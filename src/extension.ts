@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ClaudeAdapter, ClaudeAdapterConfig } from "./adapters/claude";
+import { CopilotAdapter, CopilotAdapterConfig } from "./adapters/copilot";
 import { StubAdapter } from "./adapters/stubs";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionsTreeProvider } from "./sessions/tree";
@@ -15,11 +16,19 @@ function claudeConfig(): ClaudeAdapterConfig {
     };
 }
 
+function copilotConfig(): CopilotAdapterConfig {
+    const config = vscode.workspace.getConfiguration("symposium.copilot");
+    return {
+        executable: config.get<string>("executable", "copilot"),
+        model: config.get<string>("model", ""),
+    };
+}
+
 export function activate(context: vscode.ExtensionContext): void {
     const adapters: AgentAdapter[] = [
         new ClaudeAdapter(claudeConfig),
+        new CopilotAdapter(copilotConfig),
         new StubAdapter("codex"),
-        new StubAdapter("copilot"),
     ];
     const adapterByBackend = new Map(adapters.map((adapter) => [adapter.backend, adapter]));
 
