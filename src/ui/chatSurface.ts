@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { AgentAdapter, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "./chatController";
 import { renderHtml } from "./chatHtml";
+import { symposiumLog } from "../extension";
 
 export interface ChatSurfaceDeps {
     adapterByBackend: Map<string, AgentAdapter>;
@@ -31,6 +32,7 @@ export class ChatSurface {
     }
 
     private post(message: unknown): void {
+        symposiumLog(`[surface] -> webview: ${(message as any)?.type}${this.ready ? "" : " (queued)"}`);
         if (this.ready) {
             void this.webview.postMessage(message);
         } else {
@@ -39,6 +41,7 @@ export class ChatSurface {
     }
 
     private async onMessage(message: any): Promise<void> {
+        symposiumLog(`[surface] <- webview: ${message?.type}`);
         try {
             switch (message?.type) {
                 case "ready": {
@@ -69,6 +72,7 @@ export class ChatSurface {
                 }
             }
         } catch (error) {
+            symposiumLog(`[surface] ERROR: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
             void this.webview.postMessage({
                 type: "event",
                 event: { kind: "error", message: error instanceof Error ? error.message : String(error) },

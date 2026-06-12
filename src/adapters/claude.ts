@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as readline from "readline";
+import { resolveExecutable } from "./exec";
 import {
     AgentAdapter,
     AgentSession,
@@ -14,6 +15,8 @@ import {
 
 export interface ClaudeAdapterConfig {
     executable: string;
+    /** Optional diagnostics sink (the Symposium output channel). */
+    log?: (message: string) => void;
     model: string;
     permissionMode: string;
     env: Record<string, string>;
@@ -60,7 +63,9 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         if (this.options.resumeSessionId) {
             args.push("--resume", this.options.resumeSessionId);
         }
-        const child = spawn(this.config.executable, args, {
+        const executable = resolveExecutable(this.config.executable);
+        this.config.log?.(`[claude] spawn ${executable} ${args.join(" ")} (cwd=${this.options.cwd})`);
+        const child = spawn(executable, args, {
             cwd: this.options.cwd,
             env: { ...process.env, ...this.config.env },
             stdio: ["pipe", "pipe", "pipe"],
@@ -73,7 +78,9 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         let stderr = "";
         child.stderr.on("data", (chunk) => { stderr += String(chunk); });
         child.on("error", (error) => {
-            this.emit("event", { kind: "error", message: `claude spawn failed: ${error.message}` });
+            this.config.log?.(`[claude] spawn error: ${error.message}`);
+            this.emit("event", { kind: "error", message: `claude spawn failed (${executable}): ${error.message}` });
+            this.emit("event", { kind: "turn-end" });
         });
         child.on("exit", (code) => {
             if (!this.disposed && code !== 0 && code !== null) {
@@ -175,7 +182,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
         return new Promise((resolve) => {
-            const child = spawn(this.getConfig().executable, ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
+            const child = spawn(resolveExecutable(this.getConfig().executable), ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
             let out = "";
             child.stdout.on("data", (chunk) => { out += String(chunk); });
             child.on("error", (error) => resolve({ ok: false, error: error.message }));

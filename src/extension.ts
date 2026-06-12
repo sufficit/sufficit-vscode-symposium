@@ -16,6 +16,7 @@ function claudeConfig(): ClaudeAdapterConfig {
         model: config.get<string>("model", ""),
         permissionMode: config.get<string>("permissionMode", "default"),
         env: config.get<Record<string, string>>("env", {}),
+        log: symposiumLog,
     };
 }
 
@@ -27,7 +28,14 @@ function copilotConfig(): CopilotAdapterConfig {
     };
 }
 
+let output: vscode.OutputChannel | undefined;
+export function symposiumLog(message: string): void {
+    output?.appendLine(`${new Date().toISOString()} ${message}`);
+}
+
 export function activate(context: vscode.ExtensionContext): void {
+    output = vscode.window.createOutputChannel("Symposium");
+    context.subscriptions.push(output);
     const adapters: AgentAdapter[] = [
         new ClaudeAdapter(claudeConfig),
         new CopilotAdapter(copilotConfig),

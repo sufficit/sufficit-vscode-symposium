@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import * as readline from "readline";
+import { resolveExecutable } from "./exec";
 import {
     AgentAdapter,
     AgentSession,
@@ -43,7 +44,7 @@ class CopilotSession extends EventEmitter implements AgentSession {
         if (this.sessionId) {
             args.push("--resume", this.sessionId);
         }
-        const child = spawn(this.config.executable, args, {
+        const child = spawn(resolveExecutable(this.config.executable), args, {
             cwd: this.options.cwd,
             env: process.env,
             stdio: ["ignore", "pipe", "pipe"],
@@ -136,7 +137,7 @@ export class CopilotAdapter implements AgentAdapter {
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
         return new Promise((resolve) => {
-            const child = spawn(this.getConfig().executable, ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
+            const child = spawn(resolveExecutable(this.getConfig().executable), ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
             let out = "";
             child.stdout.on("data", (chunk) => { out += String(chunk); });
             child.on("error", (error) => resolve({ ok: false, error: error.message }));
