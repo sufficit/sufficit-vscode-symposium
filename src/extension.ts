@@ -37,6 +37,10 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.registerTreeDataProvider("symposium.sessions", tree),
         vscode.commands.registerCommand("symposium.refreshSessions", () => tree.refresh()),
 
+        // dev convenience: reload the freshly installed vsix without reloading the window
+        vscode.commands.registerCommand("symposium.restartExtensionHost", () =>
+            vscode.commands.executeCommand("workbench.action.restartExtensionHost")),
+
         vscode.commands.registerCommand("symposium.newSession", async () => {
             const picks = await Promise.all(adapters.map(async (adapter) => {
                 const probe = await adapter.available();
