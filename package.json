@@ -1,0 +1,125 @@
+{
+  "name": "sufficit-vscode-symposium",
+  "displayName": "Symposium",
+  "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "sufficit",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sufficit/sufficit-vscode-symposium"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "symposium",
+          "title": "Symposium",
+          "icon": "media/symposium.svg"
+        }
+      ]
+    },
+    "views": {
+      "symposium": [
+        {
+          "id": "symposium.sessions",
+          "name": "Sessions",
+          "icon": "media/symposium.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "symposium.newSession",
+        "title": "Symposium: New Session",
+        "icon": "$(add)"
+      },
+      {
+        "command": "symposium.openSession",
+        "title": "Symposium: Open Session"
+      },
+      {
+        "command": "symposium.refreshSessions",
+        "title": "Symposium: Refresh Sessions",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "symposium.newSession",
+          "when": "view == symposium.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "symposium.refreshSessions",
+          "when": "view == symposium.sessions",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Symposium",
+      "properties": {
+        "symposium.claude.executable": {
+          "type": "string",
+          "default": "claude",
+          "description": "Path to the Claude Code CLI executable."
+        },
+        "symposium.claude.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model passed to claude --model. Empty uses the CLI default."
+        },
+        "symposium.claude.permissionMode": {
+          "type": "string",
+          "enum": [
+            "default",
+            "acceptEdits",
+            "bypassPermissions",
+            "plan"
+          ],
+          "default": "default",
+          "description": "Permission mode passed to claude --permission-mode."
+        },
+        "symposium.claude.env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Extra environment variables for the Claude CLI process (e.g. ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN for a gateway)."
+        },
+        "symposium.codex.executable": {
+          "type": "string",
+          "default": "codex",
+          "description": "Path to the Codex CLI executable."
+        },
+        "symposium.copilot.executable": {
+          "type": "string",
+          "default": "copilot",
+          "description": "Path to the GitHub Copilot CLI executable."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.100.0",
+    "typescript": "^5.6.0"
+  }
+}
