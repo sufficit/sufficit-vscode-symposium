@@ -176,7 +176,8 @@ export function renderHtml(): string {
     .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
     .msg.user .role { opacity: 0.5; }
     .ubody {
-        background: var(--vscode-chat-requestBackground, rgba(128,128,128,0.12));
+        background: var(--vscode-chat-requestBackground, var(--vscode-list-activeSelectionBackground, rgba(120,150,220,0.18)));
+        border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(128,128,128,0.25)));
         border-radius: 12px 12px 3px 12px; padding: 9px 13px; white-space: pre-wrap;
         max-width: 80%; text-align: left;
     }

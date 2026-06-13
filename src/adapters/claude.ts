@@ -443,6 +443,28 @@ export class ClaudeAdapter implements AgentAdapter {
     }
 }
 
+/**
+ * Cleans a stored user message for display: slash-command invocations are
+ * saved with a `<command-name>/<command-args>`/`<command-message>` envelope
+ * (plus a `<local-command-*>`/caveat) — collapse those to `/name args`, and
+ * drop other injected `<...>` system wrappers, so the transcript reads like
+ * the chat the user actually typed.
+ */
+function cleanUserText(raw: string): string {
+    const text = String(raw);
+    const name = /<command-name>([^<]*)<\/command-name>/.exec(text);
+    if (name) {
+        const args = /<command-args>([^<]*)<\/command-args>/.exec(text);
+        const cmd = name[1].trim().replace(/^\//, "");
+        return ("/" + cmd + (args && args[1].trim() ? " " + args[1].trim() : "")).trim();
+    }
+    // System reminders / caveats wrapped in tags are not user input.
+    if (/^<(local-command|command-message|system-reminder|command-stdout)/.test(text.trim())) {
+        return "";
+    }
+    return text.trim();
+}
+
 /** Parses one transcript JSONL line into chat messages (text + tool calls). */
 function parseTranscriptLine(line: string): HistoryMessage[] {
     if (!line.trim()) {
@@ -461,11 +483,13 @@ function parseTranscriptLine(line: string): HistoryMessage[] {
     if (entry.type === "user") {
         const content = entry.message?.content;
         if (typeof content === "string") {
-            content.trim() && messages.push({ role: "user", text: content });
+            const t = cleanUserText(content);
+            t && messages.push({ role: "user", text: t });
         } else if (Array.isArray(content)) {
             for (const block of content) {
                 if (block.type === "text" && block.text?.trim()) {
-                    messages.push({ role: "user", text: block.text });
+                    const t = cleanUserText(block.text);
+                    t && messages.push({ role: "user", text: t });
                 }
                 // tool_result blocks are skipped: the tool line was already added
             }
