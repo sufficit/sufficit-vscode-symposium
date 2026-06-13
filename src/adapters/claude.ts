@@ -175,13 +175,29 @@ class ClaudeSession extends EventEmitter implements AgentSession {
     }
 }
 
+/**
+ * A short, human target for a tool call — the file, command, pattern or url —
+ * so the UI can show "Read foo.ts" / "Ran npm test" like the native chat,
+ * instead of a raw JSON blob.
+ */
 function summarizeToolInput(input: unknown): string {
-    try {
-        const text = JSON.stringify(input);
-        return text.length > 120 ? text.slice(0, 117) + "..." : text;
-    } catch {
-        return "";
+    const o = (input ?? {}) as Record<string, unknown>;
+    const base = (p: unknown) => String(p).split("/").pop() || String(p);
+    let s = "";
+    if (typeof o.file_path === "string") { s = base(o.file_path); }
+    else if (typeof o.notebook_path === "string") { s = base(o.notebook_path); }
+    else if (typeof o.path === "string") { s = base(o.path); }
+    else if (typeof o.command === "string") { s = o.command.trim().replace(/\s+/g, " "); }
+    else if (typeof o.pattern === "string") { s = o.pattern + (typeof o.path === "string" ? " in " + base(o.path) : ""); }
+    else if (typeof o.url === "string") { s = o.url; }
+    else if (typeof o.query === "string") { s = o.query; }
+    else if (typeof o.description === "string") { s = o.description; }
+    else if (typeof o.prompt === "string") { s = o.prompt; }
+    else {
+        const first = Object.values(o).find((v) => typeof v === "string") as string | undefined;
+        s = first ?? "";
     }
+    return s.length > 140 ? s.slice(0, 137) + "..." : s;
 }
 
 export class ClaudeAdapter implements AgentAdapter {

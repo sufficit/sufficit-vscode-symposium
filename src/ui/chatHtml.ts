@@ -229,6 +229,21 @@ export function renderHtml(): string {
         font-size: var(--vscode-editor-font-size, 0.9em); white-space: pre;
     }
     .tool { opacity: 0.6; font-size: 0.9em; padding-left: 4px; font-family: var(--vscode-editor-font-family, monospace); }
+    /* tool invocation row — native-chat look: icon + verb + muted target */
+    .toolrow {
+        display: flex; align-items: center; gap: 7px;
+        padding: 2px 8px; margin: 1px 0; border-radius: 4px;
+        font-size: 0.9em; line-height: 1.5;
+        color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+    }
+    .toolrow:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,0.1)); }
+    .toolrow .tIcon { display: inline-flex; flex-shrink: 0; opacity: 0.8; }
+    .toolrow .tIcon svg { width: 14px; height: 14px; }
+    .toolrow .tVerb { color: var(--vscode-foreground); opacity: 0.85; flex-shrink: 0; }
+    .toolrow .tTarget {
+        font-family: var(--vscode-editor-font-family, monospace); font-size: 0.92em;
+        opacity: 0.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+    }
     .error { color: var(--vscode-errorForeground); }
     .meta { opacity: 0.5; font-size: 0.85em; text-align: center; margin: 8px 0; }
 
@@ -792,6 +807,11 @@ export function renderHtml(): string {
         copy: "M5 2h6a1 1 0 0 1 1 1v8h-1V3H5V2ZM3 4h6a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm0 1v8h6V5H3Z",
         plus: "M8 1.5a.5.5 0 0 1 .5.5V7.5h5.5a.5.5 0 0 1 0 1H8.5V14a.5.5 0 0 1-1 0V8.5H2a.5.5 0 0 1 0-1h5.5V2a.5.5 0 0 1 .5-.5Z",
         chevron: "M4 6l4 4 4-4H4Z",
+        edit: "M12.1 1.6a1.4 1.4 0 0 1 2 2L5 12.7l-2.8.8.8-2.8 9.1-9.1Zm-1 1.4L3.6 10.4l-.4 1.4 1.4-.4 7.5-7.4-1-1Z",
+        search: "M6.5 1a5.5 5.5 0 0 1 4.3 8.9l3.1 3.2-.7.7-3.2-3.1A5.5 5.5 0 1 1 6.5 1Zm0 1a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Z",
+        globe: "M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM6.1 5.5h3.8a12 12 0 0 1 0 3H6.1a12 12 0 0 1 0-3ZM8 2.5c.6 0 1.4 1.3 1.8 3.5H6.2C6.6 3.8 7.4 2.5 8 2.5Zm0 11c-.6 0-1.4-1.3-1.8-3.5h3.6c-.4 2.2-1.2 3.5-1.8 3.5Zm3.2-1.3a10 10 0 0 0 .8-2.7h2a5.5 5.5 0 0 1-2.8 2.7Zm.8-3.7a14 14 0 0 0 0-3h2.1A5.5 5.5 0 0 1 13.5 8c0 .5-.1 1-.2 1.5H12Zm.9-4.5H11a10 10 0 0 0-.8-2.7A5.5 5.5 0 0 1 12.9 6ZM3.1 6h2a14 14 0 0 0 0 3h-2A5.5 5.5 0 0 1 2.5 8c0-.7.1-1.4.6-2Zm.2 4.5H5a10 10 0 0 0 .8 2.7 5.5 5.5 0 0 1-2.5-2.7Z",
+        list: "M2 3h2v2H2V3Zm4 .5h8v1H6v-1ZM2 7h2v2H2V7Zm4 .5h8v1H6v-1ZM2 11h2v2H2v-2Zm4 .5h8v1H6v-1Z",
+        tool: "M11.5 1.5a3.5 3.5 0 0 0-3.4 4.4L1.7 12.3l2 2 6.4-6.4a3.5 3.5 0 0 0 4.4-4.4l-1.9 1.9-1.5-.4-.4-1.5 1.9-1.9a3.5 3.5 0 0 0-1.6-.6Z",
     };
     function svgIcon(name) {
         const ns = "http://www.w3.org/2000/svg";
@@ -800,6 +820,41 @@ export function renderHtml(): string {
         const p = document.createElementNS(ns, "path"); p.setAttribute("d", ICONS[name] || "");
         svg.appendChild(p);
         return svg;
+    }
+
+    // Map a backend tool name to a native-chat icon + verb.
+    const TOOL_META = {
+        Read: { icon: "file", verb: "Read" },
+        Write: { icon: "file", verb: "Wrote" },
+        Edit: { icon: "edit", verb: "Edited" },
+        MultiEdit: { icon: "edit", verb: "Edited" },
+        NotebookEdit: { icon: "edit", verb: "Edited" },
+        Bash: { icon: "terminal", verb: "Ran" },
+        BashOutput: { icon: "terminal", verb: "Output" },
+        exec: { icon: "terminal", verb: "Ran" },
+        shell: { icon: "terminal", verb: "Ran" },
+        Glob: { icon: "search", verb: "Searched" },
+        Grep: { icon: "search", verb: "Searched" },
+        LS: { icon: "file", verb: "Listed" },
+        Task: { icon: "robot", verb: "Task" },
+        WebFetch: { icon: "globe", verb: "Fetched" },
+        WebSearch: { icon: "globe", verb: "Searched web" },
+        TodoWrite: { icon: "list", verb: "Updated plan" },
+    };
+    function renderTool(name, detail) {
+        const stick = nearBottom();
+        const meta = TOOL_META[name] || { icon: "tool", verb: name };
+        const row = document.createElement("div"); row.className = "msg toolrow";
+        const ic = document.createElement("span"); ic.className = "tIcon"; ic.appendChild(svgIcon(meta.icon));
+        const verb = document.createElement("span"); verb.className = "tVerb"; verb.textContent = meta.verb;
+        row.appendChild(ic); row.appendChild(verb);
+        if (detail) {
+            const tg = document.createElement("span"); tg.className = "tTarget"; tg.textContent = detail;
+            row.appendChild(tg);
+        }
+        log.appendChild(row);
+        autoScroll(stick);
+        return row;
     }
 
     // Per-session actions, shown as hover icons on the right and in the
@@ -1201,7 +1256,7 @@ export function renderHtml(): string {
             case "event": {
                 const ev = data.event;
                 if (ev.kind === "text") message("assistant", ev.text);
-                else if (ev.kind === "tool-start") append("tool", "⚙ " + ev.toolName + " " + (ev.detail || ""));
+                else if (ev.kind === "tool-start") renderTool(ev.toolName, ev.detail || "");
                 else if (ev.kind === "error") append("error", "✖ " + ev.message);
                 else if (ev.kind === "session") {
                     if (ev.model) { activeModel = ev.model; }
