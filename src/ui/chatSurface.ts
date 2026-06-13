@@ -6,6 +6,7 @@ import { AgentAdapter, SessionInfo, SessionStartOptions } from "../adapters/type
 import { ChatController } from "./chatController";
 import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
+import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
 
 const IMAGE_EXT: Record<string, string> = {
@@ -32,6 +33,7 @@ export interface ChatSurfaceDeps {
     adapterByBackend: Map<string, AgentAdapter>;
     listSessions(): Promise<SessionInfo[]>;
     cwdFor(info: SessionInfo): string;
+    runtime: LiveSessions;
 }
 
 /**
@@ -188,7 +190,7 @@ export class ChatSurface {
             this.openSession(info);
             return;
         }
-        this.disposeActive();
+        this.detachActive();
         this.post({ type: "clear" });
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
         this.post({
@@ -228,7 +230,7 @@ export class ChatSurface {
         if (!adapter) {
             return;
         }
-        this.disposeActive();
+        this.detachActive();
         this.post({ type: "clear" });
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
         this.post({
@@ -254,15 +256,26 @@ export class ChatSurface {
         this.onTitleChange?.(`▷ ${title} · ${adapter.backend}`);
     }
 
-    /** Opens a dialogue (new or resumed) in this surface. */
+    /**
+     * Opens a dialogue (new or resumed) in this surface. Switching away from a
+     * running session DETACHES it (it keeps working in the background) instead
+     * of stopping it; returning to it re-attaches and replays its output.
+     */
     openDialogue(backend: string, options: SessionStartOptions, title: string, info?: SessionInfo): void {
         const adapter = this.deps.adapterByBackend.get(backend);
         if (!adapter) {
             return;
         }
-        this.disposeActive();
+        this.detachActive();
         this.post({ type: "clear" });
-        this.controller = new ChatController(adapter, options, (message) => this.post(message));
+
+        // Reuse a still-running controller for this session; else create one.
+        const existing = options.resumeSessionId
+            ? this.deps.runtime.findBySessionId(options.resumeSessionId)
+            : undefined;
+        const controller = existing ?? this.deps.runtime.create(adapter, options);
+        this.controller = controller;
+
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
         this.post({
             type: "meta",
@@ -275,8 +288,9 @@ export class ChatSurface {
             chatOnly: this.chatOnly,
             defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
         });
-        if (info) {
-            void this.controller.loadHistory(info);
+        controller.attach((message) => this.post(message));
+        if (!existing && info) {
+            void controller.loadHistory(info);
         }
         this.postCommands(adapter);
         this.onTitleChange?.(`${title} · ${adapter.backend}`);
@@ -306,9 +320,14 @@ export class ChatSurface {
         });
     }
 
-    /** Tears down whatever dialogue is currently active in this surface. */
-    private disposeActive(): void {
-        this.controller?.dispose();
+    /**
+     * Unbinds the current dialogue from this surface WITHOUT stopping it: the
+     * headless controller keeps running in the shared runtime (re-attached on
+     * return). The terminal/follow mirrors are surface-bound and torn down
+     * (the terminal panel itself stays open).
+     */
+    private detachActive(): void {
+        this.controller?.detach();
         this.controller = undefined;
         this.terminalSession?.dispose();
         this.terminalSession = undefined;
@@ -317,6 +336,8 @@ export class ChatSurface {
     }
 
     dispose(): void {
-        this.disposeActive();
+        // Detach only — the runtime owns controller lifetimes so sessions
+        // survive the view/panel being closed.
+        this.detachActive();
     }
 }

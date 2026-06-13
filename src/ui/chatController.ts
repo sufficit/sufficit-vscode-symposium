@@ -10,9 +10,10 @@ interface PendingMessage {
 }
 
 /**
- * Backend-side state of one dialogue, independent of the webview surface
- * (sidebar view or editor panel). Owns the agent process; the webview is a
- * thin renderer fed through `post`.
+ * Backend-side state of one dialogue. Owns the agent process and KEEPS IT
+ * RUNNING even when the user switches to another session: the controller
+ * just detaches from the webview (buffering its output) and replays it on
+ * re-attach. Only an explicit delete/dispose stops the process.
  *
  * Send modes (mirroring VS Code chat):
  *   - send : start now when idle; if a turn is running, it is queued.
@@ -23,12 +24,47 @@ export class ChatController {
     private session: AgentSession | undefined;
     private busy = false;
     private readonly queue: PendingMessage[] = [];
+    private readonly log: unknown[] = [];   // replayable render messages
+    private sink: ((message: unknown) => void) | null = null;
 
     constructor(
         private readonly adapter: AgentAdapter,
         private readonly options: SessionStartOptions,
-        private readonly post: (message: unknown) => void,
     ) { }
+
+    /** The live session id, once the backend has reported it. */
+    get sessionId(): string | undefined {
+        return this.session?.sessionId ?? this.options.resumeSessionId;
+    }
+
+    get attached(): boolean {
+        return this.sink !== null;
+    }
+
+    /**
+     * Binds this controller to a webview sink and replays its render log.
+     * Replaying the buffered user/turn-end/queued messages naturally restores
+     * the busy/queued status in the webview.
+     */
+    attach(sink: (message: unknown) => void): void {
+        this.sink = sink;
+        for (const message of this.log) {
+            sink(message);
+        }
+    }
+
+    /** Stops forwarding to the webview but keeps the process running. */
+    detach(): void {
+        this.sink = null;
+    }
+
+    private emit(message: unknown): void {
+        this.log.push(message);
+        if (this.log.length > 5000) {
+            this.log.shift();
+        }
+        this.sink?.(message);
+    }
 
     async loadHistory(info: SessionInfo): Promise<void> {
         if (!this.adapter.history) {
@@ -36,9 +72,9 @@ export class ChatController {
         }
         try {
             const messages = await this.adapter.history(info);
-            this.post({ type: "history", messages });
+            this.emit({ type: "history", messages });
         } catch (error) {
-            this.post({
+            this.emit({
                 type: "event",
                 event: { kind: "error", message: `failed to load history: ${error instanceof Error ? error.message : error}` },
             });
@@ -63,7 +99,8 @@ export class ChatController {
                     title: "Attach files to the message",
                 });
                 if (picked?.length) {
-                    this.post({
+                    // Not buffered: a transient UI affordance for the active view.
+                    this.sink?.({
                         type: "attachments-picked",
                         files: picked.map((uri) => ({
                             path: uri.fsPath,
@@ -79,18 +116,14 @@ export class ChatController {
 
     private onSend(msg: PendingMessage, mode: SendMode): void {
         if (mode === "steer" && this.busy) {
-            // Interrupt the running turn, then send this message fresh. Set the
-            // queue up BEFORE cancelling: cancel() leads to a turn-end that
-            // flushes the queue, and we want only this message to run next.
             this.queue.length = 0;
             this.queue.push(msg);
             this.session?.cancel();
             return;
         }
         if (this.busy) {
-            // send + queue both wait for the current turn.
             this.queue.push(msg);
-            this.post({ type: "queued", count: this.queue.length });
+            this.emit({ type: "queued", count: this.queue.length });
             return;
         }
         this.dispatch(msg);
@@ -110,17 +143,17 @@ export class ChatController {
                 msg.attachments.map((p) => `- ${p}`).join("\n");
         }
         this.busy = true;
-        this.post({ type: "user", text: msg.text, attachments: msg.attachments });
+        this.emit({ type: "user", text: msg.text, attachments: msg.attachments });
         this.session.send(fullText);
     }
 
     private onEvent(event: AgentEvent): void {
-        this.post({ type: "event", event });
+        this.emit({ type: "event", event });
         if (event.kind === "turn-end") {
             this.busy = false;
             const next = this.queue.shift();
             if (next) {
-                this.post({ type: "queued", count: this.queue.length });
+                this.emit({ type: "queued", count: this.queue.length });
                 this.dispatch(next);
             }
         }

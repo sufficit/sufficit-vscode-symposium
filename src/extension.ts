@@ -5,6 +5,7 @@ import { CodexAdapter, CodexAdapterConfig } from "./adapters/codex";
 import { CopilotAdapter, CopilotAdapterConfig } from "./adapters/copilot";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
+import { LiveSessions } from "./sessions/runtime";
 import { ChatPanel } from "./ui/chatPanel";
 import { ChatSurfaceDeps } from "./ui/chatSurface";
 import { ChatViewProvider } from "./ui/chatView";
@@ -53,6 +54,8 @@ export function activate(context: vscode.ExtensionContext): void {
         adapters.map((adapter) => [adapter.backend, adapter]));
 
     const store = new SessionStore(context.globalState);
+    const runtime = new LiveSessions();
+    context.subscriptions.push({ dispose: () => runtime.disposeAll() });
 
     const rawSessions = async (): Promise<SessionInfo[]> => {
         const all = await Promise.all(adapters.map((adapter) =>
@@ -71,6 +74,7 @@ export function activate(context: vscode.ExtensionContext): void {
             info.cwd && path.isAbsolute(info.cwd)
                 ? info.cwd
                 : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+        runtime,
     };
 
     const chatView = new ChatViewProvider(deps);
@@ -234,6 +238,7 @@ export function activate(context: vscode.ExtensionContext): void {
                 return;
             }
             try {
+                runtime.disposeBySessionId(info.sessionId); // stop it if running
                 const residual = await adapter.deleteSession(info);
                 await store.forget(info);
                 refreshAll();
