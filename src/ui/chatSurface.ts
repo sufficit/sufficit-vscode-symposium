@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { AgentAdapter, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "./chatController";
 import { renderHtml } from "./chatHtml";
+import { TerminalSession } from "./terminalSession";
 import { symposiumLog } from "../extension";
 
 export interface ChatSurfaceDeps {
@@ -18,6 +19,7 @@ export interface ChatSurfaceDeps {
  */
 export class ChatSurface {
     private controller: ChatController | undefined;
+    private terminalSession: TerminalSession | undefined;
     private followHandle: { dispose(): void } | undefined;
     private ready = false;
     private queue: unknown[] = [];
@@ -54,8 +56,8 @@ export class ChatSurface {
                     void this.refreshSessions();
                     // No dialogue chosen yet (e.g. the sidebar Chat view was just
                     // opened): start a fresh one so the composer is immediately live.
-                    // Skip when mirroring a session (read-only follow).
-                    if (!this.controller && !this.followHandle) {
+                    // Skip when mirroring (follow) or driving a terminal session.
+                    if (!this.controller && !this.followHandle && !this.terminalSession) {
                         this.startDefaultDialogue();
                     }
                     return;
@@ -73,6 +75,13 @@ export class ChatSurface {
                     return;
                 }
                 default: {
+                    if (this.terminalSession && message?.type === "send") {
+                        this.terminalSession.send(message.text);
+                        return;
+                    }
+                    if (this.terminalSession && message?.type === "cancel") {
+                        return; // the user interrupts in the terminal itself
+                    }
                     if (!this.controller && message?.type === "send") {
                         // Composer used before any dialogue was opened — start one now,
                         // then deliver this message to it.
@@ -123,9 +132,7 @@ export class ChatSurface {
             this.openSession(info);
             return;
         }
-        this.controller?.dispose();
-        this.controller = undefined;
-        this.followHandle?.dispose();
+        this.disposeActive();
         this.post({ type: "clear" });
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "left");
         this.post({
@@ -152,15 +159,47 @@ export class ChatSurface {
         this.onTitleChange?.(`👁 ${info.title} · ${adapter.backend}`);
     }
 
+    /**
+     * Terminal-backed dialogue: Symposium launches the CLI in a visible VS
+     * Code terminal it owns, so the composer drives the same interactive
+     * process the user can also type into. Full two-way control of one live
+     * session. `env`/`model` come from the adapter's configuration.
+     */
+    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string> }, title: string): void {
+        const adapter = this.deps.adapterByBackend.get(backend);
+        if (!adapter) {
+            return;
+        }
+        this.disposeActive();
+        this.post({ type: "clear" });
+        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "left");
+        this.post({
+            type: "meta",
+            backend: adapter.backend,
+            resumed: !!options.resumeSessionId,
+            terminal: true,
+            models: [],
+            sessionId: options.resumeSessionId ?? "",
+            title,
+            sessionsSide,
+        });
+        this.terminalSession = new TerminalSession(
+            adapter,
+            { cwd: options.cwd, resumeSessionId: options.resumeSessionId, model: options.model, env: options.env },
+            (message) => this.post(message),
+            symposiumLog,
+        );
+        void this.terminalSession.start();
+        this.onTitleChange?.(`▷ ${title} · ${adapter.backend}`);
+    }
+
     /** Opens a dialogue (new or resumed) in this surface. */
     openDialogue(backend: string, options: SessionStartOptions, title: string, info?: SessionInfo): void {
         const adapter = this.deps.adapterByBackend.get(backend);
         if (!adapter) {
             return;
         }
-        this.controller?.dispose();
-        this.followHandle?.dispose();
-        this.followHandle = undefined;
+        this.disposeActive();
         this.post({ type: "clear" });
         this.controller = new ChatController(adapter, options, (message) => this.post(message));
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "left");
@@ -192,10 +231,17 @@ export class ChatSurface {
         });
     }
 
-    dispose(): void {
+    /** Tears down whatever dialogue is currently active in this surface. */
+    private disposeActive(): void {
         this.controller?.dispose();
         this.controller = undefined;
+        this.terminalSession?.dispose();
+        this.terminalSession = undefined;
         this.followHandle?.dispose();
         this.followHandle = undefined;
+    }
+
+    dispose(): void {
+        this.disposeActive();
     }
 }

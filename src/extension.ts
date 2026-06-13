@@ -65,6 +65,21 @@ export function activate(context: vscode.ExtensionContext): void {
     const inEditor = () =>
         vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor") === "editor";
 
+    // Per-backend env for terminal-backed sessions (e.g. gateway routing).
+    const envFor = (backend: string): Record<string, string> =>
+        backend === "claude" ? claudeConfig().env : {};
+    const modelFor = (backend: string): string =>
+        backend === "claude" ? claudeConfig().model : copilotConfig().model;
+
+    const startTerminal = (backend: string, options: { cwd: string; resumeSessionId?: string }, title: string) => {
+        const opts = { ...options, env: envFor(backend), model: modelFor(backend) || undefined };
+        if (inEditor()) {
+            ChatPanel.show(context, deps).openTerminalDialogue(backend, opts, title);
+        } else {
+            void chatView.openTerminalDialogue(backend, opts, title);
+        }
+    };
+
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider("symposium.sessions", tree),
         vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, chatView,
@@ -128,6 +143,30 @@ export function activate(context: vscode.ExtensionContext): void {
             } else {
                 void chatView.followSession(info);
             }
+        }),
+
+        vscode.commands.registerCommand("symposium.newTerminalSession", async () => {
+            const picks = await Promise.all(adapters.map(async (adapter) => {
+                const probe = await adapter.available();
+                return { label: adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, backend: adapter.backend, ok: probe.ok };
+            }));
+            const choice = await vscode.window.showQuickPick(picks.filter((p) => p.ok), {
+                placeHolder: "Launch which agent in a terminal session?",
+            });
+            if (!choice) {
+                return;
+            }
+            const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!cwd) {
+                void vscode.window.showWarningMessage("Open a folder first; sessions are bound to a working directory.");
+                return;
+            }
+            startTerminal(choice.backend, { cwd }, "Terminal session");
+        }),
+
+        vscode.commands.registerCommand("symposium.resumeInTerminal", (item: { info?: SessionInfo } | SessionInfo) => {
+            const info = "info" in item && item.info ? item.info : item as SessionInfo;
+            startTerminal(info.backend, { cwd: deps.cwdFor(info), resumeSessionId: info.sessionId }, info.title);
         }),
     );
 }

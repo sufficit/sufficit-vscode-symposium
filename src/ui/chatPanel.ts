@@ -47,4 +47,8 @@ export class ChatPanel {
     openDialogue(backend: string, options: SessionStartOptions, title: string): void {
         this.surface.openDialogue(backend, options, title);
     }
+
+    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string> }, title: string): void {
+        this.surface.openTerminalDialogue(backend, options, title);
+    }
 }

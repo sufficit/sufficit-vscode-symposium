@@ -3,10 +3,10 @@ import { SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatSurface, ChatSurfaceDeps } from "./chatSurface";
 
 interface PendingOpen {
-    kind: "session" | "dialogue" | "follow";
+    kind: "session" | "dialogue" | "follow" | "terminal";
     info?: SessionInfo;
     backend?: string;
-    options?: SessionStartOptions;
+    options?: (SessionStartOptions & { env?: Record<string, string> });
     title?: string;
 }
 
@@ -52,6 +52,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.reveal();
     }
 
+    async openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string> }, title: string): Promise<void> {
+        this.pending = { kind: "terminal", backend, options, title };
+        await this.reveal();
+    }
+
     private async reveal(): Promise<void> {
         await vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`);
         this.consumePending();
@@ -69,6 +74,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             void this.surface.followSession(pending.info);
         } else if (pending.kind === "dialogue" && pending.backend && pending.options) {
             this.surface.openDialogue(pending.backend, pending.options, pending.title ?? "New dialogue");
+        } else if (pending.kind === "terminal" && pending.backend && pending.options) {
+            this.surface.openTerminalDialogue(pending.backend, pending.options, pending.title ?? "New terminal session");
         }
     }
 }

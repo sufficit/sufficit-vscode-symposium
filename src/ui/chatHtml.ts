@@ -290,6 +290,8 @@ export function renderHtml(): string {
                 document.getElementById("composer").style.display = data.readOnly ? "none" : "flex";
                 if (data.readOnly) {
                     append("meta", "👁 watching live — read only (this session runs elsewhere)");
+                } else if (data.terminal) {
+                    append("meta", "▷ terminal session — drive it here or type in the terminal panel" + (data.resumed ? " (resumed)" : ""));
                 } else {
                     append("meta", data.backend + (data.resumed ? " · resumed session" : " · new session"));
                 }
