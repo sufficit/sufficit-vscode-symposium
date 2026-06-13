@@ -58,8 +58,7 @@ export function renderHtml(): string {
     /* ---- sessions pane ---- */
     #sessionsPane {
         order: 1; width: 260px; min-width: 180px; flex-shrink: 0;
-        border-right: 1px solid var(--vscode-sideBarSectionHeader-border, var(--vscode-panel-border, #333));
-        background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+        border-right: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
         display: flex; flex-direction: column; overflow: hidden;
     }
     #root.side-right #sessionsPane {
@@ -169,15 +168,18 @@ export function renderHtml(): string {
     .role .avatar {
         width: 19px; height: 19px; border-radius: 5px; flex-shrink: 0;
         display: inline-flex; align-items: center; justify-content: center;
-        background: var(--vscode-badge-background, rgba(128,128,128,0.2)); color: var(--vscode-badge-foreground, inherit);
+        background: var(--vscode-chat-avatarBackground, var(--vscode-badge-background, rgba(128,128,128,0.2)));
+        color: var(--vscode-icon-foreground, var(--vscode-foreground));
+        border: 1px solid var(--vscode-chat-requestBorder, rgba(255,255,255,0.08));
     }
     .role .avatar svg { width: 12px; height: 12px; }
     /* user turns: right-aligned bubble */
     .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
     .msg.user .role { opacity: 0.5; }
+    /* exact native chat tokens: requestBackground (translucent editor bg) + requestBorder (white 10%) */
     .ubody {
-        background: var(--vscode-chat-requestBackground, var(--vscode-list-activeSelectionBackground, rgba(120,150,220,0.18)));
-        border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(128,128,128,0.25)));
+        background: var(--vscode-chat-requestBackground, rgba(255,255,255,0.05));
+        border: 1px solid var(--vscode-chat-requestBorder, rgba(255,255,255,0.1));
         border-radius: 12px 12px 3px 12px; padding: 9px 13px; white-space: pre-wrap;
         max-width: 80%; text-align: left;
     }
