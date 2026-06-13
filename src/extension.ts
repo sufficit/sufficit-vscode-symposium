@@ -1,6 +1,23 @@
 import * as cp from "child_process";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+
+/**
+ * Working directory for a new session: the workspace folder, else the active
+ * editor's folder, else the user's home. Never blocks on "open a folder".
+ */
+function defaultCwd(): string {
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (ws) {
+        return ws;
+    }
+    const doc = vscode.window.activeTextEditor?.document;
+    if (doc && doc.uri.scheme === "file") {
+        return path.dirname(doc.uri.fsPath);
+    }
+    return os.homedir();
+}
 import { ClaudeAdapter, ClaudeAdapterConfig } from "./adapters/claude";
 import { CodexAdapter, CodexAdapterConfig } from "./adapters/codex";
 import { CopilotAdapter, CopilotAdapterConfig } from "./adapters/copilot";
@@ -195,11 +212,7 @@ export function activate(context: vscode.ExtensionContext): void {
                     `${choice.label} CLI is not available: ${choice.description}`);
                 return;
             }
-            const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-            if (!cwd) {
-                void vscode.window.showWarningMessage("Open a folder first; sessions are bound to a working directory.");
-                return;
-            }
+            const cwd = defaultCwd();
             if (inEditor()) {
                 ChatPanel.show(context, deps).openDialogue(choice.adapter.backend, { cwd }, "New dialogue");
             } else {
@@ -240,11 +253,7 @@ export function activate(context: vscode.ExtensionContext): void {
             if (!choice) {
                 return;
             }
-            const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-            if (!cwd) {
-                void vscode.window.showWarningMessage("Open a folder first; sessions are bound to a working directory.");
-                return;
-            }
+            const cwd = defaultCwd();
             startTerminal(choice.backend, { cwd }, "Terminal session");
         }),
 
@@ -273,11 +282,7 @@ export function activate(context: vscode.ExtensionContext): void {
             if (!choice) {
                 return;
             }
-            const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-            if (!cwd) {
-                void vscode.window.showWarningMessage("Open a folder first; sessions are bound to a working directory.");
-                return;
-            }
+            const cwd = defaultCwd();
             const tmuxName = `symposium-${choice.backend}-${Date.now().toString(36)}`;
             const title = `Persistent ${choice.backend}`;
             await persistAdd({ tmuxName, backend: choice.backend, cwd, title });
