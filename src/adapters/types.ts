@@ -36,6 +36,13 @@ export interface FollowHandle {
     dispose(): void;
 }
 
+/** A slash command / skill offered by a backend for composer autocomplete. */
+export interface SlashCommand {
+    name: string;
+    description?: string;
+    kind?: "skill" | "command";
+}
+
 /** Options for starting or resuming a live session. */
 export interface SessionStartOptions {
     cwd: string;
@@ -81,6 +88,8 @@ export interface AgentAdapter {
     follow?(info: SessionInfo, onMessage: (message: HistoryMessage) => void): FollowHandle;
     /** Models offered in the chat panel picker; first entry is the default. */
     models?(): string[];
+    /** Slash commands / skills offered for composer autocomplete. */
+    commands?(): Promise<SlashCommand[]>;
     /**
      * Permanently scrubs a session's stored data from disk (transcript plus
      * any shared history/index files). Returns the names of stores that may

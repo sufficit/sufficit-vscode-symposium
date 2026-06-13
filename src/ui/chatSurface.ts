@@ -248,6 +248,7 @@ export class ChatSurface {
             symposiumLog,
         );
         void this.terminalSession.start();
+        this.postCommands(adapter);
         this.onTitleChange?.(`▷ ${title} · ${adapter.backend}`);
     }
 
@@ -274,7 +275,19 @@ export class ChatSurface {
         if (info) {
             void this.controller.loadHistory(info);
         }
+        this.postCommands(adapter);
         this.onTitleChange?.(`${title} · ${adapter.backend}`);
+    }
+
+    /** Fetches the backend's slash commands/skills and sends them for autocomplete. */
+    private postCommands(adapter: AgentAdapter): void {
+        if (!adapter.commands) {
+            this.post({ type: "commands", items: [] });
+            return;
+        }
+        void adapter.commands()
+            .then((items) => this.post({ type: "commands", items }))
+            .catch(() => this.post({ type: "commands", items: [] }));
     }
 
     async refreshSessions(): Promise<void> {

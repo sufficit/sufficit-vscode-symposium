@@ -6,6 +6,7 @@ import * as path from "path";
 import * as readline from "readline";
 import { resolveExecutable } from "./exec";
 import { removeMatchingFiles, scrubJsonlLines } from "./scrub";
+import { discoverSlashCommands, findNamedDirs } from "./skills";
 import {
     AgentAdapter,
     AgentSession,
@@ -13,6 +14,7 @@ import {
     HistoryMessage,
     SessionInfo,
     SessionStartOptions,
+    SlashCommand,
 } from "./types";
 
 export interface ClaudeAdapterConfig {
@@ -249,6 +251,17 @@ export class ClaudeAdapter implements AgentAdapter {
         const configured = this.getConfig().model;
         const known = ["sonnet", "opus", "haiku"];
         return [...new Set([configured || "default", ...known])];
+    }
+
+    async commands(): Promise<SlashCommand[]> {
+        const root = path.join(os.homedir(), ".claude");
+        const marketplaces = path.join(root, "plugins", "marketplaces");
+        const pluginSkills = await findNamedDirs(marketplaces, "skills");
+        const pluginCommands = await findNamedDirs(marketplaces, "commands");
+        return discoverSlashCommands(
+            [path.join(root, "skills"), ...pluginSkills],
+            [path.join(root, "commands"), ...pluginCommands],
+        );
     }
 
     /**

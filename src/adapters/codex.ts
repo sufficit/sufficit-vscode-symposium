@@ -6,12 +6,14 @@ import * as path from "path";
 import * as readline from "readline";
 import { resolveExecutable } from "./exec";
 import { scrubJsonlLines, scrubSqliteRows } from "./scrub";
+import { discoverSlashCommands, findNamedDirs } from "./skills";
 import {
     AgentAdapter,
     AgentSession,
     HistoryMessage,
     SessionInfo,
     SessionStartOptions,
+    SlashCommand,
 } from "./types";
 
 export interface CodexAdapterConfig {
@@ -290,6 +292,16 @@ export class CodexAdapter implements AgentAdapter {
      * Returns the names of stores that may still hold residual data so the
      * caller can warn the user (e.g. the aggregate logs_*.sqlite).
      */
+    async commands(): Promise<SlashCommand[]> {
+        const root = path.join(os.homedir(), ".codex");
+        const pluginSkills = await findNamedDirs(path.join(root, "plugins"), "skills");
+        return discoverSlashCommands(
+            // Codex's bundled skills live under skills/.system/<name>/SKILL.md.
+            [path.join(root, "skills"), path.join(root, "skills", ".system"), ...pluginSkills],
+            [path.join(root, "prompts")],
+        );
+    }
+
     async deleteSession(info: SessionInfo): Promise<string[]> {
         const root = path.join(os.homedir(), ".codex");
         const id = info.sessionId;

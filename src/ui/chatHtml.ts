@@ -102,7 +102,22 @@ export function renderHtml(): string {
     .error { color: var(--vscode-errorForeground); }
     .meta { opacity: 0.5; font-size: 0.85em; text-align: center; }
 
+    /* ---- slash command autocomplete ---- */
+    #slash {
+        position: absolute; z-index: 40; display: none;
+        left: 12px; right: 12px; bottom: 100%; margin-bottom: 2px;
+        max-height: 240px; overflow-y: auto;
+        background: var(--vscode-editorSuggestWidget-background, var(--vscode-menu-background, var(--vscode-editor-background)));
+        border: 1px solid var(--vscode-editorSuggestWidget-border, var(--vscode-widget-border, #454545));
+        border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+    }
+    .slashItem { padding: 5px 10px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+    .slashItem.sel { background: var(--vscode-editorSuggestWidget-selectedBackground, var(--vscode-list-activeSelectionBackground)); }
+    .slashItem .nm { color: var(--vscode-editorSuggestWidget-foreground, inherit); font-weight: 600; white-space: nowrap; }
+    .slashItem .ds { opacity: 0.65; font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     /* ---- composer ---- */
+    #composer { position: relative; }
     #composer {
         margin: 6px 12px 10px 12px;
         border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, #454545));
@@ -177,6 +192,7 @@ export function renderHtml(): string {
         </div>
         <div id="log"></div>
         <div id="composer">
+            <div id="slash"></div>
             <div id="chips">
                 <button id="addContext" title="Attach files">📎 Add Context...</button>
             </div>
@@ -377,16 +393,65 @@ export function renderHtml(): string {
         renderChips();
     }
 
+    // ---- slash-command autocomplete ----
+    const slash = document.getElementById("slash");
+    let commands = [];     // [{name, description, kind}]
+    let slashMatches = [];
+    let slashSel = 0;
+
+    function slashActive() { return slash.style.display === "block"; }
+
+    function updateSlash() {
+        const v = input.value;
+        // Only when the line is a single "/token" (slash first, no whitespace yet).
+        const oneToken = v.charAt(0) === "/" && v.indexOf(" ") === -1 && v.indexOf("\\n") === -1;
+        if (!oneToken || !commands.length) { slash.style.display = "none"; return; }
+        const q = v.slice(1).toLowerCase();
+        slashMatches = commands.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 50);
+        if (!slashMatches.length) { slash.style.display = "none"; return; }
+        slashSel = Math.min(slashSel, slashMatches.length - 1);
+        renderSlash();
+        slash.style.display = "block";
+    }
+    function renderSlash() {
+        slash.textContent = "";
+        slashMatches.forEach((c, i) => {
+            const el = document.createElement("div");
+            el.className = "slashItem" + (i === slashSel ? " sel" : "");
+            const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = "/" + c.name;
+            const ds = document.createElement("span"); ds.className = "ds"; ds.textContent = c.description || c.kind || "";
+            el.appendChild(nm); el.appendChild(ds);
+            el.addEventListener("mousedown", (ev) => { ev.preventDefault(); acceptSlash(i); });
+            slash.appendChild(el);
+        });
+    }
+    function acceptSlash(i) {
+        const c = slashMatches[i];
+        if (!c) return;
+        input.value = "/" + c.name + " ";
+        slash.style.display = "none";
+        slashSel = 0;
+        input.focus();
+    }
+
     sendBtn.addEventListener("click", send);
     addContext.addEventListener("click", () => vscode.postMessage({ type: "pick-attachments" }));
     input.addEventListener("keydown", (e) => {
+        if (slashActive()) {
+            if (e.key === "ArrowDown") { e.preventDefault(); slashSel = (slashSel + 1) % slashMatches.length; renderSlash(); return; }
+            if (e.key === "ArrowUp") { e.preventDefault(); slashSel = (slashSel - 1 + slashMatches.length) % slashMatches.length; renderSlash(); return; }
+            if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); acceptSlash(slashSel); return; }
+            if (e.key === "Escape") { e.preventDefault(); slash.style.display = "none"; return; }
+        }
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
         if (e.key === "Escape" && busy) { vscode.postMessage({ type: "cancel" }); }
     });
     input.addEventListener("input", () => {
         input.style.height = "auto";
         input.style.height = Math.min(input.scrollHeight, 180) + "px";
+        updateSlash();
     });
+    input.addEventListener("blur", () => { setTimeout(() => { slash.style.display = "none"; }, 120); });
 
     // Paste: images become attachments (written to a temp file by the
     // extension); text falls through to the textarea natively.
@@ -456,6 +521,10 @@ export function renderHtml(): string {
             case "sessions": {
                 sessions = data.items;
                 renderSessions();
+                break;
+            }
+            case "commands": {
+                commands = data.items || [];
                 break;
             }
             case "history": {

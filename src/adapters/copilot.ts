@@ -1,12 +1,16 @@
 import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import * as readline from "readline";
+import * as os from "os";
+import * as path from "path";
 import { resolveExecutable } from "./exec";
+import { discoverSlashCommands, findNamedDirs } from "./skills";
 import {
     AgentAdapter,
     AgentSession,
     SessionInfo,
     SessionStartOptions,
+    SlashCommand,
 } from "./types";
 
 export interface CopilotAdapterConfig {
@@ -165,5 +169,14 @@ export class CopilotAdapter implements AgentAdapter {
         const configured = this.getConfig().model;
         const known = ["auto", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.2", "gpt-5-mini"];
         return [...new Set([configured || "auto", ...known])];
+    }
+
+    async commands(): Promise<SlashCommand[]> {
+        const root = path.join(os.homedir(), ".copilot");
+        const pluginSkills = await findNamedDirs(path.join(root, "plugins"), "skills");
+        return discoverSlashCommands(
+            [path.join(root, "skills"), ...pluginSkills],
+            [path.join(root, "prompts"), path.join(root, "commands")],
+        );
     }
 }
