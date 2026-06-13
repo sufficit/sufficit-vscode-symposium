@@ -23,6 +23,8 @@ export interface SessionInfo {
     transcriptPath?: string;
     /** Set by the session store; true when the user archived it. */
     archived?: boolean;
+    /** Live runtime status: a session with a running controller. */
+    status?: "working" | "idle";
 }
 
 /** One past message reconstructed from a stored transcript. */

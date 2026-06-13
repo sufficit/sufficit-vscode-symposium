@@ -31,11 +31,19 @@ export class ChatController {
     constructor(
         private readonly adapter: AgentAdapter,
         private readonly options: SessionStartOptions,
+        // Fired when the running/idle state changes, so the sessions list can
+        // update its per-session working indicator.
+        private readonly onStatusChange?: () => void,
     ) { }
 
     /** The live session id, once the backend has reported it. */
     get sessionId(): string | undefined {
         return this.session?.sessionId ?? this.options.resumeSessionId;
+    }
+
+    /** True while a turn is running (agent working). */
+    get isBusy(): boolean {
+        return this.busy;
     }
 
     get attached(): boolean {
@@ -147,6 +155,7 @@ export class ChatController {
                 msg.attachments.map((p) => `- ${p}`).join("\n");
         }
         this.busy = true;
+        this.onStatusChange?.();
         this.emit({ type: "user", text: msg.text, attachments: msg.attachments });
         this.session.send(fullText);
     }
@@ -155,6 +164,7 @@ export class ChatController {
         this.emit({ type: "event", event });
         if (event.kind === "turn-end") {
             this.busy = false;
+            this.onStatusChange?.();
             const next = this.queue.shift();
             if (next) {
                 this.emit({ type: "queued", count: this.queue.length });

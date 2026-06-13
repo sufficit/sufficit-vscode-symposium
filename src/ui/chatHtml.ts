@@ -89,6 +89,14 @@ export function renderHtml(): string {
         color: var(--vscode-list-activeSelectionForeground);
         border-left-color: var(--vscode-focusBorder);
     }
+    .sessionItem .statusDot { width: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+    .sessionItem .statusDot .idle { width: 6px; height: 6px; border-radius: 50%; background: var(--vscode-charts-green, #89d185); opacity: 0.8; }
+    .sessionItem .statusDot .work {
+        width: 11px; height: 11px; border-radius: 50%;
+        border: 2px solid color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 30%, transparent);
+        border-top-color: var(--vscode-charts-blue, #3794ff);
+        animation: spin 0.7s linear infinite;
+    }
     .sessionItem .body { flex: 1; min-width: 0; }
     .sessionItem .ttl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sessionItem .sub { opacity: 0.6; font-size: 0.82em; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -514,6 +522,15 @@ export function renderHtml(): string {
             const el = document.createElement("div");
             el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "");
 
+            // Live status indicator: spinner = working, green dot = idle/live.
+            const statusDot = document.createElement("div");
+            statusDot.className = "statusDot";
+            if (s.status === "working") {
+                const w = document.createElement("span"); w.className = "work"; w.title = "Agent working…"; statusDot.appendChild(w);
+            } else if (s.status === "idle") {
+                const d = document.createElement("span"); d.className = "idle"; d.title = "Running session (idle)"; statusDot.appendChild(d);
+            }
+
             const body = document.createElement("div");
             body.className = "body";
             const ttl = document.createElement("div");
@@ -522,7 +539,8 @@ export function renderHtml(): string {
             ttl.title = s.title + "\\n" + s.sessionId;
             const sub = document.createElement("span");
             sub.className = "sub";
-            sub.textContent = s.backend + (s.updatedAt ? " · " + new Date(s.updatedAt).toLocaleString() : "");
+            const statusText = s.status === "working" ? "working… · " : (s.status === "idle" ? "live · " : "");
+            sub.textContent = statusText + s.backend + (s.updatedAt ? " · " + new Date(s.updatedAt).toLocaleString() : "");
             body.appendChild(ttl);
             body.appendChild(sub);
             body.addEventListener("click", () => {
@@ -542,6 +560,7 @@ export function renderHtml(): string {
                 acts.appendChild(b);
             }
 
+            el.appendChild(statusDot);
             el.appendChild(body);
             el.appendChild(acts);
             el.addEventListener("contextmenu", (ev) => { ev.preventDefault(); showCtx(ev, s); });

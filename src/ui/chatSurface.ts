@@ -352,6 +352,8 @@ export class ChatSurface {
                 sessionId: s.sessionId,
                 title: s.title,
                 updatedAt: s.updatedAt?.toISOString(),
+                archived: s.archived,
+                status: s.status,
             })),
         });
     }

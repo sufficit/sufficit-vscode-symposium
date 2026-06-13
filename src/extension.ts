@@ -55,7 +55,10 @@ export function activate(context: vscode.ExtensionContext): void {
         adapters.map((adapter) => [adapter.backend, adapter]));
 
     const store = new SessionStore(context.globalState);
-    const runtime = new LiveSessions();
+    // Forward-declared so the runtime can trigger a (debounced) sessions
+    // refresh whenever an agent starts/stops working.
+    let notifyStatus = () => { };
+    const runtime = new LiveSessions(() => notifyStatus());
     context.subscriptions.push({ dispose: () => runtime.disposeAll() });
 
     const rawSessions = async (): Promise<SessionInfo[]> => {
@@ -67,9 +70,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
     const deps: ChatSurfaceDeps = {
         adapterByBackend,
-        // Return ALL sessions with the archived flag set; the webview list
-        // shows/hides archived itself via its own toggle.
-        listSessions: async () => store.decorate(await rawSessions(), true),
+        // Return ALL sessions (archived flag + live runtime status); the webview
+        // list shows/hides archived itself and renders the working indicator.
+        listSessions: async () => store.decorate(await rawSessions(), true)
+            .map((s) => ({ ...s, status: runtime.statusFor(s.sessionId) })),
         // Resume must run in the session's original cwd: the CLIs scope sessions per directory.
         cwdFor: (info) =>
             info.cwd && path.isAbsolute(info.cwd)
@@ -88,6 +92,14 @@ export function activate(context: vscode.ExtensionContext): void {
     const refreshAll = () => {
         void chatView.refreshSessions();
         ChatPanel.refreshSessions();
+    };
+    // Debounce status-driven refreshes (turns flip busy frequently).
+    let statusTimer: ReturnType<typeof setTimeout> | undefined;
+    notifyStatus = () => {
+        if (statusTimer) {
+            clearTimeout(statusTimer);
+        }
+        statusTimer = setTimeout(refreshAll, 250);
     };
     const infoOf = (item: { info?: SessionInfo } | SessionInfo): SessionInfo =>
         "info" in item && item.info ? item.info : item as SessionInfo;
