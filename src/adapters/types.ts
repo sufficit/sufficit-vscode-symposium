@@ -54,6 +54,8 @@ export interface SessionStartOptions {
     model?: string;
     /** Reasoning/thinking effort level; adapters map it to their CLI flag. */
     reasoning?: string;
+    /** Permission/approval mode (backend-specific); adapters map it to a flag. */
+    permission?: string;
 }
 
 /**
@@ -94,6 +96,10 @@ export interface AgentAdapter {
     models?(): string[];
     /** Reasoning/thinking effort levels for the picker; first entry = CLI default (no flag). */
     reasoningLevels?(): string[];
+    /** Permission/approval modes for the config menu (backend-specific). */
+    permissionModes?(): string[];
+    /** The currently configured default permission mode. */
+    defaultPermission?(): string;
     /** Slash commands / skills offered for composer autocomplete. */
     commands?(): Promise<SlashCommand[]>;
     /**

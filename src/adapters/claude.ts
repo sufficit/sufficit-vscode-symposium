@@ -65,8 +65,9 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         if (this.options.reasoning && this.options.reasoning !== "default") {
             args.push("--effort", this.options.reasoning);
         }
-        if (this.config.permissionMode && this.config.permissionMode !== "default") {
-            args.push("--permission-mode", this.config.permissionMode);
+        const permission = this.options.permission || this.config.permissionMode;
+        if (permission && permission !== "default") {
+            args.push("--permission-mode", permission);
         }
         if (this.options.resumeSessionId) {
             args.push("--resume", this.options.resumeSessionId);
@@ -260,6 +261,14 @@ export class ClaudeAdapter implements AgentAdapter {
     // claude --effort <level> (2.1.177). "default" means: don't pass the flag.
     reasoningLevels(): string[] {
         return ["default", "low", "medium", "high", "xhigh", "max"];
+    }
+
+    permissionModes(): string[] {
+        return ["default", "acceptEdits", "bypassPermissions", "plan"];
+    }
+
+    defaultPermission(): string {
+        return this.getConfig().permissionMode || "default";
     }
 
     async commands(): Promise<SlashCommand[]> {

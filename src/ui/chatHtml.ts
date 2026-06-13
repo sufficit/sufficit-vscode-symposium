@@ -142,6 +142,19 @@ export function renderHtml(): string {
     #ctxMenu .mi:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
     #ctxMenu .mi.danger { color: var(--vscode-errorForeground); }
     #ctxMenu .sep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, rgba(128,128,128,0.3)); }
+    #ctxMenu { max-width: 340px; }
+    #ctxMenu .menuSearch {
+        display: block; width: calc(100% - 16px); margin: 4px 8px 6px 8px; padding: 4px 7px;
+        background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+        border: 1px solid var(--vscode-input-border, #454545); border-radius: 4px; outline: none; font-family: inherit; font-size: 0.9em;
+    }
+    #ctxMenu .menuSearch:focus { border-color: var(--vscode-focusBorder); }
+    #ctxMenu .menuList { max-height: 320px; overflow-y: auto; }
+    #ctxMenu .menuGroup { padding: 5px 12px 2px; font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.5; font-weight: 600; }
+    #ctxMenu .mi { display: flex; align-items: center; gap: 6px; }
+    #ctxMenu .mi .tick { width: 12px; flex-shrink: 0; color: var(--vscode-focusBorder); }
+    #ctxMenu .mi .milbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #ctxMenu .mi .midetail { opacity: 0.5; font-size: 0.85em; flex-shrink: 0; }
 
     /* ---- chat column ---- */
     #chatCol { order: 3; flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -332,6 +345,9 @@ export function renderHtml(): string {
                 <button id="addContext" class="iconBtn" title="Attach files">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>
                 </button>
+                <button id="configBtn" class="iconBtn" title="Tools & configuration">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 3a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 3Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Zm6 4.5a2 2 0 0 1 3.9-.5H14v1h-2.1A2 2 0 0 1 8 8Zm-6 .5h4.2a2 2 0 0 0 0-1H2v1Zm2 4.5a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 13Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Z"/></svg>
+                </button>
                 <button id="modelPicker" class="ctl menubtn" title="Model (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <button id="reasoningPicker" class="ctl menubtn" title="Reasoning effort (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <span id="status"></span>
@@ -414,16 +430,49 @@ export function renderHtml(): string {
     });
     updateSendTitle();
 
-    // ---- themed dropdowns (model / reasoning) replacing native <select> ----
-    function openChoiceMenu(anchorEl, options, current, onPick) {
+    // ---- themed dropdowns replacing native <select> ----
+    // options: [{ value, label, group?, detail?, title? }]; opts: { search?: bool }
+    function openChoiceMenu(anchorEl, options, current, onPick, opts) {
+        opts = opts || {};
         ctxMenu.textContent = "";
-        for (const o of options) {
-            const mi = document.createElement("div"); mi.className = "mi";
-            mi.textContent = (o.value === current ? "✓ " : "    ") + o.label;
-            if (o.title) mi.title = o.title;
-            mi.addEventListener("click", () => onPick(o.value));
-            ctxMenu.appendChild(mi);
+        const wantSearch = opts.search || options.length >= 9;
+
+        const list = document.createElement("div"); list.className = "menuList";
+        const renderRows = (filter) => {
+            list.textContent = "";
+            const q = (filter || "").toLowerCase();
+            let lastGroup = null; let shown = 0;
+            for (const o of options) {
+                if (q && !(o.label + " " + (o.detail || "")).toLowerCase().includes(q)) continue;
+                if (o.group && o.group !== lastGroup) {
+                    lastGroup = o.group;
+                    const gh = document.createElement("div"); gh.className = "menuGroup"; gh.textContent = o.group;
+                    list.appendChild(gh);
+                }
+                const mi = document.createElement("div"); mi.className = "mi";
+                const tick = document.createElement("span"); tick.className = "tick"; tick.textContent = o.value === current ? "✓" : "";
+                const lbl = document.createElement("span"); lbl.className = "milbl"; lbl.textContent = o.label;
+                mi.appendChild(tick); mi.appendChild(lbl);
+                if (o.detail) { const d = document.createElement("span"); d.className = "midetail"; d.textContent = o.detail; mi.appendChild(d); }
+                if (o.title) mi.title = o.title;
+                mi.addEventListener("click", () => onPick(o.value));
+                list.appendChild(mi);
+                shown++;
+            }
+            if (!shown) { const e = document.createElement("div"); e.className = "mi"; e.style.opacity = "0.6"; e.textContent = "no matches"; list.appendChild(e); }
+        };
+
+        if (wantSearch) {
+            const box = document.createElement("input"); box.className = "menuSearch"; box.type = "text"; box.placeholder = "Search…";
+            box.addEventListener("input", () => renderRows(box.value));
+            box.addEventListener("click", (e) => e.stopPropagation());
+            box.addEventListener("keydown", (e) => { if (e.key === "Escape") hideCtx(); });
+            ctxMenu.appendChild(box);
+            setTimeout(() => box.focus(), 0);
         }
+        renderRows("");
+        ctxMenu.appendChild(list);
+
         ctxMenu.style.display = "block";
         const r = anchorEl.getBoundingClientRect();
         const w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
@@ -444,6 +493,43 @@ export function renderHtml(): string {
         ev.stopPropagation();
         if (reasoningPicker.disabled || !reasoningList.length) return;
         openChoiceMenu(reasoningPicker, reasoningList.map((r) => ({ value: r, label: r === "default" ? "default" : r })), reasoningValue, (v) => { reasoningValue = v; setReasoningLabel(); });
+    });
+
+    // ---- tools & configuration menu (sliders) ----
+    const configBtn = document.getElementById("configBtn");
+    let permissionModes = [], permissionValue = "default";
+    const PERM_DESC = {
+        "default": "Ask for permission as needed",
+        "acceptEdits": "Auto-accept file edits",
+        "bypassPermissions": "Run everything without prompts",
+        "plan": "Plan only — no edits/commands",
+    };
+    configBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        ctxMenu.textContent = "";
+        const list = document.createElement("div"); list.className = "menuList";
+        if (permissionModes.length) {
+            const gh = document.createElement("div"); gh.className = "menuGroup"; gh.textContent = "Permission mode"; list.appendChild(gh);
+            for (const p of permissionModes) {
+                const mi = document.createElement("div"); mi.className = "mi";
+                const tick = document.createElement("span"); tick.className = "tick"; tick.textContent = p === permissionValue ? "✓" : "";
+                const lbl = document.createElement("span"); lbl.className = "milbl"; lbl.textContent = p;
+                mi.appendChild(tick); mi.appendChild(lbl); mi.title = PERM_DESC[p] || "";
+                mi.addEventListener("click", () => { permissionValue = p; });
+                list.appendChild(mi);
+            }
+            const sep = document.createElement("div"); sep.className = "sep"; list.appendChild(sep);
+        }
+        const open = document.createElement("div"); open.className = "mi";
+        const t = document.createElement("span"); t.className = "tick"; const l = document.createElement("span"); l.className = "milbl"; l.textContent = "Open Settings…";
+        open.appendChild(t); open.appendChild(l);
+        open.addEventListener("click", () => vscode.postMessage({ type: "open-settings" }));
+        list.appendChild(open);
+        ctxMenu.appendChild(list);
+        ctxMenu.style.display = "block";
+        const r = configBtn.getBoundingClientRect(); const w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
+        ctxMenu.style.left = Math.max(4, Math.min(r.left, window.innerWidth - w - 4)) + "px";
+        ctxMenu.style.top = Math.max(4, r.top - h - 4) + "px";
     });
 
     // ---- resizable sessions pane ----
@@ -823,6 +909,7 @@ export function renderHtml(): string {
             attachments: attachments.map((a) => a.path),
             model: modelValue,
             reasoning: reasoningValue,
+            permission: permissionValue,
             mode: sendMode.value,
         });
         if (!busy) { busy = true; setStatus(); }
@@ -933,6 +1020,9 @@ export function renderHtml(): string {
                 reasoningPicker.disabled = false;
                 reasoningPicker.style.display = reasoningList.length ? "" : "none";
                 setReasoningLabel();
+                permissionModes = data.permissionModes || [];
+                permissionValue = data.permission || "default";
+                configBtn.style.display = (permissionModes.length || true) ? "" : "none";
                 document.getElementById("composer").style.display = data.readOnly ? "none" : "flex";
                 if (data.readOnly) {
                     append("meta", "👁 watching live — read only (this session runs elsewhere)");

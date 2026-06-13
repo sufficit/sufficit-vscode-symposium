@@ -117,6 +117,10 @@ export class ChatSurface {
                     await vscode.commands.executeCommand("symposium.newSession");
                     return;
                 }
+                case "open-settings": {
+                    await vscode.commands.executeCommand("symposium.openSettings");
+                    return;
+                }
                 case "session-action": {
                     const sessions = await this.deps.listSessions();
                     const info = sessions.find((s) => s.sessionId === message.sessionId && s.backend === message.backend);
@@ -308,6 +312,8 @@ export class ChatSurface {
             resumed: !!options.resumeSessionId,
             models: adapter.models?.() ?? [],
             reasoningLevels: adapter.reasoningLevels?.() ?? [],
+            permissionModes: adapter.permissionModes?.() ?? [],
+            permission: adapter.defaultPermission?.() ?? "default",
             sessionId: options.resumeSessionId ?? "",
             title,
             sessionsSide,
