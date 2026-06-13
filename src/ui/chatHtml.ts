@@ -1041,15 +1041,37 @@ export function renderHtml(): string {
     }
 
     // ---- changed-files working set (above the composer) ----
+    // Bound to the session id (Hugo's GUID-keyed model): each session keeps its
+    // own edited-files set so switching never mixes files across sessions.
     const changedFiles = document.getElementById("changedFiles");
-    const changed = {};   // path -> { added, removed }
+    const NEW_KEY = "__new__";          // placeholder until a session id arrives
+    const changedBySession = {};        // sessionId -> { path: { added, removed } }
+    let wsKey = NEW_KEY;
+    function curChanged() { return changedBySession[wsKey] || (changedBySession[wsKey] = {}); }
+    // Switch the active working set to a session id, starting it empty so the
+    // controller's replay rebuilds it cleanly (no double counting).
+    function startWorkingSet(sessionId) {
+        wsKey = sessionId || NEW_KEY;
+        changedBySession[wsKey] = {};
+        renderChangedFiles();
+    }
+    // A brand-new session's edits land under NEW_KEY; when its id arrives,
+    // migrate the bucket so it stays bound to the real session id.
+    function bindWorkingSet(sessionId) {
+        if (!sessionId || wsKey === sessionId) { return; }
+        if (wsKey === NEW_KEY) { changedBySession[sessionId] = changedBySession[NEW_KEY] || {}; delete changedBySession[NEW_KEY]; }
+        wsKey = sessionId;
+        renderChangedFiles();
+    }
     function trackChangedFile(path, added, removed) {
+        const changed = curChanged();
         const cur = changed[path] || { added: 0, removed: 0 };
         cur.added += added; cur.removed += removed;
         changed[path] = cur;
         renderChangedFiles();
     }
     function renderChangedFiles() {
+        const changed = curChanged();
         const paths = Object.keys(changed);
         changedFiles.textContent = "";
         if (!paths.length) { changedFiles.classList.remove("has"); return; }
@@ -1080,9 +1102,11 @@ export function renderHtml(): string {
         changedFiles.appendChild(head); changedFiles.appendChild(list);
     }
     function resetWorkingState() {
+        // clear arrives before meta (which carries the new session id), so just
+        // hide the panel here; meta calls startWorkingSet with the real id.
         todoPanel = null;
-        for (const k of Object.keys(changed)) { delete changed[k]; }
-        renderChangedFiles();
+        changedFiles.textContent = "";
+        changedFiles.classList.remove("has");
     }
 
     // Per-session actions, shown as hover icons on the right and in the
@@ -1388,6 +1412,7 @@ export function renderHtml(): string {
                 root.classList.toggle("chat-only", !!data.chatOnly);
                 layout();
                 activeSessionId = data.sessionId || "";
+                startWorkingSet(activeSessionId);   // bind edited-files set to this session
                 currentBackend = data.backend || "";
                 chatTitle.textContent = (data.title ? data.title + " · " : "") + data.backend;
                 modelDefault = data.modelDefault || "";
@@ -1485,12 +1510,13 @@ export function renderHtml(): string {
             case "event": {
                 const ev = data.event;
                 if (ev.kind === "text") message("assistant", ev.text);
-                else if (ev.kind === "tool-start") renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input });
+                else if (ev.kind === "tool-start") renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path });
                 else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);
                 else if (ev.kind === "error") append("error", "✖ " + ev.message);
                 else if (ev.kind === "session") {
                     if (ev.model) { activeModel = ev.model; }
                     activeSessionId = ev.sessionId || activeSessionId;
+                    bindWorkingSet(ev.sessionId);   // migrate a new session's edits to its real id
                     append("meta", "session " + ev.sessionId + (ev.model ? " · " + ev.model : ""));
                     setStatus();
                 }
