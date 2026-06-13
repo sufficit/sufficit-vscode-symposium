@@ -3,11 +3,17 @@ import { EventEmitter } from "events";
 /** Backend identifiers for the supported agent CLIs. */
 export type AgentBackend = "claude" | "codex" | "copilot";
 
+/** One entry of an agent's plan/todo list. */
+export interface TodoItem {
+    content: string;
+    status: "pending" | "in_progress" | "completed";
+}
+
 /** A normalized event emitted by any adapter while a turn is running. */
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
     | { kind: "text"; text: string }
-    | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string }
+    | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string }
     | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string }
     | { kind: "turn-end"; costUsd?: number; durationMs?: number }
     | { kind: "error"; message: string };
@@ -38,6 +44,10 @@ export interface HistoryMessage {
     detail?: string;
     input?: string;
     result?: string;
+    added?: number;
+    removed?: number;
+    todos?: TodoItem[];
+    path?: string;
 }
 
 /** Stops a live transcript follow. */

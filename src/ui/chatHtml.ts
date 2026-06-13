@@ -281,6 +281,51 @@ export function renderHtml(): string {
         font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em;
         white-space: pre-wrap; word-break: break-word;
     }
+    /* diff counts on edit rows */
+    .tDiff { flex-shrink: 0; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em; margin-left: 8px; }
+    .tAdd { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec94e); }
+    .tDel { color: var(--vscode-gitDecoration-deletedResourceForeground, #d16969); margin-left: 5px; }
+    .tSpacer { flex: 1; min-width: 0; }
+    /* todo / plan panel */
+    .todopanel {
+        margin: 6px 0 12px 0; border: 1px solid var(--vscode-input-border, rgba(128,128,128,0.3));
+        border-radius: 8px; overflow: hidden;
+    }
+    .todopanel .thead {
+        display: flex; align-items: center; gap: 7px; padding: 6px 10px; cursor: pointer;
+        background: var(--vscode-editorWidget-background, rgba(128,128,128,0.1)); font-weight: 600; font-size: 0.85em;
+    }
+    .todopanel .thead svg { width: 14px; height: 14px; opacity: 0.8; }
+    .todopanel .tcount { opacity: 0.6; font-weight: 400; }
+    .todopanel .tlist { padding: 6px 10px; }
+    .todoitem { display: flex; align-items: flex-start; gap: 8px; padding: 2px 0; line-height: 1.5; }
+    .todoitem .tmark { flex-shrink: 0; width: 15px; height: 15px; margin-top: 2px; display: inline-flex; }
+    .todoitem.done .tcontent { opacity: 0.55; text-decoration: line-through; }
+    .todoitem.active .tcontent { color: var(--vscode-foreground); font-weight: 600; }
+    .todoitem.active .tmark { color: var(--vscode-progressBar-background, var(--vscode-focusBorder)); }
+    .todoitem.done .tmark { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec94e); }
+    .todoitem .tmark.pending { color: var(--vscode-descriptionForeground); opacity: 0.6; }
+    /* changed-files working set above the composer */
+    #changedFiles { display: none; border-top: 1px solid var(--vscode-panel-border, transparent); }
+    #changedFiles.has { display: block; }
+    #changedFiles .cfhead {
+        display: flex; align-items: center; gap: 6px; padding: 4px 12px; cursor: pointer;
+        font-size: 0.78em; font-weight: 600; opacity: 0.75;
+    }
+    #changedFiles .cfhead svg { width: 12px; height: 12px; transition: transform 150ms ease; }
+    #changedFiles.collapsed .cfhead svg.cfchev { transform: rotate(-90deg); }
+    #changedFiles .cflist { max-height: 132px; overflow-y: auto; padding: 0 8px 6px 8px; }
+    #changedFiles.collapsed .cflist { display: none; }
+    .cfitem {
+        display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 4px;
+        cursor: pointer; font-size: 0.85em;
+    }
+    .cfitem:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,0.12)); }
+    .cfitem .cficon { flex-shrink: 0; opacity: 0.75; display: inline-flex; }
+    .cfitem .cficon svg { width: 13px; height: 13px; }
+    .cfitem .cfname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .cfitem .cfdir { opacity: 0.5; font-size: 0.9em; }
+    .cfitem .cfdiff { flex-shrink: 0; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em; }
     .error { color: var(--vscode-errorForeground); }
     .meta { opacity: 0.55; font-size: 0.82em; text-align: center; margin: 10px 0; }
 
@@ -417,6 +462,7 @@ export function renderHtml(): string {
         </div>
         <div id="log"></div>
         <div id="loadingState"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
+        <div id="changedFiles"></div>
         <div id="composer">
             <div id="slash"></div>
             <div id="chips"></div>
@@ -860,6 +906,9 @@ export function renderHtml(): string {
         globe: "M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM6.1 5.5h3.8a12 12 0 0 1 0 3H6.1a12 12 0 0 1 0-3ZM8 2.5c.6 0 1.4 1.3 1.8 3.5H6.2C6.6 3.8 7.4 2.5 8 2.5Zm0 11c-.6 0-1.4-1.3-1.8-3.5h3.6c-.4 2.2-1.2 3.5-1.8 3.5Zm3.2-1.3a10 10 0 0 0 .8-2.7h2a5.5 5.5 0 0 1-2.8 2.7Zm.8-3.7a14 14 0 0 0 0-3h2.1A5.5 5.5 0 0 1 13.5 8c0 .5-.1 1-.2 1.5H12Zm.9-4.5H11a10 10 0 0 0-.8-2.7A5.5 5.5 0 0 1 12.9 6ZM3.1 6h2a14 14 0 0 0 0 3h-2A5.5 5.5 0 0 1 2.5 8c0-.7.1-1.4.6-2Zm.2 4.5H5a10 10 0 0 0 .8 2.7 5.5 5.5 0 0 1-2.5-2.7Z",
         list: "M2 3h2v2H2V3Zm4 .5h8v1H6v-1ZM2 7h2v2H2V7Zm4 .5h8v1H6v-1ZM2 11h2v2H2v-2Zm4 .5h8v1H6v-1Z",
         tool: "M11.5 1.5a3.5 3.5 0 0 0-3.4 4.4L1.7 12.3l2 2 6.4-6.4a3.5 3.5 0 0 0 4.4-4.4l-1.9 1.9-1.5-.4-.4-1.5 1.9-1.9a3.5 3.5 0 0 0-1.6-.6Z",
+        check: "M6.2 11.3 2.7 7.8l1-1 2.5 2.5L12.3 3.3l1 1-7.1 7Z",
+        circleEmpty: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7 4.7 4.7 0 0 1 8 3.3Z",
+        circleHalf: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7V3.3Z",
     };
     function svgIcon(name) {
         const ns = "http://www.w3.org/2000/svg";
@@ -901,6 +950,11 @@ export function renderHtml(): string {
     // Expandable tool panel (icon + verb + target, click to reveal input/result).
     function renderTool(name, detail, opts) {
         opts = opts || {};
+        // A plan/todo update renders as the evolving checklist panel, not a row.
+        if (opts.todos) { renderTodos(opts.todos); return null; }
+        if (opts.path && (opts.added != null || opts.removed != null)) {
+            trackChangedFile(opts.path, opts.added || 0, opts.removed || 0);
+        }
         const stick = nearBottom();
         const meta = TOOL_META[name] || { icon: "tool", verb: name };
         const wrap = document.createElement("div"); wrap.className = "msg toolwrap";
@@ -911,6 +965,14 @@ export function renderHtml(): string {
         if (detail) {
             const tg = document.createElement("span"); tg.className = "tTarget"; tg.textContent = detail;
             head.appendChild(tg);
+        } else {
+            const sp = document.createElement("span"); sp.className = "tSpacer"; head.appendChild(sp);
+        }
+        if (opts.added != null || opts.removed != null) {
+            const d = document.createElement("span"); d.className = "tDiff";
+            if (opts.added) { const a = document.createElement("span"); a.className = "tAdd"; a.textContent = "+" + opts.added; d.appendChild(a); }
+            if (opts.removed) { const r = document.createElement("span"); r.className = "tDel"; r.textContent = "-" + opts.removed; d.appendChild(r); }
+            if (d.childNodes.length) { head.appendChild(d); }
         }
         const body = document.createElement("div"); body.className = "toolbody";
         if (opts.input) { body.appendChild(toolSection("Input", opts.input)); }
@@ -937,6 +999,90 @@ export function renderHtml(): string {
     function fillToolResult(toolId, result) {
         const rec = toolId && toolRows[toolId];
         if (rec) { rec.showResult(result); }
+    }
+
+    // ---- plan / todo panel (single evolving checklist) ----
+    let todoPanel = null;
+    function todoMark(status) {
+        if (status === "completed") return svgIcon("check");
+        if (status === "in_progress") return svgIcon("circleHalf");
+        const s = svgIcon("circleEmpty"); return s;
+    }
+    function renderTodos(todos) {
+        const stick = nearBottom();
+        const done = todos.filter((t) => t.status === "completed").length;
+        if (!todoPanel) {
+            todoPanel = document.createElement("div"); todoPanel.className = "msg todopanel";
+            const head = document.createElement("div"); head.className = "thead";
+            head.appendChild(svgIcon("list"));
+            const ttl = document.createElement("span"); ttl.textContent = "Plan";
+            const cnt = document.createElement("span"); cnt.className = "tcount";
+            const listEl = document.createElement("div"); listEl.className = "tlist";
+            head.appendChild(ttl); head.appendChild(cnt);
+            head.addEventListener("click", () => listEl.style.display = listEl.style.display === "none" ? "" : "none");
+            todoPanel.appendChild(head); todoPanel.appendChild(listEl);
+            todoPanel._cnt = cnt; todoPanel._list = listEl;
+            log.appendChild(todoPanel);
+        }
+        todoPanel._cnt.textContent = "(" + done + "/" + todos.length + ")";
+        const listEl = todoPanel._list; listEl.textContent = "";
+        for (const t of todos) {
+            const item = document.createElement("div");
+            item.className = "todoitem" + (t.status === "completed" ? " done" : t.status === "in_progress" ? " active" : "");
+            const mk = document.createElement("span"); mk.className = "tmark" + (t.status === "pending" ? " pending" : "");
+            mk.appendChild(todoMark(t.status));
+            const c = document.createElement("span"); c.className = "tcontent"; c.textContent = t.content;
+            item.appendChild(mk); item.appendChild(c);
+            listEl.appendChild(item);
+        }
+        // Keep the evolving plan at the bottom of the flow as it updates.
+        log.appendChild(todoPanel);
+        autoScroll(stick);
+    }
+
+    // ---- changed-files working set (above the composer) ----
+    const changedFiles = document.getElementById("changedFiles");
+    const changed = {};   // path -> { added, removed }
+    function trackChangedFile(path, added, removed) {
+        const cur = changed[path] || { added: 0, removed: 0 };
+        cur.added += added; cur.removed += removed;
+        changed[path] = cur;
+        renderChangedFiles();
+    }
+    function renderChangedFiles() {
+        const paths = Object.keys(changed);
+        changedFiles.textContent = "";
+        if (!paths.length) { changedFiles.classList.remove("has"); return; }
+        changedFiles.classList.add("has");
+        const head = document.createElement("div"); head.className = "cfhead";
+        const chev = svgIcon("chevron"); chev.classList.add("cfchev");
+        const ttl = document.createElement("span"); ttl.textContent = "Edited files (" + paths.length + ")";
+        head.appendChild(chev); head.appendChild(ttl);
+        head.addEventListener("click", () => changedFiles.classList.toggle("collapsed"));
+        const list = document.createElement("div"); list.className = "cflist";
+        for (const p of paths) {
+            const parts = p.split("/").filter(Boolean);
+            const name = parts[parts.length - 1] || p;
+            const dir = parts.slice(-3, -1).join("/");
+            const it = document.createElement("div"); it.className = "cfitem"; it.title = p;
+            const ic = document.createElement("span"); ic.className = "cficon"; ic.appendChild(svgIcon("file"));
+            const nm = document.createElement("span"); nm.className = "cfname";
+            nm.textContent = name;
+            if (dir) { const dd = document.createElement("span"); dd.className = "cfdir"; dd.textContent = "  " + dir; nm.appendChild(dd); }
+            const df = document.createElement("span"); df.className = "cfdiff";
+            const c = changed[p];
+            if (c.added) { const a = document.createElement("span"); a.className = "tAdd"; a.textContent = "+" + c.added; df.appendChild(a); }
+            if (c.removed) { const r = document.createElement("span"); r.className = "tDel"; r.textContent = "-" + c.removed; df.appendChild(r); }
+            it.appendChild(ic); it.appendChild(nm); it.appendChild(df);
+            it.addEventListener("click", () => vscode.postMessage({ type: "open-file", path: p }));
+            list.appendChild(it);
+        }
+        changedFiles.appendChild(head); changedFiles.appendChild(list);
+    }
+    function resetWorkingState() {
+        todoPanel = null;
+        for (const k of Object.keys(changed)) { delete changed[k]; }
+        renderChangedFiles();
     }
 
     // Per-session actions, shown as hover icons on the right and in the
@@ -1281,6 +1427,7 @@ export function renderHtml(): string {
             case "clear": {
                 log.textContent = "";
                 activeModel = ""; busy = false; queued = 0;
+                resetWorkingState();
                 sendBtn.disabled = false;
                 document.getElementById("composer").style.display = "flex";
                 setStatus();
@@ -1295,7 +1442,7 @@ export function renderHtml(): string {
             case "append": {
                 const m = data.message;
                 if (m.role === "user") message("user", m.text);
-                else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result });
+                else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path });
                 else message("assistant", m.text);
                 break;
             }
@@ -1311,7 +1458,7 @@ export function renderHtml(): string {
             case "history": {
                 for (const m of data.messages) {
                     if (m.role === "user") message("user", m.text);
-                    else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result });
+                    else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path });
                     else message("assistant", m.text);
                 }
                 append("meta", data.messages.length ? "— end of stored transcript —" : "(empty transcript)");

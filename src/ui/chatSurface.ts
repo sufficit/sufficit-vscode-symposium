@@ -132,6 +132,13 @@ export class ChatSurface {
                     await vscode.commands.executeCommand("symposium.openSettings");
                     return;
                 }
+                case "open-file": {
+                    if (typeof message.path === "string") {
+                        const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(message.path));
+                        await vscode.window.showTextDocument(doc, { preview: true });
+                    }
+                    return;
+                }
                 case "session-action": {
                     const sessions = await this.deps.listSessions();
                     const info = sessions.find((s) => s.sessionId === message.sessionId && s.backend === message.backend);

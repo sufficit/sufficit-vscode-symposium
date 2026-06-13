@@ -16,6 +16,7 @@ import {
     SessionInfo,
     SessionStartOptions,
     SlashCommand,
+    TodoItem,
 } from "./types";
 
 export interface ClaudeAdapterConfig {
@@ -123,12 +124,17 @@ class ClaudeSession extends EventEmitter implements AgentSession {
                     if (block.type === "text" && block.text) {
                         this.emit("event", { kind: "text", text: block.text });
                     } else if (block.type === "tool_use") {
+                        const counts = diffCounts(block.name, block.input);
                         this.emit("event", {
                             kind: "tool-start",
                             toolName: block.name,
                             detail: summarizeToolInput(block.input),
                             toolId: block.id,
                             input: prettyJson(block.input),
+                            added: counts?.added,
+                            removed: counts?.removed,
+                            todos: extractTodos(block.name, block.input),
+                            path: counts ? (block.input as any)?.file_path : undefined,
                         });
                     }
                 }
@@ -218,6 +224,43 @@ function summarizeToolInput(input: unknown): string {
         s = first ?? "";
     }
     return s.length > 160 ? s.slice(0, 157) + "..." : s;
+}
+
+/** Line count of a string block (0 for empty/missing). */
+function lineCount(s: unknown): number {
+    return typeof s === "string" && s.length ? s.split("\n").length : 0;
+}
+
+/**
+ * Approximate added/removed line counts for a write/edit tool, so the row can
+ * show +N/-M like the native chat. Edit: new vs old string; MultiEdit: summed;
+ * Write: whole content added.
+ */
+function diffCounts(name: string, input: unknown): { added: number; removed: number } | undefined {
+    const o = (input ?? {}) as Record<string, unknown>;
+    if (name === "Write") {
+        return { added: lineCount(o.content), removed: 0 };
+    }
+    if (name === "Edit") {
+        return { added: lineCount(o.new_string), removed: lineCount(o.old_string) };
+    }
+    if (name === "MultiEdit" && Array.isArray(o.edits)) {
+        let added = 0, removed = 0;
+        for (const e of o.edits as any[]) { added += lineCount(e?.new_string); removed += lineCount(e?.old_string); }
+        return { added, removed };
+    }
+    return undefined;
+}
+
+/** Extract a TodoWrite plan list, if this tool carries one. */
+function extractTodos(name: string, input: unknown): TodoItem[] | undefined {
+    if (name !== "TodoWrite") { return undefined; }
+    const todos = (input as any)?.todos;
+    if (!Array.isArray(todos)) { return undefined; }
+    return todos.map((t: any) => ({
+        content: String(t?.content ?? ""),
+        status: t?.status === "completed" || t?.status === "in_progress" ? t.status : "pending",
+    }));
 }
 
 /** Pretty-print a tool input for the expandable panel (capped). */
@@ -558,7 +601,14 @@ function parseTranscriptLine(line: string): HistoryMessage[] {
             if (block.type === "text" && block.text?.trim()) {
                 messages.push({ role: "assistant", text: block.text });
             } else if (block.type === "tool_use") {
-                messages.push({ role: "tool", text: block.name, toolName: block.name, detail: summarizeToolInput(block.input), input: prettyJson(block.input) });
+                const counts = diffCounts(block.name, block.input);
+                messages.push({
+                    role: "tool", text: block.name, toolName: block.name,
+                    detail: summarizeToolInput(block.input), input: prettyJson(block.input),
+                    added: counts?.added, removed: counts?.removed,
+                    todos: extractTodos(block.name, block.input),
+                    path: counts ? (block.input as any)?.file_path : undefined,
+                });
             }
         }
     }
