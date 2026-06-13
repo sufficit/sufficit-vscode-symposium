@@ -1,8 +1,8 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { ClaudeAdapter, ClaudeAdapterConfig } from "./adapters/claude";
+import { CodexAdapter, CodexAdapterConfig } from "./adapters/codex";
 import { CopilotAdapter, CopilotAdapterConfig } from "./adapters/copilot";
-import { StubAdapter } from "./adapters/stubs";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionsTreeProvider } from "./sessions/tree";
 import { ChatPanel } from "./ui/chatPanel";
@@ -28,6 +28,14 @@ function copilotConfig(): CopilotAdapterConfig {
     };
 }
 
+function codexConfig(): CodexAdapterConfig {
+    const config = vscode.workspace.getConfiguration("symposium.codex");
+    return {
+        executable: config.get<string>("executable", "codex"),
+        model: config.get<string>("model", ""),
+    };
+}
+
 let output: vscode.OutputChannel | undefined;
 export function symposiumLog(message: string): void {
     output?.appendLine(`${new Date().toISOString()} ${message}`);
@@ -38,8 +46,8 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(output);
     const adapters: AgentAdapter[] = [
         new ClaudeAdapter(claudeConfig),
+        new CodexAdapter(codexConfig),
         new CopilotAdapter(copilotConfig),
-        new StubAdapter("codex"),
     ];
     const adapterByBackend = new Map<string, AgentAdapter>(
         adapters.map((adapter) => [adapter.backend, adapter]));
@@ -69,7 +77,9 @@ export function activate(context: vscode.ExtensionContext): void {
     const envFor = (backend: string): Record<string, string> =>
         backend === "claude" ? claudeConfig().env : {};
     const modelFor = (backend: string): string =>
-        backend === "claude" ? claudeConfig().model : copilotConfig().model;
+        backend === "claude" ? claudeConfig().model
+            : backend === "codex" ? codexConfig().model
+                : copilotConfig().model;
 
     const startTerminal = (backend: string, options: { cwd: string; resumeSessionId?: string }, title: string) => {
         const opts = { ...options, env: envFor(backend), model: modelFor(backend) || undefined };

@@ -41,10 +41,12 @@ and the model selection. Agents converse; the host conducts.
   `~/.claude/projects/`. Model pinned per session via `--model` and gateway
   routing via `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` in
   `symposium.claude.env`.
-- **Codex CLI** (planned): `codex exec --json` JSONL events, resume via
-  `codex exec resume <id>`, sessions in `~/.codex/sessions`.
-- **Copilot CLI** (planned): native `--acp` (Agent Client Protocol, JSON-RPC
-  over stdio); `copilot -p --resume` as fallback.
+- **Codex CLI** (implemented): `codex exec --json` JSONL events
+  (`thread.started`/`item.completed`/`turn.completed`), resume via
+  `codex exec resume <id>`, sessions discovered under `~/.codex/sessions`.
+- **Copilot CLI** (implemented): `copilot -p --output-format json` JSONL,
+  one process per turn, resume via `--resume <session-id>`. Native `--acp`
+  (Agent Client Protocol) is a future upgrade for persistent sessions.
 
 ## Settings
 
