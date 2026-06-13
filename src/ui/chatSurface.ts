@@ -9,6 +9,12 @@ import { TerminalSession } from "./terminalSession";
 import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
 
+/** Path of the file in the active editor, if any (skips non-file/webview tabs). */
+function activeEditorFile(): string | undefined {
+    const doc = vscode.window.activeTextEditor?.document;
+    return doc && doc.uri.scheme === "file" ? doc.uri.fsPath : undefined;
+}
+
 const IMAGE_EXT: Record<string, string> = {
     "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
     "image/webp": "webp", "image/bmp": "bmp", "image/svg+xml": "svg",
@@ -54,6 +60,8 @@ export class ChatSurface {
     private ready = false;
     private queue: unknown[] = [];
 
+    private readonly disposables: vscode.Disposable[] = [];
+
     constructor(
         private readonly webview: vscode.Webview,
         private readonly deps: ChatSurfaceDeps,
@@ -65,6 +73,9 @@ export class ChatSurface {
         webview.options = { enableScripts: true };
         webview.html = renderHtml();
         webview.onDidReceiveMessage((message) => void this.onMessage(message));
+        // Offer the active editor file as removable context; update on switch.
+        this.disposables.push(vscode.window.onDidChangeActiveTextEditor(() =>
+            this.post({ type: "active-file", path: activeEditorFile() })));
     }
 
     private post(message: unknown): void {
@@ -269,6 +280,7 @@ export class ChatSurface {
             sessionsSide,
             chatOnly: this.chatOnly,
             cwd: options.cwd,
+            activeFile: activeEditorFile(),
             defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
         });
         this.terminalSession = new TerminalSession(
@@ -321,6 +333,7 @@ export class ChatSurface {
             sessionsSide,
             chatOnly: this.chatOnly,
             cwd: options.cwd,
+            activeFile: activeEditorFile(),
             defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
         });
         controller.attach((message) => {
@@ -387,5 +400,7 @@ export class ChatSurface {
         // Detach only — the runtime owns controller lifetimes so sessions
         // survive the view/panel being closed.
         this.detachActive();
+        this.disposables.forEach((d) => d.dispose());
+        this.disposables.length = 0;
     }
 }

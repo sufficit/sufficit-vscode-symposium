@@ -173,12 +173,18 @@ export function renderHtml(): string {
     .role .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
     .role.user .dot { background: var(--vscode-charts-blue, #3794ff); }
     .role.assistant .dot { background: var(--vscode-charts-green, #89d185); }
-    .user {
+    /* user turns: right-aligned bubble */
+    .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
+    .msg.user .role { flex-direction: row-reverse; }
+    .ubody {
         background: var(--vscode-chat-requestBackground, var(--vscode-input-background));
         border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, transparent));
-        border-radius: 8px; padding: 8px 11px; white-space: pre-wrap;
+        border-radius: 10px 10px 2px 10px; padding: 8px 11px; white-space: pre-wrap;
+        max-width: 82%; text-align: left;
     }
-    .assistant { padding: 0 2px; }
+    .ubody .chips { margin-top: 6px; }
+    /* assistant turns: full width, no bubble */
+    .msg.assistant { padding: 0 2px; }
     /* markdown content */
     .md p { margin: 0 0 8px 0; }
     .md p:last-child { margin-bottom: 0; }
@@ -246,6 +252,8 @@ export function renderHtml(): string {
         color: var(--vscode-badge-foreground, inherit);
         max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
+    .chip .chipIcon { width: 11px; height: 11px; opacity: 0.7; flex-shrink: 0; }
+    .chip.activeChip { border-color: var(--vscode-focusBorder); }
     .chip .x { cursor: pointer; opacity: 0.7; }
     .chip .x:hover { opacity: 1; }
     #addContext svg { width: 15px; height: 15px; }
@@ -387,6 +395,8 @@ export function renderHtml(): string {
     const listToggle = document.getElementById("listToggle");
 
     let attachments = [];   // [{path, name}]
+    let activeFile = null;  // active editor path, offered as removable context
+    let activeFileDismissed = false;
     let activeModel = "";
     let activeSessionId = "";
     let busy = false;
@@ -613,7 +623,7 @@ export function renderHtml(): string {
         wrap.appendChild(label);
         const body = document.createElement("div");
         if (role === "assistant") { body.className = "md"; renderMarkdown(body, text); }
-        else { body.style.whiteSpace = "pre-wrap"; body.textContent = text; }
+        else { body.className = "ubody"; body.textContent = text; }
         wrap.appendChild(body);
         log.appendChild(wrap);
         autoScroll(stick);
@@ -714,6 +724,7 @@ export function renderHtml(): string {
         trash: "M6 1h4l.5 1H14v1H2V2h3.5L6 1Zm-2.5 3h9l-.7 10H4.2L3.5 4Zm2.5 2v6h1V6H6Zm3 0v6h1V6H9Z",
         send: "M1.2 2.8 3 8 1.2 13.2a.5.5 0 0 0 .7.6l13-5.5a.5.5 0 0 0 0-.9l-13-5.5a.5.5 0 0 0-.7.6Z",
         chat: "M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6A1.5 1.5 0 0 1 12.5 11H6l-3 3v-3H3.5A1.5 1.5 0 0 1 2 9.5v-6Z",
+        file: "M4 1h5l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1Zm5 1v3h3L9 2Z",
         plus: "M8 1.5a.5.5 0 0 1 .5.5V7.5h5.5a.5.5 0 0 1 0 1H8.5V14a.5.5 0 0 1-1 0V8.5H2a.5.5 0 0 1 0-1h5.5V2a.5.5 0 0 1 .5-.5Z",
         chevron: "M4 6l4 4 4-4H4Z",
     };
@@ -862,22 +873,29 @@ export function renderHtml(): string {
     document.addEventListener("click", hideCtx);
     document.addEventListener("scroll", hideCtx, true);
 
+    function makeChip(label, fullPath, onRemove, active) {
+        const chip = document.createElement("span");
+        chip.className = "chip" + (active ? " activeChip" : "");
+        chip.title = fullPath;
+        const ic = svgIcon("file"); ic.classList.add("chipIcon"); chip.appendChild(ic);
+        chip.appendChild(document.createTextNode(label));
+        const x = document.createElement("span"); x.className = "x"; x.textContent = "✕";
+        x.addEventListener("click", onRemove);
+        chip.appendChild(x);
+        return chip;
+    }
     function renderChips() {
         chips.querySelectorAll(".chip").forEach((el) => el.remove());
+        // Active editor file as a removable context chip (like the native chat).
+        if (activeFile && !activeFileDismissed) {
+            const base = activeFile.split("/").filter(Boolean).pop() || activeFile;
+            chips.appendChild(makeChip(base, activeFile, () => { activeFileDismissed = true; renderChips(); }, true));
+        }
         for (const file of attachments) {
-            const chip = document.createElement("span");
-            chip.className = "chip";
-            chip.title = file.path;
-            chip.textContent = "📄 " + file.name + " ";
-            const x = document.createElement("span");
-            x.className = "x";
-            x.textContent = "✕";
-            x.addEventListener("click", () => {
+            chips.appendChild(makeChip(file.name, file.path, () => {
                 attachments = attachments.filter((a) => a.path !== file.path);
                 renderChips();
-            });
-            chip.appendChild(x);
-            chips.appendChild(chip);
+            }, false));
         }
     }
 
@@ -907,10 +925,12 @@ export function renderHtml(): string {
         input.value = "";
         modelPicker.disabled = true;
         reasoningPicker.disabled = true;
+        const atts = attachments.map((a) => a.path);
+        if (activeFile && !activeFileDismissed) atts.unshift(activeFile);
         vscode.postMessage({
             type: "send",
             text,
-            attachments: attachments.map((a) => a.path),
+            attachments: atts,
             model: modelValue,
             reasoning: reasoningValue,
             permission: permissionValue,
@@ -1039,7 +1059,13 @@ export function renderHtml(): string {
                 }
                 renderSessions();
                 renderStatusbar(data);
+                activeFile = data.activeFile || null; activeFileDismissed = false; renderChips();
                 setLoading(false);   // session resolved — reveal the conversation
+                break;
+            }
+            case "active-file": {
+                // Editor switched — offer the new file as context again.
+                activeFile = data.path || null; activeFileDismissed = false; renderChips();
                 break;
             }
             case "clear": {
