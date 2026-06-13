@@ -80,6 +80,17 @@ export function renderHtml(): string {
         padding: 6px 10px; opacity: 0.8; font-size: 0.85em; text-transform: uppercase;
     }
     #sessionsList { flex: 1; overflow-y: auto; }
+    .groupHeader {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 8px 10px 3px 10px; font-size: 0.72em; text-transform: uppercase;
+        letter-spacing: 0.04em; opacity: 0.55; font-weight: 600;
+    }
+    .groupHeader .gcount {
+        opacity: 0.8; font-weight: 600; font-size: 0.95em;
+        background: var(--vscode-badge-background, rgba(128,128,128,0.2));
+        color: var(--vscode-badge-foreground, inherit);
+        border-radius: 9px; padding: 0 6px; min-width: 16px; text-align: center;
+    }
     .sessionItem {
         padding: 6px 10px; cursor: pointer; border-left: 2px solid transparent;
         display: flex; align-items: center; gap: 6px;
@@ -202,6 +213,7 @@ export function renderHtml(): string {
     }
     #composer:focus-within { border-color: var(--vscode-focusBorder); }
     #chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px 0 8px; }
+    #chips:empty { display: none; }
     .chip {
         display: inline-flex; align-items: center; gap: 4px;
         font-size: 0.85em; padding: 1px 6px;
@@ -213,12 +225,7 @@ export function renderHtml(): string {
     }
     .chip .x { cursor: pointer; opacity: 0.7; }
     .chip .x:hover { opacity: 1; }
-    #addContext {
-        background: none; border: 1px dashed var(--vscode-input-border, #666);
-        color: var(--vscode-descriptionForeground); cursor: pointer;
-        border-radius: 4px; font-size: 0.85em; padding: 1px 8px;
-    }
-    #addContext:hover { color: var(--vscode-foreground); }
+    #addContext svg { width: 15px; height: 15px; }
     #input {
         border: none; outline: none; resize: none;
         background: transparent; color: var(--vscode-input-foreground);
@@ -294,11 +301,12 @@ export function renderHtml(): string {
         <div id="loadingState"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
         <div id="composer">
             <div id="slash"></div>
-            <div id="chips">
-                <button id="addContext" title="Attach files">📎 Add Context...</button>
-            </div>
-            <textarea id="input" placeholder="Ask the agent... (Enter sends, Shift+Enter newline)"></textarea>
+            <div id="chips"></div>
+            <textarea id="input" placeholder="Ask the agent…  (Enter sends · Shift+Enter newline)"></textarea>
             <div id="toolbar">
+                <button id="addContext" class="iconBtn" title="Attach files">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>
+                </button>
                 <select id="modelPicker" class="ctl" title="Model for this session (locked after the first message)"></select>
                 <select id="reasoningPicker" class="ctl" title="Reasoning/thinking effort (locked after the first message)"></select>
                 <span id="status"></span>
@@ -541,10 +549,44 @@ export function renderHtml(): string {
         vscode.postMessage({ type: "session-action", action, sessionId: s.sessionId, backend: s.backend });
     }
 
+    // Relative time like the native viewer ("agora", "5 min atrás", "1 dia atrás").
+    function relTime(iso) {
+        if (!iso) return "";
+        const d = (Date.now() - new Date(iso).getTime()) / 1000;
+        if (d < 60) return "agora";
+        if (d < 3600) return Math.floor(d / 60) + " min atrás";
+        if (d < 86400) return Math.floor(d / 3600) + "h atrás";
+        if (d < 172800) return "ontem";
+        if (d < 604800) return Math.floor(d / 86400) + " dias atrás";
+        if (d < 2592000) return Math.floor(d / 604800) + " sem atrás";
+        return Math.floor(d / 2592000) + " meses atrás";
+    }
+    // Recency bucket header label.
+    function bucket(iso) {
+        if (!iso) return "Sem data";
+        const d = (Date.now() - new Date(iso).getTime()) / 1000;
+        if (d < 86400) return "Hoje";
+        if (d < 172800) return "Ontem";
+        if (d < 604800) return "Esta semana";
+        if (d < 2592000) return "Este mês";
+        return "Mais antigo";
+    }
+
     function renderSessions() {
         sessionsList.textContent = "";
-        for (const s of sessions) {
-            if (s.archived && !showArchived) continue;
+        const visible = sessions.filter((s) => !s.archived || showArchived);
+        let lastBucket = null;
+        for (const s of visible) {
+            const bk = bucket(s.updatedAt);
+            if (bk !== lastBucket) {
+                lastBucket = bk;
+                const count = visible.filter((x) => bucket(x.updatedAt) === bk).length;
+                const gh = document.createElement("div"); gh.className = "groupHeader";
+                const gl = document.createElement("span"); gl.textContent = bk;
+                const gc = document.createElement("span"); gc.className = "gcount"; gc.textContent = String(count);
+                gh.appendChild(gl); gh.appendChild(gc);
+                sessionsList.appendChild(gh);
+            }
             const el = document.createElement("div");
             el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "");
 
@@ -566,7 +608,8 @@ export function renderHtml(): string {
             const sub = document.createElement("span");
             sub.className = "sub";
             const statusText = s.status === "working" ? "working… · " : (s.status === "idle" ? "live · " : "");
-            sub.textContent = statusText + s.backend + (s.updatedAt ? " · " + new Date(s.updatedAt).toLocaleString() : "");
+            sub.textContent = statusText + s.backend + (s.updatedAt ? " · " + relTime(s.updatedAt) : "");
+            sub.title = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
             body.appendChild(ttl);
             body.appendChild(sub);
             body.addEventListener("click", () => {
