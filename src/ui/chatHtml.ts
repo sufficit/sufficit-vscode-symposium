@@ -178,11 +178,11 @@ export function renderHtml(): string {
     /* user turns: right-aligned bubble */
     .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
     .msg.user .role { opacity: 0.5; }
-    /* user bubble: input-background is always a visible, theme-driven surface
-       distinct from the editor background (chat.requestBackground is a
-       translucent editor bg that disappears over our editor-bg body). */
+    /* user bubble: the native chat tone (chat.requestBackground — a blue in
+       most themes); falls back to input-background on themes that leave it as
+       a translucent editor bg that would disappear over our body. */
     .ubody {
-        background: var(--vscode-input-background, rgba(255,255,255,0.07));
+        background: var(--vscode-chat-requestBackground, var(--vscode-input-background, rgba(255,255,255,0.07)));
         border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(255,255,255,0.12)));
         border-radius: 12px 12px 3px 12px; padding: 9px 13px; white-space: pre-wrap;
         max-width: 80%; text-align: left;
