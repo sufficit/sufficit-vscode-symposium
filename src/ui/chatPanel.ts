@@ -54,7 +54,7 @@ export class ChatPanel {
         this.surface.openDialogue(backend, options, title);
     }
 
-    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string> }, title: string): void {
+    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string }, title: string): void {
         this.surface.openTerminalDialogue(backend, options, title);
     }
 }

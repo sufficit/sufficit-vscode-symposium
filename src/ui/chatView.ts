@@ -6,7 +6,7 @@ interface PendingOpen {
     kind: "session" | "dialogue" | "follow" | "terminal";
     info?: SessionInfo;
     backend?: string;
-    options?: (SessionStartOptions & { env?: Record<string, string> });
+    options?: (SessionStartOptions & { env?: Record<string, string>; tmuxName?: string });
     title?: string;
 }
 
@@ -57,7 +57,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.reveal();
     }
 
-    async openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string> }, title: string): Promise<void> {
+    async openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string }, title: string): Promise<void> {
         this.pending = { kind: "terminal", backend, options, title };
         await this.reveal();
     }

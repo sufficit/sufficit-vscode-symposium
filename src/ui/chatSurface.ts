@@ -246,7 +246,7 @@ export class ChatSurface {
      * process the user can also type into. Full two-way control of one live
      * session. `env`/`model` come from the adapter's configuration.
      */
-    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string> }, title: string): void {
+    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string }, title: string): void {
         const adapter = this.deps.adapterByBackend.get(backend);
         if (!adapter) {
             return;
@@ -268,10 +268,13 @@ export class ChatSurface {
         });
         this.terminalSession = new TerminalSession(
             adapter,
-            { cwd: options.cwd, resumeSessionId: options.resumeSessionId, model: options.model, env: options.env },
+            { cwd: options.cwd, resumeSessionId: options.resumeSessionId, model: options.model, env: options.env, tmuxName: options.tmuxName },
             (message) => this.post(message),
             symposiumLog,
         );
+        if (options.tmuxName) {
+            this.post({ type: "event", event: { kind: "tool-start", toolName: "tmux", detail: options.tmuxName + " — survives VS Code closing" } });
+        }
         void this.terminalSession.start();
         this.postCommands(adapter);
         this.onTitleChange?.(`▷ ${title} · ${adapter.backend}`);

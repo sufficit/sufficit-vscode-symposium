@@ -8,6 +8,12 @@ export interface TerminalSessionOptions {
     model?: string;
     /** Extra environment for the launched CLI (gateway routing, etc.). */
     env?: Record<string, string>;
+    /**
+     * When set, the CLI runs inside a detached tmux session of this name
+     * (`tmux new-session -A -s <name>`). The agent then survives VS Code
+     * closing and is recovered live by re-attaching to the same name.
+     */
+    tmuxName?: string;
 }
 
 /**
@@ -54,7 +60,13 @@ export class TerminalSession {
             args.push("--resume", this.options.resumeSessionId);
             this.sessionId = this.options.resumeSessionId;
         }
-        const cmd = `${this.adapter.backend === "claude" ? "claude" : this.adapter.backend} ${args.join(" ")}`.trim();
+        const cli = `${this.adapter.backend === "claude" ? "claude" : this.adapter.backend} ${args.join(" ")}`.trim();
+        // Persistent mode: run the CLI inside a detached tmux session that
+        // survives VS Code. `-A` attaches to it if it already exists (recovery
+        // of a live process), or creates it on first launch.
+        const cmd = this.options.tmuxName
+            ? `tmux new-session -A -s ${shellQuote(this.options.tmuxName)} ${shellQuote(cli)}`
+            : cli;
         this.log(`[terminal] launch: ${cmd} (cwd=${this.options.cwd})`);
         this.terminal.sendText(cmd, true);
 
@@ -152,4 +164,9 @@ export class TerminalSession {
         // Leave the terminal open so the user keeps their session; just detach.
         this.terminal = undefined;
     }
+}
+
+/** Minimal POSIX single-quote escaping for a shell argument. */
+function shellQuote(value: string): string {
+    return `'${value.replace(/'/g, "'\\''")}'`;
 }

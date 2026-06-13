@@ -1,3 +1,4 @@
+import * as cp from "child_process";
 import * as path from "path";
 import * as vscode from "vscode";
 import { ClaudeAdapter, ClaudeAdapterConfig } from "./adapters/claude";
@@ -102,7 +103,7 @@ export function activate(context: vscode.ExtensionContext): void {
             : backend === "codex" ? codexConfig().model
                 : copilotConfig().model;
 
-    const startTerminal = (backend: string, options: { cwd: string; resumeSessionId?: string }, title: string) => {
+    const startTerminal = (backend: string, options: { cwd: string; resumeSessionId?: string; tmuxName?: string }, title: string) => {
         const opts = { ...options, env: envFor(backend), model: modelFor(backend) || undefined };
         if (inEditor()) {
             ChatPanel.show(context, deps).openTerminalDialogue(backend, opts, title);
@@ -110,6 +111,22 @@ export function activate(context: vscode.ExtensionContext): void {
             void chatView.openTerminalDialogue(backend, opts, title);
         }
     };
+
+    // Registry of tmux-backed persistent terminal sessions (survive VS Code quit).
+    type PersistEntry = { tmuxName: string; backend: string; cwd: string; title: string };
+    const persistKey = "symposium.persistentSessions";
+    const persistGet = (): PersistEntry[] => context.workspaceState.get(persistKey, []);
+    const persistAdd = (e: PersistEntry) => {
+        const list = persistGet().filter((x) => x.tmuxName !== e.tmuxName);
+        list.push(e);
+        return context.workspaceState.update(persistKey, list);
+    };
+    const tmuxAlive = (name: string): Promise<boolean> =>
+        new Promise((resolve) => {
+            const child = cp.spawn("tmux", ["has-session", "-t", name], { stdio: "ignore" });
+            child.on("error", () => resolve(false));
+            child.on("exit", (code) => resolve(code === 0));
+        });
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, chatView,
@@ -201,6 +218,64 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand("symposium.resumeInTerminal", (item: { info?: SessionInfo } | SessionInfo) => {
             const info = infoOf(item);
             startTerminal(info.backend, { cwd: deps.cwdFor(info), resumeSessionId: info.sessionId }, info.title);
+        }),
+
+        vscode.commands.registerCommand("symposium.newPersistentSession", async () => {
+            const hasTmux = await new Promise<boolean>((r) => {
+                const c = cp.spawn("tmux", ["-V"], { stdio: "ignore" });
+                c.on("error", () => r(false));
+                c.on("exit", (code) => r(code === 0));
+            });
+            if (!hasTmux) {
+                void vscode.window.showWarningMessage("tmux is not installed — persistent sessions need tmux (the agent runs inside a detached tmux session so it survives VS Code closing).");
+                return;
+            }
+            const picks = await Promise.all(adapters.map(async (a) => {
+                const p = await a.available();
+                return { label: a.backend, description: p.ok ? p.version : `unavailable: ${p.error}`, backend: a.backend, ok: p.ok };
+            }));
+            const choice = await vscode.window.showQuickPick(picks.filter((p) => p.ok), {
+                placeHolder: "Launch which agent as a PERSISTENT (tmux) session?",
+            });
+            if (!choice) {
+                return;
+            }
+            const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!cwd) {
+                void vscode.window.showWarningMessage("Open a folder first; sessions are bound to a working directory.");
+                return;
+            }
+            const tmuxName = `symposium-${choice.backend}-${Date.now().toString(36)}`;
+            const title = `Persistent ${choice.backend}`;
+            await persistAdd({ tmuxName, backend: choice.backend, cwd, title });
+            startTerminal(choice.backend, { cwd, tmuxName }, title);
+        }),
+
+        vscode.commands.registerCommand("symposium.reattachPersistent", async () => {
+            const entries = persistGet();
+            const alive: PersistEntry[] = [];
+            for (const e of entries) {
+                if (await tmuxAlive(e.tmuxName)) {
+                    alive.push(e);
+                }
+            }
+            // Prune dead entries from the registry.
+            if (alive.length !== entries.length) {
+                await context.workspaceState.update(persistKey, alive);
+            }
+            if (!alive.length) {
+                void vscode.window.showInformationMessage("No live persistent (tmux) sessions to reattach.");
+                return;
+            }
+            const choice = await vscode.window.showQuickPick(
+                alive.map((e) => ({ label: e.title, description: `${e.backend} · ${e.tmuxName}`, entry: e })),
+                { placeHolder: "Reattach a live persistent session" },
+            );
+            if (!choice) {
+                return;
+            }
+            // Re-running `tmux new-session -A -s <name>` attaches to the live process.
+            startTerminal(choice.entry.backend, { cwd: choice.entry.cwd, tmuxName: choice.entry.tmuxName }, choice.entry.title);
         }),
 
         vscode.commands.registerCommand("symposium.renameSession", async (item: { info?: SessionInfo } | SessionInfo) => {
