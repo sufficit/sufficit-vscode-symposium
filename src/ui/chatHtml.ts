@@ -258,12 +258,28 @@ export function renderHtml(): string {
         color: var(--vscode-descriptionForeground, var(--vscode-foreground));
     }
     .toolrow:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,0.1)); }
+    .toolrow.expandable { cursor: pointer; }
     .toolrow .tIcon { display: inline-flex; flex-shrink: 0; opacity: 0.8; }
     .toolrow .tIcon svg { width: 14px; height: 14px; }
     .toolrow .tVerb { color: var(--vscode-foreground); opacity: 0.85; flex-shrink: 0; }
     .toolrow .tTarget {
-        font-family: var(--vscode-editor-font-family, monospace); font-size: 0.92em;
+        flex: 1; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.92em;
         opacity: 0.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+    }
+    .toolrow .tChev { margin-left: auto; flex-shrink: 0; opacity: 0.55; display: inline-flex; transition: transform 150ms ease; }
+    .toolrow .tChev svg { width: 12px; height: 12px; }
+    .toolwrap { margin: 1px 0; }
+    .toolwrap.open .toolrow .tChev { transform: rotate(180deg); }
+    .toolbody { display: none; margin: 4px 0 8px 26px; }
+    .toolwrap.open .toolbody { display: block; }
+    .toolsec { margin: 6px 0; }
+    .toolsec .tlabel { font-size: 0.8em; font-weight: 600; opacity: 0.7; margin-bottom: 3px; }
+    .toolsec pre {
+        margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto;
+        border: 1px solid var(--vscode-input-border, rgba(128,128,128,0.3)); border-radius: 6px;
+        background: var(--vscode-textCodeBlock-background, rgba(128,128,128,0.1));
+        font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em;
+        white-space: pre-wrap; word-break: break-word;
     }
     .error { color: var(--vscode-errorForeground); }
     .meta { opacity: 0.55; font-size: 0.82em; text-align: center; margin: 10px 0; }
@@ -873,20 +889,54 @@ export function renderHtml(): string {
         WebSearch: { icon: "globe", verb: "Searched web" },
         TodoWrite: { icon: "list", verb: "Updated plan" },
     };
-    function renderTool(name, detail) {
+    // Live tool rows awaiting their result, keyed by tool id.
+    const toolRows = {};
+    function toolSection(label, text) {
+        const sec = document.createElement("div"); sec.className = "toolsec";
+        const lab = document.createElement("div"); lab.className = "tlabel"; lab.textContent = label;
+        const pre = document.createElement("pre"); pre.textContent = text;
+        sec.appendChild(lab); sec.appendChild(pre);
+        return sec;
+    }
+    // Expandable tool panel (icon + verb + target, click to reveal input/result).
+    function renderTool(name, detail, opts) {
+        opts = opts || {};
         const stick = nearBottom();
         const meta = TOOL_META[name] || { icon: "tool", verb: name };
-        const row = document.createElement("div"); row.className = "msg toolrow";
+        const wrap = document.createElement("div"); wrap.className = "msg toolwrap";
+        const head = document.createElement("div"); head.className = "toolrow";
         const ic = document.createElement("span"); ic.className = "tIcon"; ic.appendChild(svgIcon(meta.icon));
         const verb = document.createElement("span"); verb.className = "tVerb"; verb.textContent = meta.verb;
-        row.appendChild(ic); row.appendChild(verb);
+        head.appendChild(ic); head.appendChild(verb);
         if (detail) {
             const tg = document.createElement("span"); tg.className = "tTarget"; tg.textContent = detail;
-            row.appendChild(tg);
+            head.appendChild(tg);
         }
-        log.appendChild(row);
+        const body = document.createElement("div"); body.className = "toolbody";
+        if (opts.input) { body.appendChild(toolSection("Input", opts.input)); }
+        let resultSec = null;
+        const showResult = (text) => {
+            if (!text) return;
+            if (!resultSec) { resultSec = toolSection("Result", text); body.appendChild(resultSec); }
+            else { resultSec.querySelector("pre").textContent = text; }
+        };
+        if (opts.result) { showResult(opts.result); }
+        const expandable = !!(opts.input || opts.result || opts.toolId);
+        if (expandable) {
+            const chev = document.createElement("span"); chev.className = "tChev"; chev.appendChild(svgIcon("chevron"));
+            head.appendChild(chev);
+            head.classList.add("expandable");
+            head.addEventListener("click", () => wrap.classList.toggle("open"));
+        }
+        wrap.appendChild(head); wrap.appendChild(body);
+        log.appendChild(wrap);
         autoScroll(stick);
-        return row;
+        if (opts.toolId) { toolRows[opts.toolId] = { showResult }; }
+        return wrap;
+    }
+    function fillToolResult(toolId, result) {
+        const rec = toolId && toolRows[toolId];
+        if (rec) { rec.showResult(result); }
     }
 
     // Per-session actions, shown as hover icons on the right and in the
@@ -1245,7 +1295,7 @@ export function renderHtml(): string {
             case "append": {
                 const m = data.message;
                 if (m.role === "user") message("user", m.text);
-                else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "");
+                else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result });
                 else message("assistant", m.text);
                 break;
             }
@@ -1261,7 +1311,7 @@ export function renderHtml(): string {
             case "history": {
                 for (const m of data.messages) {
                     if (m.role === "user") message("user", m.text);
-                    else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "");
+                    else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result });
                     else message("assistant", m.text);
                 }
                 append("meta", data.messages.length ? "— end of stored transcript —" : "(empty transcript)");
@@ -1288,7 +1338,8 @@ export function renderHtml(): string {
             case "event": {
                 const ev = data.event;
                 if (ev.kind === "text") message("assistant", ev.text);
-                else if (ev.kind === "tool-start") renderTool(ev.toolName, ev.detail || "");
+                else if (ev.kind === "tool-start") renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input });
+                else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);
                 else if (ev.kind === "error") append("error", "✖ " + ev.message);
                 else if (ev.kind === "session") {
                     if (ev.model) { activeModel = ev.model; }

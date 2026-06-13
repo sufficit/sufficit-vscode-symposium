@@ -127,6 +127,8 @@ class ClaudeSession extends EventEmitter implements AgentSession {
                             kind: "tool-start",
                             toolName: block.name,
                             detail: summarizeToolInput(block.input),
+                            toolId: block.id,
+                            input: prettyJson(block.input),
                         });
                     }
                 }
@@ -135,7 +137,12 @@ class ClaudeSession extends EventEmitter implements AgentSession {
             case "user": {
                 for (const block of event.message?.content ?? []) {
                     if (block.type === "tool_result") {
-                        this.emit("event", { kind: "tool-end", toolName: block.tool_use_id ?? "tool" });
+                        this.emit("event", {
+                            kind: "tool-end",
+                            toolName: block.tool_use_id ?? "tool",
+                            toolId: block.tool_use_id,
+                            result: toolResultText(block.content),
+                        });
                     }
                 }
                 break;
@@ -211,6 +218,29 @@ function summarizeToolInput(input: unknown): string {
         s = first ?? "";
     }
     return s.length > 160 ? s.slice(0, 157) + "..." : s;
+}
+
+/** Pretty-print a tool input for the expandable panel (capped). */
+function prettyJson(input: unknown): string {
+    try {
+        const s = JSON.stringify(input, null, 2);
+        return s.length > 6000 ? s.slice(0, 6000) + "\n…(truncated)" : s;
+    } catch {
+        return String(input ?? "");
+    }
+}
+
+/** Flatten a tool_result content (string or content blocks) to text (capped). */
+function toolResultText(content: unknown): string {
+    let s: string;
+    if (typeof content === "string") {
+        s = content;
+    } else if (Array.isArray(content)) {
+        s = content.map((b: any) => (typeof b === "string" ? b : b?.text ?? "")).join("");
+    } else {
+        try { s = JSON.stringify(content); } catch { s = String(content ?? ""); }
+    }
+    return s.length > 6000 ? s.slice(0, 6000) + "\n…(truncated)" : s;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -528,7 +558,7 @@ function parseTranscriptLine(line: string): HistoryMessage[] {
             if (block.type === "text" && block.text?.trim()) {
                 messages.push({ role: "assistant", text: block.text });
             } else if (block.type === "tool_use") {
-                messages.push({ role: "tool", text: block.name, toolName: block.name, detail: summarizeToolInput(block.input) });
+                messages.push({ role: "tool", text: block.name, toolName: block.name, detail: summarizeToolInput(block.input), input: prettyJson(block.input) });
             }
         }
     }

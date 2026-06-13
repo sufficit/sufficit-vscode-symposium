@@ -7,8 +7,8 @@ export type AgentBackend = "claude" | "codex" | "copilot";
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
     | { kind: "text"; text: string }
-    | { kind: "tool-start"; toolName: string; detail?: string }
-    | { kind: "tool-end"; toolName: string; detail?: string }
+    | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string }
+    | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string }
     | { kind: "turn-end"; costUsd?: number; durationMs?: number }
     | { kind: "error"; message: string };
 
@@ -32,9 +32,12 @@ export interface HistoryMessage {
     role: "user" | "assistant" | "tool";
     text: string;
     // For tool rows: the backend tool name and a short human target, so stored
-    // transcripts render the same icon+verb+target as live events.
+    // transcripts render the same icon+verb+target as live events. input/result
+    // hold the full (pretty) payloads for the expandable panel.
     toolName?: string;
     detail?: string;
+    input?: string;
+    result?: string;
 }
 
 /** Stops a live transcript follow. */
