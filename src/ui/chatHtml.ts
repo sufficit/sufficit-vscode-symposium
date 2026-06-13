@@ -179,10 +179,13 @@ export function renderHtml(): string {
     #chatTitle { flex: 1; opacity: 0.75; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #listToggle { display: none; }
     #root.narrow #listToggle { display: inline-flex; }
-    #log { flex: 1; overflow-y: auto; padding: 16px 16px 6px 16px; user-select: text; cursor: text; }
-    .msg { margin: 0 0 18px 0; word-break: break-word; line-height: 1.6; user-select: text; -webkit-user-select: text; }
+    #log {
+        flex: 1; overflow-y: auto; padding: 16px 16px 6px 16px; user-select: text; cursor: text;
+        font-size: 13.5px; line-height: 1.65;
+    }
+    .msg { margin: 0 0 20px 0; word-break: break-word; line-height: 1.65; user-select: text; -webkit-user-select: text; }
     .msg.plain { white-space: pre-wrap; }
-    .role { font-size: 0.78em; opacity: 0.7; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; font-weight: 600; }
+    .role { font-size: 0.8em; opacity: 0.85; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: 0.01em; }
     .role .avatar {
         width: 19px; height: 19px; border-radius: 5px; flex-shrink: 0;
         display: inline-flex; align-items: center; justify-content: center;
@@ -201,8 +204,8 @@ export function renderHtml(): string {
     .ubody {
         background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 16%, transparent);
         border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 32%, transparent);
-        border-radius: 12px 12px 3px 12px; padding: 9px 13px; white-space: pre-wrap;
-        max-width: 80%; text-align: left;
+        border-radius: 12px 12px 3px 12px; padding: 10px 14px; white-space: pre-wrap;
+        max-width: 82%; text-align: left; line-height: 1.6;
     }
     .ubody .chips { margin-top: 6px; }
     /* assistant turns: full width, no bubble */
@@ -217,11 +220,13 @@ export function renderHtml(): string {
     .msgCopy.done { opacity: 1 !important; color: var(--vscode-charts-green, #89d185); }
     .msgCopy svg { width: 13px; height: 13px; }
     /* markdown content */
-    .md p { margin: 0 0 8px 0; }
+    .md { line-height: 1.65; }
+    .md p { margin: 0 0 10px 0; }
     .md p:last-child { margin-bottom: 0; }
-    .md ul, .md ol { margin: 4px 0 8px 0; padding-left: 20px; }
-    .md li { margin: 2px 0; }
-    .md h1, .md h2, .md h3 { margin: 10px 0 6px 0; line-height: 1.3; }
+    .md ul, .md ol { margin: 6px 0 10px 0; padding-left: 22px; }
+    .md li { margin: 3px 0; }
+    .md li::marker { color: var(--vscode-descriptionForeground); }
+    .md h1, .md h2, .md h3 { margin: 14px 0 7px 0; line-height: 1.3; }
     .md h1 { font-size: 1.25em; } .md h2 { font-size: 1.15em; } .md h3 { font-size: 1.05em; }
     .md a { color: var(--vscode-textLink-foreground); }
     .md code.inline {
@@ -261,7 +266,7 @@ export function renderHtml(): string {
         opacity: 0.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
     }
     .error { color: var(--vscode-errorForeground); }
-    .meta { opacity: 0.5; font-size: 0.85em; text-align: center; margin: 8px 0; }
+    .meta { opacity: 0.55; font-size: 0.82em; text-align: center; margin: 10px 0; }
 
     /* ---- slash command autocomplete ---- */
     #slash {
