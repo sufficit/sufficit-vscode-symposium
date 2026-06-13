@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -94,6 +94,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "symposium.openSettings",
+        "title": "Symposium: Settings",
+        "icon": "$(gear)"
+      },
+      {
         "command": "symposium.restartExtensionHost",
         "title": "Symposium: Restart Extension Host (dev)",
         "icon": "$(debug-restart)"
@@ -115,6 +120,11 @@
           "command": "symposium.refreshSessions",
           "when": "view == symposium.chat",
           "group": "navigation@3"
+        },
+        {
+          "command": "symposium.openSettings",
+          "when": "view == symposium.chat",
+          "group": "navigation@4"
         },
         {
           "command": "symposium.restartExtensionHost",
@@ -193,6 +203,21 @@
           ],
           "default": "auto",
           "description": "Side of the sessions list inside the chat surface. 'auto' follows the dock side (sessions on the outer edge: right when docked right, left when docked left)."
+        },
+        "symposium.chat.defaultSendMode": {
+          "type": "string",
+          "enum": [
+            "send",
+            "queue",
+            "steer"
+          ],
+          "enumDescriptions": [
+            "Send now when idle; queued while a turn is running.",
+            "Always wait for the current turn, then send (FIFO).",
+            "Interrupt the running turn and send immediately."
+          ],
+          "default": "send",
+          "description": "Default behavior of the composer send control. Overridable per session with the dropdown next to the send button."
         }
       }
     }

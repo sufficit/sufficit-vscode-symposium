@@ -201,6 +201,7 @@ export class ChatSurface {
             title: info.title,
             sessionsSide,
             chatOnly: this.chatOnly,
+            defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
         });
         if (adapter.history) {
             try {
@@ -240,6 +241,7 @@ export class ChatSurface {
             title,
             sessionsSide,
             chatOnly: this.chatOnly,
+            defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
         });
         this.terminalSession = new TerminalSession(
             adapter,
@@ -271,6 +273,7 @@ export class ChatSurface {
             title,
             sessionsSide,
             chatOnly: this.chatOnly,
+            defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
         });
         if (info) {
             void this.controller.loadHistory(info);

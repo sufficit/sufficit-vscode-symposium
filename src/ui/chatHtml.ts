@@ -162,6 +162,13 @@ export function renderHtml(): string {
         background: var(--vscode-dropdown-background);
         color: var(--vscode-dropdown-foreground);
     }
+    #sendMode {
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+        border: 1px solid var(--vscode-input-border, #454545); border-radius: 4px;
+        cursor: pointer; font-family: inherit; font-size: 0.85em; padding: 1px 4px;
+    }
+    #sendMode option { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); }
     #status { flex: 1; text-align: right; opacity: 0.5; font-size: 0.85em; padding-right: 4px; }
     .iconBtn {
         background: none; border: none; cursor: pointer; padding: 3px 5px;
@@ -200,6 +207,11 @@ export function renderHtml(): string {
             <div id="toolbar">
                 <select id="modelPicker" title="Model for this session (locked after the first message)"></select>
                 <span id="status"></span>
+                <select id="sendMode" title="Send behavior">
+                    <option value="send">Send</option>
+                    <option value="queue">Queue</option>
+                    <option value="steer">Steer</option>
+                </select>
                 <button id="send" class="iconBtn" title="Send (Enter)">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.176 2.824 3.06 8 1.176 13.176a.5.5 0 0 0 .708.605l13-5.5a.5.5 0 0 0 0-.918l-13-5.5a.5.5 0 0 0-.708.605L1.176 2.824ZM3.92 8.5 2.32 12.9l10.36-4.4H3.92Zm8.76-1L2.32 3.1l1.6 4.4h8.76Z"/></svg>
                 </button>
@@ -219,6 +231,7 @@ export function renderHtml(): string {
     const chips = document.getElementById("chips");
     const addContext = document.getElementById("addContext");
     const modelPicker = document.getElementById("modelPicker");
+    const sendMode = document.getElementById("sendMode");
     const sendBtn = document.getElementById("send");
     const status = document.getElementById("status");
     const sessionsList = document.getElementById("sessionsList");
@@ -229,11 +242,17 @@ export function renderHtml(): string {
     let activeModel = "";
     let activeSessionId = "";
     let busy = false;
+    let queued = 0;
     let sessions = [];
     let showArchived = false;
 
     document.getElementById("newSessionBtn").addEventListener("click", () => vscode.postMessage({ type: "new-session" }));
     document.getElementById("archToggle").addEventListener("click", () => { showArchived = !showArchived; renderSessions(); });
+
+    // Remember the chosen send mode across reloads.
+    const saved = vscode.getState && vscode.getState();
+    if (saved && saved.sendMode) { sendMode.value = saved.sendMode; }
+    sendMode.addEventListener("change", () => vscode.setState && vscode.setState({ sendMode: sendMode.value }));
 
     let sideMode = "auto"; // "auto" | "left" | "right", from config
 
@@ -273,7 +292,8 @@ export function renderHtml(): string {
     }
 
     function setStatus() {
-        status.textContent = busy ? "thinking..." : (activeModel ? "model: " + activeModel : "");
+        const q = queued > 0 ? " · " + queued + " queued" : "";
+        status.textContent = busy ? ("thinking..." + q) : (activeModel ? "model: " + activeModel : "");
     }
 
     // Per-session actions, shown as hover icons on the right and in the
@@ -379,16 +399,19 @@ export function renderHtml(): string {
 
     function send() {
         const text = input.value.trim();
-        if (!text || busy) return;
+        if (!text) return;
+        // While a turn runs, only queue/steer may submit; plain send waits too
+        // (the extension queues it), so allow submitting in every mode.
         input.value = "";
-        busy = true; sendBtn.disabled = true; setStatus();
         modelPicker.disabled = true;
         vscode.postMessage({
             type: "send",
             text,
             attachments: attachments.map((a) => a.path),
             model: modelPicker.value,
+            mode: sendMode.value,
         });
+        if (!busy) { busy = true; setStatus(); }
         attachments = [];
         renderChips();
     }
@@ -480,6 +503,8 @@ export function renderHtml(): string {
         switch (data.type) {
             case "meta": {
                 sideMode = data.sessionsSide || "auto";
+                // Seed the default send mode once (don't override a saved choice).
+                if (data.defaultSendMode && !(saved && saved.sendMode)) { sendMode.value = data.defaultSendMode; }
                 root.classList.toggle("chat-only", !!data.chatOnly);
                 layout();
                 activeSessionId = data.sessionId || "";
@@ -505,9 +530,15 @@ export function renderHtml(): string {
             }
             case "clear": {
                 log.textContent = "";
-                activeModel = ""; busy = false;
+                activeModel = ""; busy = false; queued = 0;
                 sendBtn.disabled = false;
                 document.getElementById("composer").style.display = "flex";
+                setStatus();
+                break;
+            }
+            case "queued": {
+                queued = data.count || 0;
+                append("meta", "↳ queued (" + queued + " waiting)");
                 setStatus();
                 break;
             }
@@ -544,6 +575,7 @@ export function renderHtml(): string {
                     list.textContent = "📎 " + data.attachments.map((p) => p.split("/").pop()).join(", ");
                     el.appendChild(list);
                 }
+                busy = true; setStatus();   // a turn just started (covers queued flush)
                 break;
             }
             case "attachments-picked": {

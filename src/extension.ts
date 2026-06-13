@@ -111,6 +111,10 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand("symposium.restartExtensionHost", () =>
             vscode.commands.executeCommand("workbench.action.restartExtensionHost")),
 
+        // Opens VS Code's native Settings UI scoped to Symposium's chat config.
+        vscode.commands.registerCommand("symposium.openSettings", () =>
+            vscode.commands.executeCommand("workbench.action.openSettings", "@ext:sufficit.sufficit-vscode-symposium")),
+
         vscode.commands.registerCommand("symposium.newSession", async () => {
             const picks = await Promise.all(adapters.map(async (adapter) => {
                 const probe = await adapter.available();
