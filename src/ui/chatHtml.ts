@@ -178,12 +178,13 @@ export function renderHtml(): string {
     /* user turns: right-aligned bubble */
     .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
     .msg.user .role { opacity: 0.5; }
-    /* user bubble: the native chat tone (chat.requestBackground — a blue in
-       most themes); falls back to input-background on themes that leave it as
-       a translucent editor bg that would disappear over our body. */
+    /* user bubble: a subtle blue tint derived from the theme accent
+       (focusBorder), mirroring the native chat — many themes leave
+       chat.requestBackground as a near-invisible translucent editor bg, so we
+       mix the accent ourselves to guarantee the blue tone in every theme. */
     .ubody {
-        background: var(--vscode-chat-requestBackground, var(--vscode-input-background, rgba(255,255,255,0.07)));
-        border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(255,255,255,0.12)));
+        background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 16%, transparent);
+        border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 32%, transparent);
         border-radius: 12px 12px 3px 12px; padding: 9px 13px; white-space: pre-wrap;
         max-width: 80%; text-align: left;
     }
