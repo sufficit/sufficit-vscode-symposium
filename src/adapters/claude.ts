@@ -182,13 +182,26 @@ class ClaudeSession extends EventEmitter implements AgentSession {
  */
 function summarizeToolInput(input: unknown): string {
     const o = (input ?? {}) as Record<string, unknown>;
-    const base = (p: unknown) => String(p).split("/").pop() || String(p);
+    // Keep the last two path segments for context (e.g. "ui/chatHtml.ts")
+    // without dumping a long absolute path.
+    const short = (p: unknown) => {
+        const parts = String(p).split("/").filter(Boolean);
+        return parts.slice(-2).join("/") || String(p);
+    };
+    const filePath = typeof o.file_path === "string" ? o.file_path
+        : typeof o.notebook_path === "string" ? o.notebook_path
+            : typeof o.path === "string" ? o.path : undefined;
     let s = "";
-    if (typeof o.file_path === "string") { s = base(o.file_path); }
-    else if (typeof o.notebook_path === "string") { s = base(o.notebook_path); }
-    else if (typeof o.path === "string") { s = base(o.path); }
+    if (filePath) {
+        s = short(filePath);
+        // Read with a line window: show the range so it's clear what was read.
+        if (typeof o.offset === "number") {
+            const end = typeof o.limit === "number" ? o.offset + o.limit : undefined;
+            s += ":" + o.offset + (end ? "-" + end : "");
+        }
+    }
     else if (typeof o.command === "string") { s = o.command.trim().replace(/\s+/g, " "); }
-    else if (typeof o.pattern === "string") { s = o.pattern + (typeof o.path === "string" ? " in " + base(o.path) : ""); }
+    else if (typeof o.pattern === "string") { s = '"' + o.pattern + '"' + (typeof o.path === "string" ? " in " + short(o.path) : ""); }
     else if (typeof o.url === "string") { s = o.url; }
     else if (typeof o.query === "string") { s = o.query; }
     else if (typeof o.description === "string") { s = o.description; }
@@ -197,7 +210,7 @@ function summarizeToolInput(input: unknown): string {
         const first = Object.values(o).find((v) => typeof v === "string") as string | undefined;
         s = first ?? "";
     }
-    return s.length > 140 ? s.slice(0, 137) + "..." : s;
+    return s.length > 160 ? s.slice(0, 157) + "..." : s;
 }
 
 export class ClaudeAdapter implements AgentAdapter {
@@ -515,7 +528,7 @@ function parseTranscriptLine(line: string): HistoryMessage[] {
             if (block.type === "text" && block.text?.trim()) {
                 messages.push({ role: "assistant", text: block.text });
             } else if (block.type === "tool_use") {
-                messages.push({ role: "tool", text: `⚙ ${block.name}` });
+                messages.push({ role: "tool", text: block.name, toolName: block.name, detail: summarizeToolInput(block.input) });
             }
         }
     }

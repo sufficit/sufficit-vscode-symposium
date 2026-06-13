@@ -496,6 +496,16 @@ export function renderHtml(): string {
         steer: "Interrupt the running turn and send now",
     };
     function updateSendTitle() {
+        // Queue/Steer only exist while a turn is running. When idle there's
+        // nothing to queue behind or interrupt — it's always a plain Send, so
+        // show the send icon and hide the mode caret.
+        if (!busy) {
+            sendIcon.innerHTML = MODE_ICONS.send;
+            sendBtn.title = "Send (Enter)";
+            sendCaret.style.display = "none";
+            return;
+        }
+        sendCaret.style.display = "";
         const m = sendMode.value;
         sendIcon.innerHTML = MODE_ICONS[m];
         sendBtn.title = MODE_LABELS[m] + " (" + MODE_KBD[m] + ") — " + MODE_DESC[m];
@@ -799,6 +809,7 @@ export function renderHtml(): string {
     function setStatus() {
         const q = queued > 0 ? " · " + queued + " queued" : "";
         status.textContent = busy ? ("thinking..." + q) : (activeModel ? "model: " + activeModel : "");
+        updateSendTitle();   // mode caret/icon depends on busy state
         syncProgress();
     }
 
@@ -1234,7 +1245,7 @@ export function renderHtml(): string {
             case "append": {
                 const m = data.message;
                 if (m.role === "user") message("user", m.text);
-                else if (m.role === "tool") append("tool", m.text);
+                else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "");
                 else message("assistant", m.text);
                 break;
             }
@@ -1250,7 +1261,7 @@ export function renderHtml(): string {
             case "history": {
                 for (const m of data.messages) {
                     if (m.role === "user") message("user", m.text);
-                    else if (m.role === "tool") append("tool", m.text);
+                    else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "");
                     else message("assistant", m.text);
                 }
                 append("meta", data.messages.length ? "— end of stored transcript —" : "(empty transcript)");

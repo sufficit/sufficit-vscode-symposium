@@ -31,6 +31,10 @@ export interface SessionInfo {
 export interface HistoryMessage {
     role: "user" | "assistant" | "tool";
     text: string;
+    // For tool rows: the backend tool name and a short human target, so stored
+    // transcripts render the same icon+verb+target as live events.
+    toolName?: string;
+    detail?: string;
 }
 
 /** Stops a live transcript follow. */
