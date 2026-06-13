@@ -57,15 +57,16 @@ export function renderHtml(): string {
 
     /* ---- sessions pane ---- */
     #sessionsPane {
-        width: 260px; min-width: 200px; flex-shrink: 0;
+        order: 1; width: 260px; min-width: 180px; flex-shrink: 0;
         border-right: 1px solid var(--vscode-panel-border, #333);
         display: flex; flex-direction: column; overflow: hidden;
     }
     #root.side-right #sessionsPane {
-        order: 2;
+        order: 3;
         border-right: none;
         border-left: 1px solid var(--vscode-panel-border, #333);
     }
+    #root.side-right #chatCol { order: 1; }
     #root.narrow #sessionsPane { display: none; }
     #root.chat-only #sessionsPane { display: none; }
     #root.chat-only #listToggle { display: none; }
@@ -122,7 +123,7 @@ export function renderHtml(): string {
     #ctxMenu .sep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, rgba(128,128,128,0.3)); }
 
     /* ---- chat column ---- */
-    #chatCol { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    #chatCol { order: 3; flex: 1; display: flex; flex-direction: column; min-width: 0; }
     #chatHeader {
         display: flex; align-items: center; gap: 8px; padding: 4px 10px;
         border-bottom: 1px solid var(--vscode-panel-border, transparent);
@@ -221,36 +222,26 @@ export function renderHtml(): string {
     #input {
         border: none; outline: none; resize: none;
         background: transparent; color: var(--vscode-input-foreground);
-        font-family: inherit; font-size: inherit;
-        padding: 8px 10px; min-height: 38px; max-height: 180px;
+        font-family: inherit; font-size: inherit; line-height: 1.5;
+        padding: 9px 11px 5px 11px; min-height: 40px; max-height: 200px;
     }
-    #toolbar { display: flex; align-items: center; gap: 6px; padding: 2px 6px 6px 8px; }
-    #modelPicker {
+    #input::placeholder { color: var(--vscode-input-placeholderForeground, rgba(128,128,128,0.7)); }
+    /* toolbar: pickers grouped left, send pinned right, uniform controls */
+    #toolbar { display: flex; align-items: center; gap: 4px; padding: 4px 6px 6px 8px; }
+    #toolbar .grow { flex: 1; }
+    /* one consistent control style for all dropdowns (.ctl) */
+    .ctl {
+        height: 24px; box-sizing: border-box;
         background: transparent; color: var(--vscode-descriptionForeground);
-        border: none; outline: none; cursor: pointer;
-        font-family: inherit; font-size: 0.9em; max-width: 200px;
+        border: 1px solid transparent; border-radius: 5px;
+        cursor: pointer; font-family: inherit; font-size: 0.85em; padding: 0 6px;
+        transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+        max-width: 180px;
     }
-    #modelPicker:hover:not(:disabled) { color: var(--vscode-foreground); }
-    #modelPicker:disabled { cursor: default; opacity: 0.8; }
-    #modelPicker option, #reasoningPicker option {
-        background: var(--vscode-dropdown-background);
-        color: var(--vscode-dropdown-foreground);
-    }
-    #reasoningPicker {
-        background: transparent; color: var(--vscode-descriptionForeground);
-        border: none; outline: none; cursor: pointer;
-        font-family: inherit; font-size: 0.9em; max-width: 130px;
-    }
-    #reasoningPicker:hover:not(:disabled) { color: var(--vscode-foreground); }
-    #reasoningPicker:disabled { cursor: default; opacity: 0.8; }
-    #sendMode {
-        background: var(--vscode-button-secondaryBackground, transparent);
-        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
-        border: 1px solid var(--vscode-input-border, #454545); border-radius: 4px;
-        cursor: pointer; font-family: inherit; font-size: 0.85em; padding: 1px 4px;
-    }
-    #sendMode option { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); }
-    #status { flex: 1; text-align: right; opacity: 0.5; font-size: 0.85em; padding-right: 4px; }
+    .ctl:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
+    .ctl:disabled { cursor: default; opacity: 0.7; }
+    .ctl option { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); }
+    #status { opacity: 0.55; font-size: 0.82em; padding: 0 6px; white-space: nowrap; }
     .iconBtn {
         background: none; border: none; cursor: pointer; padding: 3px 5px;
         color: var(--vscode-icon-foreground, var(--vscode-foreground));
@@ -258,14 +249,26 @@ export function renderHtml(): string {
         transition: background-color 150ms ease, color 150ms ease;
     }
     .iconBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
-    /* Send = primary filled button for clear affordance */
+    /* Send = primary filled button, the one emphasized control */
     #send {
+        height: 26px; min-width: 30px; justify-content: center;
         background: var(--vscode-button-background); color: var(--vscode-button-foreground);
-        padding: 4px 8px; transition: background-color 150ms ease, opacity 150ms ease;
+        border-radius: 5px; padding: 0 9px;
+        transition: background-color 150ms ease, opacity 150ms ease;
     }
-    #send:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
-    #send svg { width: 16px; height: 16px; }
+    #send:hover:not(:disabled) { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+    #send svg { width: 15px; height: 15px; }
     #send:disabled { opacity: 0.4; cursor: default; }
+
+    /* ---- sessions pane resizer ---- */
+    #resizer {
+        order: 2; flex: 0 0 5px; cursor: col-resize; position: relative; z-index: 5;
+        background: transparent; transition: background-color 150ms ease;
+    }
+    #resizer::after { content: ""; position: absolute; inset: 0 2px; background: var(--vscode-panel-border, #333); opacity: 0.4; }
+    #resizer:hover::after, #resizer.dragging::after { background: var(--vscode-focusBorder); opacity: 1; }
+    #root.side-right #resizer { order: 2; }
+    #root.narrow #resizer, #root.chat-only #resizer { display: none; }
 </style>
 </head>
 <body>
@@ -281,6 +284,7 @@ export function renderHtml(): string {
         </div>
         <div id="sessionsList"></div>
     </aside>
+    <div id="resizer" title="Drag to resize"></div>
     <main id="chatCol">
         <div id="chatHeader">
             <button id="listToggle" class="iconBtn" title="Sessions">☰</button>
@@ -295,10 +299,11 @@ export function renderHtml(): string {
             </div>
             <textarea id="input" placeholder="Ask the agent... (Enter sends, Shift+Enter newline)"></textarea>
             <div id="toolbar">
-                <select id="modelPicker" title="Model for this session (locked after the first message)"></select>
-                <select id="reasoningPicker" title="Reasoning/thinking effort (locked after the first message)"></select>
+                <select id="modelPicker" class="ctl" title="Model for this session (locked after the first message)"></select>
+                <select id="reasoningPicker" class="ctl" title="Reasoning/thinking effort (locked after the first message)"></select>
                 <span id="status"></span>
-                <select id="sendMode" title="Send behavior">
+                <span class="grow"></span>
+                <select id="sendMode" class="ctl" title="Send behavior">
                     <option value="send">Send</option>
                     <option value="queue">Queue</option>
                     <option value="steer">Steer</option>
@@ -342,10 +347,31 @@ export function renderHtml(): string {
     document.getElementById("newSessionBtn").addEventListener("click", () => { setLoading(true, "Starting…"); vscode.postMessage({ type: "new-session" }); });
     document.getElementById("archToggle").addEventListener("click", () => { showArchived = !showArchived; renderSessions(); });
 
-    // Remember the chosen send mode across reloads.
-    const saved = vscode.getState && vscode.getState();
-    if (saved && saved.sendMode) { sendMode.value = saved.sendMode; }
-    sendMode.addEventListener("change", () => vscode.setState && vscode.setState({ sendMode: sendMode.value }));
+    // Persisted UI state (send mode + sessions pane width).
+    const saved = (vscode.getState && vscode.getState()) || {};
+    function saveState(patch) { vscode.setState && vscode.setState(Object.assign({}, saved, patch)); Object.assign(saved, patch); }
+    if (saved.sendMode) { sendMode.value = saved.sendMode; }
+    sendMode.addEventListener("change", () => saveState({ sendMode: sendMode.value }));
+
+    // ---- resizable sessions pane ----
+    const sessionsPane = document.getElementById("sessionsPane");
+    const resizer = document.getElementById("resizer");
+    if (saved.paneWidth) { sessionsPane.style.width = saved.paneWidth + "px"; }
+    let dragging = false;
+    resizer.addEventListener("pointerdown", (e) => {
+        dragging = true; resizer.classList.add("dragging");
+        resizer.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    resizer.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const r = root.getBoundingClientRect();
+        let w = sideIsRight() ? (r.right - e.clientX) : (e.clientX - r.left);
+        w = Math.max(180, Math.min(520, Math.round(w)));
+        sessionsPane.style.width = w + "px";
+    });
+    const endDrag = () => { if (dragging) { dragging = false; resizer.classList.remove("dragging"); saveState({ paneWidth: parseInt(sessionsPane.style.width, 10) }); } };
+    resizer.addEventListener("pointerup", endDrag);
+    resizer.addEventListener("pointercancel", endDrag);
 
     let sideMode = "auto"; // "auto" | "left" | "right", from config
 
