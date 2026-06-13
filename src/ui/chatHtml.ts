@@ -163,6 +163,9 @@ export function renderHtml(): string {
 </div>
 <script>
     const vscode = acquireVsCodeApi();
+    window.addEventListener("error", (e) => {
+        vscode.postMessage({ type: "webview-error", message: (e.message || "error") + " @" + (e.lineno || "?") });
+    });
     const root = document.getElementById("root");
     const log = document.getElementById("log");
     const input = document.getElementById("input");

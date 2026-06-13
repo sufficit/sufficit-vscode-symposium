@@ -41,7 +41,7 @@ export class ChatSurface {
     }
 
     private async onMessage(message: any): Promise<void> {
-        symposiumLog(`[surface] <- webview: ${message?.type}`);
+        symposiumLog(`[surface] <- webview: ${message?.type}${message?.type === "send" ? ` (${(message.text ?? "").length} chars)` : ""}`);
         try {
             switch (message?.type) {
                 case "ready": {
@@ -51,6 +51,15 @@ export class ChatSurface {
                     }
                     this.queue = [];
                     void this.refreshSessions();
+                    // No dialogue chosen yet (e.g. the sidebar Chat view was just
+                    // opened): start a fresh one so the composer is immediately live.
+                    if (!this.controller) {
+                        this.startDefaultDialogue();
+                    }
+                    return;
+                }
+                case "webview-error": {
+                    symposiumLog(`[webview] ERROR: ${message.message}`);
                     return;
                 }
                 case "open-session": {
@@ -62,13 +71,12 @@ export class ChatSurface {
                     return;
                 }
                 default: {
-                    const handled = await this.controller?.handleMessage(message);
-                    if (!handled && message?.type === "send") {
-                        this.post({
-                            type: "event",
-                            event: { kind: "error", message: "no active session — pick one in the sessions list or start a new one" },
-                        });
+                    if (!this.controller && message?.type === "send") {
+                        // Composer used before any dialogue was opened — start one now,
+                        // then deliver this message to it.
+                        this.startDefaultDialogue();
                     }
+                    await this.controller?.handleMessage(message);
                 }
             }
         } catch (error) {
@@ -78,6 +86,16 @@ export class ChatSurface {
                 event: { kind: "error", message: error instanceof Error ? error.message : String(error) },
             });
         }
+    }
+
+    /** Starts a new dialogue with the first available backend in the workspace cwd. */
+    private startDefaultDialogue(): void {
+        const backend = this.deps.adapterByBackend.keys().next().value;
+        if (!backend) {
+            return;
+        }
+        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+        this.openDialogue(backend, { cwd }, "New dialogue");
     }
 
     /** Opens a stored session (resume) in this surface. */
