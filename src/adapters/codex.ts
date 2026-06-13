@@ -5,7 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import * as readline from "readline";
 import { resolveExecutable } from "./exec";
-import { scrubJsonlLines } from "./scrub";
+import { scrubJsonlLines, scrubSqliteRows } from "./scrub";
 import {
     AgentAdapter,
     AgentSession,
@@ -301,16 +301,21 @@ export class CodexAdapter implements AgentAdapter {
         await scrubJsonlLines(path.join(root, "history.jsonl"),
             (entry) => entry?.session_id === id || entry?.id === id);
 
-        // Codex also writes an aggregate sqlite log (logs_*.sqlite) that can't
-        // be edited without sqlite tooling; report it as residual.
+        // Codex also writes an aggregate sqlite log keyed by thread_id (= the
+        // session GUID). Delete those rows and VACUUM so nothing lingers in
+        // free pages; only report residual if no sqlite tool was available.
         const residual: string[] = [];
+        let dbFiles: string[] = [];
         try {
-            const files = await fs.promises.readdir(root);
-            if (files.some((f) => /^logs.*\.sqlite$/.test(f))) {
-                residual.push("~/.codex/logs_*.sqlite (aggregate log)");
-            }
+            dbFiles = (await fs.promises.readdir(root)).filter((f) => /^logs.*\.sqlite$/.test(f));
         } catch {
             // ignore
+        }
+        for (const dbFile of dbFiles) {
+            const scrubbed = await scrubSqliteRows(path.join(root, dbFile), "logs", "thread_id", id);
+            if (!scrubbed) {
+                residual.push(`~/.codex/${dbFile} (install python3 or sqlite3 to scrub)`);
+            }
         }
         return residual;
     }
