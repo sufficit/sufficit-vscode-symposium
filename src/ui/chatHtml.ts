@@ -124,15 +124,49 @@ export function renderHtml(): string {
     #listToggle { display: none; }
     #root.narrow #listToggle { display: inline-flex; }
     #log { flex: 1; overflow-y: auto; padding: 12px 14px 4px 14px; user-select: text; cursor: text; }
-    .msg { margin: 0 0 12px 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5; user-select: text; -webkit-user-select: text; }
+    .msg { margin: 0 0 14px 0; word-break: break-word; line-height: 1.55; user-select: text; -webkit-user-select: text; }
+    .msg.plain { white-space: pre-wrap; }
+    .role { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.55; margin-bottom: 3px; display: flex; align-items: center; gap: 5px; }
+    .role .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+    .role.user .dot { background: var(--vscode-charts-blue, #3794ff); }
+    .role.assistant .dot { background: var(--vscode-charts-green, #89d185); }
     .user {
         background: var(--vscode-chat-requestBackground, var(--vscode-input-background));
         border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, transparent));
-        border-radius: 6px; padding: 8px 10px;
+        border-radius: 8px; padding: 8px 11px; white-space: pre-wrap;
     }
-    .tool { opacity: 0.65; font-size: 0.92em; padding-left: 4px; }
+    .assistant { padding: 0 2px; }
+    /* markdown content */
+    .md p { margin: 0 0 8px 0; }
+    .md p:last-child { margin-bottom: 0; }
+    .md ul, .md ol { margin: 4px 0 8px 0; padding-left: 20px; }
+    .md li { margin: 2px 0; }
+    .md h1, .md h2, .md h3 { margin: 10px 0 6px 0; line-height: 1.3; }
+    .md h1 { font-size: 1.25em; } .md h2 { font-size: 1.15em; } .md h3 { font-size: 1.05em; }
+    .md a { color: var(--vscode-textLink-foreground); }
+    .md code.inline {
+        font-family: var(--vscode-editor-font-family, monospace); font-size: 0.92em;
+        background: var(--vscode-textCodeBlock-background, rgba(128,128,128,0.17));
+        padding: 1px 5px; border-radius: 4px;
+    }
+    .md strong { font-weight: 600; }
+    .codeblock { margin: 8px 0; border: 1px solid var(--vscode-input-border, rgba(128,128,128,0.3)); border-radius: 6px; overflow: hidden; }
+    .codeblock .cbhead {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 3px 8px; font-size: 0.78em; opacity: 0.8;
+        background: var(--vscode-editorWidget-background, rgba(128,128,128,0.12));
+        border-bottom: 1px solid var(--vscode-input-border, rgba(128,128,128,0.3));
+    }
+    .codeblock .cbcopy { background: none; border: none; cursor: pointer; color: inherit; opacity: 0.7; font-size: 0.95em; padding: 2px 6px; border-radius: 4px; }
+    .codeblock .cbcopy:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
+    .codeblock pre { margin: 0; padding: 8px 10px; overflow-x: auto; }
+    .codeblock code {
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: var(--vscode-editor-font-size, 0.9em); white-space: pre;
+    }
+    .tool { opacity: 0.6; font-size: 0.9em; padding-left: 4px; font-family: var(--vscode-editor-font-family, monospace); }
     .error { color: var(--vscode-errorForeground); }
-    .meta { opacity: 0.5; font-size: 0.85em; text-align: center; }
+    .meta { opacity: 0.5; font-size: 0.85em; text-align: center; margin: 8px 0; }
 
     /* ---- slash command autocomplete ---- */
     #slash {
@@ -333,13 +367,107 @@ export function renderHtml(): string {
     layout();
     listToggle.addEventListener("click", () => root.classList.toggle("listOpen"));
 
+    // Auto-scroll only when the user is already near the bottom, so reading
+    // scrollback isn't yanked away mid-stream.
+    function nearBottom() { return log.scrollHeight - log.scrollTop - log.clientHeight < 80; }
+    function autoScroll(stick) { if (stick) log.scrollTop = log.scrollHeight; }
+
     function append(cls, text) {
+        const stick = nearBottom();
         const el = document.createElement("div");
-        el.className = "msg " + cls;
+        el.className = "msg plain " + cls;
         el.textContent = text;
         log.appendChild(el);
-        log.scrollTop = log.scrollHeight;
+        autoScroll(stick);
         return el;
+    }
+
+    // A chat message with a small role label (user/assistant); assistant text
+    // is rendered as markdown.
+    function message(role, text) {
+        const stick = nearBottom();
+        const wrap = document.createElement("div");
+        wrap.className = "msg " + role;
+        const label = document.createElement("div");
+        label.className = "role " + role;
+        const dot = document.createElement("span"); dot.className = "dot";
+        const name = document.createElement("span"); name.textContent = role === "user" ? "You" : "Agent";
+        label.appendChild(dot); label.appendChild(name);
+        wrap.appendChild(label);
+        const body = document.createElement("div");
+        if (role === "assistant") { body.className = "md"; renderMarkdown(body, text); }
+        else { body.style.whiteSpace = "pre-wrap"; body.textContent = text; }
+        wrap.appendChild(body);
+        log.appendChild(wrap);
+        autoScroll(stick);
+        return wrap;
+    }
+
+    // ---- minimal, safe markdown → DOM (no innerHTML of untrusted text) ----
+    function renderMarkdown(container, src) {
+        const lines = String(src).split("\\n");
+        let i = 0; let list = null;
+        const flushList = () => { list = null; };
+        while (i < lines.length) {
+            const line = lines[i];
+            const fence = line.match(/^\`\`\`(\\w*)\\s*$/);
+            if (fence) {
+                flushList();
+                const lang = fence[1] || "";
+                const buf = [];
+                i++;
+                while (i < lines.length && !/^\`\`\`\\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+                i++; // skip closing fence
+                container.appendChild(codeBlock(lang, buf.join("\\n")));
+                continue;
+            }
+            const h = line.match(/^(#{1,3})\\s+(.*)$/);
+            if (h) { flushList(); const el = document.createElement("h" + h[1].length); inline(el, h[2]); container.appendChild(el); i++; continue; }
+            const li = line.match(/^\\s*[-*]\\s+(.*)$/);
+            const oli = line.match(/^\\s*\\d+\\.\\s+(.*)$/);
+            if (li || oli) {
+                const ordered = !!oli;
+                if (!list || list.dataset.ord !== String(ordered)) { list = document.createElement(ordered ? "ol" : "ul"); list.dataset.ord = String(ordered); container.appendChild(list); }
+                const item = document.createElement("li"); inline(item, (li || oli)[1]); list.appendChild(item); i++; continue;
+            }
+            if (!line.trim()) { flushList(); i++; continue; }
+            // paragraph: gather consecutive non-empty, non-special lines
+            flushList();
+            const para = [line]; i++;
+            while (i < lines.length && lines[i].trim() && !/^(#{1,3}\\s|\\s*[-*]\\s|\\s*\\d+\\.\\s|\`\`\`)/.test(lines[i])) { para.push(lines[i]); i++; }
+            const p = document.createElement("p"); inline(p, para.join(" ")); container.appendChild(p);
+        }
+    }
+
+    function codeBlock(lang, code) {
+        const block = document.createElement("div"); block.className = "codeblock";
+        const head = document.createElement("div"); head.className = "cbhead";
+        const tag = document.createElement("span"); tag.textContent = lang || "code";
+        const copy = document.createElement("button"); copy.className = "cbcopy"; copy.textContent = "Copy";
+        copy.addEventListener("click", () => {
+            navigator.clipboard && navigator.clipboard.writeText(code);
+            copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1200);
+        });
+        head.appendChild(tag); head.appendChild(copy);
+        const pre = document.createElement("pre"); const c = document.createElement("code"); c.textContent = code; pre.appendChild(c);
+        block.appendChild(head); block.appendChild(pre);
+        return block;
+    }
+
+    // inline: **bold**, *italic*, \`code\`, [text](url) — builds text nodes safely
+    function inline(parent, text) {
+        const re = /(\`[^\`]+\`|\\*\\*[^*]+\\*\\*|\\*[^*]+\\*|\\[[^\\]]+\\]\\([^)]+\\))/g;
+        let last = 0; let m;
+        while ((m = re.exec(text)) !== null) {
+            if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+            const tok = m[0];
+            if (tok.startsWith("\`")) { const e = document.createElement("code"); e.className = "inline"; e.textContent = tok.slice(1, -1); parent.appendChild(e); }
+            else if (tok.startsWith("**")) { const e = document.createElement("strong"); e.textContent = tok.slice(2, -2); parent.appendChild(e); }
+            else if (tok.startsWith("*")) { const e = document.createElement("em"); e.textContent = tok.slice(1, -1); parent.appendChild(e); }
+            else { const mm = tok.match(/^\\[([^\\]]+)\\]\\(([^)]+)\\)$/); const a = document.createElement("a"); a.textContent = mm[1]; a.href = mm[2]; a.title = mm[2]; parent.appendChild(a); }
+            last = re.lastIndex;
+        }
+        if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
     }
 
     function setStatus() {
@@ -620,9 +748,9 @@ export function renderHtml(): string {
             }
             case "append": {
                 const m = data.message;
-                if (m.role === "user") append("user", m.text);
+                if (m.role === "user") message("user", m.text);
                 else if (m.role === "tool") append("tool", m.text);
-                else append("", m.text);
+                else message("assistant", m.text);
                 break;
             }
             case "sessions": {
@@ -636,15 +764,15 @@ export function renderHtml(): string {
             }
             case "history": {
                 for (const m of data.messages) {
-                    if (m.role === "user") append("user", m.text);
+                    if (m.role === "user") message("user", m.text);
                     else if (m.role === "tool") append("tool", m.text);
-                    else append("", m.text);
+                    else message("assistant", m.text);
                 }
                 append("meta", data.messages.length ? "— end of stored transcript —" : "(empty transcript)");
                 break;
             }
             case "user": {
-                const el = append("user", data.text);
+                const el = message("user", data.text);
                 if (data.attachments?.length) {
                     const list = document.createElement("div");
                     list.className = "tool";
@@ -663,7 +791,7 @@ export function renderHtml(): string {
             }
             case "event": {
                 const ev = data.event;
-                if (ev.kind === "text") append("", ev.text);
+                if (ev.kind === "text") message("assistant", ev.text);
                 else if (ev.kind === "tool-start") append("tool", "⚙ " + ev.toolName + " " + (ev.detail || ""));
                 else if (ev.kind === "error") append("error", "✖ " + ev.message);
                 else if (ev.kind === "session") {
