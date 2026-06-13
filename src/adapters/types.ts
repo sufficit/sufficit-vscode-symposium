@@ -29,6 +29,11 @@ export interface HistoryMessage {
     text: string;
 }
 
+/** Stops a live transcript follow. */
+export interface FollowHandle {
+    dispose(): void;
+}
+
 /** Options for starting or resuming a live session. */
 export interface SessionStartOptions {
     cwd: string;
@@ -66,6 +71,12 @@ export interface AgentAdapter {
     start(options: SessionStartOptions): AgentSession;
     /** Reconstruct past messages of a stored session, newest last. */
     history?(info: SessionInfo): Promise<HistoryMessage[]>;
+    /**
+     * Watch a stored transcript and stream messages appended after the
+     * point `history()` already returned (read-only live mirror of a
+     * session running elsewhere). `onMessage` fires per new entry.
+     */
+    follow?(info: SessionInfo, onMessage: (message: HistoryMessage) => void): FollowHandle;
     /** Models offered in the chat panel picker; first entry is the default. */
     models?(): string[];
 }

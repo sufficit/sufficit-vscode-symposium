@@ -120,6 +120,15 @@ export function activate(context: vscode.ExtensionContext): void {
             const info = "info" in item && item.info ? item.info : item as SessionInfo;
             ChatPanel.show(context, deps).openSession(info);
         }),
+
+        vscode.commands.registerCommand("symposium.followSession", (item: { info?: SessionInfo } | SessionInfo) => {
+            const info = "info" in item && item.info ? item.info : item as SessionInfo;
+            if (inEditor()) {
+                void ChatPanel.show(context, deps).followSession(info);
+            } else {
+                void chatView.followSession(info);
+            }
+        }),
     );
 }
 

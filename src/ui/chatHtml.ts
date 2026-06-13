@@ -287,7 +287,12 @@ export function renderHtml(): string {
                     modelPicker.appendChild(opt);
                 }
                 modelPicker.style.display = data.models.length ? "" : "none";
-                append("meta", data.backend + (data.resumed ? " · resumed session" : " · new session"));
+                document.getElementById("composer").style.display = data.readOnly ? "none" : "flex";
+                if (data.readOnly) {
+                    append("meta", "👁 watching live — read only (this session runs elsewhere)");
+                } else {
+                    append("meta", data.backend + (data.resumed ? " · resumed session" : " · new session"));
+                }
                 renderSessions();
                 break;
             }
@@ -295,7 +300,15 @@ export function renderHtml(): string {
                 log.textContent = "";
                 activeModel = ""; busy = false;
                 sendBtn.disabled = false;
+                document.getElementById("composer").style.display = "flex";
                 setStatus();
+                break;
+            }
+            case "append": {
+                const m = data.message;
+                if (m.role === "user") append("user", m.text);
+                else if (m.role === "tool") append("tool", m.text);
+                else append("", m.text);
                 break;
             }
             case "sessions": {

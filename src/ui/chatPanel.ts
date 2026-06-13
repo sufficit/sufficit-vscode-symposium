@@ -40,6 +40,10 @@ export class ChatPanel {
         this.surface.openSession(info);
     }
 
+    async followSession(info: SessionInfo): Promise<void> {
+        await this.surface.followSession(info);
+    }
+
     openDialogue(backend: string, options: SessionStartOptions, title: string): void {
         this.surface.openDialogue(backend, options, title);
     }

@@ -18,6 +18,7 @@ export interface ChatSurfaceDeps {
  */
 export class ChatSurface {
     private controller: ChatController | undefined;
+    private followHandle: { dispose(): void } | undefined;
     private ready = false;
     private queue: unknown[] = [];
 
@@ -53,7 +54,8 @@ export class ChatSurface {
                     void this.refreshSessions();
                     // No dialogue chosen yet (e.g. the sidebar Chat view was just
                     // opened): start a fresh one so the composer is immediately live.
-                    if (!this.controller) {
+                    // Skip when mirroring a session (read-only follow).
+                    if (!this.controller && !this.followHandle) {
                         this.startDefaultDialogue();
                     }
                     return;
@@ -108,6 +110,48 @@ export class ChatSurface {
         );
     }
 
+    /**
+     * Read-only live mirror of a session running elsewhere (e.g. an
+     * interactive terminal). Shows the stored history, then tails the
+     * transcript so new turns appear as they happen. The composer is
+     * disabled — sending would fork the session, not drive the original.
+     */
+    async followSession(info: SessionInfo): Promise<void> {
+        const adapter = this.deps.adapterByBackend.get(info.backend);
+        if (!adapter?.follow) {
+            // No live mirror for this backend — fall back to resume.
+            this.openSession(info);
+            return;
+        }
+        this.controller?.dispose();
+        this.controller = undefined;
+        this.followHandle?.dispose();
+        this.post({ type: "clear" });
+        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "left");
+        this.post({
+            type: "meta",
+            backend: adapter.backend,
+            resumed: true,
+            readOnly: true,
+            models: [],
+            sessionId: info.sessionId,
+            title: info.title,
+            sessionsSide,
+        });
+        if (adapter.history) {
+            try {
+                const messages = await adapter.history(info);
+                this.post({ type: "history", messages });
+            } catch {
+                // ignore; live tail still attaches below
+            }
+        }
+        this.followHandle = adapter.follow(info, (message) => {
+            this.post({ type: "append", message });
+        });
+        this.onTitleChange?.(`👁 ${info.title} · ${adapter.backend}`);
+    }
+
     /** Opens a dialogue (new or resumed) in this surface. */
     openDialogue(backend: string, options: SessionStartOptions, title: string, info?: SessionInfo): void {
         const adapter = this.deps.adapterByBackend.get(backend);
@@ -115,6 +159,8 @@ export class ChatSurface {
             return;
         }
         this.controller?.dispose();
+        this.followHandle?.dispose();
+        this.followHandle = undefined;
         this.post({ type: "clear" });
         this.controller = new ChatController(adapter, options, (message) => this.post(message));
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "left");
@@ -149,5 +195,7 @@ export class ChatSurface {
     dispose(): void {
         this.controller?.dispose();
         this.controller = undefined;
+        this.followHandle?.dispose();
+        this.followHandle = undefined;
     }
 }

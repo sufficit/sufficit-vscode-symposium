@@ -3,7 +3,7 @@ import { SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatSurface, ChatSurfaceDeps } from "./chatSurface";
 
 interface PendingOpen {
-    kind: "session" | "dialogue";
+    kind: "session" | "dialogue" | "follow";
     info?: SessionInfo;
     backend?: string;
     options?: SessionStartOptions;
@@ -42,6 +42,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.reveal();
     }
 
+    async followSession(info: SessionInfo): Promise<void> {
+        this.pending = { kind: "follow", info };
+        await this.reveal();
+    }
+
     async openDialogue(backend: string, options: SessionStartOptions, title: string): Promise<void> {
         this.pending = { kind: "dialogue", backend, options, title };
         await this.reveal();
@@ -60,6 +65,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.pending = undefined;
         if (pending.kind === "session" && pending.info) {
             this.surface.openSession(pending.info);
+        } else if (pending.kind === "follow" && pending.info) {
+            void this.surface.followSession(pending.info);
         } else if (pending.kind === "dialogue" && pending.backend && pending.options) {
             this.surface.openDialogue(pending.backend, pending.options, pending.title ?? "New dialogue");
         }

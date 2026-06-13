@@ -8,6 +8,7 @@ import { resolveExecutable } from "./exec";
 import {
     AgentAdapter,
     AgentSession,
+    FollowHandle,
     HistoryMessage,
     SessionInfo,
     SessionStartOptions,
@@ -266,42 +267,94 @@ export class ClaudeAdapter implements AgentAdapter {
         }
         const messages: HistoryMessage[] = [];
         for (const line of content.split("\n")) {
-            if (!line.trim()) {
-                continue;
-            }
-            let entry: any;
-            try {
-                entry = JSON.parse(line);
-            } catch {
-                continue;
-            }
-            if (entry.isMeta) {
-                continue;
-            }
-            if (entry.type === "user") {
-                const content = entry.message?.content;
-                if (typeof content === "string") {
-                    content.trim() && messages.push({ role: "user", text: content });
-                } else if (Array.isArray(content)) {
-                    for (const block of content) {
-                        if (block.type === "text" && block.text?.trim()) {
-                            messages.push({ role: "user", text: block.text });
-                        }
-                        // tool_result blocks are skipped: the tool line was already added
-                    }
-                }
-            } else if (entry.type === "assistant") {
-                for (const block of entry.message?.content ?? []) {
-                    if (block.type === "text" && block.text?.trim()) {
-                        messages.push({ role: "assistant", text: block.text });
-                    } else if (block.type === "tool_use") {
-                        messages.push({ role: "tool", text: `⚙ ${block.name}` });
-                    }
-                }
-            }
+            messages.push(...parseTranscriptLine(line));
         }
         return messages;
     }
+
+    /**
+     * Read-only live mirror: tails the transcript JSONL, emitting messages
+     * appended after the current end of file. Used to watch a session that
+     * is running in another process (e.g. an interactive terminal) without
+     * touching it — sending is intentionally not offered for followed
+     * sessions, since two writers on one session id diverge.
+     */
+    follow(info: SessionInfo, onMessage: (message: HistoryMessage) => void): FollowHandle {
+        let file = info.transcriptPath;
+        let offset = 0;
+        let carry = "";
+        let closed = false;
+        let reading = false;
+        let watcher: fs.FSWatcher | undefined;
+
+        const drain = async () => {
+            if (closed || reading || !file) {
+                return;
+            }
+            reading = true;
+            try {
+                const stat = await fs.promises.stat(file);
+                if (stat.size < offset) {
+                    // File was truncated/rotated; restart from the top.
+                    offset = 0;
+                    carry = "";
+                }
+                if (stat.size > offset) {
+                    const stream = fs.createReadStream(file, { start: offset, encoding: "utf8" });
+                    for await (const chunk of stream) {
+                        carry += chunk;
+                        const lines = carry.split("\n");
+                        carry = lines.pop() ?? "";
+                        for (const line of lines) {
+                            for (const message of parseTranscriptLine(line)) {
+                                onMessage(message);
+                            }
+                        }
+                    }
+                    offset = stat.size;
+                }
+            } catch {
+                // transient read errors are ignored; the next event retries
+            } finally {
+                reading = false;
+            }
+        };
+
+        const begin = async () => {
+            if (!file) {
+                file = await this.findTranscript(info.sessionId);
+            }
+            if (!file || closed) {
+                return;
+            }
+            try {
+                offset = (await fs.promises.stat(file)).size;
+            } catch {
+                offset = 0;
+            }
+            try {
+                watcher = fs.watch(file, () => void drain());
+            } catch {
+                // fall back to polling if the platform can't watch the file
+            }
+            const timer = setInterval(() => void drain(), 1500);
+            const stopTimer = () => clearInterval(timer);
+            this._followStops.set(info.sessionId, stopTimer);
+        };
+
+        void begin();
+
+        return {
+            dispose: () => {
+                closed = true;
+                watcher?.close();
+                this._followStops.get(info.sessionId)?.();
+                this._followStops.delete(info.sessionId);
+            },
+        };
+    }
+
+    private readonly _followStops = new Map<string, () => void>();
 
     private async findTranscript(sessionId: string): Promise<string | undefined> {
         const root = path.join(os.homedir(), ".claude", "projects");
@@ -322,6 +375,45 @@ export class ClaudeAdapter implements AgentAdapter {
         }
         return undefined;
     }
+}
+
+/** Parses one transcript JSONL line into chat messages (text + tool calls). */
+function parseTranscriptLine(line: string): HistoryMessage[] {
+    if (!line.trim()) {
+        return [];
+    }
+    let entry: any;
+    try {
+        entry = JSON.parse(line);
+    } catch {
+        return [];
+    }
+    if (entry.isMeta) {
+        return [];
+    }
+    const messages: HistoryMessage[] = [];
+    if (entry.type === "user") {
+        const content = entry.message?.content;
+        if (typeof content === "string") {
+            content.trim() && messages.push({ role: "user", text: content });
+        } else if (Array.isArray(content)) {
+            for (const block of content) {
+                if (block.type === "text" && block.text?.trim()) {
+                    messages.push({ role: "user", text: block.text });
+                }
+                // tool_result blocks are skipped: the tool line was already added
+            }
+        }
+    } else if (entry.type === "assistant") {
+        for (const block of entry.message?.content ?? []) {
+            if (block.type === "text" && block.text?.trim()) {
+                messages.push({ role: "assistant", text: block.text });
+            } else if (block.type === "tool_use") {
+                messages.push({ role: "tool", text: `⚙ ${block.name}` });
+            }
+        }
+    }
+    return messages;
 }
 
 /**
