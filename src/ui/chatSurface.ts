@@ -1,9 +1,32 @@
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import * as vscode from "vscode";
 import { AgentAdapter, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "./chatController";
 import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
 import { symposiumLog } from "../extension";
+
+const IMAGE_EXT: Record<string, string> = {
+    "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
+    "image/webp": "webp", "image/bmp": "bmp", "image/svg+xml": "svg",
+};
+
+/** Writes a pasted image (base64) to a temp file and returns its attachment descriptor. */
+async function writePastedImage(mime: string, base64: string): Promise<{ path: string; name: string } | undefined> {
+    if (!base64) {
+        return undefined;
+    }
+    const ext = IMAGE_EXT[mime] ?? "png";
+    const dir = path.join(os.tmpdir(), "symposium-pastes");
+    await fs.promises.mkdir(dir, { recursive: true });
+    const name = `paste-${Date.now()}.${ext}`;
+    const full = path.join(dir, name);
+    await fs.promises.writeFile(full, Buffer.from(base64, "base64"));
+    symposiumLog(`[surface] pasted image saved: ${full}`);
+    return { path: full, name };
+}
 
 export interface ChatSurfaceDeps {
     adapterByBackend: Map<string, AgentAdapter>;
@@ -74,6 +97,13 @@ export class ChatSurface {
                     }
                     return;
                 }
+                case "paste-image": {
+                    const file = await writePastedImage(message.mime, message.data);
+                    if (file) {
+                        this.post({ type: "attachments-picked", files: [file] });
+                    }
+                    return;
+                }
                 default: {
                     if (this.terminalSession && message?.type === "send") {
                         this.terminalSession.send(message.text);
@@ -134,7 +164,7 @@ export class ChatSurface {
         }
         this.disposeActive();
         this.post({ type: "clear" });
-        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "left");
+        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
         this.post({
             type: "meta",
             backend: adapter.backend,
@@ -172,7 +202,7 @@ export class ChatSurface {
         }
         this.disposeActive();
         this.post({ type: "clear" });
-        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "left");
+        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
         this.post({
             type: "meta",
             backend: adapter.backend,
@@ -202,7 +232,7 @@ export class ChatSurface {
         this.disposeActive();
         this.post({ type: "clear" });
         this.controller = new ChatController(adapter, options, (message) => this.post(message));
-        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "left");
+        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
         this.post({
             type: "meta",
             backend: adapter.backend,

@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -189,11 +189,12 @@
         "symposium.chat.sessionsSide": {
           "type": "string",
           "enum": [
+            "auto",
             "left",
             "right"
           ],
-          "default": "left",
-          "description": "Side of the sessions list inside the chat surface."
+          "default": "auto",
+          "description": "Side of the sessions list inside the chat surface. 'auto' follows the dock side (sessions on the outer edge: right when docked right, left when docked left)."
         }
       }
     }

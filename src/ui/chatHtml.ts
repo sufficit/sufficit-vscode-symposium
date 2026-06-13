@@ -67,8 +67,8 @@ export function renderHtml(): string {
     #chatTitle { flex: 1; opacity: 0.75; font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #listToggle { display: none; }
     #root.narrow #listToggle { display: inline-flex; }
-    #log { flex: 1; overflow-y: auto; padding: 12px 14px 4px 14px; }
-    .msg { margin: 0 0 12px 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5; }
+    #log { flex: 1; overflow-y: auto; padding: 12px 14px 4px 14px; user-select: text; cursor: text; }
+    .msg { margin: 0 0 12px 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5; user-select: text; -webkit-user-select: text; }
     .user {
         background: var(--vscode-chat-requestBackground, var(--vscode-input-background));
         border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, transparent));
@@ -184,12 +184,29 @@ export function renderHtml(): string {
     let busy = false;
     let sessions = [];
 
+    let sideMode = "auto"; // "auto" | "left" | "right", from config
+
+    // The sessions pane sits on the OUTER edge: when the view is docked on the
+    // right of the window, sessions go right; docked left, sessions go left.
+    // With no API for dock side, infer it from the webview's screen position.
+    function sideIsRight() {
+        if (sideMode === "left") return false;
+        if (sideMode === "right") return true;
+        try {
+            const center = (window.screenX || 0) + window.innerWidth / 2;
+            return center > (window.screen.width / 2);
+        } catch (e) {
+            return false;
+        }
+    }
+
     // Responsive: a wide surface shows the sessions pane beside the chat,
     // a narrow one hides it behind the toggle — same feel as the built-in
     // chat sessions viewer.
     const NARROW = 640;
     function layout() {
         root.classList.toggle("narrow", document.body.clientWidth < NARROW);
+        root.classList.toggle("side-right", sideIsRight());
     }
     new ResizeObserver(layout).observe(document.body);
     layout();
@@ -273,10 +290,33 @@ export function renderHtml(): string {
         input.style.height = Math.min(input.scrollHeight, 180) + "px";
     });
 
+    // Paste: images become attachments (written to a temp file by the
+    // extension); text falls through to the textarea natively.
+    function handlePaste(e) {
+        const items = (e.clipboardData && e.clipboardData.items) || [];
+        for (const item of items) {
+            if (item.kind === "file" && item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (!file) continue;
+                e.preventDefault();
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const base64 = String(reader.result).split(",")[1] || "";
+                    vscode.postMessage({ type: "paste-image", mime: item.type, data: base64 });
+                };
+                reader.readAsDataURL(file);
+                return;
+            }
+        }
+    }
+    input.addEventListener("paste", handlePaste);
+    document.addEventListener("paste", handlePaste);
+
     window.addEventListener("message", ({ data }) => {
         switch (data.type) {
             case "meta": {
-                root.classList.toggle("side-right", data.sessionsSide === "right");
+                sideMode = data.sessionsSide || "auto";
+                layout();
                 activeSessionId = data.sessionId || "";
                 chatTitle.textContent = (data.title ? data.title + " · " : "") + data.backend;
                 modelPicker.textContent = "";
