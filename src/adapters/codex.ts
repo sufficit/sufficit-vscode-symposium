@@ -5,6 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import * as readline from "readline";
 import { resolveExecutable } from "./exec";
+import { scrubJsonlLines } from "./scrub";
 import {
     AgentAdapter,
     AgentSession,
@@ -281,10 +282,37 @@ export class CodexAdapter implements AgentAdapter {
         return [...new Set([configured || "default", ...known])];
     }
 
-    async deleteSession(info: SessionInfo): Promise<void> {
+    /**
+     * Permanently scrubs every on-disk trace of a session from Codex:
+     *   - sessions/.../rollout-*-<id>.jsonl  (transcript)
+     *   - session_index.jsonl                (line with "id":"<id>")
+     *   - history.jsonl                       (entries for the session)
+     * Returns the names of stores that may still hold residual data so the
+     * caller can warn the user (e.g. the aggregate logs_*.sqlite).
+     */
+    async deleteSession(info: SessionInfo): Promise<string[]> {
+        const root = path.join(os.homedir(), ".codex");
+        const id = info.sessionId;
         if (info.transcriptPath) {
             await fs.promises.rm(info.transcriptPath, { force: true });
         }
+        await scrubJsonlLines(path.join(root, "session_index.jsonl"),
+            (entry) => entry?.id === id || entry?.session_id === id || entry?.thread_id === id);
+        await scrubJsonlLines(path.join(root, "history.jsonl"),
+            (entry) => entry?.session_id === id || entry?.id === id);
+
+        // Codex also writes an aggregate sqlite log (logs_*.sqlite) that can't
+        // be edited without sqlite tooling; report it as residual.
+        const residual: string[] = [];
+        try {
+            const files = await fs.promises.readdir(root);
+            if (files.some((f) => /^logs.*\.sqlite$/.test(f))) {
+                residual.push("~/.codex/logs_*.sqlite (aggregate log)");
+            }
+        } catch {
+            // ignore
+        }
+        return residual;
     }
 }
 

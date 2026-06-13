@@ -81,6 +81,10 @@ export interface AgentAdapter {
     follow?(info: SessionInfo, onMessage: (message: HistoryMessage) => void): FollowHandle;
     /** Models offered in the chat panel picker; first entry is the default. */
     models?(): string[];
-    /** Permanently removes a session's stored transcript from disk. */
-    deleteSession?(info: SessionInfo): Promise<void>;
+    /**
+     * Permanently scrubs a session's stored data from disk (transcript plus
+     * any shared history/index files). Returns the names of stores that may
+     * still hold residual data and could not be surgically cleaned, if any.
+     */
+    deleteSession?(info: SessionInfo): Promise<string[] | void>;
 }

@@ -5,6 +5,7 @@ import * as os from "os";
 import * as path from "path";
 import * as readline from "readline";
 import { resolveExecutable } from "./exec";
+import { removeMatchingFiles, scrubJsonlLines } from "./scrub";
 import {
     AgentAdapter,
     AgentSession,
@@ -250,11 +251,36 @@ export class ClaudeAdapter implements AgentAdapter {
         return [...new Set([configured || "default", ...known])];
     }
 
+    /**
+     * Permanently scrubs every on-disk trace of a session from Claude Code,
+     * not just the transcript — so a deleted session leaves no recoverable
+     * data behind:
+     *   - projects/<cwd>/<id>.jsonl   (transcript)
+     *   - history.jsonl                (lines with "sessionId":"<id>")
+     *   - session-env/<id>/            (per-session env dir)
+     *   - todos/<id>*                  (todo files)
+     *   - sessions/*.json              (runtime files referencing the id)
+     */
     async deleteSession(info: SessionInfo): Promise<void> {
-        const file = info.transcriptPath ?? await this.findTranscript(info.sessionId);
-        if (file) {
-            await fs.promises.rm(file, { force: true });
+        const home = os.homedir();
+        const root = path.join(home, ".claude");
+        const id = info.sessionId;
+
+        const transcript = info.transcriptPath ?? await this.findTranscript(id);
+        if (transcript) {
+            await fs.promises.rm(transcript, { force: true });
         }
+        await fs.promises.rm(path.join(root, "session-env", id), { recursive: true, force: true });
+        await removeMatchingFiles(path.join(root, "todos"), (name) => name.startsWith(id));
+        await scrubJsonlLines(path.join(root, "history.jsonl"), (entry) => entry?.sessionId === id);
+        await removeMatchingFiles(path.join(root, "sessions"), undefined, async (full) => {
+            try {
+                const data = JSON.parse(await fs.promises.readFile(full, "utf8"));
+                return data?.sessionId === id;
+            } catch {
+                return false;
+            }
+        });
     }
 
     /**

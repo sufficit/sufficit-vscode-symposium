@@ -227,17 +227,23 @@ export function activate(context: vscode.ExtensionContext): void {
                 return;
             }
             const confirm = await vscode.window.showWarningMessage(
-                `Permanently delete "${info.title}"? This removes the transcript from disk and cannot be undone.`,
+                `Permanently delete "${info.title}"?\n\nThis scrubs the transcript and all history/index entries for this session (${info.sessionId}) from the ${info.backend} CLI on disk. It cannot be undone.`,
                 { modal: true },
-                "Delete",
+                "Delete permanently",
             );
-            if (confirm !== "Delete") {
+            if (confirm !== "Delete permanently") {
                 return;
             }
             try {
-                await adapter.deleteSession(info);
+                const residual = await adapter.deleteSession(info);
                 await store.forget(info);
                 refreshAll();
+                if (Array.isArray(residual) && residual.length) {
+                    void vscode.window.showWarningMessage(
+                        `Session deleted. Residual data may remain in: ${residual.join(", ")} — clear it manually if required.`);
+                } else {
+                    void vscode.window.showInformationMessage(`Session "${info.title}" permanently deleted.`);
+                }
             } catch (error) {
                 void vscode.window.showErrorMessage(`Delete failed: ${error instanceof Error ? error.message : error}`);
             }
