@@ -92,9 +92,13 @@ export function renderHtml(): string {
         border-radius: 9px; padding: 0 6px; min-width: 16px; text-align: center;
     }
     .sessionItem {
-        padding: 6px 10px; cursor: pointer; border-left: 2px solid transparent;
-        display: flex; align-items: center; gap: 6px;
+        padding: 7px 10px; cursor: pointer; border-left: 2px solid transparent;
+        display: flex; align-items: center; gap: 8px;
     }
+    .sessionItem .statusDot .stored { width: 13px; height: 13px; opacity: 0.4; }
+    .sessionItem.active .statusDot .stored { opacity: 0.7; }
+    .sessionItem .ttl { line-height: 1.35; }
+    .sessionItem .sub { margin-top: 1px; }
     .sessionItem:hover { background: var(--vscode-list-hoverBackground); }
     .sessionItem.active {
         background: var(--vscode-list-activeSelectionBackground);
@@ -253,7 +257,9 @@ export function renderHtml(): string {
     }
     .ctl:hover:not(:disabled) { color: var(--vscode-foreground); background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
     .ctl:disabled { cursor: default; opacity: 0.7; }
-    .ctl option { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); }
+    .menubtn { display: inline-flex; align-items: center; gap: 3px; }
+    .menubtn .lbl { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .menubtn svg { width: 11px; height: 11px; opacity: 0.7; flex-shrink: 0; }
     #status { opacity: 0.55; font-size: 0.82em; padding: 0 6px; white-space: nowrap; }
     .iconBtn {
         background: none; border: none; cursor: pointer; padding: 3px 5px;
@@ -326,8 +332,8 @@ export function renderHtml(): string {
                 <button id="addContext" class="iconBtn" title="Attach files">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>
                 </button>
-                <select id="modelPicker" class="ctl" title="Model for this session (locked after the first message)"></select>
-                <select id="reasoningPicker" class="ctl" title="Reasoning/thinking effort (locked after the first message)"></select>
+                <button id="modelPicker" class="ctl menubtn" title="Model (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="reasoningPicker" class="ctl menubtn" title="Reasoning effort (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <span id="status"></span>
                 <span class="grow"></span>
                 <select id="sendMode" style="display:none">
@@ -407,6 +413,38 @@ export function renderHtml(): string {
         ctxMenu.style.top = Math.max(4, r.top - h - 4) + "px";
     });
     updateSendTitle();
+
+    // ---- themed dropdowns (model / reasoning) replacing native <select> ----
+    function openChoiceMenu(anchorEl, options, current, onPick) {
+        ctxMenu.textContent = "";
+        for (const o of options) {
+            const mi = document.createElement("div"); mi.className = "mi";
+            mi.textContent = (o.value === current ? "✓ " : "    ") + o.label;
+            if (o.title) mi.title = o.title;
+            mi.addEventListener("click", () => onPick(o.value));
+            ctxMenu.appendChild(mi);
+        }
+        ctxMenu.style.display = "block";
+        const r = anchorEl.getBoundingClientRect();
+        const w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
+        ctxMenu.style.left = Math.max(4, Math.min(r.left, window.innerWidth - w - 4)) + "px";
+        ctxMenu.style.top = Math.max(4, r.top - h - 4) + "px";
+    }
+    let modelValue = "", modelList = [], reasoningValue = "default", reasoningList = [];
+    const modelLbl = modelPicker.querySelector(".lbl");
+    const reasoningLbl = reasoningPicker.querySelector(".lbl");
+    function setModelLabel() { modelLbl.textContent = modelValue || "model"; }
+    function setReasoningLabel() { reasoningLbl.textContent = reasoningValue && reasoningValue !== "default" ? "effort: " + reasoningValue : "reasoning"; }
+    modelPicker.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (modelPicker.disabled || !modelList.length) return;
+        openChoiceMenu(modelPicker, modelList.map((m) => ({ value: m, label: m })), modelValue, (v) => { modelValue = v; setModelLabel(); });
+    });
+    reasoningPicker.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (reasoningPicker.disabled || !reasoningList.length) return;
+        openChoiceMenu(reasoningPicker, reasoningList.map((r) => ({ value: r, label: r === "default" ? "default" : r })), reasoningValue, (v) => { reasoningValue = v; setReasoningLabel(); });
+    });
 
     // ---- resizable sessions pane ----
     const sessionsPane = document.getElementById("sessionsPane");
@@ -585,6 +623,7 @@ export function renderHtml(): string {
         unarchive: "M8 2.5 3 6h2v6h6V6h2L8 2.5ZM7 8h2v3H7V8Z",
         trash: "M6 1h4l.5 1H14v1H2V2h3.5L6 1Zm-2.5 3h9l-.7 10H4.2L3.5 4Zm2.5 2v6h1V6H6Zm3 0v6h1V6H9Z",
         send: "M1.2 2.8 3 8 1.2 13.2a.5.5 0 0 0 .7.6l13-5.5a.5.5 0 0 0 0-.9l-13-5.5a.5.5 0 0 0-.7.6Z",
+        chat: "M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6A1.5 1.5 0 0 1 12.5 11H6l-3 3v-3H3.5A1.5 1.5 0 0 1 2 9.5v-6Z",
         plus: "M8 1.5a.5.5 0 0 1 .5.5V7.5h5.5a.5.5 0 0 1 0 1H8.5V14a.5.5 0 0 1-1 0V8.5H2a.5.5 0 0 1 0-1h5.5V2a.5.5 0 0 1 .5-.5Z",
         chevron: "M4 6l4 4 4-4H4Z",
     };
@@ -665,6 +704,8 @@ export function renderHtml(): string {
                 const w = document.createElement("span"); w.className = "work"; w.title = "Agent working…"; statusDot.appendChild(w);
             } else if (s.status === "idle") {
                 const d = document.createElement("span"); d.className = "idle"; d.title = "Running session (idle)"; statusDot.appendChild(d);
+            } else {
+                const ic = svgIcon("chat"); ic.classList.add("stored"); ic.setAttribute("aria-hidden", "true"); statusDot.appendChild(ic);
             }
 
             const body = document.createElement("div");
@@ -780,8 +821,8 @@ export function renderHtml(): string {
             type: "send",
             text,
             attachments: attachments.map((a) => a.path),
-            model: modelPicker.value,
-            reasoning: reasoningPicker.value,
+            model: modelValue,
+            reasoning: reasoningValue,
             mode: sendMode.value,
         });
         if (!busy) { busy = true; setStatus(); }
@@ -882,22 +923,16 @@ export function renderHtml(): string {
                 layout();
                 activeSessionId = data.sessionId || "";
                 chatTitle.textContent = (data.title ? data.title + " · " : "") + data.backend;
-                modelPicker.textContent = "";
+                modelList = data.models || [];
+                modelValue = modelList[0] || "";
                 modelPicker.disabled = false;
-                for (const m of data.models) {
-                    const opt = document.createElement("option");
-                    opt.value = m; opt.textContent = m;
-                    modelPicker.appendChild(opt);
-                }
-                modelPicker.style.display = data.models.length ? "" : "none";
-                reasoningPicker.textContent = "";
+                modelPicker.style.display = modelList.length ? "" : "none";
+                setModelLabel();
+                reasoningList = data.reasoningLevels || [];
+                reasoningValue = reasoningList[0] || "default";
                 reasoningPicker.disabled = false;
-                for (const r of (data.reasoningLevels || [])) {
-                    const opt = document.createElement("option");
-                    opt.value = r; opt.textContent = r === "default" ? "reasoning: default" : "reasoning: " + r;
-                    reasoningPicker.appendChild(opt);
-                }
-                reasoningPicker.style.display = (data.reasoningLevels && data.reasoningLevels.length) ? "" : "none";
+                reasoningPicker.style.display = reasoningList.length ? "" : "none";
+                setReasoningLabel();
                 document.getElementById("composer").style.display = data.readOnly ? "none" : "flex";
                 if (data.readOnly) {
                     append("meta", "👁 watching live — read only (this session runs elsewhere)");
