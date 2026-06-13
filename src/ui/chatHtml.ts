@@ -21,7 +21,39 @@ export function renderHtml(): string {
         background: var(--vscode-editor-background);
         height: 100vh; margin: 0; padding: 0; overflow: hidden;
     }
-    #root { display: flex; height: 100vh; }
+    *:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+    #root { display: flex; height: 100vh; position: relative; }
+
+    /* ---- progress + loading indicators ---- */
+    #progress {
+        position: absolute; top: 0; left: 0; right: 0; height: 2px; z-index: 60;
+        overflow: hidden; opacity: 0; transition: opacity 150ms ease;
+        background: color-mix(in srgb, var(--vscode-progressBar-background, #0e70c0) 25%, transparent);
+    }
+    #progress.on { opacity: 1; }
+    #progress::before {
+        content: ""; position: absolute; height: 100%; width: 40%; left: -40%;
+        background: var(--vscode-progressBar-background, #0e70c0);
+        animation: slide 1.1s ease-in-out infinite;
+    }
+    @keyframes slide { 0% { left: -40%; } 50% { left: 40%; } 100% { left: 100%; } }
+    .spinner {
+        display: inline-block; width: 14px; height: 14px; vertical-align: -2px;
+        border: 2px solid color-mix(in srgb, var(--vscode-foreground) 25%, transparent);
+        border-top-color: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+        border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loadingState {
+        display: none; flex-direction: column; align-items: center; justify-content: center;
+        gap: 10px; flex: 1; opacity: 0.7; font-size: 0.9em;
+    }
+    #root.loading #loadingState { display: flex; }
+    #root.loading #log { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+        #progress::before, .spinner { animation: none; }
+        #progress.on { opacity: 1; }
+    }
 
     /* ---- sessions pane ---- */
     #sessionsPane {
@@ -181,14 +213,22 @@ export function renderHtml(): string {
         background: none; border: none; cursor: pointer; padding: 3px 5px;
         color: var(--vscode-icon-foreground, var(--vscode-foreground));
         border-radius: 4px; display: inline-flex; align-items: center;
+        transition: background-color 150ms ease, color 150ms ease;
     }
     .iconBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
+    /* Send = primary filled button for clear affordance */
+    #send {
+        background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+        padding: 4px 8px; transition: background-color 150ms ease, opacity 150ms ease;
+    }
+    #send:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
     #send svg { width: 16px; height: 16px; }
     #send:disabled { opacity: 0.4; cursor: default; }
 </style>
 </head>
 <body>
 <div id="root">
+    <div id="progress"></div>
     <aside id="sessionsPane">
         <div id="sessionsHeader">
             <span>Sessions</span>
@@ -205,6 +245,7 @@ export function renderHtml(): string {
             <span id="chatTitle"></span>
         </div>
         <div id="log"></div>
+        <div id="loadingState"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
         <div id="composer">
             <div id="slash"></div>
             <div id="chips">
@@ -252,10 +293,11 @@ export function renderHtml(): string {
     let activeSessionId = "";
     let busy = false;
     let queued = 0;
+    let loading = false;
     let sessions = [];
     let showArchived = false;
 
-    document.getElementById("newSessionBtn").addEventListener("click", () => vscode.postMessage({ type: "new-session" }));
+    document.getElementById("newSessionBtn").addEventListener("click", () => { setLoading(true, "Starting…"); vscode.postMessage({ type: "new-session" }); });
     document.getElementById("archToggle").addEventListener("click", () => { showArchived = !showArchived; renderSessions(); });
 
     // Remember the chosen send mode across reloads.
@@ -303,6 +345,18 @@ export function renderHtml(): string {
     function setStatus() {
         const q = queued > 0 ? " · " + queued + " queued" : "";
         status.textContent = busy ? ("thinking..." + q) : (activeModel ? "model: " + activeModel : "");
+        syncProgress();
+    }
+
+    const progress = document.getElementById("progress");
+    // Top progress bar reflects any pending work (switching or a running turn).
+    function syncProgress() { progress.classList.toggle("on", loading || busy); }
+    // Full loading state shown while a session is being opened (empty log).
+    function setLoading(on, text) {
+        loading = on;
+        if (text) { document.getElementById("loadingText").textContent = text; }
+        root.classList.toggle("loading", on);
+        syncProgress();
     }
 
     // Per-session actions, shown as hover icons on the right and in the
@@ -345,6 +399,8 @@ export function renderHtml(): string {
             body.appendChild(sub);
             body.addEventListener("click", () => {
                 root.classList.remove("listOpen");
+                activeSessionId = s.sessionId; renderSessions();
+                setLoading(true, "Loading session…");
                 vscode.postMessage({ type: "open-session", sessionId: s.sessionId, backend: s.backend });
             });
 
@@ -545,6 +601,7 @@ export function renderHtml(): string {
                     append("meta", data.backend + (data.resumed ? " · resumed session" : " · new session"));
                 }
                 renderSessions();
+                setLoading(false);   // session resolved — reveal the conversation
                 break;
             }
             case "clear": {
