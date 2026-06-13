@@ -18,7 +18,9 @@ export function renderHtml(): string {
         font-family: var(--vscode-font-family);
         font-size: var(--vscode-font-size, 13px);
         color: var(--vscode-foreground);
-        background: var(--vscode-editor-background);
+        /* transparent: inherit the host view background (editor vs sidebar) so
+           the chat background always matches the native chat in that location. */
+        background: transparent;
         height: 100vh; margin: 0; padding: 0; overflow: hidden;
     }
     *:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
@@ -176,10 +178,12 @@ export function renderHtml(): string {
     /* user turns: right-aligned bubble */
     .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
     .msg.user .role { opacity: 0.5; }
-    /* exact native chat tokens: requestBackground (translucent editor bg) + requestBorder (white 10%) */
+    /* user bubble: input-background is always a visible, theme-driven surface
+       distinct from the editor background (chat.requestBackground is a
+       translucent editor bg that disappears over our editor-bg body). */
     .ubody {
-        background: var(--vscode-chat-requestBackground, rgba(255,255,255,0.05));
-        border: 1px solid var(--vscode-chat-requestBorder, rgba(255,255,255,0.1));
+        background: var(--vscode-input-background, rgba(255,255,255,0.07));
+        border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(255,255,255,0.12)));
         border-radius: 12px 12px 3px 12px; padding: 9px 13px; white-space: pre-wrap;
         max-width: 80%; text-align: left;
     }
