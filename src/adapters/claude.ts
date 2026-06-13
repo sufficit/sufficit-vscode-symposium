@@ -62,6 +62,9 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         if (model) {
             args.push("--model", model);
         }
+        if (this.options.reasoning && this.options.reasoning !== "default") {
+            args.push("--effort", this.options.reasoning);
+        }
         if (this.config.permissionMode && this.config.permissionMode !== "default") {
             args.push("--permission-mode", this.config.permissionMode);
         }
@@ -252,6 +255,11 @@ export class ClaudeAdapter implements AgentAdapter {
         const configured = this.getConfig().model;
         const known = ["sonnet", "opus", "haiku"];
         return [...new Set([configured || "default", ...known])];
+    }
+
+    // claude --effort <level> (2.1.177). "default" means: don't pass the flag.
+    reasoningLevels(): string[] {
+        return ["default", "low", "medium", "high", "xhigh", "max"];
     }
 
     async commands(): Promise<SlashCommand[]> {

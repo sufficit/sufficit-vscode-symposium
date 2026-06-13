@@ -50,6 +50,8 @@ export interface SessionStartOptions {
     resumeSessionId?: string;
     /** Model override; adapters map it to their CLI flag. */
     model?: string;
+    /** Reasoning/thinking effort level; adapters map it to their CLI flag. */
+    reasoning?: string;
 }
 
 /**
@@ -88,6 +90,8 @@ export interface AgentAdapter {
     follow?(info: SessionInfo, onMessage: (message: HistoryMessage) => void): FollowHandle;
     /** Models offered in the chat panel picker; first entry is the default. */
     models?(): string[];
+    /** Reasoning/thinking effort levels for the picker; first entry = CLI default (no flag). */
+    reasoningLevels?(): string[];
     /** Slash commands / skills offered for composer autocomplete. */
     commands?(): Promise<SlashCommand[]>;
     /**

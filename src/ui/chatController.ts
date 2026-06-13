@@ -7,6 +7,7 @@ interface PendingMessage {
     text: string;
     attachments: string[];
     model?: string;
+    reasoning?: string;
 }
 
 /**
@@ -85,7 +86,7 @@ export class ChatController {
         switch (message?.type) {
             case "send":
                 this.onSend(
-                    { text: message.text, attachments: message.attachments ?? [], model: message.model },
+                    { text: message.text, attachments: message.attachments ?? [], model: message.model, reasoning: message.reasoning },
                     (message.mode as SendMode) ?? "send",
                 );
                 return true;
@@ -133,6 +134,9 @@ export class ChatController {
         if (!this.session) {
             if (msg.model && msg.model !== "default" && msg.model !== "auto") {
                 this.options.model = msg.model;
+            }
+            if (msg.reasoning && msg.reasoning !== "default") {
+                this.options.reasoning = msg.reasoning;
             }
             this.session = this.adapter.start(this.options);
             this.session.on("event", (event: AgentEvent) => this.onEvent(event));

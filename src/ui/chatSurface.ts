@@ -306,6 +306,7 @@ export class ChatSurface {
             backend: adapter.backend,
             resumed: !!options.resumeSessionId,
             models: adapter.models?.() ?? [],
+            reasoningLevels: adapter.reasoningLevels?.() ?? [],
             sessionId: options.resumeSessionId ?? "",
             title,
             sessionsSide,

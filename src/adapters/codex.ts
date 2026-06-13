@@ -49,6 +49,9 @@ class CodexSession extends EventEmitter implements AgentSession {
         if (model) {
             base.push("--model", model);
         }
+        if (this.options.reasoning && this.options.reasoning !== "default") {
+            base.push("-c", `model_reasoning_effort="${this.options.reasoning}"`);
+        }
         // `resume <id>` must precede the prompt; a fresh turn just passes the prompt.
         const args = this.sessionId
             ? [...base, "resume", this.sessionId, text]
@@ -283,6 +286,11 @@ export class CodexAdapter implements AgentAdapter {
         const configured = this.getConfig().model;
         const known = ["gpt-5.2-codex", "gpt-5.2", "o4-mini"];
         return [...new Set([configured || "default", ...known])];
+    }
+
+    // codex -c model_reasoning_effort="<level>" (0.139.0). "default" = omit.
+    reasoningLevels(): string[] {
+        return ["default", "minimal", "low", "medium", "high"];
     }
 
     /**

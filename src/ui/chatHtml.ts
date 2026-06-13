@@ -158,10 +158,17 @@ export function renderHtml(): string {
     }
     #modelPicker:hover:not(:disabled) { color: var(--vscode-foreground); }
     #modelPicker:disabled { cursor: default; opacity: 0.8; }
-    #modelPicker option {
+    #modelPicker option, #reasoningPicker option {
         background: var(--vscode-dropdown-background);
         color: var(--vscode-dropdown-foreground);
     }
+    #reasoningPicker {
+        background: transparent; color: var(--vscode-descriptionForeground);
+        border: none; outline: none; cursor: pointer;
+        font-family: inherit; font-size: 0.9em; max-width: 130px;
+    }
+    #reasoningPicker:hover:not(:disabled) { color: var(--vscode-foreground); }
+    #reasoningPicker:disabled { cursor: default; opacity: 0.8; }
     #sendMode {
         background: var(--vscode-button-secondaryBackground, transparent);
         color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
@@ -206,6 +213,7 @@ export function renderHtml(): string {
             <textarea id="input" placeholder="Ask the agent... (Enter sends, Shift+Enter newline)"></textarea>
             <div id="toolbar">
                 <select id="modelPicker" title="Model for this session (locked after the first message)"></select>
+                <select id="reasoningPicker" title="Reasoning/thinking effort (locked after the first message)"></select>
                 <span id="status"></span>
                 <select id="sendMode" title="Send behavior">
                     <option value="send">Send</option>
@@ -231,6 +239,7 @@ export function renderHtml(): string {
     const chips = document.getElementById("chips");
     const addContext = document.getElementById("addContext");
     const modelPicker = document.getElementById("modelPicker");
+    const reasoningPicker = document.getElementById("reasoningPicker");
     const sendMode = document.getElementById("sendMode");
     const sendBtn = document.getElementById("send");
     const status = document.getElementById("status");
@@ -404,11 +413,13 @@ export function renderHtml(): string {
         // (the extension queues it), so allow submitting in every mode.
         input.value = "";
         modelPicker.disabled = true;
+        reasoningPicker.disabled = true;
         vscode.postMessage({
             type: "send",
             text,
             attachments: attachments.map((a) => a.path),
             model: modelPicker.value,
+            reasoning: reasoningPicker.value,
             mode: sendMode.value,
         });
         if (!busy) { busy = true; setStatus(); }
@@ -517,6 +528,14 @@ export function renderHtml(): string {
                     modelPicker.appendChild(opt);
                 }
                 modelPicker.style.display = data.models.length ? "" : "none";
+                reasoningPicker.textContent = "";
+                reasoningPicker.disabled = false;
+                for (const r of (data.reasoningLevels || [])) {
+                    const opt = document.createElement("option");
+                    opt.value = r; opt.textContent = r === "default" ? "reasoning: default" : "reasoning: " + r;
+                    reasoningPicker.appendChild(opt);
+                }
+                reasoningPicker.style.display = (data.reasoningLevels && data.reasoningLevels.length) ? "" : "none";
                 document.getElementById("composer").style.display = data.readOnly ? "none" : "flex";
                 if (data.readOnly) {
                     append("meta", "👁 watching live — read only (this session runs elsewhere)");

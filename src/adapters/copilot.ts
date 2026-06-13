@@ -46,6 +46,9 @@ class CopilotSession extends EventEmitter implements AgentSession {
         if (model) {
             args.push("--model", model);
         }
+        if (this.options.reasoning && this.options.reasoning !== "default") {
+            args.push("--reasoning-effort", this.options.reasoning);
+        }
         if (this.sessionId) {
             args.push("--resume", this.sessionId);
         }
@@ -170,6 +173,11 @@ export class CopilotAdapter implements AgentAdapter {
         const configured = this.getConfig().model;
         const known = ["auto", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.2", "gpt-5-mini"];
         return [...new Set([configured || "auto", ...known])];
+    }
+
+    // copilot --reasoning-effort <level> (1.0.61). "default" = omit.
+    reasoningLevels(): string[] {
+        return ["default", "low", "medium", "high", "xhigh"];
     }
 
     async commands(): Promise<SlashCommand[]> {
