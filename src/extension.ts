@@ -133,9 +133,19 @@ export function activate(context: vscode.ExtensionContext): void {
             { webviewOptions: { retainContextWhenHidden: true } }),
         vscode.commands.registerCommand("symposium.refreshSessions", () => refreshAll()),
 
-        // dev convenience: reload the freshly installed vsix without reloading the window
-        vscode.commands.registerCommand("symposium.restartExtensionHost", () =>
-            vscode.commands.executeCommand("workbench.action.restartExtensionHost")),
+        // dev convenience: reload the window so a freshly installed vsix is
+        // picked up. restartExtensionHost only reactivates the already-scanned
+        // version and does NOT load a new build from disk; reloadWindow does.
+        vscode.commands.registerCommand("symposium.reload", async () => {
+            const pick = await vscode.window.showWarningMessage(
+                "Reload the window to apply the latest installed Symposium build? Editors are restored after reload.",
+                { modal: false },
+                "Reload Window",
+            );
+            if (pick === "Reload Window") {
+                await vscode.commands.executeCommand("workbench.action.reloadWindow");
+            }
+        }),
 
         // Opens VS Code's native Settings UI scoped to Symposium's chat config.
         vscode.commands.registerCommand("symposium.openSettings", () =>

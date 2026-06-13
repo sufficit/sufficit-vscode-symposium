@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -109,8 +109,8 @@
         "icon": "$(gear)"
       },
       {
-        "command": "symposium.restartExtensionHost",
-        "title": "Symposium: Restart Extension Host (dev)",
+        "command": "symposium.reload",
+        "title": "Symposium: Reload Window (apply latest build)",
         "icon": "$(debug-restart)"
       }
     ],
@@ -142,7 +142,7 @@
           "group": "navigation@5"
         },
         {
-          "command": "symposium.restartExtensionHost",
+          "command": "symposium.reload",
           "when": "view == symposium.chat",
           "group": "navigation@9"
         }
