@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.49.1",
+  "version": "0.50.0",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -299,20 +299,18 @@
           "default": "auto",
           "description": "Side of the sessions list inside the chat surface. 'auto' follows the dock side (sessions on the outer edge: right when docked right, left when docked left)."
         },
-        "symposium.chat.defaultSendMode": {
+        "symposium.chat.whenBusy": {
           "type": "string",
           "enum": [
-            "send",
             "queue",
             "steer"
           ],
           "enumDescriptions": [
-            "Send now when idle; queued while a turn is running.",
-            "Always wait for the current turn, then send (FIFO).",
+            "Queue the message and send it after the current turn (FIFO).",
             "Interrupt the running turn and send immediately."
           ],
-          "default": "send",
-          "description": "Default behavior of the composer send control. Overridable per session with the dropdown next to the send button."
+          "default": "queue",
+          "description": "What sending does WHILE a turn is running. When the agent is idle it always sends immediately, so this only applies when it's busy. Overridable per message with the dropdown next to the send button."
         }
       }
     }

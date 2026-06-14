@@ -292,7 +292,7 @@ export class ChatSurface {
             title: info.title,
             sessionsSide,
             chatOnly: this.chatOnly,
-            defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
+            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
         });
         if (adapter.history) {
             try {
@@ -334,7 +334,7 @@ export class ChatSurface {
             chatOnly: this.chatOnly,
             cwd: options.cwd,
             activeFile: activeEditorFile(),
-            defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
+            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
         });
         this.terminalSession = new TerminalSession(
             adapter,
@@ -387,7 +387,7 @@ export class ChatSurface {
             chatOnly: this.chatOnly,
             cwd: options.cwd,
             activeFile: activeEditorFile(),
-            defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
+            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
         });
         controller.attach((message) => {
             // The controller emits the RAW edited-files set; the surface filters

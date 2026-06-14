@@ -580,7 +580,6 @@ export function renderHtml(): string {
                 <span id="status"></span>
                 <span class="grow"></span>
                 <select id="sendMode" style="display:none">
-                    <option value="send">Send</option>
                     <option value="queue">Queue</option>
                     <option value="steer">Steer</option>
                 </select>
@@ -676,7 +675,7 @@ export function renderHtml(): string {
     sendCaret.addEventListener("click", (ev) => {
         ev.stopPropagation();
         ctxMenu.textContent = "";
-        for (const mode of ["send", "queue", "steer"]) {
+        for (const mode of ["queue", "steer"]) {
             const mi = document.createElement("div"); mi.className = "mi";
             mi.title = MODE_DESC[mode];
             const tick = document.createElement("span"); tick.className = "tick";
@@ -1627,7 +1626,7 @@ export function renderHtml(): string {
             case "meta": {
                 sideMode = data.sessionsSide || "auto";
                 // Seed the default send mode once (don't override a saved choice).
-                if (data.defaultSendMode && !(saved && saved.sendMode)) { sendMode.value = data.defaultSendMode; }
+                if (data.whenBusy && !(saved && saved.sendMode)) { sendMode.value = data.whenBusy; }
                 root.classList.toggle("chat-only", !!data.chatOnly);
                 layout();
                 activeSessionId = data.sessionId || "";
