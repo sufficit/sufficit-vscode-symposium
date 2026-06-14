@@ -343,6 +343,14 @@ export function renderHtml(): string {
         font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em;
         white-space: pre-wrap; word-break: break-word;
     }
+    .toolsec pre.numbered { padding: 6px 0; white-space: normal; }
+    .toolsec .ln { display: flex; }
+    .toolsec .lnum {
+        user-select: none; -webkit-user-select: none; flex-shrink: 0; text-align: right;
+        min-width: 3.2em; padding: 0 10px 0 8px; opacity: 0.4;
+        color: var(--vscode-editorLineNumber-foreground, var(--vscode-descriptionForeground));
+    }
+    .toolsec .lcode { white-space: pre-wrap; word-break: break-word; flex: 1; min-width: 0; padding-right: 8px; }
     /* diff counts on edit rows */
     .tDiff { flex-shrink: 0; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em; margin-left: 8px; }
     .tAdd { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec94e); }
@@ -1165,11 +1173,30 @@ export function renderHtml(): string {
     };
     // Live tool rows awaiting their result, keyed by tool id.
     const toolRows = {};
+    const TAB = String.fromCharCode(9);
+    function allDigits(s) { return s.length > 0 && [...s].every((ch) => ch >= "0" && ch <= "9"); }
+    // Tool output from Read comes as "  <n>\t<code>"; split the line number into
+    // a non-selectable gutter so copying the result never includes the numbers.
     function toolSection(label, text) {
         const sec = document.createElement("div"); sec.className = "toolsec";
         const lab = document.createElement("div"); lab.className = "tlabel"; lab.textContent = label;
-        const pre = document.createElement("pre"); pre.textContent = text;
-        sec.appendChild(lab); sec.appendChild(pre);
+        const lines = String(text).split("\n");
+        const numbered = lines.filter((l) => { const i = l.indexOf(TAB); return i > 0 && allDigits(l.slice(0, i).trim()); });
+        if (numbered.length > 1 && numbered.length >= lines.length * 0.5) {
+            const pre = document.createElement("pre"); pre.className = "numbered";
+            for (const line of lines) {
+                const i = line.indexOf(TAB);
+                const isNum = i > 0 && allDigits(line.slice(0, i).trim());
+                const row = document.createElement("div"); row.className = "ln";
+                const g = document.createElement("span"); g.className = "lnum"; g.textContent = isNum ? line.slice(0, i).trim() : "";
+                const c = document.createElement("span"); c.className = "lcode"; c.textContent = isNum ? line.slice(i + 1) : line;
+                row.appendChild(g); row.appendChild(c); pre.appendChild(row);
+            }
+            sec.appendChild(lab); sec.appendChild(pre);
+        } else {
+            const pre = document.createElement("pre"); pre.textContent = text;
+            sec.appendChild(lab); sec.appendChild(pre);
+        }
         return sec;
     }
     // Expandable tool panel (icon + verb + target, click to reveal input/result).
