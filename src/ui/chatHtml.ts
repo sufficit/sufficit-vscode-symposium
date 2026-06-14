@@ -1118,6 +1118,7 @@ export function renderHtml(): string {
         up: "M8 2.5 3 7.5h3v6h4v-6h3L8 2.5Z",
         down: "M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z",
         pin: "M9.5 1.5 8 3l3.5 3.5L13 5l-3.5-3.5ZM7.3 3.8 2.8 8.3l1.4 1.4-3 3.8 3.8-3 1.4 1.4 4.5-4.5L7.3 3.8Z",
+        more: "M4 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm4 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm4 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z",
         diff: "M4 2h5l3 3v3h-1V6H8V3H4v9h3v1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm6 1.5V5h1.5L10 3.5ZM11 9h1v2h2v1h-2v2h-1v-2H9v-1h2V9Z",
         circleEmpty: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7 4.7 4.7 0 0 1 8 3.3Z",
         circleHalf: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7V3.3Z",
@@ -1550,16 +1551,13 @@ export function renderHtml(): string {
                 vscode.postMessage({ type: "open-session", sessionId: s.sessionId, backend: s.backend });
             });
 
+            // One "more" button opens the same menu as right-click.
             const acts = document.createElement("div");
             acts.className = "acts";
-            for (const a of actionsFor(s)) {
-                const b = document.createElement("button");
-                if (a.danger) b.classList.add("danger");
-                b.appendChild(svgIcon(a.icon));
-                b.title = a.label;
-                b.addEventListener("click", (ev) => { ev.stopPropagation(); runAction(s, a.id); });
-                acts.appendChild(b);
-            }
+            const more = document.createElement("button");
+            more.appendChild(svgIcon("more")); more.title = "Actions";
+            more.addEventListener("click", (ev) => { ev.stopPropagation(); showCtx(ev, s); });
+            acts.appendChild(more);
 
             el.appendChild(statusDot);
             el.appendChild(body);
