@@ -30,6 +30,10 @@ export class ChatController {
     private firstTitle = "";
     private todoInjected = false;
     private queueSeq = 0;
+    // Files this session edited and their net +/- — owned here so it survives
+    // view switches (the runtime keeps the controller alive) and approval state
+    // isn't lost to a transcript replay.
+    private readonly changed = new Map<string, { added: number; removed: number }>();
     private readonly queue: PendingMessage[] = [];
     private readonly log: unknown[] = [];   // replayable render messages
     private sink: ((message: unknown) => void) | null = null;
@@ -71,6 +75,10 @@ export class ChatController {
         for (const message of this.log) {
             sink(message);
         }
+        // The edited-files set is controller state (not in the replay log), so
+        // push it after replay — this is what keeps approvals from "coming back"
+        // when switching away and back.
+        this.emitChanged();
     }
 
     /** Stops forwarding to the webview but keeps the process running. */
@@ -211,6 +219,13 @@ export class ChatController {
 
     private onEvent(event: AgentEvent): void {
         this.emit({ type: "event", event });
+        // Track edited files here (authoritative, survives view switches).
+        if (event.kind === "tool-start" && event.path && (event.added != null || event.removed != null)) {
+            const cur = this.changed.get(event.path) ?? { added: 0, removed: 0 };
+            cur.added += event.added ?? 0; cur.removed += event.removed ?? 0;
+            this.changed.set(event.path, cur);
+            this.emitChanged();
+        }
         // For CLIs with no native todo tool, recognize a fenced ```todo block in
         // the agent's text and surface it as a plan update.
         if (event.kind === "text" && this.adapter.hasNativeTodo?.() === false) {
@@ -228,6 +243,24 @@ export class ChatController {
                 this.dispatch(next);
             }
         }
+    }
+
+    /** Pushes the current edited-files set to the webview. */
+    private emitChanged(): void {
+        this.sink?.({
+            type: "changed-files",
+            items: [...this.changed.entries()].map(([path, c]) => ({ path, added: c.added, removed: c.removed })),
+        });
+    }
+
+    /** Paths still pending review (for bulk approve/reject). */
+    changedPaths(): string[] {
+        return [...this.changed.keys()];
+    }
+
+    /** Drops a file from the set after it's approved or reverted. */
+    resolveChanged(path: string): void {
+        if (this.changed.delete(path)) { this.emitChanged(); }
     }
 
     dispose(): void {

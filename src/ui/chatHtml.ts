@@ -1097,9 +1097,6 @@ export function renderHtml(): string {
         opts = opts || {};
         // A plan/todo update renders as the evolving checklist panel, not a row.
         if (opts.todos) { renderTodos(opts.todos); return null; }
-        if (opts.path && (opts.added != null || opts.removed != null)) {
-            trackChangedFile(opts.path, opts.added || 0, opts.removed || 0);
-        }
         const stick = nearBottom();
         const meta = TOOL_META[name] || { icon: "tool", verb: name };
         const wrap = document.createElement("div"); wrap.className = "msg toolwrap";
@@ -1216,42 +1213,26 @@ export function renderHtml(): string {
     }
 
     // ---- changed-files working set (above the composer) ----
-    // Bound to the session id (Hugo's GUID-keyed model): each session keeps its
-    // own edited-files set so switching never mixes files across sessions.
+    // The edited-files list is OWNED BY THE CONTROLLER (extension side) and
+    // pushed via {type:"changed-files"}, so it survives view switches and keeps
+    // approvals resolved. The plan, below, is still session-keyed in the webview.
     const changedFiles = document.getElementById("changedFiles");
     const NEW_KEY = "__new__";          // placeholder until a session id arrives
-    const changedBySession = {};        // sessionId -> { path: { added, removed } }
     let wsKey = NEW_KEY;
-    function curChanged() { return changedBySession[wsKey] || (changedBySession[wsKey] = {}); }
-    // Switch the active working set to a session id, starting it empty so the
-    // controller's replay rebuilds it cleanly (no double counting).
+    let changedItems = [];              // [{ path, added, removed }] from controller
+    // Switch the active PLAN to a session id (changed-files comes from controller).
     function startWorkingSet(sessionId) {
         wsKey = sessionId || NEW_KEY;
-        changedBySession[wsKey] = {};
         delete planBySession[wsKey];
-        renderChangedFiles();
         renderPlan();
     }
-    // A brand-new session's edits land under NEW_KEY; when its id arrives,
-    // migrate the bucket so it stays bound to the real session id.
     function bindWorkingSet(sessionId) {
         if (!sessionId || wsKey === sessionId) { return; }
-        if (wsKey === NEW_KEY) {
-            changedBySession[sessionId] = changedBySession[NEW_KEY] || {};
-            delete changedBySession[NEW_KEY];
-            if (planBySession[NEW_KEY]) { planBySession[sessionId] = planBySession[NEW_KEY]; delete planBySession[NEW_KEY]; }
+        if (wsKey === NEW_KEY && planBySession[NEW_KEY]) {
+            planBySession[sessionId] = planBySession[NEW_KEY]; delete planBySession[NEW_KEY];
         }
         wsKey = sessionId;
-        renderChangedFiles();
         renderPlan();
-    }
-    function trackChangedFile(path, added, removed) {
-        const changed = curChanged();
-        const cur = changed[path] || { added: 0, removed: 0 };
-        cur.added += added; cur.removed += removed;
-        cur.approved = false;   // a fresh edit needs review again
-        changed[path] = cur;
-        renderChangedFiles();
     }
     function cfActionBtn(icon, title, cls, onClick) {
         const b = document.createElement("button"); b.className = "cfbtn " + (cls || ""); b.title = title;
@@ -1267,31 +1248,26 @@ export function renderHtml(): string {
         return b;
     }
     function renderChangedFiles() {
-        const changed = curChanged();
-        const paths = Object.keys(changed);
+        const items = changedItems;
         changedFiles.textContent = "";
-        if (!paths.length) { changedFiles.classList.remove("has"); return; }
+        if (!items.length) { changedFiles.classList.remove("has"); return; }
         changedFiles.classList.add("has");
-        const pending = paths.filter((p) => !changed[p].approved);
         const head = document.createElement("div"); head.className = "cfhead";
         const chev = svgIcon("chevron"); chev.classList.add("cfchev");
-        const ttl = document.createElement("span"); ttl.className = "cftitle"; ttl.textContent = "Edited files (" + paths.length + ")";
+        const ttl = document.createElement("span"); ttl.className = "cftitle"; ttl.textContent = "Edited files (" + items.length + ")";
         head.appendChild(chev); head.appendChild(ttl);
-        // Bulk approve/reject for everything still pending in this session.
-        if (pending.length) {
-            const acts = document.createElement("span"); acts.className = "cfheadActs";
-            acts.appendChild(cfLabelBtn("check", "Approve all", "Stage all pending files (git add)", "ok", () => vscode.postMessage({ type: "file-approve-all", paths: pending })));
-            acts.appendChild(cfLabelBtn("x", "Reject all", "Revert all pending files to HEAD", "no", () => vscode.postMessage({ type: "file-reject-all", paths: pending })));
-            head.appendChild(acts);
-        }
+        const acts = document.createElement("span"); acts.className = "cfheadActs";
+        acts.appendChild(cfLabelBtn("check", "Approve all", "Accept all (git add)", "ok", () => vscode.postMessage({ type: "file-approve-all" })));
+        acts.appendChild(cfLabelBtn("x", "Reject all", "Revert all to pre-edit state", "no", () => vscode.postMessage({ type: "file-reject-all" })));
+        head.appendChild(acts);
         head.addEventListener("click", () => changedFiles.classList.toggle("collapsed"));
         const list = document.createElement("div"); list.className = "cflist";
-        for (const p of paths) {
-            const c = changed[p];
+        for (const c of items) {
+            const p = c.path;
             const parts = p.split("/").filter(Boolean);
             const name = parts[parts.length - 1] || p;
             const dir = parts.slice(-3, -1).join("/");
-            const it = document.createElement("div"); it.className = "cfitem" + (c.approved ? " approved" : ""); it.title = p + " — click to diff vs HEAD";
+            const it = document.createElement("div"); it.className = "cfitem"; it.title = p + " — click to diff";
             const ic = document.createElement("span"); ic.className = "cficon"; ic.appendChild(svgIcon("file"));
             const nm = document.createElement("span"); nm.className = "cfname";
             nm.textContent = name;
@@ -1300,21 +1276,20 @@ export function renderHtml(): string {
             if (c.added) { const a = document.createElement("span"); a.className = "tAdd"; a.textContent = "+" + c.added; df.appendChild(a); }
             if (c.removed) { const r = document.createElement("span"); r.className = "tDel"; r.textContent = "-" + c.removed; df.appendChild(r); }
             it.appendChild(ic); it.appendChild(nm); it.appendChild(df);
-            const acts = document.createElement("span"); acts.className = "cfacts";
-            if (!c.approved) {
-                acts.appendChild(cfActionBtn("check", "Approve (git add)", "ok", () => vscode.postMessage({ type: "file-approve", path: p })));
-                acts.appendChild(cfActionBtn("x", "Reject (revert to HEAD)", "no", () => vscode.postMessage({ type: "file-reject", path: p })));
-            }
-            it.appendChild(acts);
+            const fa = document.createElement("span"); fa.className = "cfacts";
+            fa.appendChild(cfActionBtn("check", "Approve (git add)", "ok", () => vscode.postMessage({ type: "file-approve", path: p })));
+            fa.appendChild(cfActionBtn("x", "Reject (revert)", "no", () => vscode.postMessage({ type: "file-reject", path: p })));
+            it.appendChild(fa);
             it.addEventListener("click", () => vscode.postMessage({ type: "file-diff", path: p }));
             list.appendChild(it);
         }
         changedFiles.appendChild(head); changedFiles.appendChild(list);
     }
     function resetWorkingState() {
-        // clear arrives before meta (which carries the new session id), so just
-        // hide the panels here; meta calls startWorkingSet with the real id.
+        // clear arrives before meta; the controller re-sends changed-files on
+        // attach, so just hide the panels here.
         endToolGroup();
+        changedItems = [];
         changedFiles.textContent = "";
         changedFiles.classList.remove("has");
         planEl.textContent = "";
@@ -1734,11 +1709,9 @@ export function renderHtml(): string {
                 renderChips();
                 break;
             }
-            case "file-approved":
-            case "file-removed": {
-                // Approve (accept) and reject (revert) both clear the file from
-                // the session's working set.
-                if (curChanged()[data.path]) { delete curChanged()[data.path]; renderChangedFiles(); }
+            case "changed-files": {
+                changedItems = data.items || [];
+                renderChangedFiles();
                 break;
             }
             case "event": {

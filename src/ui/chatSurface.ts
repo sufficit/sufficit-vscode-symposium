@@ -153,34 +153,33 @@ export class ChatSurface {
                 case "file-approve": {
                     if (typeof message.path === "string") {
                         await this.approveFile(message.path);
-                        this.post({ type: "file-approved", path: message.path });
+                        this.controller?.resolveChanged(message.path);
                     }
                     return;
                 }
                 case "file-reject": {
                     if (typeof message.path === "string") {
-                        if (await this.rejectFile(message.path)) { this.post({ type: "file-removed", path: message.path }); }
+                        if (await this.rejectFile(message.path)) { this.controller?.resolveChanged(message.path); }
                         else { void vscode.window.showWarningMessage("Could not revert " + message.path); }
                     }
                     return;
                 }
                 case "file-approve-all": {
-                    const paths: string[] = Array.isArray(message.paths) ? message.paths : [];
-                    for (const p of paths) {
+                    for (const p of this.controller?.changedPaths() ?? []) {
                         await this.approveFile(p);
-                        this.post({ type: "file-approved", path: p });
+                        this.controller?.resolveChanged(p);
                     }
                     return;
                 }
                 case "file-reject-all": {
-                    const paths: string[] = Array.isArray(message.paths) ? message.paths : [];
+                    const paths = this.controller?.changedPaths() ?? [];
                     if (!paths.length) { return; }
                     const pick = await vscode.window.showWarningMessage(
                         `Revert ${paths.length} file(s) to their pre-edit state? This discards the agent's changes.`,
                         { modal: true }, "Revert");
                     if (pick !== "Revert") { return; }
                     for (const p of paths) {
-                        if (await this.rejectFile(p)) { this.post({ type: "file-removed", path: p }); }
+                        if (await this.rejectFile(p)) { this.controller?.resolveChanged(p); }
                     }
                     return;
                 }
@@ -465,7 +464,8 @@ export class ChatSurface {
      * can't be reverted anymore; if the file is in a git repo we also stage it.
      */
     private async approveFile(filePath: string): Promise<void> {
-        snapshots.accept(this.sid(), filePath);
+        // Keep the snapshot baseline so the diff still works after approving;
+        // it's freed when the session is deleted. Stage in git if it's a repo.
         if (await gitRoot(repoCwd(filePath))) {
             void approveChange(repoCwd(filePath), filePath);
         }
