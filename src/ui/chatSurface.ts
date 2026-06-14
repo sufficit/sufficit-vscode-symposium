@@ -10,6 +10,11 @@ import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
 import { approveChange, gitRoot, headContent, rejectChange } from "../git";
 
+/** Directory to run git in for a file — git discovers the enclosing repo upward. */
+function repoCwd(file: string): string {
+    return path.dirname(file);
+}
+
 /** Path of the file in the active editor, if any (skips non-file/webview tabs). */
 function activeEditorFile(): string | undefined {
     const doc = vscode.window.activeTextEditor?.document;
@@ -145,16 +150,16 @@ export class ChatSurface {
                     return;
                 }
                 case "file-approve": {
-                    if (typeof message.path === "string" && await this.ensureRepo()) {
-                        const ok = await approveChange(this.cwd(), message.path);
+                    if (typeof message.path === "string" && await this.ensureRepoFor(message.path)) {
+                        const ok = await approveChange(repoCwd(message.path), message.path);
                         if (ok) { this.post({ type: "file-approved", path: message.path }); }
                         else { void vscode.window.showWarningMessage("Could not stage " + message.path); }
                     }
                     return;
                 }
                 case "file-reject": {
-                    if (typeof message.path === "string" && await this.ensureRepo()) {
-                        const ok = await rejectChange(this.cwd(), message.path);
+                    if (typeof message.path === "string" && await this.ensureRepoFor(message.path)) {
+                        const ok = await rejectChange(repoCwd(message.path), message.path);
                         if (ok) { this.post({ type: "file-removed", path: message.path }); }
                         else { void vscode.window.showWarningMessage("Could not revert " + message.path); }
                     }
@@ -162,10 +167,10 @@ export class ChatSurface {
                 }
                 case "file-approve-all": {
                     const paths: string[] = Array.isArray(message.paths) ? message.paths : [];
-                    if (!paths.length || !(await this.ensureRepo())) { return; }
+                    if (!paths.length || !(await this.ensureRepoFor(paths[0]))) { return; }
                     let failed = 0;
                     for (const p of paths) {
-                        if (await approveChange(this.cwd(), p)) { this.post({ type: "file-approved", path: p }); }
+                        if (await approveChange(repoCwd(p), p)) { this.post({ type: "file-approved", path: p }); }
                         else { failed++; }
                     }
                     if (failed) { void vscode.window.showWarningMessage(`Could not stage ${failed} file(s).`); }
@@ -173,13 +178,13 @@ export class ChatSurface {
                 }
                 case "file-reject-all": {
                     const paths: string[] = Array.isArray(message.paths) ? message.paths : [];
-                    if (!paths.length || !(await this.ensureRepo())) { return; }
+                    if (!paths.length || !(await this.ensureRepoFor(paths[0]))) { return; }
                     const pick = await vscode.window.showWarningMessage(
                         `Revert ${paths.length} file(s) to their last committed state? This discards the agent's changes.`,
                         { modal: true }, "Revert");
                     if (pick !== "Revert") { return; }
                     for (const p of paths) {
-                        if (await rejectChange(this.cwd(), p)) { this.post({ type: "file-removed", path: p }); }
+                        if (await rejectChange(repoCwd(p), p)) { this.post({ type: "file-removed", path: p }); }
                     }
                     return;
                 }
@@ -454,12 +459,13 @@ export class ChatSurface {
             ?? process.cwd();
     }
 
-    /** Warns (and returns false) when the session's cwd isn't a git repo. */
-    private async ensureRepo(): Promise<boolean> {
-        const root = await gitRoot(this.cwd());
+    /** Warns (and returns false) when a file isn't inside a git repository. */
+    private async ensureRepoFor(file: string | undefined): Promise<boolean> {
+        if (typeof file !== "string") { return false; }
+        const root = await gitRoot(repoCwd(file));
         if (!root) {
             void vscode.window.showWarningMessage(
-                `Approve/Reject needs a git repository — the session folder isn't one: ${this.cwd()}`);
+                `Approve/Reject needs a git repository — this file isn't inside one: ${file}`);
             return false;
         }
         return true;
@@ -473,7 +479,7 @@ export class ChatSurface {
         if (typeof filePath !== "string") { return; }
         const fileUri = vscode.Uri.file(filePath);
         const name = path.basename(filePath);
-        const head = await headContent(this.cwd(), filePath);
+        const head = await headContent(repoCwd(filePath), filePath);
         if (head === undefined) {
             await vscode.window.showTextDocument(fileUri, { preview: true });
             return;
