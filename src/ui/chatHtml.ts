@@ -312,6 +312,7 @@ export function renderHtml(): string {
         display: flex; align-items: center; gap: 6px; padding: 4px 12px; cursor: pointer;
         font-size: 0.78em; font-weight: 600; opacity: 0.75;
     }
+    #changedFiles .cfhead .cftitle { flex: 1; }
     #changedFiles .cfhead svg { width: 12px; height: 12px; transition: transform 150ms ease; }
     #changedFiles.collapsed .cfhead svg.cfchev { transform: rotate(-90deg); }
     #changedFiles .cflist { max-height: 132px; overflow-y: auto; padding: 0 8px 6px 8px; }
@@ -326,6 +327,19 @@ export function renderHtml(): string {
     .cfitem .cfname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .cfitem .cfdir { opacity: 0.5; font-size: 0.9em; }
     .cfitem .cfdiff { flex-shrink: 0; font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em; }
+    .cfitem.approved .cfname { opacity: 0.55; }
+    .cfitem.approved .cficon { color: var(--vscode-gitDecoration-stageModifiedResourceForeground, var(--vscode-gitDecoration-addedResourceForeground, #4ec94e)); opacity: 1; }
+    .cfacts, .cfheadActs { display: inline-flex; gap: 2px; flex-shrink: 0; }
+    .cfacts { opacity: 0; }
+    .cfitem:hover .cfacts { opacity: 1; }
+    .cfbtn {
+        background: none; border: none; cursor: pointer; padding: 2px; border-radius: 4px;
+        color: var(--vscode-icon-foreground, var(--vscode-foreground)); display: inline-flex; opacity: 0.8;
+    }
+    .cfbtn svg { width: 13px; height: 13px; }
+    .cfbtn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
+    .cfbtn.ok:hover { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec94e); }
+    .cfbtn.no:hover { color: var(--vscode-gitDecoration-deletedResourceForeground, #d16969); }
     .error { color: var(--vscode-errorForeground); }
     .meta { opacity: 0.55; font-size: 0.82em; text-align: center; margin: 10px 0; }
 
@@ -907,6 +921,8 @@ export function renderHtml(): string {
         list: "M2 3h2v2H2V3Zm4 .5h8v1H6v-1ZM2 7h2v2H2V7Zm4 .5h8v1H6v-1ZM2 11h2v2H2v-2Zm4 .5h8v1H6v-1Z",
         tool: "M11.5 1.5a3.5 3.5 0 0 0-3.4 4.4L1.7 12.3l2 2 6.4-6.4a3.5 3.5 0 0 0 4.4-4.4l-1.9 1.9-1.5-.4-.4-1.5 1.9-1.9a3.5 3.5 0 0 0-1.6-.6Z",
         check: "M6.2 11.3 2.7 7.8l1-1 2.5 2.5L12.3 3.3l1 1-7.1 7Z",
+        x: "M5 4 4 5l3 3-3 3 1 1 3-3 3 3 1-1-3-3 3-3-1-1-3 3-3-3Z",
+        diff: "M4 2h5l3 3v3h-1V6H8V3H4v9h3v1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm6 1.5V5h1.5L10 3.5ZM11 9h1v2h2v1h-2v2h-1v-2H9v-1h2V9Z",
         circleEmpty: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7 4.7 4.7 0 0 1 8 3.3Z",
         circleHalf: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7V3.3Z",
     };
@@ -1067,8 +1083,15 @@ export function renderHtml(): string {
         const changed = curChanged();
         const cur = changed[path] || { added: 0, removed: 0 };
         cur.added += added; cur.removed += removed;
+        cur.approved = false;   // a fresh edit needs review again
         changed[path] = cur;
         renderChangedFiles();
+    }
+    function cfActionBtn(icon, title, cls, onClick) {
+        const b = document.createElement("button"); b.className = "cfbtn " + (cls || ""); b.title = title;
+        b.appendChild(svgIcon(icon));
+        b.addEventListener("click", (e) => { e.stopPropagation(); onClick(); });
+        return b;
     }
     function renderChangedFiles() {
         const changed = curChanged();
@@ -1076,27 +1099,41 @@ export function renderHtml(): string {
         changedFiles.textContent = "";
         if (!paths.length) { changedFiles.classList.remove("has"); return; }
         changedFiles.classList.add("has");
+        const pending = paths.filter((p) => !changed[p].approved);
         const head = document.createElement("div"); head.className = "cfhead";
         const chev = svgIcon("chevron"); chev.classList.add("cfchev");
-        const ttl = document.createElement("span"); ttl.textContent = "Edited files (" + paths.length + ")";
+        const ttl = document.createElement("span"); ttl.className = "cftitle"; ttl.textContent = "Edited files (" + paths.length + ")";
         head.appendChild(chev); head.appendChild(ttl);
+        // Bulk approve/reject for everything still pending in this session.
+        if (pending.length) {
+            const acts = document.createElement("span"); acts.className = "cfheadActs";
+            acts.appendChild(cfActionBtn("check", "Approve all (git add)", "ok", () => vscode.postMessage({ type: "file-approve-all", paths: pending })));
+            acts.appendChild(cfActionBtn("x", "Reject all (revert to HEAD)", "no", () => vscode.postMessage({ type: "file-reject-all", paths: pending })));
+            head.appendChild(acts);
+        }
         head.addEventListener("click", () => changedFiles.classList.toggle("collapsed"));
         const list = document.createElement("div"); list.className = "cflist";
         for (const p of paths) {
+            const c = changed[p];
             const parts = p.split("/").filter(Boolean);
             const name = parts[parts.length - 1] || p;
             const dir = parts.slice(-3, -1).join("/");
-            const it = document.createElement("div"); it.className = "cfitem"; it.title = p;
+            const it = document.createElement("div"); it.className = "cfitem" + (c.approved ? " approved" : ""); it.title = p + " — click to diff vs HEAD";
             const ic = document.createElement("span"); ic.className = "cficon"; ic.appendChild(svgIcon("file"));
             const nm = document.createElement("span"); nm.className = "cfname";
             nm.textContent = name;
             if (dir) { const dd = document.createElement("span"); dd.className = "cfdir"; dd.textContent = "  " + dir; nm.appendChild(dd); }
             const df = document.createElement("span"); df.className = "cfdiff";
-            const c = changed[p];
             if (c.added) { const a = document.createElement("span"); a.className = "tAdd"; a.textContent = "+" + c.added; df.appendChild(a); }
             if (c.removed) { const r = document.createElement("span"); r.className = "tDel"; r.textContent = "-" + c.removed; df.appendChild(r); }
             it.appendChild(ic); it.appendChild(nm); it.appendChild(df);
-            it.addEventListener("click", () => vscode.postMessage({ type: "open-file", path: p }));
+            const acts = document.createElement("span"); acts.className = "cfacts";
+            if (!c.approved) {
+                acts.appendChild(cfActionBtn("check", "Approve (git add)", "ok", () => vscode.postMessage({ type: "file-approve", path: p })));
+                acts.appendChild(cfActionBtn("x", "Reject (revert to HEAD)", "no", () => vscode.postMessage({ type: "file-reject", path: p })));
+            }
+            it.appendChild(acts);
+            it.addEventListener("click", () => vscode.postMessage({ type: "file-diff", path: p }));
             list.appendChild(it);
         }
         changedFiles.appendChild(head); changedFiles.appendChild(list);
@@ -1505,6 +1542,15 @@ export function renderHtml(): string {
                     if (!attachments.some((a) => a.path === file.path)) attachments.push(file);
                 }
                 renderChips();
+                break;
+            }
+            case "file-approved": {
+                const c = curChanged()[data.path];
+                if (c) { c.approved = true; renderChangedFiles(); }
+                break;
+            }
+            case "file-removed": {
+                if (curChanged()[data.path]) { delete curChanged()[data.path]; renderChangedFiles(); }
                 break;
             }
             case "event": {

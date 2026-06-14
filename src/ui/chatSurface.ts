@@ -8,6 +8,7 @@ import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
 import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
+import { approveChange, headContent, rejectChange } from "../git";
 
 /** Path of the file in the active editor, if any (skips non-file/webview tabs). */
 function activeEditorFile(): string | undefined {
@@ -136,6 +137,45 @@ export class ChatSurface {
                     if (typeof message.path === "string") {
                         const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(message.path));
                         await vscode.window.showTextDocument(doc, { preview: true });
+                    }
+                    return;
+                }
+                case "file-diff": {
+                    await this.openFileDiff(message.path);
+                    return;
+                }
+                case "file-approve": {
+                    if (typeof message.path === "string") {
+                        const ok = await approveChange(this.cwd(), message.path);
+                        if (ok) { this.post({ type: "file-approved", path: message.path }); }
+                        else { void vscode.window.showWarningMessage("Could not stage " + message.path); }
+                    }
+                    return;
+                }
+                case "file-reject": {
+                    if (typeof message.path === "string") {
+                        const ok = await rejectChange(this.cwd(), message.path);
+                        if (ok) { this.post({ type: "file-removed", path: message.path }); }
+                        else { void vscode.window.showWarningMessage("Could not revert " + message.path); }
+                    }
+                    return;
+                }
+                case "file-approve-all": {
+                    const paths: string[] = Array.isArray(message.paths) ? message.paths : [];
+                    for (const p of paths) {
+                        if (await approveChange(this.cwd(), p)) { this.post({ type: "file-approved", path: p }); }
+                    }
+                    return;
+                }
+                case "file-reject-all": {
+                    const paths: string[] = Array.isArray(message.paths) ? message.paths : [];
+                    if (!paths.length) { return; }
+                    const pick = await vscode.window.showWarningMessage(
+                        `Revert ${paths.length} file(s) to their last committed state? This discards the agent's changes.`,
+                        { modal: true }, "Revert");
+                    if (pick !== "Revert") { return; }
+                    for (const p of paths) {
+                        if (await rejectChange(this.cwd(), p)) { this.post({ type: "file-removed", path: p }); }
                     }
                     return;
                 }
@@ -401,6 +441,34 @@ export class ChatSurface {
         this.terminalSession = undefined;
         this.followHandle?.dispose();
         this.followHandle = undefined;
+    }
+
+    /** Working directory of the active session (for git operations). */
+    private cwd(): string {
+        return this.controller?.cwd
+            ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+            ?? process.cwd();
+    }
+
+    /**
+     * Opens a diff of an edited file against its HEAD version. Newly created
+     * (untracked) files have no HEAD side, so they just open.
+     */
+    private async openFileDiff(filePath: unknown): Promise<void> {
+        if (typeof filePath !== "string") { return; }
+        const fileUri = vscode.Uri.file(filePath);
+        const name = path.basename(filePath);
+        const head = await headContent(this.cwd(), filePath);
+        if (head === undefined) {
+            await vscode.window.showTextDocument(fileUri, { preview: true });
+            return;
+        }
+        const tmp = path.join(os.tmpdir(), "symposium-diff");
+        await fs.promises.mkdir(tmp, { recursive: true });
+        const headFile = path.join(tmp, `HEAD-${Date.now()}-${name}`);
+        await fs.promises.writeFile(headFile, head);
+        await vscode.commands.executeCommand(
+            "vscode.diff", vscode.Uri.file(headFile), fileUri, `${name} (HEAD ↔ working)`);
     }
 
     dispose(): void {
