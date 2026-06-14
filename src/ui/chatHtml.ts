@@ -220,7 +220,12 @@ export function renderHtml(): string {
        reset the padding-top that spaces content below the turn separator. */
     .msg.assistant { padding-left: 2px; padding-right: 2px; position: relative; }
     /* copy: a hover-only floating action in the corner, reserves no space */
-    .msgTools { position: absolute; top: 24px; right: 2px; margin: 0; }
+    .msgTools { position: absolute; top: 24px; right: 2px; margin: 0; z-index: 1; }
+    /* hovering copy highlights exactly the message it will copy */
+    .msg.assistant:has(.msgCopy:hover) {
+        background: var(--vscode-editor-inactiveSelectionBackground, rgba(128,128,128,0.12));
+        border-radius: 6px; box-shadow: 0 0 0 1px var(--vscode-focusBorder, rgba(128,128,128,0.4)) inset;
+    }
     .msgCopy {
         background: var(--vscode-editor-background, transparent); border: none; cursor: pointer; padding: 2px 4px; border-radius: 4px;
         color: var(--vscode-icon-foreground, var(--vscode-foreground)); opacity: 0; transition: opacity 150ms ease, background-color 150ms ease;
@@ -929,7 +934,7 @@ export function renderHtml(): string {
         wrap.appendChild(body);
         if (role === "assistant") {
             const tools = document.createElement("div"); tools.className = "msgTools";
-            const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy message";
+            const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy this reply";
             cp.appendChild(svgIcon("copy"));
             cp.addEventListener("click", () => {
                 navigator.clipboard && navigator.clipboard.writeText(text);
