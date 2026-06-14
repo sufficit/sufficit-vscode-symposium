@@ -157,7 +157,7 @@ export function renderHtml(): string {
     #ctxMenu .sep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, rgba(128,128,128,0.3)); }
     #ctxMenu { max-width: 340px; }
     #ctxMenu .menuSearch {
-        display: block; width: calc(100% - 16px); margin: 4px 8px 6px 8px; padding: 4px 7px;
+        display: block; box-sizing: border-box; width: calc(100% - 16px); margin: 4px 8px 6px 8px; padding: 4px 7px;
         background: var(--vscode-input-background); color: var(--vscode-input-foreground);
         border: 1px solid var(--vscode-input-border, #454545); border-radius: 4px; outline: none; font-family: inherit; font-size: 0.9em;
     }
@@ -1490,7 +1490,11 @@ export function renderHtml(): string {
         ctxMenu.style.top = Math.min(ev.clientY, window.innerHeight - h - 4) + "px";
     }
     document.addEventListener("click", hideCtx);
-    document.addEventListener("scroll", hideCtx, true);
+    // Close on page scroll, but NOT when scrolling inside the menu's own list.
+    document.addEventListener("scroll", (e) => {
+        if (ctxMenu.contains(e.target)) { return; }
+        hideCtx();
+    }, true);
 
     // Right-click menu for a file referenced by a tool row.
     function showFileMenu(ev, path) {
