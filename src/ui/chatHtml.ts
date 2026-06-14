@@ -192,7 +192,7 @@ export function renderHtml(): string {
        hover highlight box symmetric around the content. The separator line sits
        at the top edge with the gap above it provided by the margin. */
     .msg.user, .msg.assistant {
-        margin-top: 20px; padding: 10px 10px;
+        margin: 20px -10px 0 -10px; padding: 10px;
         border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
     }
     #log > .msg.user:first-child, #log > .msg.assistant:first-child { margin-top: 0; border-top: none; }
