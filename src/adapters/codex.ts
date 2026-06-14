@@ -8,6 +8,7 @@ import { builtinCommands } from "./builtins";
 import { resolveExecutable } from "./exec";
 import { scrubJsonlLines, scrubSqliteRows } from "./scrub";
 import { discoverSlashCommands, findNamedDirs, mergeCommands } from "./skills";
+import { parseNativeTodos } from "./todos";
 import {
     AgentAdapter,
     AgentSession,
@@ -108,6 +109,12 @@ class CodexSession extends EventEmitter implements AgentSession {
             case "item.completed": {
                 const item = event.item ?? {};
                 const itemType = item.type ?? item.item_type;
+                // Codex's plan/todo updates (e.g. update_plan / todo_list).
+                const todos = parseNativeTodos(String(itemType ?? ""), item);
+                if (todos) {
+                    this.emit("event", { kind: "tool-start", toolName: "TodoWrite", detail: "", todos });
+                    break;
+                }
                 if (event.type !== "item.completed") {
                     if (itemType === "command_execution" && item.command) {
                         this.emit("event", { kind: "tool-start", toolName: "exec", detail: String(item.command).slice(0, 120) });
@@ -287,6 +294,8 @@ export class CodexAdapter implements AgentAdapter {
         const known = ["gpt-5.2-codex", "gpt-5.2", "o4-mini"];
         return [...new Set([configured || "default", ...known])];
     }
+
+    hasNativeTodo(): boolean { return true; }   // update_plan / todo_list
 
     // codex -c model_reasoning_effort="<level>" (0.139.0). "default" = omit.
     reasoningLevels(): string[] {

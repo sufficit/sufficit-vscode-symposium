@@ -6,6 +6,7 @@ import * as path from "path";
 import { builtinCommands } from "./builtins";
 import { resolveExecutable } from "./exec";
 import { discoverSlashCommands, findNamedDirs, mergeCommands } from "./skills";
+import { TODO_INJECTION } from "./todos";
 import {
     AgentAdapter,
     AgentSession,
@@ -174,6 +175,10 @@ export class CopilotAdapter implements AgentAdapter {
         const known = ["auto", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.2", "gpt-5-mini"];
         return [...new Set([configured || "auto", ...known])];
     }
+
+    // No native plan/todo tool: Symposium injects one and parses a ```todo block.
+    hasNativeTodo(): boolean { return false; }
+    todoInjection(): string { return TODO_INJECTION; }
 
     // copilot --reasoning-effort <level> (1.0.61). "default" = omit.
     reasoningLevels(): string[] {

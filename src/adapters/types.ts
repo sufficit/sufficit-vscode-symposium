@@ -120,6 +120,14 @@ export interface AgentAdapter {
     /** Slash commands / skills offered for composer autocomplete. */
     commands?(): Promise<SlashCommand[]>;
     /**
+     * Whether the CLI has a native plan/todo tool (e.g. Claude TodoWrite,
+     * Codex update_plan). When false, Symposium injects a todo capability and
+     * parses a fenced ```todo block from the agent's replies instead.
+     */
+    hasNativeTodo?(): boolean;
+    /** Instruction injected to give a plan capability when there's no native one. */
+    todoInjection?(): string | undefined;
+    /**
      * Permanently scrubs a session's stored data from disk (transcript plus
      * any shared history/index files). Returns the names of stores that may
      * still hold residual data and could not be surgically cleaned, if any.

@@ -7,6 +7,7 @@ import * as readline from "readline";
 import { builtinCommands } from "./builtins";
 import { resolveExecutable } from "./exec";
 import { snapshots } from "../snapshots";
+import { parseNativeTodos } from "./todos";
 import { removeMatchingFiles, scrubJsonlLines } from "./scrub";
 import { discoverSlashCommands, findNamedDirs, mergeCommands } from "./skills";
 import {
@@ -257,15 +258,9 @@ function diffCounts(name: string, input: unknown): { added: number; removed: num
     return undefined;
 }
 
-/** Extract a TodoWrite plan list, if this tool carries one. */
+/** Extract a plan/todo list from a tool call, if it is one. */
 function extractTodos(name: string, input: unknown): TodoItem[] | undefined {
-    if (name !== "TodoWrite") { return undefined; }
-    const todos = (input as any)?.todos;
-    if (!Array.isArray(todos)) { return undefined; }
-    return todos.map((t: any) => ({
-        content: String(t?.content ?? ""),
-        status: t?.status === "completed" || t?.status === "in_progress" ? t.status : "pending",
-    }));
+    return parseNativeTodos(name, input);
 }
 
 /** Pretty-print a tool input for the expandable panel (capped). */
@@ -364,6 +359,8 @@ export class ClaudeAdapter implements AgentAdapter {
         const known = ["sonnet", "opus", "haiku"];
         return [...new Set([configured || "default", ...known])];
     }
+
+    hasNativeTodo(): boolean { return true; }   // TodoWrite
 
     // claude --effort <level> (2.1.177). "default" means: don't pass the flag.
     reasoningLevels(): string[] {

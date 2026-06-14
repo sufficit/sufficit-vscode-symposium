@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { AgentAdapter, AgentEvent, AgentSession, SessionInfo, SessionStartOptions } from "../adapters/types";
+import { parseTodoFence } from "../adapters/todos";
 
 type SendMode = "send" | "queue" | "steer";
 
@@ -26,6 +27,7 @@ export class ChatController {
     private session: AgentSession | undefined;
     private busy = false;
     private firstTitle = "";
+    private todoInjected = false;
     private readonly queue: PendingMessage[] = [];
     private readonly log: unknown[] = [];   // replayable render messages
     private sink: ((message: unknown) => void) | null = null;
@@ -164,6 +166,12 @@ export class ChatController {
             fullText += "\n\nAttached files (read them from disk):\n" +
                 msg.attachments.map((p) => `- ${p}`).join("\n");
         }
+        // Inject a todo capability once, for CLIs without a native plan tool.
+        if (!this.todoInjected && this.adapter.hasNativeTodo?.() === false) {
+            const inj = this.adapter.todoInjection?.();
+            if (inj) { fullText = inj + "\n\n---\n\n" + fullText; }
+            this.todoInjected = true;
+        }
         if (!this.firstTitle && msg.text.trim()) { this.firstTitle = msg.text.trim().slice(0, 60); }
         this.busy = true;
         this.onStatusChange?.();
@@ -173,6 +181,14 @@ export class ChatController {
 
     private onEvent(event: AgentEvent): void {
         this.emit({ type: "event", event });
+        // For CLIs with no native todo tool, recognize a fenced ```todo block in
+        // the agent's text and surface it as a plan update.
+        if (event.kind === "text" && this.adapter.hasNativeTodo?.() === false) {
+            const todos = parseTodoFence(event.text);
+            if (todos) {
+                this.emit({ type: "event", event: { kind: "tool-start", toolName: "TodoWrite", detail: "", todos } });
+            }
+        }
         if (event.kind === "turn-end") {
             this.busy = false;
             this.onStatusChange?.();
