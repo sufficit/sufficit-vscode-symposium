@@ -421,6 +421,23 @@ export function activate(context: vscode.ExtensionContext): void {
             refreshAll();
         }),
 
+        vscode.commands.registerCommand("symposium.pinSession", async (item: { info?: SessionInfo } | SessionInfo) => {
+            await store.setPinned(infoOf(item), true);
+            refreshAll();
+        }),
+        vscode.commands.registerCommand("symposium.unpinSession", async (item: { info?: SessionInfo } | SessionInfo) => {
+            await store.setPinned(infoOf(item), false);
+            refreshAll();
+        }),
+        vscode.commands.registerCommand("symposium.pinUp", async (item: { info?: SessionInfo } | SessionInfo) => {
+            await store.movePinned(infoOf(item), -1);
+            refreshAll();
+        }),
+        vscode.commands.registerCommand("symposium.pinDown", async (item: { info?: SessionInfo } | SessionInfo) => {
+            await store.movePinned(infoOf(item), 1);
+            refreshAll();
+        }),
+
         vscode.commands.registerCommand("symposium.deleteSession", async (item: { info?: SessionInfo } | SessionInfo) => {
             const info = infoOf(item);
             const adapter = adapterByBackend.get(info.backend);

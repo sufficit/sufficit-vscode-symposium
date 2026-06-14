@@ -1116,6 +1116,8 @@ export function renderHtml(): string {
         check: "M6.2 11.3 2.7 7.8l1-1 2.5 2.5L12.3 3.3l1 1-7.1 7Z",
         x: "M5 4 4 5l3 3-3 3 1 1 3-3 3 3 1-1-3-3 3-3-1-1-3 3-3-3Z",
         up: "M8 2.5 3 7.5h3v6h4v-6h3L8 2.5Z",
+        down: "M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z",
+        pin: "M9.5 1.5 8 3l3.5 3.5L13 5l-3.5-3.5ZM7.3 3.8 2.8 8.3l1.4 1.4-3 3.8 3.8-3 1.4 1.4 4.5-4.5L7.3 3.8Z",
         diff: "M4 2h5l3 3v3h-1V6H8V3H4v9h3v1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm6 1.5V5h1.5L10 3.5ZM11 9h1v2h2v1h-2v2h-1v-2H9v-1h2V9Z",
         circleEmpty: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7 4.7 4.7 0 0 1 8 3.3Z",
         circleHalf: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7V3.3Z",
@@ -1442,6 +1444,13 @@ export function renderHtml(): string {
             { id: "rename", icon: "rename", label: "Rename" },
             { id: "watch", icon: "eye", label: "Watch live (read-only)" },
         ];
+        if (s.pinned) {
+            list.push({ id: "pinUp", icon: "up", label: "Move pin up" });
+            list.push({ id: "pinDown", icon: "down", label: "Move pin down" });
+            list.push({ id: "unpin", icon: "pin", label: "Unpin" });
+        } else {
+            list.push({ id: "pin", icon: "pin", label: "Pin to top" });
+        }
         list.push(s.archived
             ? { id: "unarchive", icon: "unarchive", label: "Unarchive" }
             : { id: "archive", icon: "archive", label: "Archive" });
@@ -1477,23 +1486,36 @@ export function renderHtml(): string {
         return "Mais antigo";
     }
 
+    function groupHeader(label, count) {
+        const gh = document.createElement("div"); gh.className = "groupHeader";
+        const gl = document.createElement("span"); gl.textContent = label;
+        const gc = document.createElement("span"); gc.className = "gcount"; gc.textContent = String(count);
+        gh.appendChild(gl); gh.appendChild(gc);
+        return gh;
+    }
     function renderSessions() {
         sessionsList.textContent = "";
         const visible = sessions.filter((s) => !s.archived || showArchived);
+        const pinned = visible.filter((s) => s.pinned).sort((a, b) => (a.pinIndex || 0) - (b.pinIndex || 0));
+        const rest = visible.filter((s) => !s.pinned);
+        if (pinned.length) {
+            sessionsList.appendChild(groupHeader("Pinned", pinned.length));
+            for (const s of pinned) { sessionsList.appendChild(renderSessionItem(s)); }
+        }
         let lastBucket = null;
-        for (const s of visible) {
+        for (const s of rest) {
             const bk = bucket(s.updatedAt);
             if (bk !== lastBucket) {
                 lastBucket = bk;
-                const count = visible.filter((x) => bucket(x.updatedAt) === bk).length;
-                const gh = document.createElement("div"); gh.className = "groupHeader";
-                const gl = document.createElement("span"); gl.textContent = bk;
-                const gc = document.createElement("span"); gc.className = "gcount"; gc.textContent = String(count);
-                gh.appendChild(gl); gh.appendChild(gc);
-                sessionsList.appendChild(gh);
+                const count = rest.filter((x) => bucket(x.updatedAt) === bk).length;
+                sessionsList.appendChild(groupHeader(bk, count));
             }
+            sessionsList.appendChild(renderSessionItem(s));
+        }
+    }
+    function renderSessionItem(s) {
             const el = document.createElement("div");
-            el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "");
+            el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "") + (s.pinned ? " pinned" : "");
 
             // Live status indicator: spinner = working, green dot = idle/live.
             const statusDot = document.createElement("div");
@@ -1510,6 +1532,7 @@ export function renderHtml(): string {
             body.className = "body";
             const ttl = document.createElement("div");
             ttl.className = "ttl";
+            if (s.pinned) { const pn = svgIcon("pin"); pn.classList.add("ttlIcon"); ttl.appendChild(pn); }
             if (s.archived) { const ar = svgIcon("archive"); ar.classList.add("ttlIcon"); ttl.appendChild(ar); }
             ttl.appendChild(document.createTextNode(s.title));
             ttl.title = s.title + "\\n" + s.sessionId;
@@ -1542,8 +1565,7 @@ export function renderHtml(): string {
             el.appendChild(body);
             el.appendChild(acts);
             el.addEventListener("contextmenu", (ev) => { ev.preventDefault(); showCtx(ev, s); });
-            sessionsList.appendChild(el);
-        }
+            return el;
     }
 
     const ctxMenu = document.getElementById("ctxMenu");

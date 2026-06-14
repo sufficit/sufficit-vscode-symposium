@@ -197,6 +197,10 @@ export class ChatSurface {
                         watch: "symposium.followSession",
                         archive: "symposium.archiveSession",
                         unarchive: "symposium.unarchiveSession",
+                        pin: "symposium.pinSession",
+                        unpin: "symposium.unpinSession",
+                        pinUp: "symposium.pinUp",
+                        pinDown: "symposium.pinDown",
                         delete: "symposium.deleteSession",
                     }[message.action as string];
                     if (command) {

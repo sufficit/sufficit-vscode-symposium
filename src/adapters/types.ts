@@ -31,6 +31,10 @@ export interface SessionInfo {
     transcriptPath?: string;
     /** Set by the session store; true when the user archived it. */
     archived?: boolean;
+    /** Set by the session store; true when pinned to the top. */
+    pinned?: boolean;
+    /** Order within the pinned group (0 = first). */
+    pinIndex?: number;
     /** Live runtime status: a session with a running controller. */
     status?: "working" | "idle";
 }
