@@ -8,7 +8,7 @@ import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
 import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
-import { approveChange, headContent, rejectChange } from "../git";
+import { approveChange, gitRoot, headContent, rejectChange } from "../git";
 
 /** Path of the file in the active editor, if any (skips non-file/webview tabs). */
 function activeEditorFile(): string | undefined {
@@ -145,7 +145,7 @@ export class ChatSurface {
                     return;
                 }
                 case "file-approve": {
-                    if (typeof message.path === "string") {
+                    if (typeof message.path === "string" && await this.ensureRepo()) {
                         const ok = await approveChange(this.cwd(), message.path);
                         if (ok) { this.post({ type: "file-approved", path: message.path }); }
                         else { void vscode.window.showWarningMessage("Could not stage " + message.path); }
@@ -153,7 +153,7 @@ export class ChatSurface {
                     return;
                 }
                 case "file-reject": {
-                    if (typeof message.path === "string") {
+                    if (typeof message.path === "string" && await this.ensureRepo()) {
                         const ok = await rejectChange(this.cwd(), message.path);
                         if (ok) { this.post({ type: "file-removed", path: message.path }); }
                         else { void vscode.window.showWarningMessage("Could not revert " + message.path); }
@@ -162,14 +162,18 @@ export class ChatSurface {
                 }
                 case "file-approve-all": {
                     const paths: string[] = Array.isArray(message.paths) ? message.paths : [];
+                    if (!paths.length || !(await this.ensureRepo())) { return; }
+                    let failed = 0;
                     for (const p of paths) {
                         if (await approveChange(this.cwd(), p)) { this.post({ type: "file-approved", path: p }); }
+                        else { failed++; }
                     }
+                    if (failed) { void vscode.window.showWarningMessage(`Could not stage ${failed} file(s).`); }
                     return;
                 }
                 case "file-reject-all": {
                     const paths: string[] = Array.isArray(message.paths) ? message.paths : [];
-                    if (!paths.length) { return; }
+                    if (!paths.length || !(await this.ensureRepo())) { return; }
                     const pick = await vscode.window.showWarningMessage(
                         `Revert ${paths.length} file(s) to their last committed state? This discards the agent's changes.`,
                         { modal: true }, "Revert");
@@ -448,6 +452,17 @@ export class ChatSurface {
         return this.controller?.cwd
             ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
             ?? process.cwd();
+    }
+
+    /** Warns (and returns false) when the session's cwd isn't a git repo. */
+    private async ensureRepo(): Promise<boolean> {
+        const root = await gitRoot(this.cwd());
+        if (!root) {
+            void vscode.window.showWarningMessage(
+                `Approve/Reject needs a git repository — the session folder isn't one: ${this.cwd()}`);
+            return false;
+        }
+        return true;
     }
 
     /**
