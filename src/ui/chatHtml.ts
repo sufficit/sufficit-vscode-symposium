@@ -344,10 +344,19 @@ export function renderHtml(): string {
         background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 10%, transparent);
         border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 24%, transparent);
     }
+    .qitem .qmain { flex: 1; min-width: 0; }
     .qitem .qtext {
-        flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; font-size: 0.9em; line-height: 1.5;
+        white-space: pre-wrap; word-break: break-word; font-size: 0.9em; line-height: 1.5;
         max-height: 96px; overflow: hidden; cursor: text;
     }
+    .qitem .qatts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+    .qitem .qatt {
+        display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px 1px 4px; border-radius: 4px;
+        font-size: 0.8em; background: var(--vscode-badge-background, rgba(128,128,128,0.25));
+        color: var(--vscode-badge-foreground, var(--vscode-foreground)); max-width: 180px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .qitem .qatt .qattIcon { width: 11px; height: 11px; flex-shrink: 0; opacity: 0.8; }
     .qitem .qacts { display: inline-flex; gap: 2px; flex-shrink: 0; }
     .qitem .qbtn {
         background: none; border: none; cursor: pointer; padding: 3px; border-radius: 4px;
@@ -1204,8 +1213,20 @@ export function renderHtml(): string {
         queuedEl.appendChild(head);
         for (const it of items) {
             const row = document.createElement("div"); row.className = "qitem";
+            const main = document.createElement("div"); main.className = "qmain";
             const txt = document.createElement("div"); txt.className = "qtext"; txt.textContent = it.text;
             txt.title = "Click to edit"; txt.addEventListener("click", () => vscode.postMessage({ type: "queue-edit", id: it.id }));
+            main.appendChild(txt);
+            if (it.attachments && it.attachments.length) {
+                const atts = document.createElement("div"); atts.className = "qatts";
+                for (const p of it.attachments) {
+                    const chip = document.createElement("span"); chip.className = "qatt"; chip.title = p;
+                    const ic = svgIcon("file"); ic.classList.add("qattIcon"); chip.appendChild(ic);
+                    chip.appendChild(document.createTextNode(String(p).split("/").pop() || p));
+                    atts.appendChild(chip);
+                }
+                main.appendChild(atts);
+            }
             const acts = document.createElement("span"); acts.className = "qacts";
             const mkBtn = (icon, title, type) => {
                 const b = document.createElement("button"); b.className = "qbtn"; b.title = title;
@@ -1216,7 +1237,7 @@ export function renderHtml(): string {
             acts.appendChild(mkBtn("edit", "Edit", "queue-edit"));
             acts.appendChild(mkBtn("up", "Send next", "queue-promote"));
             acts.appendChild(mkBtn("x", "Remove", "queue-remove"));
-            row.appendChild(txt); row.appendChild(acts);
+            row.appendChild(main); row.appendChild(acts);
             queuedEl.appendChild(row);
         }
         setStatus();
