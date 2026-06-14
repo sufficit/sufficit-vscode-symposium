@@ -22,8 +22,9 @@ export interface OpenAIAdapterConfig {
     log?: (message: string) => void;
 }
 
-// Discovered model ids per base URL (best-effort GET /models cache).
+// Discovered model ids and id→friendly-name per base URL (GET /models cache).
 const discoveredModels = new Map<string, string[]>();
+const discoveredLabels = new Map<string, Record<string, string>>();
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
@@ -175,11 +176,23 @@ export class OpenAIAdapter implements AgentAdapter {
         const res = await fetch(url, { headers });
         if (!res.ok) { return; }
         const json: any = await res.json();
-        const list: string[] = (json?.data ?? json?.models ?? [])
-            .map((m: any) => (typeof m === "string" ? m : m?.id ?? m?.name))
-            .filter((x: any) => typeof x === "string");
-        if (list.length) { discoveredModels.set(cfg.baseUrl, list); }
+        const raw: any[] = json?.data ?? json?.models ?? [];
+        const list: string[] = [];
+        const labels: Record<string, string> = {};
+        for (const m of raw) {
+            const id = typeof m === "string" ? m : m?.id ?? m?.name;
+            if (typeof id !== "string") { continue; }
+            list.push(id);
+            const name = typeof m === "object" ? (m?.name ?? m?.title) : undefined;
+            if (typeof name === "string" && name && name !== id) { labels[id] = name; }
+        }
+        if (list.length) { discoveredModels.set(cfg.baseUrl, list); discoveredLabels.set(cfg.baseUrl, labels); }
         cfg.log?.(`[${this.backend}] discovered ${list.length} models from ${url}`);
+    }
+
+    /** Friendly id→name labels for the model picker (from discovery). */
+    modelLabels(): Record<string, string> {
+        return discoveredLabels.get(this.getConfig().baseUrl) ?? {};
     }
 
     models(): string[] {
