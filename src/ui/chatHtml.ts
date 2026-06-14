@@ -879,7 +879,7 @@ export function renderHtml(): string {
 
     function append(cls, text) {
         const stick = nearBottom();
-        endToolGroup();
+        endToolGroup(); endStream();
         const el = document.createElement("div");
         el.className = "msg plain " + cls;
         el.textContent = text;
@@ -959,16 +959,34 @@ export function renderHtml(): string {
             const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy this reply";
             cp.appendChild(svgIcon("copy"));
             cp.addEventListener("click", () => {
-                navigator.clipboard && navigator.clipboard.writeText(text);
+                navigator.clipboard && navigator.clipboard.writeText(wrap._raw != null ? wrap._raw : text);
                 cp.classList.add("done"); setTimeout(() => cp.classList.remove("done"), 1000);
             });
             tools.appendChild(cp);
             wrap.appendChild(tools);
         }
+        wrap._raw = text;
         log.appendChild(wrap);
         autoScroll(stick);
         return wrap;
     }
+
+    // Coalesce streaming assistant deltas into ONE message (the OpenAI adapter
+    // emits token-by-token; without this each token became its own bubble).
+    let streamMsg = null, streamBody = null, streamText = "";
+    function streamDelta(text) {
+        const stick = nearBottom();
+        if (!streamMsg) {
+            streamMsg = message("assistant", "", Date.now());
+            streamBody = streamMsg.querySelector(".md");
+            streamText = "";
+        }
+        streamText += text;
+        streamMsg._raw = streamText;
+        if (streamBody) { streamBody.textContent = ""; renderMarkdown(streamBody, streamText); }
+        autoScroll(stick);
+    }
+    function endStream() { streamMsg = null; streamBody = null; streamText = ""; }
 
     // ---- minimal, safe markdown → DOM (no innerHTML of untrusted text) ----
     function renderMarkdown(container, src) {
@@ -1346,7 +1364,7 @@ export function renderHtml(): string {
     function resetWorkingState() {
         // clear arrives before meta; the controller re-sends changed-files on
         // attach, so just hide the panels here.
-        endToolGroup();
+        endToolGroup(); endStream();
         changedItems = [];
         changedFiles.textContent = "";
         changedFiles.classList.remove("has");
@@ -1776,6 +1794,7 @@ export function renderHtml(): string {
                 break;
             }
             case "user": {
+                endStream();
                 const el = message("user", data.text, Date.now());
                 if (data.attachments?.length) {
                     const list = document.createElement("div");
@@ -1800,8 +1819,8 @@ export function renderHtml(): string {
             }
             case "event": {
                 const ev = data.event;
-                if (ev.kind === "text") message("assistant", ev.text, Date.now());
-                else if (ev.kind === "tool-start") renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path });
+                if (ev.kind === "text") streamDelta(ev.text);
+                else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }
                 else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);
                 else if (ev.kind === "error") append("error", "✖ " + ev.message);
                 else if (ev.kind === "session") {
