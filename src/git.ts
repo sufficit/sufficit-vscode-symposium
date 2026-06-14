@@ -54,3 +54,42 @@ export async function approveChange(cwd: string, abs: string): Promise<boolean> 
     const r = await git(cwd, ["add", "--", abs]);
     return r.code === 0;
 }
+
+/**
+ * Of the given absolute paths, the ones that still have UNSTAGED or untracked
+ * changes (so they're "pending review"). A file that's fully staged drops out;
+ * unstaging it in git brings it back. Paths not inside any git repo are treated
+ * as always-pending (their lifecycle is handled by snapshots instead).
+ */
+export async function pendingChanges(absPaths: string[]): Promise<Set<string>> {
+    const pending = new Set<string>();
+    const path = require("path") as typeof import("path");
+    // Group paths by their repo root (or "" when not in a repo).
+    const byRepo = new Map<string, string[]>();
+    for (const abs of absPaths) {
+        const root = (await gitRoot(path.dirname(abs))) ?? "";
+        const list = byRepo.get(root) ?? [];
+        list.push(abs);
+        byRepo.set(root, list);
+    }
+    for (const [root, paths] of byRepo) {
+        if (!root) {
+            // Non-git: always pending (snapshot-resolved elsewhere).
+            for (const p of paths) { pending.add(p); }
+            continue;
+        }
+        const r = await git(root, ["status", "--porcelain", "--no-renames"]);
+        if (r.code !== 0) { for (const p of paths) { pending.add(p); } continue; }
+        const dirty = new Set<string>();
+        for (const line of r.stdout.split("\n")) {
+            if (line.length < 4) { continue; }
+            const x = line[0], y = line[1];
+            const rel = line.slice(3).trim();
+            // Untracked, or any working-tree change (2nd column != space).
+            const isPending = (x === "?" && y === "?") || (y !== " ");
+            if (isPending && rel) { dirty.add(path.resolve(root, rel)); }
+        }
+        for (const p of paths) { if (dirty.has(p)) { pending.add(p); } }
+    }
+    return pending;
+}

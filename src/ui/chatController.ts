@@ -245,17 +245,19 @@ export class ChatController {
         }
     }
 
-    /** Pushes the current edited-files set to the webview. */
+    /** Signals the surface to re-derive the displayed edited-files set. */
     private emitChanged(): void {
-        this.sink?.({
-            type: "changed-files",
-            items: [...this.changed.entries()].map(([path, c]) => ({ path, added: c.added, removed: c.removed })),
-        });
+        this.sink?.({ type: "changed-files", items: this.changedItemsRaw() });
     }
 
     /** Paths still pending review (for bulk approve/reject). */
     changedPaths(): string[] {
         return [...this.changed.keys()];
+    }
+
+    /** The raw edited-files set (before git-status filtering by the surface). */
+    changedItemsRaw(): { path: string; added: number; removed: number }[] {
+        return [...this.changed.entries()].map(([path, c]) => ({ path, added: c.added, removed: c.removed }));
     }
 
     /** Drops a file from the set after it's approved or reverted. */

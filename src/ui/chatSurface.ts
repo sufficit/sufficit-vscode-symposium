@@ -8,7 +8,7 @@ import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
 import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
-import { approveChange, gitRoot, headContent, rejectChange } from "../git";
+import { approveChange, gitRoot, headContent, pendingChanges, rejectChange } from "../git";
 import { snapshots } from "../snapshots";
 
 /** Directory to run git in for a file — git discovers the enclosing repo upward. */
@@ -66,6 +66,8 @@ export class ChatSurface {
     private followHandle: { dispose(): void } | undefined;
     private ready = false;
     private queue: unknown[] = [];
+    private gitWatcher: vscode.FileSystemWatcher | undefined;
+    private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
     private readonly disposables: vscode.Disposable[] = [];
 
@@ -153,7 +155,7 @@ export class ChatSurface {
                 case "file-approve": {
                     if (typeof message.path === "string") {
                         await this.approveFile(message.path);
-                        this.controller?.resolveChanged(message.path);
+                        this.refreshChangedNow();
                     }
                     return;
                 }
@@ -167,8 +169,8 @@ export class ChatSurface {
                 case "file-approve-all": {
                     for (const p of this.controller?.changedPaths() ?? []) {
                         await this.approveFile(p);
-                        this.controller?.resolveChanged(p);
                     }
+                    this.refreshChangedNow();
                     return;
                 }
                 case "file-reject-all": {
@@ -388,6 +390,13 @@ export class ChatSurface {
             defaultSendMode: vscode.workspace.getConfiguration("symposium.chat").get("defaultSendMode", "send"),
         });
         controller.attach((message) => {
+            // The controller emits the RAW edited-files set; the surface filters
+            // it against live git status (so staged files drop, unstaging them
+            // brings them back) before showing it.
+            if ((message as any)?.type === "changed-files") {
+                void this.refreshChanged((message as any).items);
+                return;
+            }
             // Capture a freshly-assigned session id so a brand-new dialogue
             // also becomes the restorable "last active" one.
             const ev = (message as any)?.event;
@@ -464,11 +473,45 @@ export class ChatSurface {
      * can't be reverted anymore; if the file is in a git repo we also stage it.
      */
     private async approveFile(filePath: string): Promise<void> {
-        // Keep the snapshot baseline so the diff still works after approving;
-        // it's freed when the session is deleted. Stage in git if it's a repo.
+        // In a git repo, approve = stage (git add). The file then has no
+        // unstaged change, so the git-status filter hides it — and unstaging in
+        // git brings it back. Outside a repo, drop it from the set directly.
         if (await gitRoot(repoCwd(filePath))) {
-            void approveChange(repoCwd(filePath), filePath);
+            await approveChange(repoCwd(filePath), filePath);
+        } else {
+            this.controller?.resolveChanged(filePath);
         }
+    }
+
+    /**
+     * Filters the controller's raw edited-files set against live git status and
+     * pushes the result to the webview. Also (re)arms a watcher on the repos'
+     * index so staging/unstaging in git or the SCM view syncs back here.
+     */
+    private async refreshChanged(rawItems: { path: string; added: number; removed: number }[]): Promise<void> {
+        const paths = rawItems.map((i) => i.path);
+        const pending = await pendingChanges(paths);
+        this.post({ type: "changed-files", items: rawItems.filter((i) => pending.has(i.path)) });
+        this.ensureGitWatcher();
+    }
+
+    /** Recomputes the displayed set from the controller's current raw set. */
+    private refreshChangedNow(): void {
+        void this.refreshChanged(this.controller?.changedItemsRaw() ?? []);
+    }
+
+    /** Watches workspace git indexes so external stage/unstage re-syncs the list. */
+    private ensureGitWatcher(): void {
+        if (this.gitWatcher) { return; }
+        this.gitWatcher = vscode.workspace.createFileSystemWatcher("**/.git/index");
+        const onGit = () => {
+            if (this.refreshTimer) { clearTimeout(this.refreshTimer); }
+            this.refreshTimer = setTimeout(() => this.refreshChangedNow(), 250);
+        };
+        this.gitWatcher.onDidChange(onGit);
+        this.gitWatcher.onDidCreate(onGit);
+        this.gitWatcher.onDidDelete(onGit);
+        this.disposables.push(this.gitWatcher);
     }
 
     /**
