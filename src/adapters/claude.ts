@@ -42,6 +42,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
     sessionId: string | undefined;
     private child: ChildProcessWithoutNullStreams | undefined;
     private disposed = false;
+    private streamedText = false;   // got token deltas this turn (skip the full block)
 
     constructor(
         private readonly config: ClaudeAdapterConfig,
@@ -59,6 +60,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
             "-p",
             "--input-format", "stream-json",
             "--output-format", "stream-json",
+            "--include-partial-messages",   // token-level streaming deltas
             "--verbose",
         ];
         const model = this.options.model || this.config.model;
@@ -115,6 +117,15 @@ class ClaudeSession extends EventEmitter implements AgentSession {
             return;
         }
         switch (event.type) {
+            case "stream_event": {
+                // Token-level deltas (--include-partial-messages).
+                const ev = event.event;
+                if (ev?.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) {
+                    this.streamedText = true;
+                    this.emit("event", { kind: "text", text: ev.delta.text });
+                }
+                break;
+            }
             case "system":
                 if (event.subtype === "init") {
                     this.sessionId = event.session_id;
@@ -124,7 +135,8 @@ class ClaudeSession extends EventEmitter implements AgentSession {
             case "assistant": {
                 for (const block of event.message?.content ?? []) {
                     if (block.type === "text" && block.text) {
-                        this.emit("event", { kind: "text", text: block.text });
+                        // Already streamed via stream_event deltas — don't repeat.
+                        if (!this.streamedText) { this.emit("event", { kind: "text", text: block.text }); }
                     } else if (block.type === "tool_use") {
                         const counts = diffCounts(block.name, block.input);
                         const filePath = toolFilePath(block.input);
@@ -161,6 +173,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
             }
             case "result":
                 this.sessionId = event.session_id ?? this.sessionId;
+                this.streamedText = false;   // next turn streams afresh
                 if (event.is_error) {
                     this.emit("event", { kind: "error", message: event.result ?? event.subtype ?? "unknown error" });
                 }

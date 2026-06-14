@@ -1180,7 +1180,7 @@ export function renderHtml(): string {
     function toolSection(label, text) {
         const sec = document.createElement("div"); sec.className = "toolsec";
         const lab = document.createElement("div"); lab.className = "tlabel"; lab.textContent = label;
-        const lines = String(text).split("\n");
+        const lines = String(text).split("\\n");
         const numbered = lines.filter((l) => { const i = l.indexOf(TAB); return i > 0 && allDigits(l.slice(0, i).trim()); });
         if (numbered.length > 1 && numbered.length >= lines.length * 0.5) {
             const pre = document.createElement("pre"); pre.className = "numbered";
