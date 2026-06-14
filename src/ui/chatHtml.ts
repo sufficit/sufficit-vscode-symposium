@@ -188,13 +188,14 @@ export function renderHtml(): string {
     /* Clear separation between message blocks (not between tool rows): a hairline
        rule + breathing room above each user/assistant turn marks where one ends
        and the next begins. */
-    /* Inter-turn gap lives in margin (outside the box) so a hover highlight hugs
-       the content; a modest padding spaces content below the line + sideways. */
+    /* Inter-turn gap lives in margin (outside the box); uniform padding keeps the
+       hover highlight box symmetric around the content. The separator line sits
+       at the top edge with the gap above it provided by the margin. */
     .msg.user, .msg.assistant {
-        margin-top: 18px; padding: 14px 8px 0 8px;
+        margin-top: 20px; padding: 10px 10px;
         border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
     }
-    #log > .msg.user:first-child, #log > .msg.assistant:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+    #log > .msg.user:first-child, #log > .msg.assistant:first-child { margin-top: 0; border-top: none; }
     .role { font-size: 0.82em; opacity: 1; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: 0.02em; color: var(--vscode-foreground); }
     .role .msgTime { font-weight: 400; opacity: 0; font-size: 0.92em; color: var(--vscode-descriptionForeground); transition: opacity 150ms ease; }
     .msg:hover .role .msgTime { opacity: 0.7; }
@@ -223,7 +224,7 @@ export function renderHtml(): string {
     /* assistant turns: full width, no bubble (padding from the combined rule). */
     .msg.assistant { position: relative; }
     /* copy: a hover-only floating action in the corner, reserves no space */
-    .msgTools { position: absolute; top: 12px; right: 6px; margin: 0; z-index: 1; }
+    .msgTools { position: absolute; top: 8px; right: 8px; margin: 0; z-index: 1; }
     /* hovering copy highlights exactly the message it will copy */
     .msg.assistant:has(.msgCopy:hover) {
         background: var(--vscode-editor-inactiveSelectionBackground, rgba(128,128,128,0.12));
