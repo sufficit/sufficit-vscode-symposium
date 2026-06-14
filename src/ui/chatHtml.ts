@@ -938,9 +938,13 @@ export function renderHtml(): string {
         }
         // Hover-only timestamp next to the role (only when we have a real time).
         if (ts) {
-            const d = new Date(ts);
+            const d = new Date(ts), now = new Date();
+            const sameDay = d.toDateString() === now.toDateString();
+            const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            // Other days include the date so it's never ambiguous.
+            const text = sameDay ? time : d.toLocaleDateString([], { day: "2-digit", month: "short" }) + " " + time;
             const t = document.createElement("span"); t.className = "msgTime";
-            t.textContent = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            t.textContent = text;
             t.title = d.toLocaleString();
             label.appendChild(t);
         }
