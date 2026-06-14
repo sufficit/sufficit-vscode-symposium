@@ -5,6 +5,7 @@ import { parseTodoFence } from "../adapters/todos";
 type SendMode = "send" | "queue" | "steer";
 
 interface PendingMessage {
+    id?: number;
     text: string;
     attachments: string[];
     model?: string;
@@ -28,6 +29,7 @@ export class ChatController {
     private busy = false;
     private firstTitle = "";
     private todoInjected = false;
+    private queueSeq = 0;
     private readonly queue: PendingMessage[] = [];
     private readonly log: unknown[] = [];   // replayable render messages
     private sink: ((message: unknown) => void) | null = null;
@@ -110,6 +112,28 @@ export class ChatController {
             case "cancel":
                 this.session?.cancel();
                 return true;
+            case "queue-remove": {
+                const i = this.queue.findIndex((m) => m.id === message.id);
+                if (i >= 0) { this.queue.splice(i, 1); this.emitQueue(); }
+                return true;
+            }
+            case "queue-edit": {
+                // Pull a queued message back into the composer for editing and
+                // drop it from the queue (the user re-sends after editing).
+                const i = this.queue.findIndex((m) => m.id === message.id);
+                if (i >= 0) {
+                    const [m] = this.queue.splice(i, 1);
+                    this.emitQueue();
+                    this.sink?.({ type: "load-input", text: m.text, attachments: m.attachments });
+                }
+                return true;
+            }
+            case "queue-promote": {
+                // Move a queued message to the front so it's dispatched next.
+                const i = this.queue.findIndex((m) => m.id === message.id);
+                if (i > 0) { const [m] = this.queue.splice(i, 1); this.queue.unshift(m); this.emitQueue(); }
+                return true;
+            }
             case "pick-attachments": {
                 const picked = await vscode.window.showOpenDialog({
                     canSelectMany: true,
@@ -140,11 +164,17 @@ export class ChatController {
             return;
         }
         if (this.busy) {
+            msg.id = ++this.queueSeq;
             this.queue.push(msg);
-            this.emit({ type: "queued", count: this.queue.length });
+            this.emitQueue();
             return;
         }
         this.dispatch(msg);
+    }
+
+    /** Full queue state (editable until dispatched), reflected in the webview. */
+    private emitQueue(): void {
+        this.emit({ type: "queue", items: this.queue.map((m) => ({ id: m.id, text: m.text, attachments: m.attachments })) });
     }
 
     private dispatch(msg: PendingMessage): void {
@@ -194,7 +224,7 @@ export class ChatController {
             this.onStatusChange?.();
             const next = this.queue.shift();
             if (next) {
-                this.emit({ type: "queued", count: this.queue.length });
+                this.emitQueue();
                 this.dispatch(next);
             }
         }

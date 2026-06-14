@@ -313,6 +313,27 @@ export function renderHtml(): string {
     .tAdd { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec94e); }
     .tDel { color: var(--vscode-gitDecoration-deletedResourceForeground, #d16969); margin-left: 5px; }
     .tSpacer { flex: 1; min-width: 0; }
+    /* queued messages — editable until dispatched */
+    #queued { display: none; border-top: 1px solid var(--vscode-panel-border, transparent); padding: 6px 10px 2px; }
+    #queued.has { display: block; }
+    #queued .qhead { font-size: 0.72em; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.55; margin: 0 2px 5px; }
+    .qitem {
+        display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; padding: 7px 9px;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 10%, transparent);
+        border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 24%, transparent);
+    }
+    .qitem .qtext {
+        flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; font-size: 0.9em; line-height: 1.5;
+        max-height: 96px; overflow: hidden; cursor: text;
+    }
+    .qitem .qacts { display: inline-flex; gap: 2px; flex-shrink: 0; }
+    .qitem .qbtn {
+        background: none; border: none; cursor: pointer; padding: 3px; border-radius: 4px;
+        color: var(--vscode-icon-foreground, var(--vscode-foreground)); display: inline-flex; opacity: 0.75;
+    }
+    .qitem .qbtn svg { width: 13px; height: 13px; }
+    .qitem .qbtn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
     /* plan / todo — pinned above the edited-files set */
     #plan { display: none; border-top: 1px solid var(--vscode-panel-border, transparent); }
     #plan.has { display: block; }
@@ -519,6 +540,7 @@ export function renderHtml(): string {
         </div>
         <div id="log"></div>
         <div id="loadingState"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
+        <div id="queued"></div>
         <div id="plan"></div>
         <div id="changedFiles"></div>
         <div id="composer">
@@ -978,6 +1000,7 @@ export function renderHtml(): string {
         tool: "M11.5 1.5a3.5 3.5 0 0 0-3.4 4.4L1.7 12.3l2 2 6.4-6.4a3.5 3.5 0 0 0 4.4-4.4l-1.9 1.9-1.5-.4-.4-1.5 1.9-1.9a3.5 3.5 0 0 0-1.6-.6Z",
         check: "M6.2 11.3 2.7 7.8l1-1 2.5 2.5L12.3 3.3l1 1-7.1 7Z",
         x: "M5 4 4 5l3 3-3 3 1 1 3-3 3 3 1-1-3-3 3-3-1-1-3 3-3-3Z",
+        up: "M8 2.5 3 7.5h3v6h4v-6h3L8 2.5Z",
         diff: "M4 2h5l3 3v3h-1V6H8V3H4v9h3v1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Zm6 1.5V5h1.5L10 3.5ZM11 9h1v2h2v1h-2v2h-1v-2H9v-1h2V9Z",
         circleEmpty: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7 4.7 4.7 0 0 1 8 3.3Z",
         circleHalf: "M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2Zm0 1.3A4.7 4.7 0 1 1 8 12.7V3.3Z",
@@ -1112,6 +1135,35 @@ export function renderHtml(): string {
         planEl.appendChild(head); planEl.appendChild(list);
     }
 
+    // ---- queued messages (editable until dispatched) ----
+    const queuedEl = document.getElementById("queued");
+    function renderQueued(items) {
+        queued = items.length;   // keep status text in sync
+        queuedEl.textContent = "";
+        if (!items.length) { queuedEl.classList.remove("has"); setStatus(); return; }
+        queuedEl.classList.add("has");
+        const head = document.createElement("div"); head.className = "qhead"; head.textContent = "Queued";
+        queuedEl.appendChild(head);
+        for (const it of items) {
+            const row = document.createElement("div"); row.className = "qitem";
+            const txt = document.createElement("div"); txt.className = "qtext"; txt.textContent = it.text;
+            txt.title = "Click to edit"; txt.addEventListener("click", () => vscode.postMessage({ type: "queue-edit", id: it.id }));
+            const acts = document.createElement("span"); acts.className = "qacts";
+            const mkBtn = (icon, title, type) => {
+                const b = document.createElement("button"); b.className = "qbtn"; b.title = title;
+                b.appendChild(svgIcon(icon));
+                b.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type, id: it.id }); });
+                return b;
+            };
+            acts.appendChild(mkBtn("edit", "Edit", "queue-edit"));
+            acts.appendChild(mkBtn("up", "Send next", "queue-promote"));
+            acts.appendChild(mkBtn("x", "Remove", "queue-remove"));
+            row.appendChild(txt); row.appendChild(acts);
+            queuedEl.appendChild(row);
+        }
+        setStatus();
+    }
+
     // ---- changed-files working set (above the composer) ----
     // Bound to the session id (Hugo's GUID-keyed model): each session keeps its
     // own edited-files set so switching never mixes files across sessions.
@@ -1215,6 +1267,8 @@ export function renderHtml(): string {
         changedFiles.classList.remove("has");
         planEl.textContent = "";
         planEl.classList.remove("has");
+        queuedEl.textContent = "";
+        queuedEl.classList.remove("has");
     }
 
     // Per-session actions, shown as hover icons on the right and in the
@@ -1566,10 +1620,23 @@ export function renderHtml(): string {
                 setStatus();
                 break;
             }
-            case "queued": {
-                queued = data.count || 0;
-                append("meta", "↳ queued (" + queued + " waiting)");
-                setStatus();
+            case "queue": {
+                renderQueued(data.items || []);
+                break;
+            }
+            case "load-input": {
+                input.value = data.text || "";
+                input.style.height = "auto";
+                input.style.height = Math.min(input.scrollHeight, 180) + "px";
+                input.focus();
+                if (Array.isArray(data.attachments)) {
+                    for (const p of data.attachments) {
+                        if (!attachments.some((a) => a.path === p)) {
+                            attachments.push({ path: p, name: String(p).split("/").pop() || p });
+                        }
+                    }
+                    renderChips();
+                }
                 break;
             }
             case "append": {
