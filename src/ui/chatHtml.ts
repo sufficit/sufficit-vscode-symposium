@@ -189,7 +189,7 @@ export function renderHtml(): string {
        rule + breathing room above each user/assistant turn marks where one ends
        and the next begins. */
     .msg.user, .msg.assistant {
-        margin-top: 20px; padding-top: 20px;
+        margin-top: 26px; padding-top: 26px;
         border-top: 1px solid var(--vscode-panel-border, color-mix(in srgb, var(--vscode-foreground) 14%, transparent));
     }
     #log > .msg.user:first-child, #log > .msg.assistant:first-child { margin-top: 0; padding-top: 0; border-top: none; }
@@ -297,6 +297,23 @@ export function renderHtml(): string {
     .toolrow .tChev svg { width: 12px; height: 12px; }
     .toolwrap { margin: 1px 0; }
     .toolwrap.open .toolrow .tChev { transform: rotate(180deg); }
+    /* tool activity group — a timeline rail tying a turn's tool calls together */
+    .toolgroup { margin: 10px 0; }
+    .toolgroup .tghead {
+        display: flex; align-items: center; gap: 6px; cursor: pointer;
+        font-size: 0.76em; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
+        opacity: 0.6; padding: 1px 2px 5px;
+    }
+    .toolgroup .tghead:hover { opacity: 0.85; }
+    .toolgroup .tghead .tgchev { width: 11px; height: 11px; transition: transform 150ms ease; }
+    .toolgroup.collapsed .tghead .tgchev { transform: rotate(-90deg); }
+    .toolgroup .tgbody {
+        border-left: 2px solid var(--vscode-panel-border, rgba(128,128,128,0.22));
+        margin-left: 6px; padding-left: 9px;
+    }
+    .toolgroup.collapsed .tgbody { display: none; }
+    .toolgroup .tgbody .toolwrap { margin: 0; }
+    .toolgroup .tgbody .toolrow { padding: 3px 8px; }
     .toolbody { display: none; margin: 4px 0 8px 26px; }
     .toolwrap.open .toolbody { display: block; }
     .toolsec { margin: 6px 0; }
@@ -835,6 +852,7 @@ export function renderHtml(): string {
 
     function append(cls, text) {
         const stick = nearBottom();
+        endToolGroup();
         const el = document.createElement("div");
         el.className = "msg plain " + cls;
         el.textContent = text;
@@ -843,11 +861,43 @@ export function renderHtml(): string {
         return el;
     }
 
+    // Consecutive tool calls are gathered into one timeline group (a vertical
+    // rail) with a summary header, so a turn's work reads as a single activity
+    // block instead of a loose list of rows.
+    let curToolGroup = null;
+    function endToolGroup() { curToolGroup = null; }
+    function toolGroupBody() {
+        if (curToolGroup) { return curToolGroup._body; }
+        const stick = nearBottom();
+        const g = document.createElement("div"); g.className = "msg toolgroup";
+        const head = document.createElement("div"); head.className = "tghead";
+        const chev = svgIcon("chevron"); chev.classList.add("tgchev");
+        const sum = document.createElement("span"); sum.className = "tgsum";
+        head.appendChild(chev); head.appendChild(sum);
+        const body = document.createElement("div"); body.className = "tgbody";
+        head.addEventListener("click", () => g.classList.toggle("collapsed"));
+        g.appendChild(head); g.appendChild(body);
+        g._body = body; g._sum = sum; g._n = 0; g._add = 0; g._del = 0;
+        log.appendChild(g);
+        curToolGroup = g;
+        autoScroll(stick);
+        return body;
+    }
+    function bumpToolGroup(added, removed) {
+        const g = curToolGroup; if (!g) { return; }
+        g._n += 1; g._add += added || 0; g._del += removed || 0;
+        let s = g._n + (g._n === 1 ? " action" : " actions");
+        if (g._add) { s += "  +" + g._add; }
+        if (g._del) { s += " -" + g._del; }
+        g._sum.textContent = s;
+    }
+
     // A chat message with a small role label (user/assistant); assistant text
     // is rendered as markdown.
     const BACKEND_NAMES = { claude: "Claude", codex: "Codex", copilot: "Copilot" };
     function message(role, text) {
         const stick = nearBottom();
+        endToolGroup();
         const wrap = document.createElement("div");
         wrap.className = "msg " + role;
         const label = document.createElement("div");
@@ -1086,7 +1136,8 @@ export function renderHtml(): string {
             head.addEventListener("click", () => wrap.classList.toggle("open"));
         }
         wrap.appendChild(head); wrap.appendChild(body);
-        log.appendChild(wrap);
+        toolGroupBody().appendChild(wrap);
+        bumpToolGroup(opts.added, opts.removed);
         autoScroll(stick);
         if (opts.toolId) { toolRows[opts.toolId] = { showResult }; }
         return wrap;
@@ -1263,6 +1314,7 @@ export function renderHtml(): string {
     function resetWorkingState() {
         // clear arrives before meta (which carries the new session id), so just
         // hide the panels here; meta calls startWorkingSet with the real id.
+        endToolGroup();
         changedFiles.textContent = "";
         changedFiles.classList.remove("has");
         planEl.textContent = "";
