@@ -894,7 +894,7 @@ export function renderHtml(): string {
 
     // A chat message with a small role label (user/assistant); assistant text
     // is rendered as markdown.
-    const BACKEND_NAMES = { claude: "Claude", codex: "Codex", copilot: "Copilot" };
+    const BACKEND_NAMES = { claude: "Claude", codex: "Codex", copilot: "Copilot", openai: "Sufficit AI" };
     function message(role, text) {
         const stick = nearBottom();
         endToolGroup();

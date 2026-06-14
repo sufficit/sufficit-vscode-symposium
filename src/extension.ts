@@ -21,6 +21,7 @@ function defaultCwd(): string {
 import { ClaudeAdapter, ClaudeAdapterConfig } from "./adapters/claude";
 import { CodexAdapter, CodexAdapterConfig } from "./adapters/codex";
 import { CopilotAdapter, CopilotAdapterConfig } from "./adapters/copilot";
+import { OpenAIAdapter, OpenAIAdapterConfig } from "./adapters/openai";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
 import { LiveSessions } from "./sessions/runtime";
@@ -56,6 +57,18 @@ function codexConfig(): CodexAdapterConfig {
     };
 }
 
+function openaiConfig(): OpenAIAdapterConfig {
+    const config = vscode.workspace.getConfiguration("symposium.openai");
+    return {
+        baseUrl: config.get<string>("baseUrl", "https://api.openai.com/v1"),
+        model: config.get<string>("model", ""),
+        models: config.get<string[]>("models", []),
+        headers: config.get<Record<string, string>>("headers", {}),
+        apiKey: config.get<string>("apiKey", ""),
+        log: symposiumLog,
+    };
+}
+
 let output: vscode.OutputChannel | undefined;
 export function symposiumLog(message: string): void {
     output?.appendLine(`${new Date().toISOString()} ${message}`);
@@ -68,6 +81,7 @@ export function activate(context: vscode.ExtensionContext): void {
         new ClaudeAdapter(claudeConfig),
         new CodexAdapter(codexConfig),
         new CopilotAdapter(copilotConfig),
+        new OpenAIAdapter(openaiConfig),
     ];
     const adapterByBackend = new Map<string, AgentAdapter>(
         adapters.map((adapter) => [adapter.backend, adapter]));
@@ -248,7 +262,9 @@ export function activate(context: vscode.ExtensionContext): void {
         }),
 
         vscode.commands.registerCommand("symposium.newTerminalSession", async () => {
-            const picks = await Promise.all(adapters.map(async (adapter) => {
+            // Terminal sessions are CLI-only; the OpenAI adapter has no executable.
+            const cliAdapters = adapters.filter((a) => a.backend !== "openai");
+            const picks = await Promise.all(cliAdapters.map(async (adapter) => {
                 const probe = await adapter.available();
                 return { label: adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, backend: adapter.backend, ok: probe.ok };
             }));
@@ -277,7 +293,7 @@ export function activate(context: vscode.ExtensionContext): void {
                 void vscode.window.showWarningMessage("tmux is not installed — persistent sessions need tmux (the agent runs inside a detached tmux session so it survives VS Code closing).");
                 return;
             }
-            const picks = await Promise.all(adapters.map(async (a) => {
+            const picks = await Promise.all(adapters.filter((a) => a.backend !== "openai").map(async (a) => {
                 const p = await a.available();
                 return { label: a.backend, description: p.ok ? p.version : `unavailable: ${p.error}`, backend: a.backend, ok: p.ok };
             }));

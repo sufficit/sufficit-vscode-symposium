@@ -89,6 +89,11 @@ export const BUILTINS: Record<AgentBackend, BuiltinSet> = {
             b("exit", "Exit"),
         ],
     },
+    openai: {
+        // Direct API adapter — no CLI slash commands.
+        version: "api",
+        commands: [],
+    },
 };
 
 /**

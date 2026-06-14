@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -236,6 +236,49 @@
           ],
           "default": "default",
           "description": "Default reasoning effort for Copilot terminal sessions (copilot --reasoning-effort). 'default' omits it."
+        },
+        "symposium.openai.baseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL of an OpenAI-compatible API (e.g. the Sufficit AI gateway). The adapter POSTs to <baseUrl>/chat/completions."
+        },
+        "symposium.openai.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key sent as 'Authorization: Bearer <key>' when no Authorization header is set in symposium.openai.headers."
+        },
+        "symposium.openai.headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Custom HTTP headers for the OpenAI-compatible endpoint (e.g. Authorization, x-api-key, gateway routing for Sufficit AI)."
+        },
+        "symposium.openai.model": {
+          "type": "string",
+          "default": "",
+          "description": "Default model id. Empty uses the first of symposium.openai.models."
+        },
+        "symposium.openai.models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Model ids offered in the picker (the Sufficit AI catalog)."
+        },
+        "symposium.openai.reasoning": {
+          "type": "string",
+          "enum": [
+            "default",
+            "minimal",
+            "low",
+            "medium",
+            "high"
+          ],
+          "default": "default",
+          "description": "Default reasoning_effort for models that support it. 'default' omits the parameter."
         },
         "symposium.chat.openIn": {
           "type": "string",
