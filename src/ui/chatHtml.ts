@@ -216,11 +216,13 @@ export function renderHtml(): string {
         max-width: 82%; text-align: left; line-height: 1.6;
     }
     .ubody .chips { margin-top: 6px; }
-    /* assistant turns: full width, no bubble */
-    .msg.assistant { padding: 0 2px; }
-    .msgTools { margin-top: 4px; height: 20px; }
+    /* assistant turns: full width, no bubble. padding-left/right only — must not
+       reset the padding-top that spaces content below the turn separator. */
+    .msg.assistant { padding-left: 2px; padding-right: 2px; position: relative; }
+    /* copy: a hover-only floating action in the corner, reserves no space */
+    .msgTools { position: absolute; top: 24px; right: 2px; margin: 0; }
     .msgCopy {
-        background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 4px;
+        background: var(--vscode-editor-background, transparent); border: none; cursor: pointer; padding: 2px 4px; border-radius: 4px;
         color: var(--vscode-icon-foreground, var(--vscode-foreground)); opacity: 0; transition: opacity 150ms ease, background-color 150ms ease;
     }
     .msg.assistant:hover .msgCopy { opacity: 0.6; }
