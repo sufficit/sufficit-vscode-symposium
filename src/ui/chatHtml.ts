@@ -765,7 +765,7 @@ export function renderHtml(): string {
 
     // ---- tools & configuration menu (sliders) ----
     const configBtn = document.getElementById("configBtn");
-    let permissionModes = [], permissionValue = "default";
+    let permissionModes = [], permissionValue = "default", permissionDefault = "default";
     const PERM_DESC = {
         "default": "Ask for permission as needed",
         "acceptEdits": "Auto-accept file edits",
@@ -781,7 +781,7 @@ export function renderHtml(): string {
             for (const p of permissionModes) {
                 const mi = document.createElement("div"); mi.className = "mi";
                 const tick = document.createElement("span"); tick.className = "tick"; tick.textContent = p === permissionValue ? "✓" : "";
-                const lbl = document.createElement("span"); lbl.className = "milbl"; lbl.textContent = p;
+                const lbl = document.createElement("span"); lbl.className = "milbl"; lbl.textContent = p + (p === permissionDefault ? " (default)" : "");
                 mi.appendChild(tick); mi.appendChild(lbl); mi.title = PERM_DESC[p] || "";
                 mi.addEventListener("click", () => { permissionValue = p; });
                 list.appendChild(mi);
@@ -1647,6 +1647,7 @@ export function renderHtml(): string {
                 setReasoningLabel();
                 permissionModes = data.permissionModes || [];
                 permissionValue = data.permission || "default";
+                permissionDefault = data.permission || "default";
                 configBtn.style.display = (permissionModes.length || true) ? "" : "none";
                 document.getElementById("composer").style.display = data.readOnly ? "none" : "flex";
                 if (data.readOnly) {
