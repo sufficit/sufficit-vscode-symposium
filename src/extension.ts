@@ -69,10 +69,45 @@ function openaiConfig(): OpenAIAdapterConfig {
     };
 }
 
+interface CustomAdapterDef {
+    id: string;
+    name?: string;
+    baseUrl: string;
+    model?: string;
+    models?: string[];
+    headers?: Record<string, string>;
+    apiKey?: string;
+}
+
+/** Reads the user's extra OpenAI-compatible adapters (symposium.adapters). */
+function customAdapterDefs(): CustomAdapterDef[] {
+    const arr = vscode.workspace.getConfiguration("symposium").get<CustomAdapterDef[]>("adapters", []);
+    return Array.isArray(arr) ? arr.filter((a) => a && a.id && a.baseUrl) : [];
+}
+
+/** One OpenAIAdapter per custom def, re-reading its entry live by id. */
+function buildCustomAdapters(): OpenAIAdapter[] {
+    return customAdapterDefs().map((def) =>
+        new OpenAIAdapter(def.id, def.name || def.id, () => {
+            const e = customAdapterDefs().find((x) => x.id === def.id) ?? def;
+            return {
+                baseUrl: e.baseUrl,
+                model: e.model ?? "",
+                models: e.models ?? [],
+                headers: e.headers ?? {},
+                apiKey: e.apiKey ?? "",
+                log: symposiumLog,
+            };
+        }));
+}
+
 let output: vscode.OutputChannel | undefined;
 export function symposiumLog(message: string): void {
     output?.appendLine(`${new Date().toISOString()} ${message}`);
 }
+
+// Backends that run as a CLI in a terminal (the rest are HTTP API adapters).
+const CLI_BACKENDS = new Set(["claude", "codex", "copilot"]);
 
 export function activate(context: vscode.ExtensionContext): void {
     output = vscode.window.createOutputChannel("Symposium");
@@ -81,7 +116,8 @@ export function activate(context: vscode.ExtensionContext): void {
         new ClaudeAdapter(claudeConfig),
         new CodexAdapter(codexConfig),
         new CopilotAdapter(copilotConfig),
-        new OpenAIAdapter(openaiConfig),
+        new OpenAIAdapter("openai", "Sufficit AI", openaiConfig),
+        ...buildCustomAdapters(),
     ];
     const adapterByBackend = new Map<string, AgentAdapter>(
         adapters.map((adapter) => [adapter.backend, adapter]));
@@ -210,6 +246,10 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand("symposium.openSettings", () =>
             vscode.commands.executeCommand("workbench.action.openSettings", "@ext:sufficit.sufficit-vscode-symposium")),
 
+        // Jump straight to the adapters array in settings.json for direct editing.
+        vscode.commands.registerCommand("symposium.editAdapters", () =>
+            vscode.commands.executeCommand("workbench.action.openSettingsJson", { revealSetting: { key: "symposium.adapters", edit: true } })),
+
         vscode.commands.registerCommand("symposium.newSession", async () => {
             const picks = await Promise.all(adapters.map(async (adapter) => {
                 const probe = await adapter.available();
@@ -263,7 +303,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
         vscode.commands.registerCommand("symposium.newTerminalSession", async () => {
             // Terminal sessions are CLI-only; the OpenAI adapter has no executable.
-            const cliAdapters = adapters.filter((a) => a.backend !== "openai");
+            const cliAdapters = adapters.filter((a) => CLI_BACKENDS.has(a.backend));
             const picks = await Promise.all(cliAdapters.map(async (adapter) => {
                 const probe = await adapter.available();
                 return { label: adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, backend: adapter.backend, ok: probe.ok };
@@ -293,7 +333,7 @@ export function activate(context: vscode.ExtensionContext): void {
                 void vscode.window.showWarningMessage("tmux is not installed — persistent sessions need tmux (the agent runs inside a detached tmux session so it survives VS Code closing).");
                 return;
             }
-            const picks = await Promise.all(adapters.filter((a) => a.backend !== "openai").map(async (a) => {
+            const picks = await Promise.all(adapters.filter((a) => CLI_BACKENDS.has(a.backend)).map(async (a) => {
                 const p = await a.available();
                 return { label: a.backend, description: p.ok ? p.version : `unavailable: ${p.error}`, backend: a.backend, ok: p.ok };
             }));

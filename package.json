@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.50.2",
+  "version": "0.51.0",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -112,6 +112,11 @@
         "command": "symposium.reload",
         "title": "Symposium: Reload Window (apply latest build)",
         "icon": "$(debug-restart)"
+      },
+      {
+        "command": "symposium.editAdapters",
+        "title": "Symposium: Edit Adapters (JSON)",
+        "icon": "$(json)"
       }
     ],
     "menus": {
@@ -140,6 +145,11 @@
           "command": "symposium.openSettings",
           "when": "view == symposium.chat",
           "group": "navigation@5"
+        },
+        {
+          "command": "symposium.editAdapters",
+          "when": "view == symposium.chat",
+          "group": "navigation@6"
         },
         {
           "command": "symposium.reload",
@@ -236,6 +246,54 @@
           ],
           "default": "default",
           "description": "Default reasoning effort for Copilot terminal sessions (copilot --reasoning-effort). 'default' omits it."
+        },
+        "symposium.adapters": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Extra OpenAI-compatible adapters (e.g. multiple Sufficit AI gateways). Each entry: `{ id, name, baseUrl, headers, apiKey, model, models }`. Leave `models` empty to auto-discover from `GET <baseUrl>/models`. Edit as JSON via the command 'Symposium: Edit Adapters (JSON)'.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "baseUrl"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique id (also the backend key)."
+              },
+              "name": {
+                "type": "string",
+                "description": "Display name shown in the UI."
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "OpenAI-compatible base URL; POSTs to <baseUrl>/chat/completions."
+              },
+              "apiKey": {
+                "type": "string",
+                "description": "Sent as Authorization: Bearer <key> when no Authorization header is set."
+              },
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Custom HTTP headers."
+              },
+              "model": {
+                "type": "string",
+                "description": "Default model id."
+              },
+              "models": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Model ids; empty = auto-discover from /models."
+              }
+            }
+          }
         },
         "symposium.openai.baseUrl": {
           "type": "string",

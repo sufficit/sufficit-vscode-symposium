@@ -624,7 +624,7 @@ export function renderHtml(): string {
     let attachments = [];   // [{path, name}]
     let activeFile = null;  // active editor path, offered as removable context
     let activeFileDismissed = false;
-    let currentBackend = "";
+    let currentBackend = "", currentBackendName = "";
     let activeModel = "";
     let activeSessionId = "";
     let busy = false;
@@ -916,7 +916,7 @@ export function renderHtml(): string {
         label.className = "role " + role;
         if (role === "assistant") {
             const av = document.createElement("span"); av.className = "avatar"; av.appendChild(svgIcon("robot"));
-            const name = document.createElement("span"); name.textContent = BACKEND_NAMES[currentBackend] || "Agent";
+            const name = document.createElement("span"); name.textContent = currentBackendName || BACKEND_NAMES[currentBackend] || "Agent";
             label.appendChild(av); label.appendChild(name);
         } else {
             const name = document.createElement("span"); name.textContent = "You";
@@ -1653,7 +1653,8 @@ export function renderHtml(): string {
                 activeSessionId = data.sessionId || "";
                 startWorkingSet(activeSessionId);   // bind edited-files set to this session
                 currentBackend = data.backend || "";
-                chatTitle.textContent = (data.title ? data.title + " · " : "") + data.backend;
+                currentBackendName = data.backendName || "";
+                chatTitle.textContent = (data.title ? data.title + " · " : "") + (data.backendName || data.backend);
                 modelDefault = data.modelDefault || "";
                 reasoningDefault = data.reasoningDefault || "";
                 modelList = data.models || [];

@@ -285,6 +285,7 @@ export class ChatSurface {
         this.post({
             type: "meta",
             backend: adapter.backend,
+            backendName: (adapter as any).displayName,
             resumed: true,
             readOnly: true,
             models: [],
@@ -325,6 +326,7 @@ export class ChatSurface {
         this.post({
             type: "meta",
             backend: adapter.backend,
+            backendName: (adapter as any).displayName,
             resumed: !!options.resumeSessionId,
             terminal: true,
             models: [],
@@ -374,6 +376,7 @@ export class ChatSurface {
         this.post({
             type: "meta",
             backend: adapter.backend,
+            backendName: (adapter as any).displayName,
             resumed: !!options.resumeSessionId,
             models: adapter.models?.() ?? [],
             reasoningLevels: adapter.reasoningLevels?.() ?? [],

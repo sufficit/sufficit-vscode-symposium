@@ -19,7 +19,7 @@ interface BuiltinSet {
 
 const b = (name: string, description: string): SlashCommand => ({ name, description, kind: "builtin" });
 
-export const BUILTINS: Record<AgentBackend, BuiltinSet> = {
+export const BUILTINS: Record<string, BuiltinSet> = {
     claude: {
         version: "2.1.177",
         commands: [

@@ -13,7 +13,7 @@ export interface OpenAIAdapterConfig {
     baseUrl: string;
     /** Default model (empty = first of models). */
     model: string;
-    /** Models offered in the picker. */
+    /** Models offered in the picker (empty = auto-discover from /models). */
     models: string[];
     /** Custom headers (e.g. Authorization, x-api-key) for the sufficit-ai gateway. */
     headers: Record<string, string>;
@@ -21,6 +21,9 @@ export interface OpenAIAdapterConfig {
     apiKey?: string;
     log?: (message: string) => void;
 }
+
+// Discovered model ids per base URL (best-effort GET /models cache).
+const discoveredModels = new Map<string, string[]>();
 
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
 
@@ -135,13 +138,22 @@ class OpenAISession extends EventEmitter implements AgentSession {
 }
 
 export class OpenAIAdapter implements AgentAdapter {
-    readonly backend = "openai" as const;
-
-    constructor(private readonly getConfig: () => OpenAIAdapterConfig) { }
+    /**
+     * @param backend  unique id for this adapter instance (built-in "openai" or
+     *                 a custom adapter id).
+     * @param name     display name shown in the UI.
+     */
+    constructor(
+        readonly backend: string,
+        readonly displayName: string,
+        private readonly getConfig: () => OpenAIAdapterConfig,
+    ) { }
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
         const cfg = this.getConfig();
-        if (!cfg.baseUrl) { return { ok: false, error: "set symposium.openai.baseUrl" }; }
+        if (!cfg.baseUrl) { return { ok: false, error: `set baseUrl for ${this.displayName}` }; }
+        // Best-effort model discovery so the picker is populated when opened.
+        await this.discoverModels(cfg).catch(() => undefined);
         return { ok: true, version: cfg.baseUrl };
     }
 
@@ -153,9 +165,27 @@ export class OpenAIAdapter implements AgentAdapter {
         return new OpenAISession(this.getConfig(), options);
     }
 
+    /** GET <baseUrl>/models → cache the offered model ids (OpenAI shape). */
+    private async discoverModels(cfg: OpenAIAdapterConfig): Promise<void> {
+        const url = cfg.baseUrl.replace(/\/+$/, "") + "/models";
+        const headers: Record<string, string> = { ...cfg.headers };
+        if (cfg.apiKey && !Object.keys(headers).some((k) => k.toLowerCase() === "authorization")) {
+            headers["authorization"] = `Bearer ${cfg.apiKey}`;
+        }
+        const res = await fetch(url, { headers });
+        if (!res.ok) { return; }
+        const json: any = await res.json();
+        const list: string[] = (json?.data ?? json?.models ?? [])
+            .map((m: any) => (typeof m === "string" ? m : m?.id ?? m?.name))
+            .filter((x: any) => typeof x === "string");
+        if (list.length) { discoveredModels.set(cfg.baseUrl, list); }
+        cfg.log?.(`[${this.backend}] discovered ${list.length} models from ${url}`);
+    }
+
     models(): string[] {
         const cfg = this.getConfig();
-        const list = cfg.models.length ? cfg.models : ["gpt-4o", "gpt-4o-mini"];
+        const configured = cfg.models.length ? cfg.models : (discoveredModels.get(cfg.baseUrl) ?? []);
+        const list = configured.length ? configured : ["gpt-4o", "gpt-4o-mini"];
         return [...new Set([cfg.model || list[0], ...list])];
     }
 

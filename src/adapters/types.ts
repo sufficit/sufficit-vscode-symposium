@@ -1,7 +1,9 @@
 import { EventEmitter } from "events";
 
 /** Backend identifiers for the supported agent CLIs. */
-export type AgentBackend = "claude" | "codex" | "copilot" | "openai";
+// Built-in backends are "claude" | "codex" | "copilot" | "openai"; custom
+// OpenAI-compatible adapters use their own id, so this is widened to string.
+export type AgentBackend = string;
 
 /** One entry of an agent's plan/todo list. */
 export interface TodoItem {
