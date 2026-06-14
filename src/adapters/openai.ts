@@ -1,12 +1,45 @@
 import { EventEmitter } from "events";
 import { randomUUID } from "crypto";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import {
     AgentAdapter,
     AgentSession,
+    HistoryMessage,
     SessionInfo,
     SessionStartOptions,
 } from "./types";
 import { TODO_INJECTION } from "./todos";
+
+type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
+
+interface StoredSession {
+    id: string;
+    backend: string;
+    title: string;
+    cwd: string;
+    model: string;
+    updatedAt: string;
+    messages: ChatMsg[];
+}
+
+/** Per-backend store dir for API-adapter transcripts (no CLI to persist them). */
+function storeDir(backend: string): string {
+    return path.join(os.homedir(), ".symposium", "sessions", backend);
+}
+function storePath(backend: string, id: string): string {
+    return path.join(storeDir(backend), id + ".json");
+}
+function readStored(backend: string, id: string): StoredSession | undefined {
+    try { return JSON.parse(fs.readFileSync(storePath(backend, id), "utf8")); } catch { return undefined; }
+}
+function writeStored(s: StoredSession): void {
+    try {
+        fs.mkdirSync(storeDir(s.backend), { recursive: true });
+        fs.writeFileSync(storePath(s.backend, s.id), JSON.stringify(s));
+    } catch { /* best-effort persistence */ }
+}
 
 export interface OpenAIAdapterConfig {
     /** Which API to call: chat completions or the Responses API. */
@@ -28,23 +61,39 @@ export interface OpenAIAdapterConfig {
 const discoveredModels = new Map<string, string[]>();
 const discoveredLabels = new Map<string, Record<string, string>>();
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+type ChatMessage = ChatMsg;
 
 /**
  * A direct OpenAI-compatible chat session (no CLI): streams /chat/completions
  * over HTTP with a custom base URL + headers, to talk straight to sufficit-ai
- * models. Stateless server-side, so the message history is kept here.
+ * models. Stateless server-side, so history is kept here and persisted to disk
+ * so the session survives a reload (the API has no transcript of its own).
  */
 class OpenAISession extends EventEmitter implements AgentSession {
-    readonly backend = "openai" as const;
     readonly sessionId: string;
     private readonly messages: ChatMessage[] = [];
     private abort: AbortController | undefined;
+    private title = "";
 
-    constructor(private readonly cfg: OpenAIAdapterConfig, private readonly options: SessionStartOptions) {
+    constructor(
+        readonly backend: string,
+        private readonly cfg: OpenAIAdapterConfig,
+        private readonly options: SessionStartOptions,
+    ) {
         super();
-        this.sessionId = randomUUID();
+        // Resume a stored session if asked, else start a fresh one.
+        const resumed = options.resumeSessionId ? readStored(backend, options.resumeSessionId) : undefined;
+        this.sessionId = resumed?.id ?? randomUUID();
+        if (resumed) { this.messages.push(...resumed.messages); this.title = resumed.title; }
         queueMicrotask(() => this.emit("event", { kind: "session", sessionId: this.sessionId, model: this.model() }));
+    }
+
+    private persist(): void {
+        writeStored({
+            id: this.sessionId, backend: this.backend, title: this.title,
+            cwd: this.options.cwd, model: this.model(), updatedAt: new Date().toISOString(),
+            messages: this.messages,
+        });
     }
 
     private model(): string {
@@ -61,6 +110,8 @@ class OpenAISession extends EventEmitter implements AgentSession {
 
     send(text: string): void {
         this.messages.push({ role: "user", content: text });
+        if (!this.title) { this.title = text.trim().slice(0, 60); }
+        this.persist();
         void this.run();
     }
 
@@ -107,6 +158,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
             }
         }
         if (assistant) { this.messages.push({ role: "assistant", content: assistant }); }
+        this.persist();
         this.emit("event", { kind: "turn-end" });
     }
 
@@ -172,11 +224,33 @@ export class OpenAIAdapter implements AgentAdapter {
     }
 
     async listSessions(): Promise<SessionInfo[]> {
-        return []; // stateless API: live sessions appear via the runtime registry
+        const dir = storeDir(this.backend);
+        let files: string[];
+        try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { return []; }
+        const out: SessionInfo[] = [];
+        for (const f of files) {
+            const s = readStored(this.backend, f.slice(0, -5));
+            if (s) {
+                out.push({ backend: this.backend, sessionId: s.id, title: s.title || "Session", cwd: s.cwd, updatedAt: new Date(s.updatedAt) });
+            }
+        }
+        return out;
+    }
+
+    async history(info: SessionInfo): Promise<HistoryMessage[]> {
+        const s = readStored(this.backend, info.sessionId);
+        if (!s) { return []; }
+        return s.messages
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map((m) => ({ role: m.role as "user" | "assistant", text: m.content }));
+    }
+
+    async deleteSession(info: SessionInfo): Promise<void> {
+        try { fs.rmSync(storePath(this.backend, info.sessionId), { force: true }); } catch { /* ignore */ }
     }
 
     start(options: SessionStartOptions): AgentSession {
-        return new OpenAISession(this.getConfig(), options);
+        return new OpenAISession(this.backend, this.getConfig(), options);
     }
 
     /** GET <baseUrl>/models → cache the offered model ids (OpenAI shape). */
