@@ -11,8 +11,23 @@ import {
     SessionStartOptions,
 } from "./types";
 import { TODO_INJECTION } from "./todos";
+import { HubClient } from "../sync/hubClient";
+import { AI_TOOLS, runAiTool } from "./aiTools";
 
-type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
+/** OpenAI tool call as streamed/accumulated from chat completions deltas. */
+interface ToolCall {
+    id: string;
+    type: "function";
+    function: { name: string; arguments: string };
+}
+
+type ChatMsg = {
+    role: "system" | "user" | "assistant" | "tool";
+    content: string | null;
+    tool_calls?: ToolCall[];
+    tool_call_id?: string;
+    name?: string;
+};
 
 interface StoredSession {
     id: string;
@@ -74,6 +89,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
     private readonly messages: ChatMessage[] = [];
     private abort: AbortController | undefined;
     private title = "";
+    private readonly hub = new HubClient();
 
     constructor(
         readonly backend: string,
@@ -129,77 +145,110 @@ class OpenAISession extends EventEmitter implements AgentSession {
         const base = this.cfg.baseUrl.replace(/\/+$/, "");
         const url = base + (responses ? "/responses" : "/chat/completions");
         const effort = this.options.reasoning;
-        const body: Record<string, unknown> = responses
-            ? { model: this.model(), input: this.messages, stream: true }
-            : { model: this.model(), messages: this.messages, stream: true };
-        if (effort && effort !== "default") {
-            if (responses) { body.reasoning = { effort }; }
-            else { body.reasoning_effort = effort; }
-        }
-        this.cfg.log?.(`[${this.backend}] POST ${url} api=${this.cfg.api} model=${this.model()}`);
-        let assistant = "";
+        // Memory/web tools only on the chat-completions path and when the hub is
+        // configured. The model calls them; we execute against the sufficit hub.
+        const useTools = !responses && this.hub.configured();
+
         try {
-            const res = await fetch(url, {
-                method: "POST",
-                headers: this.headers(),
-                body: JSON.stringify(body),
-                signal: this.abort.signal,
-            });
-            if (!res.ok || !res.body) {
-                const detail = await res.text().catch(() => "");
-                this.emit("event", { kind: "error", message: `HTTP ${res.status} ${res.statusText} ${detail}`.trim() });
-                this.emit("event", { kind: "turn-end" });
-                return;
+            // Tool-call loop: keep round-tripping while the model requests tools.
+            for (let hop = 0; hop < 8; hop++) {
+                this.abort = new AbortController();
+                const body: Record<string, unknown> = responses
+                    ? { model: this.model(), input: this.messages, stream: true }
+                    : { model: this.model(), messages: this.messages, stream: true };
+                if (useTools) { body.tools = AI_TOOLS; body.tool_choice = "auto"; }
+                if (effort && effort !== "default") {
+                    if (responses) { body.reasoning = { effort }; }
+                    else { body.reasoning_effort = effort; }
+                }
+                this.cfg.log?.(`[${this.backend}] POST ${url} api=${this.cfg.api} model=${this.model()} tools=${useTools} hop=${hop}`);
+                const res = await fetch(url, {
+                    method: "POST", headers: this.headers(), body: JSON.stringify(body), signal: this.abort.signal,
+                });
+                if (!res.ok || !res.body) {
+                    const detail = await res.text().catch(() => "");
+                    this.emit("event", { kind: "error", message: `HTTP ${res.status} ${res.statusText} ${detail}`.trim() });
+                    break;
+                }
+                const { text, toolCalls } = await this.consume(res.body);
+
+                if (toolCalls.length === 0) {
+                    if (text) { this.messages.push({ role: "assistant", content: text }); }
+                    break;
+                }
+
+                // Record the assistant turn that requested tools, then run each.
+                this.messages.push({ role: "assistant", content: text || null, tool_calls: toolCalls });
+                for (const tc of toolCalls) {
+                    let args: Record<string, unknown> = {};
+                    try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* leave empty */ }
+                    this.emit("event", { kind: "tool-start", toolName: tc.function.name, detail: tc.function.arguments?.slice(0, 200), toolId: tc.id, input: tc.function.arguments });
+                    const result = await runAiTool(tc.function.name, args, this.hub);
+                    this.emit("event", { kind: "tool-end", toolName: tc.function.name, toolId: tc.id, result });
+                    this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
+                }
+                // loop again so the model can use the tool results
             }
-            assistant = await this.consume(res.body);
         } catch (error) {
             if ((error as any)?.name !== "AbortError") {
                 this.emit("event", { kind: "error", message: error instanceof Error ? error.message : String(error) });
             }
         }
-        if (assistant) { this.messages.push({ role: "assistant", content: assistant }); }
         this.persist();
         this.emit("event", { kind: "turn-end" });
     }
 
-    /** Reads an SSE stream, emitting text deltas for chat or responses shape. */
-    private async consume(stream: ReadableStream<Uint8Array>): Promise<string> {
+    /**
+     * Reads an SSE stream, emitting text deltas. Also accumulates streamed
+     * tool_calls (chat completions) so the caller can run them and continue.
+     */
+    private async consume(stream: ReadableStream<Uint8Array>): Promise<{ text: string; toolCalls: ToolCall[] }> {
         const responses = this.cfg.api === "responses";
         const reader = stream.getReader();
         const decoder = new TextDecoder();
         let buf = "";
         let assistant = "";
+        const calls: ToolCall[] = []; // indexed by streamed tool_call index
+        const done = () => ({ text: assistant, toolCalls: calls.filter((c) => c && c.function.name) });
         for (; ;) {
-            const { done, value } = await reader.read();
-            if (done) { break; }
-            buf += decoder.decode(value, { stream: true });
+            const r = await reader.read();
+            if (r.done) { break; }
+            buf += decoder.decode(r.value, { stream: true });
             let nl: number;
             while ((nl = buf.indexOf("\n")) >= 0) {
                 const line = buf.slice(0, nl).trim();
                 buf = buf.slice(nl + 1);
                 if (!line.startsWith("data:")) { continue; }
                 const payload = line.slice(5).trim();
-                if (payload === "[DONE]") { return assistant; }
+                if (payload === "[DONE]") { return done(); }
                 try {
                     const json = JSON.parse(payload);
-                    let delta: unknown;
                     if (responses) {
-                        // Responses API: streamed as response.output_text.delta events.
-                        if (json?.type === "response.output_text.delta") { delta = json.delta; }
-                        else if (json?.type === "response.error") { this.emit("event", { kind: "error", message: String(json?.error?.message ?? "response error") }); }
-                    } else {
-                        delta = json?.choices?.[0]?.delta?.content;
+                        if (json?.type === "response.output_text.delta" && typeof json.delta === "string") {
+                            assistant += json.delta; this.emit("event", { kind: "text", text: json.delta });
+                        } else if (json?.type === "response.error") {
+                            this.emit("event", { kind: "error", message: String(json?.error?.message ?? "response error") });
+                        }
+                        continue;
                     }
-                    if (typeof delta === "string" && delta) {
-                        assistant += delta;
-                        this.emit("event", { kind: "text", text: delta });
+                    const delta = json?.choices?.[0]?.delta;
+                    if (typeof delta?.content === "string" && delta.content) {
+                        assistant += delta.content; this.emit("event", { kind: "text", text: delta.content });
+                    }
+                    // Accumulate tool_calls: name+id arrive first, arguments stream in chunks.
+                    for (const tc of delta?.tool_calls ?? []) {
+                        const i = tc.index ?? 0;
+                        if (!calls[i]) { calls[i] = { id: tc.id ?? "", type: "function", function: { name: "", arguments: "" } }; }
+                        if (tc.id) { calls[i].id = tc.id; }
+                        if (tc.function?.name) { calls[i].function.name = tc.function.name; }
+                        if (tc.function?.arguments) { calls[i].function.arguments += tc.function.arguments; }
                     }
                 } catch {
                     // partial/non-JSON keepalive line; ignore
                 }
             }
         }
-        return assistant;
+        return done();
     }
 }
 
@@ -241,8 +290,8 @@ export class OpenAIAdapter implements AgentAdapter {
         const s = readStored(this.backend, info.sessionId);
         if (!s) { return []; }
         return s.messages
-            .filter((m) => m.role === "user" || m.role === "assistant")
-            .map((m) => ({ role: m.role as "user" | "assistant", text: m.content }));
+            .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.length > 0)
+            .map((m) => ({ role: m.role as "user" | "assistant", text: m.content as string }));
     }
 
     async deleteSession(info: SessionInfo): Promise<void> {

@@ -90,15 +90,33 @@ export class HubClient {
 
     /** Lists compact records of one type (empty query → recent, up to limit). */
     async searchByType(type: string, limit = 100): Promise<CompactRecord[]> {
+        return this.searchMemory({ type, limit });
+    }
+
+    /** Free-form memory search (query/type/limit). Returns compact records. */
+    async searchMemory(params: { query?: string; type?: string; limit?: number }): Promise<CompactRecord[]> {
         const res = await fetch(`${this.base()}/api/memory/search`, {
             method: "POST",
             headers: this.headers(),
-            body: JSON.stringify({ type, limit }),
+            body: JSON.stringify({ limit: 20, ...params }),
         });
         if (!res.ok) {
-            throw new Error(`search ${type} failed: ${res.status}`);
+            throw new Error(`memory search failed: ${res.status}`);
         }
         return (await res.json()) as CompactRecord[];
+    }
+
+    /** Web search via the sufficit-ai gateway (SearXNG-backed). Returns raw JSON. */
+    async webSearch(query: string, limit = 8): Promise<unknown> {
+        const res = await fetch(`${this.base()}/api/ai/websearch`, {
+            method: "POST",
+            headers: this.headers(),
+            body: JSON.stringify({ query, limit }),
+        });
+        if (!res.ok) {
+            throw new Error(`web search failed: ${res.status}`);
+        }
+        return await res.json();
     }
 
     /** Fetches full observations (with payload) by id. */
