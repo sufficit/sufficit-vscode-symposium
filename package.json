@@ -213,6 +213,21 @@
           "default": "",
           "description": "Base URL of the sufficit-ai memory/vault hub (e.g. https://ai.sufficit.com.br). Empty disables sync; agents still work offline from local files."
         },
+        "symposium.identity.url": {
+          "type": "string",
+          "default": "https://identity.sufficit.com.br",
+          "description": "Sufficit Identity (Duende) issuer URL for login."
+        },
+        "symposium.identity.clientId": {
+          "type": "string",
+          "default": "",
+          "description": "OAuth client id registered in Sufficit Identity for Symposium (public client with the device_code grant). Required for login."
+        },
+        "symposium.identity.scope": {
+          "type": "string",
+          "default": "openid profile email offline_access",
+          "description": "OAuth scopes requested at login."
+        },
         "symposium.hub.token": {
           "type": "string",
           "default": "",

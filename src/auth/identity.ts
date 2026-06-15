@@ -1,14 +1,17 @@
 import * as vscode from "vscode";
-import { createHash, randomBytes } from "crypto";
 
 /**
- * Sufficit Identity login for Symposium via the sufficit-ai OAuth proxy
- * (Duende IdentityServer behind ai.sufficit.com.br). Authorization Code + PKCE
- * with a VS Code URI redirect; tokens are kept in SecretStorage (never in
- * settings.json). The profile (name/email/avatar) comes from /connect/userinfo.
+ * Sufficit Identity login for Symposium via OAuth 2.0 Device Authorization Grant
+ * against the Duende IdentityServer at identity.sufficit.com.br. Device flow is
+ * used because it needs no redirect URI — works in desktop VS Code and code-server.
  *
- * These credentials are the basis for memory/MCP access (next slice wires the
- * access token into the hub requests).
+ * Tokens live in SecretStorage (never settings.json). The profile (name/email/
+ * avatar) comes from /connect/userinfo. These credentials are the basis for
+ * memory/MCP access.
+ *
+ * Requires a public OAuth client registered in identity with the device_code
+ * grant enabled and scopes openid/profile/email/offline_access. The client id is
+ * read from `symposium.identity.clientId`.
  */
 
 export interface SufficitProfile {
@@ -25,13 +28,17 @@ interface StoredTokens {
     expiresAtMs: number;
 }
 
+interface Discovery {
+    token_endpoint: string;
+    device_authorization_endpoint?: string;
+    userinfo_endpoint?: string;
+}
+
 const SECRET_KEY = "sufficit.identity.tokens";
-const REDIRECT_PATH = "/auth-callback";
 
 export class SufficitAuth {
     private profileCache: SufficitProfile | undefined;
     private readonly onChangeEmitter = new vscode.EventEmitter<void>();
-    /** Fires on login/logout so the UI can refresh. */
     readonly onDidChange = this.onChangeEmitter.event;
 
     constructor(
@@ -39,69 +46,66 @@ export class SufficitAuth {
         private readonly log: (msg: string) => void = () => { },
     ) { }
 
-    /** Base of the sufficit-ai gateway / OAuth proxy. */
-    private base(): string {
-        return vscode.workspace.getConfiguration("symposium.hub").get<string>("url", "").replace(/\/+$/, "");
+    private cfg() {
+        return vscode.workspace.getConfiguration("symposium.identity");
+    }
+    private issuer(): string {
+        return this.cfg().get<string>("url", "https://identity.sufficit.com.br").replace(/\/+$/, "");
+    }
+    private clientId(): string {
+        return this.cfg().get<string>("clientId", "");
+    }
+    private scope(): string {
+        return this.cfg().get<string>("scope", "openid profile email offline_access");
     }
 
-    private redirectUri(): string {
-        return `${vscode.env.uriScheme}://sufficit.sufficit-vscode-symposium${REDIRECT_PATH}`;
-    }
-
-    /** Loads the OIDC discovery document from the proxy. */
-    private async discovery(): Promise<{ authorization_endpoint: string; token_endpoint: string; userinfo_endpoint?: string; registration_endpoint?: string }> {
-        const res = await fetch(`${this.base()}/.well-known/openid-configuration`);
+    private async discovery(): Promise<Discovery> {
+        const res = await fetch(`${this.issuer()}/.well-known/openid-configuration`);
         if (!res.ok) {
             throw new Error(`discovery failed: ${res.status}`);
         }
-        return (await res.json()) as any;
+        return (await res.json()) as Discovery;
     }
 
-    /** Registers a public PKCE client with our redirect, returning a client_id. */
-    private async registerClient(registrationEndpoint: string): Promise<string> {
-        const res = await fetch(registrationEndpoint, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-                client_name: "Symposium (VS Code)",
-                redirect_uris: [this.redirectUri()],
-                grant_types: ["authorization_code", "refresh_token"],
-                response_types: ["code"],
-                token_endpoint_auth_method: "none",
-            }),
-        });
-        if (!res.ok) {
-            throw new Error(`client registration failed: ${res.status}`);
-        }
-        const j = (await res.json()) as { client_id: string };
-        return j.client_id;
-    }
-
-    /** Whether a (possibly expired) session is stored. */
     async isLoggedIn(): Promise<boolean> {
         return (await this.readTokens()) !== undefined;
     }
 
-    /** Runs the interactive login. Returns the profile on success. */
+    /** Interactive device-code login. Returns the profile on success. */
     async login(): Promise<SufficitProfile | undefined> {
-        if (!this.base()) {
-            void vscode.window.showWarningMessage("Configure symposium.hub.url antes do login.");
+        const clientId = this.clientId();
+        if (!clientId) {
+            void vscode.window.showErrorMessage("Configure symposium.identity.clientId (client OAuth registrado no Sufficit Identity).");
             return undefined;
         }
         const disco = await this.discovery();
-        const clientId = disco.registration_endpoint
-            ? await this.registerClient(disco.registration_endpoint).catch(() => "mcp_vscode_proxy")
-            : "mcp_vscode_proxy";
+        if (!disco.device_authorization_endpoint) {
+            throw new Error("Identity não anuncia device_authorization_endpoint.");
+        }
 
-        const verifier = randomBytes(32).toString("base64url");
-        const challenge = createHash("sha256").update(verifier).digest("base64url");
-        const state = randomBytes(16).toString("base64url");
+        // 1. Request a device + user code.
+        const devRes = await fetch(disco.device_authorization_endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ client_id: clientId, scope: this.scope() }).toString(),
+        });
+        const dev = await devRes.json() as any;
+        if (!devRes.ok) {
+            throw new Error(`device authorization failed: ${dev.error ?? devRes.status}`);
+        }
 
-        const code = await this.authorizeViaBrowser(disco.authorization_endpoint, clientId, challenge, state);
-        if (!code) {
+        const verifyUrl: string = dev.verification_uri_complete ?? dev.verification_uri;
+        const pick = await vscode.window.showInformationMessage(
+            `Sufficit: abra o navegador e confirme o código ${dev.user_code}`, "Abrir navegador");
+        if (pick) {
+            await vscode.env.openExternal(vscode.Uri.parse(verifyUrl));
+        }
+
+        // 2. Poll the token endpoint until the user approves (or timeout).
+        const tokens = await this.pollToken(disco.token_endpoint, clientId, dev.device_code, dev.interval ?? 5, dev.expires_in ?? 300);
+        if (!tokens) {
             return undefined;
         }
-        const tokens = await this.exchangeCode(disco.token_endpoint, clientId, code, verifier);
         await this.writeTokens(tokens);
         this.profileCache = undefined;
         const profile = await this.getProfile(true);
@@ -109,60 +113,34 @@ export class SufficitAuth {
         return profile;
     }
 
-    /** Opens the browser to the authorize URL and waits for the redirect code. */
-    private authorizeViaBrowser(authEndpoint: string, clientId: string, challenge: string, state: string): Promise<string | undefined> {
-        const params = new URLSearchParams({
-            response_type: "code",
-            client_id: clientId,
-            redirect_uri: this.redirectUri(),
-            scope: "openid profile email offline_access",
-            code_challenge: challenge,
-            code_challenge_method: "S256",
-            state,
-        });
-        const url = `${authEndpoint}?${params.toString()}`;
-
-        return new Promise<string | undefined>((resolve) => {
-            const disposable = vscode.window.registerUriHandler({
-                handleUri: (uri: vscode.Uri) => {
-                    if (!uri.path.startsWith(REDIRECT_PATH)) {
-                        return;
+    private async pollToken(tokenEndpoint: string, clientId: string, deviceCode: string, intervalSec: number, expiresInSec: number): Promise<StoredTokens | undefined> {
+        const deadline = Date.now() + expiresInSec * 1000;
+        let interval = intervalSec;
+        return vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: "Sufficit: aguardando aprovação no navegador…", cancellable: true },
+            async (_p, token) => {
+                while (Date.now() < deadline && !token.isCancellationRequested) {
+                    await new Promise((r) => setTimeout(r, interval * 1000));
+                    const res = await fetch(tokenEndpoint, {
+                        method: "POST",
+                        headers: { "content-type": "application/x-www-form-urlencoded" },
+                        body: new URLSearchParams({
+                            grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+                            device_code: deviceCode,
+                            client_id: clientId,
+                        }).toString(),
+                    });
+                    const j = await res.json() as any;
+                    if (res.ok) {
+                        return this.toStored(j);
                     }
-                    const q = new URLSearchParams(uri.query);
-                    if (q.get("state") !== state) {
-                        resolve(undefined);
-                    } else {
-                        resolve(q.get("code") ?? undefined);
-                    }
-                    disposable.dispose();
-                },
+                    if (j.error === "authorization_pending") { continue; }
+                    if (j.error === "slow_down") { interval += 5; continue; }
+                    this.log(`[auth] device token error: ${j.error}`);
+                    throw new Error(j.error_description ?? j.error ?? "device login failed");
+                }
+                return undefined;
             });
-            const timer = setTimeout(() => { disposable.dispose(); resolve(undefined); }, 300_000);
-            void vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Notification, title: "Sufficit: aguardando login no navegador…" },
-                () => new Promise<void>((done) => {
-                    const i = setInterval(() => { /* keep notification while waiting */ }, 1000);
-                    const stop = () => { clearInterval(i); clearTimeout(timer); done(); };
-                    this.context.subscriptions.push({ dispose: stop });
-                    setTimeout(stop, 300_000);
-                }));
-            void vscode.env.openExternal(vscode.Uri.parse(url));
-        });
-    }
-
-    private async exchangeCode(tokenEndpoint: string, clientId: string, code: string, verifier: string): Promise<StoredTokens> {
-        const body = new URLSearchParams({
-            grant_type: "authorization_code",
-            code,
-            redirect_uri: this.redirectUri(),
-            client_id: clientId,
-            code_verifier: verifier,
-        });
-        const res = await fetch(tokenEndpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: body.toString() });
-        if (!res.ok) {
-            throw new Error(`token exchange failed: ${res.status} ${await res.text().catch(() => "")}`);
-        }
-        return this.toStored(await res.json());
     }
 
     private toStored(j: any): StoredTokens {
@@ -176,57 +154,43 @@ export class SufficitAuth {
 
     private async readTokens(): Promise<StoredTokens | undefined> {
         const raw = await this.context.secrets.get(SECRET_KEY);
-        if (!raw) {
-            return undefined;
-        }
+        if (!raw) { return undefined; }
         try { return JSON.parse(raw) as StoredTokens; } catch { return undefined; }
     }
-
     private async writeTokens(t: StoredTokens): Promise<void> {
         await this.context.secrets.store(SECRET_KEY, JSON.stringify(t));
     }
 
-    /** Returns a valid access token, refreshing if needed; null if not logged in. */
+    /** Valid access token (refreshes when possible); null if not logged in. */
     async getAccessToken(): Promise<string | null> {
         let t = await this.readTokens();
-        if (!t) {
-            return null;
-        }
-        if (Date.now() < t.expiresAtMs - 60_000) {
-            return t.accessToken;
-        }
+        if (!t) { return null; }
+        if (Date.now() < t.expiresAtMs - 60_000) { return t.accessToken; }
         if (t.refreshToken) {
             try {
                 const disco = await this.discovery();
-                const body = new URLSearchParams({ grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: "mcp_vscode_proxy" });
-                const res = await fetch(disco.token_endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: body.toString() });
-                if (res.ok) {
-                    t = this.toStored(await res.json());
-                    await this.writeTokens(t);
-                    return t.accessToken;
-                }
+                const res = await fetch(disco.token_endpoint, {
+                    method: "POST",
+                    headers: { "content-type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: this.clientId() }).toString(),
+                });
+                if (res.ok) { t = this.toStored(await res.json()); await this.writeTokens(t); return t.accessToken; }
             } catch (err) {
                 this.log(`[auth] refresh failed: ${err}`);
             }
         }
-        return t.accessToken; // possibly expired; caller handles 401
+        return t.accessToken;
     }
 
-    /** Profile from userinfo (cached). */
     async getProfile(force = false): Promise<SufficitProfile | undefined> {
-        if (this.profileCache && !force) {
-            return this.profileCache;
-        }
+        if (this.profileCache && !force) { return this.profileCache; }
         const token = await this.getAccessToken();
-        if (!token) {
-            return undefined;
-        }
+        if (!token) { return undefined; }
         try {
-            const res = await fetch(`${this.base()}/connect/userinfo`, { headers: { authorization: `Bearer ${token}` } });
-            if (!res.ok) {
-                return undefined;
-            }
-            const j = (await res.json()) as any;
+            const disco = await this.discovery();
+            const res = await fetch(disco.userinfo_endpoint ?? `${this.issuer()}/connect/userinfo`, { headers: { authorization: `Bearer ${token}` } });
+            if (!res.ok) { return undefined; }
+            const j = await res.json() as any;
             this.profileCache = { sub: j.sub, name: j.name ?? j.preferred_username, email: j.email, picture: j.picture };
             return this.profileCache;
         } catch {
