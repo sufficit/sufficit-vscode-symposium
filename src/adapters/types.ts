@@ -102,6 +102,11 @@ export interface SessionStartOptions {
      * (no agent gating); empty array = expose none.
      */
     aiTools?: string[];
+    /**
+     * System prompt to seed a fresh session with (e.g. the bound agent-def's
+     * instructions). Applied by API backends; ignored on resume.
+     */
+    systemPrompt?: string;
 }
 
 /**

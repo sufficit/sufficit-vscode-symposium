@@ -281,6 +281,20 @@ export function readAgentTools(name: string): string[] {
     }
 }
 
+/** Returns an agent-def's body (the markdown after frontmatter) = its instructions. */
+export function readAgentBody(name: string): string {
+    try {
+        const text = fs.readFileSync(resourcePath("agent", name), "utf8");
+        if (!text.startsWith("---")) {
+            return text.trim();
+        }
+        const end = text.indexOf("\n---", 3);
+        return end === -1 ? text.trim() : text.slice(end + 4).replace(/^\s+/, "");
+    } catch {
+        return "";
+    }
+}
+
 /** Parses all simple `key: value` pairs from a leading frontmatter block. */
 function parseFrontmatterRaw(text: string): Record<string, string> {
     const out: Record<string, string> = {};

@@ -33,6 +33,8 @@ import { ConfigPanel } from "./ui/configPanel";
 import { createSymposiumApi, SymposiumApi } from "./api/symposiumApi";
 import { RemoteBridge } from "./api/bridge";
 import { seedExamples } from "./config/seed";
+import { scanKind, readAgentBody, readAgentTools } from "./config/root";
+import { aiToolsForAgent } from "./adapters/aiTools";
 import { snapshots } from "./snapshots";
 
 function claudeConfig(): ClaudeAdapterConfig {
@@ -311,6 +313,45 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 ChatPanel.show(context, deps).openDialogue(choice.adapter.backend, { cwd }, "New dialogue");
             } else {
                 void chatView.openDialogue(choice.adapter.backend, { cwd }, "New dialogue");
+            }
+        }),
+
+        // New session bound to a local agent-def: seeds the system prompt from the
+        // agent's instructions and gates AI tools (memory/web) by its declared tools.
+        vscode.commands.registerCommand("symposium.newAgentSession", async () => {
+            const agents = scanKind("agent");
+            if (agents.length === 0) {
+                void vscode.window.showWarningMessage("Nenhum agente em ~/.symposium/repo/agents. Use Seed/Import ou crie um na Configuração.");
+                return;
+            }
+            const agent = await vscode.window.showQuickPick(
+                agents.map((a) => ({ label: a.name, description: a.description, name: a.name })),
+                { placeHolder: "Qual agente?" });
+            if (!agent) {
+                return;
+            }
+            const picks = await Promise.all(adapters.map(async (adapter) => {
+                const probe = await adapter.available();
+                return { label: adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, adapter, ok: probe.ok };
+            }));
+            const choice = await vscode.window.showQuickPick(picks, { placeHolder: `Backend para "${agent.name}"` });
+            if (!choice) {
+                return;
+            }
+            if (!choice.ok) {
+                void vscode.window.showWarningMessage(`${choice.label} indisponível: ${choice.description}`);
+                return;
+            }
+            const options = {
+                cwd: defaultCwd(),
+                systemPrompt: readAgentBody(agent.name),
+                aiTools: aiToolsForAgent(readAgentTools(agent.name)),
+            };
+            const title = `Agente: ${agent.name}`;
+            if (inEditor()) {
+                ChatPanel.show(context, deps).openDialogue(choice.adapter.backend, options, title);
+            } else {
+                void chatView.openDialogue(choice.adapter.backend, options, title);
             }
         }),
 

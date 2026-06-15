@@ -100,7 +100,12 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // Resume a stored session if asked, else start a fresh one.
         const resumed = options.resumeSessionId ? readStored(backend, options.resumeSessionId) : undefined;
         this.sessionId = resumed?.id ?? randomUUID();
-        if (resumed) { this.messages.push(...resumed.messages); this.title = resumed.title; }
+        if (resumed) {
+            this.messages.push(...resumed.messages); this.title = resumed.title;
+        } else if (options.systemPrompt) {
+            // Seed a fresh session with the bound agent-def's instructions.
+            this.messages.push({ role: "system", content: options.systemPrompt });
+        }
         queueMicrotask(() => this.emit("event", { kind: "session", sessionId: this.sessionId, model: this.model() }));
     }
 
