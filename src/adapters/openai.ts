@@ -212,6 +212,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
         let buf = "";
         let assistant = "";
         const calls: ToolCall[] = []; // indexed by streamed tool_call index
+        let lastFnIndex = 0;          // responses API: index of the most recent function_call
         const done = () => ({ text: assistant, toolCalls: calls.filter((c) => c && c.function.name) });
         for (; ;) {
             const r = await reader.read();
@@ -233,10 +234,15 @@ class OpenAISession extends EventEmitter implements AgentSession {
                         } else if (ty === "response.output_item.added" && json?.item?.type === "function_call") {
                             // New function call: index by output_index; carry call_id + name.
                             const i = json.output_index ?? calls.length;
-                            calls[i] = { id: json.item.call_id ?? json.item.id ?? "", type: "function", function: { name: json.item.name ?? "", arguments: "" } };
+                            calls[i] = { id: json.item.call_id ?? json.item.id ?? "", type: "function", function: { name: json.item.name ?? "", arguments: json.item.arguments ?? "" } };
+                            lastFnIndex = i;
                         } else if (ty === "response.function_call_arguments.delta" && typeof json.delta === "string") {
-                            const i = json.output_index ?? 0;
+                            const i = json.output_index ?? lastFnIndex;
                             if (calls[i]) { calls[i].function.arguments += json.delta; }
+                        } else if (ty === "response.function_call_arguments.done" && typeof json.arguments === "string") {
+                            // Some gateways send the full arguments only in the .done event (no deltas).
+                            const i = json.output_index ?? lastFnIndex;
+                            if (calls[i]) { calls[i].function.arguments = json.arguments; }
                         } else if (ty === "response.error") {
                             this.emit("event", { kind: "error", message: String(json?.error?.message ?? "response error") });
                         }
