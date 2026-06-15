@@ -64,6 +64,11 @@ export interface ChatSurfaceDeps {
         get(): { backend: string; sessionId: string } | undefined;
         set(value: { backend: string; sessionId: string } | undefined): void;
     };
+    /** Sufficit account for the sessions-pane footer (avatar + login/logout). */
+    account?: {
+        get(): Promise<{ name?: string; email?: string; picture?: string } | undefined>;
+        onDidChange: vscode.Event<void>;
+    };
 }
 
 /**
@@ -99,6 +104,9 @@ export class ChatSurface {
         const pushActiveFile = () => this.post({ type: "active-file", ...activeEditorContext() });
         this.disposables.push(vscode.window.onDidChangeActiveTextEditor(pushActiveFile));
         this.disposables.push(vscode.window.onDidChangeTextEditorSelection(pushActiveFile));
+        if (this.deps.account) {
+            this.disposables.push(this.deps.account.onDidChange(() => void this.pushAccount()));
+        }
     }
 
     private post(message: unknown): void {
@@ -121,6 +129,7 @@ export class ChatSurface {
                     }
                     this.queue = [];
                     void this.refreshSessions();
+                    void this.pushAccount();
                     // Nothing bound yet (view just opened): restore the last
                     // active session if we have one, else start a fresh dialogue.
                     if (!this.controller && !this.followHandle && !this.terminalSession) {
@@ -130,6 +139,14 @@ export class ChatSurface {
                 }
                 case "webview-error": {
                     symposiumLog(`[webview] ERROR: ${message.message}`);
+                    return;
+                }
+                case "account-login": {
+                    await vscode.commands.executeCommand("symposium.login");
+                    return;
+                }
+                case "account-logout": {
+                    await vscode.commands.executeCommand("symposium.logout");
                     return;
                 }
                 case "open-session": {
@@ -762,6 +779,15 @@ export class ChatSurface {
                 this.post({ type: "models", models, labels: labels ?? {} });
             })
             .catch(() => undefined);
+    }
+
+    /** Pushes the Sufficit account (or null) for the sessions-pane footer. */
+    private async pushAccount(): Promise<void> {
+        if (!this.deps.account) {
+            return;
+        }
+        const profile = await this.deps.account.get().catch(() => undefined);
+        this.post({ type: "account", profile: profile ?? null });
     }
 
     async refreshSessions(): Promise<void> {

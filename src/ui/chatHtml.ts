@@ -7,7 +7,7 @@
  * pane side (left/right) comes from the `meta` message.
  */
 export function renderHtml(): string {
-    const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';`;
+    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';`;
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -113,6 +113,23 @@ export function renderHtml(): string {
         padding: 6px 10px; opacity: 0.8; font-size: 0.85em; text-transform: uppercase;
     }
     #sessionsList { flex: 1; overflow-y: auto; }
+    #accountFooter {
+        border-top: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+        padding: 8px 10px; display: flex; align-items: center; gap: 8px;
+        cursor: pointer; font-size: 0.85em;
+    }
+    #accountFooter:hover { background: var(--vscode-list-hoverBackground); }
+    #accountFooter img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: 0 0 auto; }
+    #accountFooter .acc-ico {
+        width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto;
+        display: flex; align-items: center; justify-content: center;
+        background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); font-size: 13px;
+    }
+    #accountFooter .acc-text { flex: 1; overflow: hidden; }
+    #accountFooter .acc-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #accountFooter .acc-sub { opacity: 0.6; font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #accountFooter .acc-out { opacity: 0; padding: 2px 6px; }
+    #accountFooter:hover .acc-out { opacity: 0.7; }
     .groupHeader {
         display: flex; align-items: center; justify-content: space-between;
         padding: 10px 12px 4px 12px; font-size: 0.72em; text-transform: uppercase;
@@ -689,6 +706,7 @@ export function renderHtml(): string {
             </span>
         </div>
         <div id="sessionsList"></div>
+        <div id="accountFooter" title="Conta Sufficit"></div>
     </aside>
     <div id="resizer" title="Drag to resize"></div>
     <main id="chatCol">
@@ -1800,6 +1818,51 @@ export function renderHtml(): string {
         gh.appendChild(gl); gh.appendChild(gc);
         return gh;
     }
+    function renderAccount(profile) {
+        const el = document.getElementById("accountFooter");
+        if (!el) { return; }
+        el.textContent = "";
+        if (profile && (profile.name || profile.email)) {
+            if (profile.picture) {
+                const img = document.createElement("img");
+                img.setAttribute("src", profile.picture); img.alt = "";
+                el.appendChild(img);
+            } else {
+                const ic = document.createElement("div");
+                ic.className = "acc-ico";
+                ic.textContent = (profile.name || profile.email || "?").trim().charAt(0).toUpperCase();
+                el.appendChild(ic);
+            }
+            const txt = document.createElement("div");
+            txt.className = "acc-text";
+            const nm = document.createElement("div");
+            nm.className = "acc-name"; nm.textContent = profile.name || profile.email;
+            txt.appendChild(nm);
+            if (profile.name && profile.email) {
+                const sub = document.createElement("div");
+                sub.className = "acc-sub"; sub.textContent = profile.email;
+                txt.appendChild(sub);
+            }
+            el.appendChild(txt);
+            const out = document.createElement("span");
+            out.className = "acc-out"; out.title = "Sair"; out.textContent = "⎋";
+            out.onclick = (e) => { e.stopPropagation(); vscode.postMessage({ type: "account-logout" }); };
+            el.appendChild(out);
+            el.onclick = null;
+        } else {
+            const ic = document.createElement("div");
+            ic.className = "acc-ico"; ic.textContent = "↪";
+            el.appendChild(ic);
+            const txt = document.createElement("div");
+            txt.className = "acc-text";
+            const nm = document.createElement("div");
+            nm.className = "acc-name"; nm.textContent = "Entrar na Sufficit";
+            txt.appendChild(nm);
+            el.appendChild(txt);
+            el.onclick = () => vscode.postMessage({ type: "account-login" });
+        }
+    }
+
     function renderSessions() {
         sessionsList.textContent = "";
         const visible = sessions.filter((s) => !s.archived || showArchived);
@@ -2268,6 +2331,10 @@ export function renderHtml(): string {
             case "sessions": {
                 sessions = data.items;
                 renderSessions();
+                break;
+            }
+            case "account": {
+                renderAccount(data.profile);
                 break;
             }
             case "commands": {

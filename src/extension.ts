@@ -234,6 +234,10 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             get: () => context.workspaceState.get("symposium.lastActive"),
             set: (value) => void context.workspaceState.update("symposium.lastActive", value),
         },
+        account: {
+            get: () => auth.getProfile(),
+            onDidChange: auth.onDidChange,
+        },
     };
 
     const chatView = new ChatViewProvider(deps);
