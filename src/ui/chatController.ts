@@ -181,12 +181,13 @@ export class ChatController {
                 const i = this.queue.findIndex((m) => m.id === message.id);
                 if (i < 0) { return true; }
                 const [m] = this.queue.splice(i, 1);
-                this.queue.unshift(m);
-                this.emitQueue();
                 if (this.busy) {
+                    this.queue.unshift(m);   // dispatched first on turn-end
+                    this.emitQueue();
                     this.session?.cancel();
                 } else {
-                    this.dispatch(this.queue.shift());
+                    this.emitQueue();
+                    this.dispatch(m);
                 }
                 return true;
             }
