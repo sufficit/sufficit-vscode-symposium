@@ -193,7 +193,11 @@ export class SufficitAuth {
             const res = await fetch(disco.userinfo_endpoint ?? `${this.issuer()}/connect/userinfo`, { headers: { authorization: `Bearer ${token}` } });
             if (!res.ok) { return undefined; }
             const j = await res.json() as any;
-            this.profileCache = { sub: j.sub, name: j.name ?? j.preferred_username, email: j.email, picture: j.picture };
+            // Avatar comes from the Sufficit contact endpoint keyed by the user id.
+            const picture = j.sub
+                ? `https://endpoints.sufficit.com.br/contact/avatar?contextid=${encodeURIComponent(j.sub)}`
+                : j.picture;
+            this.profileCache = { sub: j.sub, name: j.name ?? j.preferred_username, email: j.email, picture };
             return this.profileCache;
         } catch {
             return undefined;
