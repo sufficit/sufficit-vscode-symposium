@@ -110,6 +110,39 @@ export class TerminalSession {
         setTimeout(() => this.terminal?.sendText("", true), 60);
     }
 
+    /** The backend this terminal session runs (for a handoff to another agent). */
+    get backend(): string {
+        return this.adapter.backend;
+    }
+
+    /** Working directory of the session (carried to the target on handoff). */
+    get cwd(): string {
+        return this.options.cwd;
+    }
+
+    /** The discovered backend session id, once the CLI reported one. */
+    get currentSessionId(): string | undefined {
+        return this.sessionId;
+    }
+
+    /**
+     * Reconstructs the visible conversation (user prompts + assistant replies)
+     * from the CLI transcript, so the dialogue can be handed off to another
+     * agent. Returns an empty array when the backend keeps no transcript or the
+     * session id hasn't been discovered yet.
+     */
+    async historyMessages(): Promise<HistoryMessage[]> {
+        if (!this.sessionId || !this.adapter.history) {
+            return [];
+        }
+        const info: SessionInfo = { backend: this.adapter.backend, sessionId: this.sessionId, title: "" };
+        try {
+            return await this.adapter.history(info);
+        } catch {
+            return [];
+        }
+    }
+
     private markBooted(): void {
         this.booted = true;
         for (const text of this.pending.splice(0)) {

@@ -289,6 +289,22 @@ export class OpenAIAdapter implements AgentAdapter {
         return [...new Set([cfg.model || list[0], ...list])];
     }
 
+    /**
+     * Force a (re)discovery from <baseUrl>/models, then return the freshly
+     * built list + labels. The chat surface awaits this right after opening a
+     * dialogue so the picker reflects the real server models even when the
+     * discovery cache was empty (e.g. first session after a reload). When the
+     * models are pinned in settings, discovery is skipped — the configured
+     * list wins.
+     */
+    async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
+        const cfg = this.getConfig();
+        if (!cfg.models.length && cfg.baseUrl) {
+            await this.discoverModels(cfg).catch(() => undefined);
+        }
+        return { models: this.models(), labels: this.modelLabels() };
+    }
+
     // Common OpenAI reasoning_effort values; "default" omits the param.
     reasoningLevels(): string[] {
         return ["default", "minimal", "low", "medium", "high"];

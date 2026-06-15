@@ -80,16 +80,27 @@ export async function pendingChanges(absPaths: string[]): Promise<Set<string>> {
         }
         const r = await git(root, ["status", "--porcelain", "--no-renames"]);
         if (r.code !== 0) { for (const p of paths) { pending.add(p); } continue; }
-        const dirty = new Set<string>();
-        for (const line of r.stdout.split("\n")) {
-            if (line.length < 4) { continue; }
-            const x = line[0], y = line[1];
-            const rel = line.slice(3).trim();
-            // Untracked, or any working-tree change (2nd column != space).
-            const isPending = (x === "?" && y === "?") || (y !== " ");
-            if (isPending && rel) { dirty.add(path.resolve(root, rel)); }
-        }
+        const dirty = parsePorcelainDirty(r.stdout, root, path);
         for (const p of paths) { if (dirty.has(p)) { pending.add(p); } }
     }
     return pending;
+}
+
+/**
+ * Absolute paths with UNSTAGED/untracked changes from `git status --porcelain`
+ * output. Pure (testable): a path is pending when untracked (`??`) or its
+ * worktree column (2nd char) isn't a space. `pathMod` is node:path (injectable).
+ */
+export function parsePorcelainDirty(
+    stdout: string, root: string, pathMod: typeof import("path") = require("path"),
+): Set<string> {
+    const dirty = new Set<string>();
+    for (const line of stdout.split("\n")) {
+        if (line.length < 4) { continue; }
+        const x = line[0], y = line[1];
+        const rel = line.slice(3).trim();
+        const isPending = (x === "?" && y === "?") || (y !== " ");
+        if (isPending && rel) { dirty.add(pathMod.resolve(root, rel)); }
+    }
+    return dirty;
 }

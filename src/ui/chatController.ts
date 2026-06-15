@@ -132,6 +132,21 @@ export class ChatController {
         return rows;
     }
 
+    /** Visible user/assistant rows up to and including `index` (0-based). */
+    transcriptMessagesUpTo(index: number): { role: "user" | "assistant"; text: string }[] {
+        if (index < 0) {
+            return [];
+        }
+        return this.transcriptMessages().slice(0, index + 1);
+    }
+
+    /** Plain-text transcript up to and including `index` (0-based). */
+    transcriptUpTo(index: number): string {
+        return this.transcriptMessagesUpTo(index)
+            .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
+            .join("\n\n");
+    }
+
     get attached(): boolean {
         return this.sink !== null;
     }

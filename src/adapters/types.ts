@@ -134,6 +134,14 @@ export interface AgentAdapter {
     follow?(info: SessionInfo, onMessage: (message: HistoryMessage) => void): FollowHandle;
     /** Models offered in the chat panel picker; first entry is the default. */
     models?(): string[];
+    /**
+     * Refresh the model list from a remote source (e.g. GET /models), then
+     * resolve with the up-to-date list. Synchronous `models()` may return a
+     * stale/fallback list before discovery completes; the chat surface awaits
+     * this after posting `meta` to repopulate the picker. Optional: backends
+     * with a static model list omit it.
+     */
+    refreshModels?(): Promise<{ models: string[]; labels?: Record<string, string> }>;
     /** Reasoning/thinking effort levels for the picker; first entry = CLI default (no flag). */
     reasoningLevels?(): string[];
     /** Permission/approval modes for the config menu (backend-specific). */

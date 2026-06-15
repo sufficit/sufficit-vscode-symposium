@@ -417,27 +417,46 @@ export function renderHtml(): string {
     }
     .qitem .qbtn svg { width: 13px; height: 13px; }
     .qitem .qbtn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
-    /* plan / todo — pinned above the edited-files set */
-    #plan { display: none; border-top: 1px solid var(--vscode-panel-border, transparent); }
+    /* plan / todo — rounded card pinned above the textarea, matching the
+       Copilot Chat todo-list widget (bordered, inset, collapsible). */
+    #plan { display: none; margin: 0 12px 8px 12px; }
     #plan.has { display: block; }
-    #plan .plhead {
-        display: flex; align-items: center; gap: 6px; padding: 4px 12px; cursor: pointer;
-        font-size: 0.78em; font-weight: 600; opacity: 0.85;
+    #plan .plcard {
+        border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(128,128,128,0.25)));
+        border-radius: 6px;
+        background: var(--vscode-chat-requestBackground, var(--vscode-input-background, transparent));
+        overflow: hidden;
     }
-    #plan .plhead .pltitle { flex: 1; }
-    #plan .plhead .plcount { opacity: 0.65; font-weight: 400; }
-    #plan .plhead svg { width: 12px; height: 12px; transition: transform 150ms ease; }
+    #plan .plhead {
+        display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer;
+        font-size: 0.9em; user-select: none;
+    }
+    #plan .plhead:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); }
+    #plan .plhead .pltitle {
+        flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        font-weight: 600;
+    }
+    #plan .plhead .plcount {
+        flex-shrink: 0; opacity: 0.75; font-weight: 400; font-size: 0.92em;
+        font-variant-numeric: tabular-nums;
+    }
+    #plan .plhead svg.plchev { width: 12px; height: 12px; flex-shrink: 0; opacity: 0.8; transition: transform 150ms ease; }
+    #plan:not(.collapsed) .plhead svg.plchev { transform: rotate(0deg); }
     #plan.collapsed .plhead svg.plchev { transform: rotate(-90deg); }
-    #plan .pllist { max-height: 160px; overflow-y: auto; padding: 0 12px 6px 12px; }
+    #plan .pllist {
+        max-height: 200px; overflow-y: auto;
+        padding: 2px 10px 8px 10px;
+        border-top: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(128,128,128,0.18)));
+    }
     #plan.collapsed .pllist { display: none; }
     .todoitem { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; line-height: 1.5; font-size: 0.9em; }
-    .todoitem .tmark { flex-shrink: 0; width: 15px; height: 15px; margin-top: 1px; display: inline-flex; }
-    .todoitem .tmark svg { width: 15px; height: 15px; }
-    .todoitem.done .tcontent { opacity: 0.5; text-decoration: line-through; }
+    .todoitem .tmark { flex-shrink: 0; width: 16px; height: 16px; margin-top: 1px; display: inline-flex; align-items: center; justify-content: center; }
+    .todoitem .tmark svg { width: 14px; height: 14px; }
+    .todoitem.done .tcontent { opacity: 0.6; text-decoration: line-through; }
     .todoitem.active .tcontent { color: var(--vscode-foreground); font-weight: 600; }
     .todoitem.active .tmark { color: var(--vscode-progressBar-background, var(--vscode-focusBorder)); }
-    .todoitem.done .tmark { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec94e); }
-    .todoitem .tmark.pending { color: var(--vscode-descriptionForeground); opacity: 0.6; }
+    .todoitem.done .tmark { color: var(--vscode-charts-green, var(--vscode-gitDecoration-addedResourceForeground, #4ec94e)); }
+    .todoitem .tmark.pending { color: var(--vscode-descriptionForeground); opacity: 0.7; }
     /* changed-files working set above the composer */
     #changedFiles { display: none; border-top: 1px solid var(--vscode-panel-border, transparent); }
     #changedFiles.has { display: block; }
@@ -1042,11 +1061,15 @@ export function renderHtml(): string {
     // A chat message with a small role label (user/assistant); assistant text
     // is rendered as markdown.
     const BACKEND_NAMES = { claude: "Claude", codex: "Codex", copilot: "Copilot", openai: "Sufficit AI" };
+    let conversationRows = [];
     function message(role, text, ts) {
         const stick = nearBottom();
         endToolGroup();
         const wrap = document.createElement("div");
         wrap.className = "msg " + role;
+        wrap.dataset.role = role;
+        wrap.dataset.msgIndex = String(conversationRows.length);
+        conversationRows.push({ role, text: text || "" });
         const label = document.createElement("div");
         label.className = "role " + role;
         if (role === "assistant") {
@@ -1074,8 +1097,15 @@ export function renderHtml(): string {
         if (role === "assistant") { body.className = "md"; renderMarkdown(body, text); }
         else { body.className = "ubody"; body.textContent = text; }
         wrap.appendChild(body);
+        const tools = document.createElement("div"); tools.className = "msgTools";
+        const restart = document.createElement("button"); restart.className = "msgCopy"; restart.title = "Restart conversation from this message";
+        restart.appendChild(svgIcon("history"));
+        restart.addEventListener("click", () => {
+            const idx = Number(wrap.dataset.msgIndex || "-1");
+            if (idx >= 0) { vscode.postMessage({ type: "restart-from-message", index: idx }); }
+        });
+        tools.appendChild(restart);
         if (role === "assistant") {
-            const tools = document.createElement("div"); tools.className = "msgTools";
             const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy this reply";
             cp.appendChild(svgIcon("copy"));
             cp.addEventListener("click", () => {
@@ -1083,8 +1113,8 @@ export function renderHtml(): string {
                 cp.classList.add("done"); setTimeout(() => cp.classList.remove("done"), 1000);
             });
             tools.appendChild(cp);
-            wrap.appendChild(tools);
         }
+        wrap.appendChild(tools);
         wrap._raw = text;
         log.appendChild(wrap);
         refreshEmpty();
@@ -1104,6 +1134,8 @@ export function renderHtml(): string {
         }
         streamText += text;
         streamMsg._raw = streamText;
+        const idx = Number(streamMsg.dataset.msgIndex || "-1");
+        if (idx >= 0 && conversationRows[idx]) { conversationRows[idx].text = streamText; }
         if (streamBody) { streamBody.textContent = ""; renderMarkdown(streamBody, streamText); }
         autoScroll(stick);
     }
@@ -1260,6 +1292,7 @@ export function renderHtml(): string {
         file: "M4 1h5l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1Zm5 1v3h3L9 2Z",
         robot: "M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z",
         copy: "M5 2h6a1 1 0 0 1 1 1v8h-1V3H5V2ZM3 4h6a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm0 1v8h6V5H3Z",
+        history: "M8 2a6 6 0 1 0 4.24 1.76l-.7.7A5 5 0 1 1 8 3a4.98 4.98 0 0 1 3.54 1.46L9.5 6.5H14V2l-1.76 1.76A5.96 5.96 0 0 0 8 2Zm-.5 3h1v3.2l2.2 1.3-.5.86L7.5 8.75V5Z",
         plus: "M8 1.5a.5.5 0 0 1 .5.5V7.5h5.5a.5.5 0 0 1 0 1H8.5V14a.5.5 0 0 1-1 0V8.5H2a.5.5 0 0 1 0-1h5.5V2a.5.5 0 0 1 .5-.5Z",
         chevron: "M4 6l4 4 4-4H4Z",
         edit: "M12.1 1.6a1.4 1.4 0 0 1 2 2L5 12.7l-2.8.8.8-2.8 9.1-9.1Zm-1 1.4L3.6 10.4l-.4 1.4 1.4-.4 7.5-7.4-1-1Z",
@@ -1280,6 +1313,7 @@ export function renderHtml(): string {
         braces: "M6 2c-1.3 0-1.8.7-1.8 1.9v1.4c0 .6-.3.9-1 .9v1.6c.7 0 1 .3 1 .9v1.4c0 1.2.5 1.9 1.8 1.9v-1.2c-.5 0-.7-.2-.7-.8V8.7c0-.6-.3-1-.8-1.2.5-.2.8-.6.8-1.2V4.9c0-.5.2-.8.7-.8V2Zm4 0v1.2c.5 0 .7.3.7.8v1.4c0 .6.3 1 .8 1.2-.5.2-.8.6-.8 1.2v1.5c0 .6-.2.8-.7.8v1.2c1.3 0 1.8-.7 1.8-1.9V9.6c0-.6.3-.9 1-.9V7.1c-.7 0-1-.3-1-.9V4.8C11.8 2.7 11.3 2 10 2Z",
         mdfile: "M2.5 4h11v8h-11V4Zm1.2 6V6h1.1l1.2 1.5L7.2 6h1.1v4H7.2V7.9L6 9.3 4.8 7.9V10H3.7Zm6.4 0V6h1.1v2.6h1.4V10h-2.5Z",
         image: "M2 3h12v10H2V3Zm1 1v5.6l3-3 2.2 2.2 2.8-2.8L13 8V4H3Zm2.2 1.2a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z",
+        "arrow-swap": "M4.5 2.5 1 6l3.5 3.5V7H10V5H4.5V2.5Zm7 4L15 10l-3.5 3.5V11H6V9h5.5V6.5Z",
     };
     // ICONS is now initialized — safe to paint the presence picker's icon.
     setPresenceLabel();
@@ -1473,10 +1507,19 @@ export function renderHtml(): string {
         if (!todos.length) { planEl.classList.remove("has"); return; }
         planEl.classList.add("has");
         const done = todos.filter((t) => t.status === "completed").length;
+        // Header summary mirrors Copilot Chat: show the task in progress (or the
+        // next pending one, or a generic label once everything is done).
+        const current = todos.find((t) => t.status === "in_progress")
+            || todos.find((t) => t.status === "pending");
+        const summary = current ? current.content : "Todos";
+
+        // Bordered card wrapper (matches the chat-todo-list-widget look).
+        const card = document.createElement("div"); card.className = "plcard";
         const head = document.createElement("div"); head.className = "plhead";
         const chev = svgIcon("chevron"); chev.classList.add("plchev");
         head.appendChild(svgIcon("list"));
-        const ttl = document.createElement("span"); ttl.className = "pltitle"; ttl.textContent = "Plan";
+        const ttl = document.createElement("span"); ttl.className = "pltitle";
+        ttl.textContent = summary; ttl.title = summary;
         const cnt = document.createElement("span"); cnt.className = "plcount"; cnt.textContent = done + "/" + todos.length;
         head.appendChild(ttl); head.appendChild(cnt); head.appendChild(chev);
         head.addEventListener("click", () => planEl.classList.toggle("collapsed"));
@@ -1490,7 +1533,8 @@ export function renderHtml(): string {
             item.appendChild(mk); item.appendChild(c);
             list.appendChild(item);
         }
-        planEl.appendChild(head); planEl.appendChild(list);
+        card.appendChild(head); card.appendChild(list);
+        planEl.appendChild(card);
     }
 
     // ---- queued messages (editable until dispatched) ----
@@ -1629,6 +1673,7 @@ export function renderHtml(): string {
             { id: "open", icon: "terminal", label: "Resume in terminal" },
             { id: "rename", icon: "rename", label: "Rename" },
             { id: "watch", icon: "eye", label: "Watch live (read-only)" },
+            { id: "switchAgent", icon: "arrow-swap", label: "Continue with another agent →" },
         ];
         if (s.pinned) {
             list.push({ id: "pinUp", icon: "up", label: "Move pin up" });
@@ -1644,7 +1689,19 @@ export function renderHtml(): string {
         return list;
     }
 
+    // Remembers the session + anchor while the backend submenu is requested,
+    // so the "backends" reply (async) can be shown as a follow-up menu.
+    let pendingSessionSwitch = null;
     function runAction(s, action) {
+        if (action === "switchAgent") {
+            // Don't close the menu position context; request the candidate
+            // backends, then reopen as a submenu anchored at the same spot.
+            const rect = ctxMenu.getBoundingClientRect();
+            pendingSessionSwitch = { session: s, x: rect.left, y: rect.top };
+            hideCtx();
+            vscode.postMessage({ type: "session-list-backends", sessionId: s.sessionId, backend: s.backend });
+            return;
+        }
         hideCtx();
         vscode.postMessage({ type: "session-action", action, sessionId: s.sessionId, backend: s.backend });
     }
@@ -2049,8 +2106,10 @@ export function renderHtml(): string {
                 permissionValue = data.permission || "default";
                 permissionDefault = data.permission || "default";
                 configBtn.style.display = (permissionModes.length || true) ? "" : "none";
-                // Hand-off only makes sense for a live, writable dialogue.
-                switchAgentBtn.style.display = (data.readOnly || data.terminal) ? "none" : "";
+                // Hand-off works for live chat dialogues and for terminal
+                // sessions (whose transcript is read back from the CLI). Only
+                // read-only live mirrors can't be handed off.
+                switchAgentBtn.style.display = data.readOnly ? "none" : "";
                 document.getElementById("composer").style.display = data.readOnly ? "none" : "flex";
                 if (data.readOnly) {
                     append("meta", "👁 watching live — read only (this session runs elsewhere)");
@@ -2077,6 +2136,7 @@ export function renderHtml(): string {
                 break;
             }
             case "clear": {
+                conversationRows = [];
                 log.textContent = "";
                 activeModel = ""; busy = false; queued = 0;
                 resetWorkingState();
@@ -2121,6 +2181,26 @@ export function renderHtml(): string {
                 commands = data.items || [];
                 break;
             }
+            case "models": {
+                // Async refresh after meta (remote discovery landed). Repopulate
+                // the picker, keep the user's current pick if it survived, else
+                // fall back to the first entry. Don't clobber an explicit
+                // "default" selection.
+                const newList = data.models || [];
+                if (newList.length) {
+                    modelList = newList;
+                    modelLabels = data.labels || modelLabels;
+                    if (modelValue && modelValue !== "default" && !modelList.includes(modelValue)) {
+                        modelValue = modelList[0] || "";
+                    } else if (!modelValue) {
+                        modelValue = modelList[0] || "";
+                    }
+                    modelPicker.disabled = false;
+                    modelPicker.style.display = modelList.length ? "" : "none";
+                    setModelLabel();
+                }
+                break;
+            }
             case "history": {
                 for (const m of data.messages) {
                     if (m.role === "user") message("user", m.text, m.ts);
@@ -2144,6 +2224,42 @@ export function renderHtml(): string {
                     "",
                     (v) => { vscode.postMessage({ type: "switch-backend", backend: v }); },
                 );
+                break;
+            }
+            case "session-backends": {
+                // Reply to "Continue with another agent" from a session's
+                // right-click menu: show the candidate backends as a submenu at
+                // the spot the context menu was, then hand the session off.
+                const ctx = pendingSessionSwitch;
+                pendingSessionSwitch = null;
+                const items = (data.items || []).filter((b) => !b.current);
+                if (!ctx || !items.length) { break; }
+                ctxMenu.textContent = "";
+                const head = document.createElement("div");
+                head.className = "menuGroup";
+                head.textContent = "Continue with…";
+                ctxMenu.appendChild(head);
+                for (const b of items) {
+                    const mi = document.createElement("div"); mi.className = "mi";
+                    const ic = svgIcon("robot"); ic.classList.add("miIcon");
+                    mi.appendChild(ic);
+                    const lbl = document.createElement("span"); lbl.className = "milbl"; lbl.textContent = b.name;
+                    mi.appendChild(lbl);
+                    mi.addEventListener("click", () => {
+                        hideCtx();
+                        vscode.postMessage({
+                            type: "session-switch-backend",
+                            sessionId: ctx.session.sessionId,
+                            backend: ctx.session.backend,
+                            targetBackend: b.backend,
+                        });
+                    });
+                    ctxMenu.appendChild(mi);
+                }
+                ctxMenu.style.display = "block";
+                const w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
+                ctxMenu.style.left = Math.max(4, Math.min(ctx.x, window.innerWidth - w - 4)) + "px";
+                ctxMenu.style.top = Math.max(4, Math.min(ctx.y, window.innerHeight - h - 4)) + "px";
                 break;
             }
             case "user": {
