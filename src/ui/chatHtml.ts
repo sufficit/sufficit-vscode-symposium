@@ -291,6 +291,10 @@ export function renderHtml(): string {
     }
     .md strong { font-weight: 700; color: var(--vscode-foreground); }
     .md em { font-style: italic; }
+    .md .mdtable { border-collapse: collapse; margin: 8px 0; font-size: 0.95em; display: block; overflow-x: auto; max-width: 100%; }
+    .md .mdtable th, .md .mdtable td { border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3)); padding: 4px 9px; text-align: left; vertical-align: top; }
+    .md .mdtable th { background: var(--vscode-editorWidget-background, rgba(128,128,128,0.12)); font-weight: 600; }
+    .md .mdtable tr:nth-child(even) td { background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
     .codeblock { margin: 8px 0; border: 1px solid var(--vscode-input-border, rgba(128,128,128,0.3)); border-radius: 6px; overflow: hidden; }
     .codeblock .cbhead {
         display: flex; align-items: center; justify-content: space-between;
@@ -1123,6 +1127,16 @@ export function renderHtml(): string {
                 }
                 container.appendChild(quote); continue;
             }
+            // GFM table: a "| h | h |" header followed by a "| --- | --- |" rule.
+            if (line.indexOf("|") >= 0 && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+                flushList();
+                const head = tableCells(line);
+                i += 2;
+                const rows = [];
+                while (i < lines.length && lines[i].trim() && lines[i].indexOf("|") >= 0) { rows.push(tableCells(lines[i])); i++; }
+                container.appendChild(tableEl(head, rows));
+                continue;
+            }
             const li = line.match(/^\\s*[-*]\\s+(.*)$/);
             const oli = line.match(/^\\s*\\d+\\.\\s+(.*)$/);
             if (li || oli) {
@@ -1137,6 +1151,37 @@ export function renderHtml(): string {
             while (i < lines.length && lines[i].trim() && !/^(#{1,6}\\s|\\s*[-*]\\s|\\s*\\d+\\.\\s|\\s*>\\s|\`\`\`)/.test(lines[i])) { para.push(lines[i]); i++; }
             const p = document.createElement("p"); inline(p, para.join(" ")); container.appendChild(p);
         }
+    }
+    // ---- GFM tables (no regex with backslashes — template-safe) ----
+    function tableCells(line) {
+        let s = line.trim();
+        if (s.charAt(0) === "|") { s = s.slice(1); }
+        if (s.charAt(s.length - 1) === "|") { s = s.slice(0, -1); }
+        return s.split("|").map((c) => c.trim());
+    }
+    function isTableSep(line) {
+        if (line.indexOf("|") < 0 && line.indexOf("-") < 0) { return false; }
+        const cells = tableCells(line);
+        if (!cells.length) { return false; }
+        return cells.every((c) => {
+            const t = c.split(" ").join("");
+            if (!t || t.indexOf("-") < 0) { return false; }
+            for (const ch of t) { if (ch !== "-" && ch !== ":") { return false; } }
+            return true;
+        });
+    }
+    function tableEl(head, rows) {
+        const t = document.createElement("table"); t.className = "mdtable";
+        const thead = document.createElement("thead"); const htr = document.createElement("tr");
+        for (const c of head) { const th = document.createElement("th"); inline(th, c); htr.appendChild(th); }
+        thead.appendChild(htr); t.appendChild(thead);
+        const tb = document.createElement("tbody");
+        for (const r of rows) {
+            const tr = document.createElement("tr");
+            for (let k = 0; k < head.length; k++) { const td = document.createElement("td"); inline(td, r[k] || ""); tr.appendChild(td); }
+            tb.appendChild(tr);
+        }
+        t.appendChild(tb); return t;
     }
 
     function codeBlock(lang, code) {
