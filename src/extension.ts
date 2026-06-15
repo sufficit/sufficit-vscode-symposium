@@ -35,6 +35,7 @@ import { RemoteBridge } from "./api/bridge";
 import { seedExamples } from "./config/seed";
 import { scanKind, readAgentBody, readAgentModel, readAgentTools } from "./config/root";
 import { aiToolsForAgent } from "./adapters/aiTools";
+import { SufficitAuth } from "./auth/identity";
 
 /** Normalizes a model label for pin matching: lowercase, drop "(...)", collapse spaces. */
 function normModel(s: string): string {
@@ -193,6 +194,10 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // share this object so every surface stays in lock-step).
     const api = createSymposiumApi({ live: runtime, adapters, onSessionsChanged: sessionsChanged.event });
 
+    // Sufficit Identity login (tokens in SecretStorage; basis for memory/MCP).
+    const auth = new SufficitAuth(context, symposiumLog);
+    context.subscriptions.push(auth.onDidChange(() => ConfigPanel.refresh()));
+
     const rawSessions = async (): Promise<SessionInfo[]> => {
         const all = await Promise.all(adapters.map((adapter) =>
             adapter.listSessions().catch(() => [] as SessionInfo[])));
@@ -317,7 +322,21 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
 
         // Dynamic configuration surface: agents/skills/tools/backends/sync.
         vscode.commands.registerCommand("symposium.openConfig", () =>
-            ConfigPanel.show(context, { api })),
+            ConfigPanel.show(context, { api, auth })),
+
+        // Sufficit Identity login / logout.
+        vscode.commands.registerCommand("symposium.login", async () => {
+            try {
+                const p = await auth.login();
+                if (p) { void vscode.window.showInformationMessage(`Sufficit: logado como ${p.name ?? p.email ?? "usuário"}.`); }
+            } catch (err) {
+                void vscode.window.showErrorMessage(`Login Sufficit falhou: ${err instanceof Error ? err.message : err}`);
+            }
+        }),
+        vscode.commands.registerCommand("symposium.logout", async () => {
+            await auth.logout();
+            void vscode.window.showInformationMessage("Sufficit: sessão encerrada.");
+        }),
 
         vscode.commands.registerCommand("symposium.newSession", async () => {
             const picks = await Promise.all(adapters.map(async (adapter) => {
@@ -579,7 +598,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 created > 0
                     ? `Symposium: ${created} exemplo(s) criado(s) em ~/.symposium/repo.`
                     : "Symposium: exemplos já existiam (nada criado).");
-            ConfigPanel.show(context, { api });
+            ConfigPanel.show(context, { api, auth });
         }),
 
         // Restart the bridge to apply changed bridge settings.

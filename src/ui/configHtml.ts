@@ -10,7 +10,7 @@
  * ConfigPanel) so the panel can refresh live on file/sync changes.
  */
 export function renderConfigHtml(): string {
-    const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';`;
+    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';`;
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -78,6 +78,9 @@ export function renderConfigHtml(): string {
         padding: 3px 6px; border-radius: 3px;
     }
     input.exec { min-width: 200px; }
+    .profile { display: inline-flex; align-items: center; gap: 6px; }
+    .profile img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
+    .profile .uname { opacity: 0.9; }
 </style>
 </head>
 <body>
@@ -86,6 +89,7 @@ export function renderConfigHtml(): string {
     <span id="health" class="health unknown">hub: —</span>
     <span class="root" id="root"></span>
     <span style="flex:1"></span>
+    <span id="profile" class="profile"></span>
     <button class="secondary" id="seed">Seed exemplos</button>
     <button class="secondary" id="open-root">Abrir pasta</button>
     <button id="refresh">Atualizar</button>
@@ -237,8 +241,22 @@ export function renderConfigHtml(): string {
         if (nb) { nb.onclick = () => vscode.postMessage({ type: "new-resource", kind: active }); }
     }
 
+    function renderProfile(p) {
+        const el = document.getElementById("profile");
+        if (p && (p.name || p.email)) {
+            const av = p.picture ? '<img src="' + esc(p.picture) + '" alt="" />' : "";
+            el.innerHTML = av + '<span class="uname">' + esc(p.name || p.email) + "</span>" +
+                ' <button class="secondary" id="btn-logout">Sair</button>';
+            document.getElementById("btn-logout").onclick = () => vscode.postMessage({ type: "logout" });
+        } else {
+            el.innerHTML = '<button id="btn-login">Login Sufficit</button>';
+            document.getElementById("btn-login").onclick = () => vscode.postMessage({ type: "login" });
+        }
+    }
+
     function applyState(s) {
         state = s;
+        renderProfile(s.profile);
         document.getElementById("root").textContent = s.root;
         const h = document.getElementById("health");
         const status = s.sync?.health || "unknown";

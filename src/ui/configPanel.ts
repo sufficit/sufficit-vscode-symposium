@@ -1,10 +1,12 @@
 import * as vscode from "vscode";
 import { ensureScaffold, ResourceKind, rootDir } from "../config/root";
 import { SymposiumApi } from "../api/symposiumApi";
+import { SufficitAuth } from "../auth/identity";
 import { renderConfigHtml } from "./configHtml";
 
 export interface ConfigPanelDeps {
     api: SymposiumApi;
+    auth?: SufficitAuth;
 }
 
 /**
@@ -28,6 +30,11 @@ export class ConfigPanel {
         }
         ConfigPanel.current = new ConfigPanel(context, deps);
         return ConfigPanel.current;
+    }
+
+    /** Re-pushes state to the open panel (e.g. after login/logout). */
+    static refresh(): void {
+        void ConfigPanel.current?.pushState();
     }
 
     private constructor(context: vscode.ExtensionContext, private readonly deps: ConfigPanelDeps) {
@@ -144,6 +151,14 @@ export class ConfigPanel {
             case "config-hub":
                 await vscode.commands.executeCommand("workbench.action.openSettings", "symposium.hub");
                 return;
+            case "login":
+                await vscode.commands.executeCommand("symposium.login");
+                await this.pushState();
+                return;
+            case "logout":
+                await vscode.commands.executeCommand("symposium.logout");
+                await this.pushState();
+                return;
             case "sync-pull": {
                 const r = await api.sync.pull();
                 this.report("Pull", r);
@@ -170,12 +185,14 @@ export class ConfigPanel {
 
     private async pushState(): Promise<void> {
         const api = this.deps.api;
+        const profile = this.deps.auth ? await this.deps.auth.getProfile().catch(() => undefined) : undefined;
         const state = {
             root: api.resources.root(),
             resources: api.resources.scan(),
             backends: await api.backends.list(),
             sync: api.sync.status(),
             hubConfigured: api.sync.configured(),
+            profile: profile ?? null,
         };
         await this.panel.webview.postMessage({ type: "state", state });
     }

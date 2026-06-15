@@ -1209,7 +1209,12 @@ export function renderHtml(): string {
                 i++;
                 while (i < lines.length && !/^\`\`\`\\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
                 i++; // skip closing fence
-                container.appendChild(codeBlock(lang, buf.join("\\n")));
+                // A todo/plan fence is surfaced in the pinned Plan panel — don't
+                // also render it raw in the message (avoids duplicated grey blocks).
+                const lg = lang.toLowerCase();
+                if (lg !== "todo" && lg !== "plan" && lg !== "tasks") {
+                    container.appendChild(codeBlock(lang, buf.join("\\n")));
+                }
                 continue;
             }
             const h = line.match(/^(#{1,6})\\s+(.*)$/);
