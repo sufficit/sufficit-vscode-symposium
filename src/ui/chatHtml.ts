@@ -361,6 +361,15 @@ export function renderHtml(): string {
         font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em;
         white-space: pre-wrap; word-break: break-word;
     }
+    .toolsec pre.diff { padding: 4px 0; white-space: normal; }
+    .toolsec .dl { display: flex; padding: 0 6px; white-space: pre-wrap; word-break: break-word; }
+    .toolsec .dl .dsign { flex: 0 0 1.2em; opacity: 0.6; user-select: none; }
+    .toolsec .dl .dtext { flex: 1; min-width: 0; }
+    .toolsec .dl.dadd { background: color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #4ec94e) 14%, transparent); }
+    .toolsec .dl.dadd .dsign, .toolsec .dl.dadd .dtext { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec94e); }
+    .toolsec .dl.ddel { background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 14%, transparent); }
+    .toolsec .dl.ddel .dsign, .toolsec .dl.ddel .dtext { color: var(--vscode-gitDecoration-deletedResourceForeground, #d16969); }
+    .toolsec .dl.dctx { opacity: 0.55; }
     .toolsec pre.numbered { padding: 6px 0; white-space: normal; }
     .toolsec .ln { display: flex; }
     .toolsec .lnum {
@@ -1285,6 +1294,34 @@ export function renderHtml(): string {
         }
         return sec;
     }
+    // A red/green line diff for edit hunks (trims common leading/trailing lines).
+    function diffSection(hunks) {
+        const sec = document.createElement("div"); sec.className = "toolsec";
+        const lab = document.createElement("div"); lab.className = "tlabel"; lab.textContent = "Diff";
+        const pre = document.createElement("pre"); pre.className = "diff";
+        const addLine = (cls, sign, text) => {
+            const d = document.createElement("div"); d.className = "dl " + cls;
+            const g = document.createElement("span"); g.className = "dsign"; g.textContent = sign;
+            const c = document.createElement("span"); c.className = "dtext"; c.textContent = text;
+            d.appendChild(g); d.appendChild(c); pre.appendChild(d);
+        };
+        hunks.forEach((h, idx) => {
+            if (idx > 0) { addLine("dctx", "", "⋯"); }
+            let oldL = (h.old || "").split("\n");
+            let newL = (h.new || "").split("\n");
+            // Trim shared prefix/suffix so only the actual change shows.
+            let p = 0; while (p < oldL.length && p < newL.length && oldL[p] === newL[p]) { p++; }
+            let s = 0; while (s < oldL.length - p && s < newL.length - p && oldL[oldL.length - 1 - s] === newL[newL.length - 1 - s]) { s++; }
+            const ctxPre = oldL.slice(Math.max(0, p - 1), p);
+            for (const l of ctxPre) { addLine("dctx", " ", l); }
+            for (const l of oldL.slice(p, oldL.length - s)) { addLine("ddel", "-", l); }
+            for (const l of newL.slice(p, newL.length - s)) { addLine("dadd", "+", l); }
+            const ctxPost = oldL.slice(oldL.length - s, oldL.length - s + 1);
+            for (const l of ctxPost) { addLine("dctx", " ", l); }
+        });
+        sec.appendChild(lab); sec.appendChild(pre);
+        return sec;
+    }
     // Expandable tool panel (icon + verb + target, click to reveal input/result).
     function renderTool(name, detail, opts) {
         opts = opts || {};
@@ -1325,7 +1362,8 @@ export function renderHtml(): string {
             if (d.childNodes.length) { head.appendChild(d); }
         }
         const body = document.createElement("div"); body.className = "toolbody";
-        if (opts.input) { body.appendChild(toolSection("Input", opts.input)); }
+        if (opts.diff && opts.diff.length) { body.appendChild(diffSection(opts.diff)); }
+        else if (opts.input) { body.appendChild(toolSection("Input", opts.input)); }
         let resultSec = null;
         const showResult = (text) => {
             if (!text) return;
@@ -2003,7 +2041,7 @@ export function renderHtml(): string {
             case "append": {
                 const m = data.message;
                 if (m.role === "user") message("user", m.text, m.ts);
-                else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path });
+                else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path, diff: m.diff });
                 else message("assistant", m.text, m.ts);
                 break;
             }
@@ -2019,7 +2057,7 @@ export function renderHtml(): string {
             case "history": {
                 for (const m of data.messages) {
                     if (m.role === "user") message("user", m.text, m.ts);
-                    else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path });
+                    else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path, diff: m.diff });
                     else message("assistant", m.text, m.ts);
                 }
                 append("meta", data.messages.length ? "— end of stored transcript —" : "(empty transcript)");

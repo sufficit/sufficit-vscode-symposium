@@ -15,7 +15,7 @@ export interface TodoItem {
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
     | { kind: "text"; text: string }
-    | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string }
+    | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string; diff?: { old: string; new: string }[] }
     | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string }
     | { kind: "turn-end"; costUsd?: number; durationMs?: number }
     | { kind: "usage"; inputTokens?: number; outputTokens?: number; cacheRead?: number; contextWindow?: number }
@@ -55,6 +55,7 @@ export interface HistoryMessage {
     removed?: number;
     todos?: TodoItem[];
     path?: string;
+    diff?: { old: string; new: string }[];
     /** Original transcript time (ms) for hover timestamps. */
     ts?: number;
 }

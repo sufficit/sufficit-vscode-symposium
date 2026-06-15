@@ -6,6 +6,8 @@ import {
     rootDir, scanAll, SyncState,
 } from "../config/root";
 import { seedExamples } from "../config/seed";
+import { HubClient } from "../sync/hubClient";
+import { SyncEngine, SyncResult } from "../sync/sync";
 
 /** A session as seen through the public API. */
 export interface ApiSessionInfo {
@@ -96,6 +98,19 @@ export interface SymposiumApi {
     sync: {
         /** Offline-readable sync/health state (state.json). */
         status(): SyncState;
+        /** Whether the hub is configured (symposium.hub.url set). */
+        configured(): boolean;
+        /** Live hub liveness probe (health-gate). */
+        health(): Promise<boolean>;
+        /** Pull hub → local files (offline-safe). */
+        pull(): Promise<SyncResult>;
+        /** Push local files → hub (health-gated). */
+        push(): Promise<SyncResult>;
+    };
+
+    vault: {
+        /** Resolves a secret value for runtime injection; null if unknown/expired/offline. */
+        resolve(reference: string): Promise<string | null>;
     };
 
     /** Fires when any session starts/stops working or is added/removed. */
@@ -147,6 +162,8 @@ async function probeBackend(a: AgentAdapter): Promise<BackendStatus> {
 /** Builds the public API facade over the running extension state. */
 export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
     const adapterByBackend = new Map(deps.adapters.map((a) => [a.backend, a]));
+    const hub = new HubClient();
+    const syncEngine = new SyncEngine(hub);
 
     return {
         version: API_VERSION,
@@ -218,6 +235,14 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
 
         sync: {
             status: () => readState(),
+            configured: () => hub.configured(),
+            health: () => hub.health(),
+            pull: () => syncEngine.pull(),
+            push: () => syncEngine.push(),
+        },
+
+        vault: {
+            resolve: (reference) => hub.resolveSecret(reference),
         },
 
         onSessionsChanged: deps.onSessionsChanged,

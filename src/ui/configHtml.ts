@@ -174,7 +174,15 @@ export function renderConfigHtml(): string {
 
     function syncView() {
         const s = state?.sync || {};
-        return '<div class="row"><span class="name">Hub</span><span class="desc">' + esc(s.health || "unknown") + "</span></div>" +
+        const configured = state?.hubConfigured;
+        const toolbar = configured
+            ? '<div class="toolbar"><button id="sync-pull">Pull (hub→local)</button>' +
+              '<button id="sync-push">Push (local→hub)</button></div>'
+            : '<div class="toolbar"><button id="sync-config">Configurar hub…</button></div>';
+        const note = configured ? "" :
+            '<div class="empty">Hub não configurado (symposium.hub.url). Agentes funcionam offline pelos arquivos locais.</div>';
+        return toolbar + note +
+            '<div class="row"><span class="name">Hub</span><span class="desc">' + esc(s.health || "unknown") + "</span></div>" +
             '<div class="row"><span class="name">Último sync</span><span class="desc">' + esc(s.lastSyncUtc || "nunca") + "</span></div>" +
             '<div class="row"><span class="name">Push pendente</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || "nenhum") + "</span></div>";
     }

@@ -1,0 +1,150 @@
+import * as vscode from "vscode";
+
+/**
+ * HTTP client for the sufficit-ai memory + vault REST API (the sync hub).
+ *
+ * Endpoints mirror the MCP tools:
+ *   POST /api/memory/save      upsert (id present → update, absent → create)
+ *   POST /api/memory/search    compact records by type
+ *   POST /api/memory/observations  full docs by ids
+ *   GET  /api/memory/health    liveness (health-gate)
+ *   GET  /api/vault/secrets/resolve?reference=  secret value (410 if expired)
+ *
+ * Configured via settings: symposium.hub.url, symposium.hub.token,
+ * symposium.hub.contextId (optional tenant boundary).
+ */
+
+export interface CompactRecord {
+    id: string;
+    type: string;
+    title: string;
+    summary: string;
+    tags?: string;
+}
+
+export interface Observation {
+    id?: string;
+    type: string;
+    title: string;
+    summary: string;
+    payload?: string;
+    tags?: string;
+}
+
+export interface SaveResponse {
+    success: boolean;
+    data?: { id: string; createdAtUtc: string };
+}
+
+export class HubClient {
+    private base(): string {
+        return vscode.workspace.getConfiguration("symposium.hub").get<string>("url", "").replace(/\/+$/, "");
+    }
+
+    private token(): string {
+        return vscode.workspace.getConfiguration("symposium.hub").get<string>("token", "");
+    }
+
+    private contextId(): string {
+        return vscode.workspace.getConfiguration("symposium.hub").get<string>("contextId", "");
+    }
+
+    /** True when a hub URL is configured. */
+    configured(): boolean {
+        return this.base().length > 0;
+    }
+
+    private headers(): Record<string, string> {
+        const h: Record<string, string> = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        };
+        const token = this.token();
+        if (token) {
+            h["Authorization"] = `Bearer ${token}`;
+        }
+        const ctx = this.contextId();
+        if (ctx) {
+            h["X-MEMORY-CONTEXT-ID"] = ctx;
+        }
+        h["X-MEMORY-SOURCE-ID"] = "symposium";
+        return h;
+    }
+
+    /** Liveness probe for the health-gate. Returns false on any failure. */
+    async health(): Promise<boolean> {
+        if (!this.configured()) {
+            return false;
+        }
+        try {
+            const res = await fetch(`${this.base()}/api/memory/health`, { headers: this.headers() });
+            return res.ok;
+        } catch {
+            return false;
+        }
+    }
+
+    /** Lists compact records of one type (empty query → recent, up to limit). */
+    async searchByType(type: string, limit = 100): Promise<CompactRecord[]> {
+        const res = await fetch(`${this.base()}/api/memory/search`, {
+            method: "POST",
+            headers: this.headers(),
+            body: JSON.stringify({ type, limit }),
+        });
+        if (!res.ok) {
+            throw new Error(`search ${type} failed: ${res.status}`);
+        }
+        return (await res.json()) as CompactRecord[];
+    }
+
+    /** Fetches full observations (with payload) by id. */
+    async getByIds(ids: string[]): Promise<Observation[]> {
+        if (ids.length === 0) {
+            return [];
+        }
+        const res = await fetch(`${this.base()}/api/memory/observations`, {
+            method: "POST",
+            headers: this.headers(),
+            body: JSON.stringify({ ids }),
+        });
+        if (!res.ok) {
+            throw new Error(`getByIds failed: ${res.status}`);
+        }
+        return (await res.json()) as Observation[];
+    }
+
+    /** Upserts an observation (id present → update, absent → create). Returns new id. */
+    async save(observation: Observation): Promise<string> {
+        const res = await fetch(`${this.base()}/api/memory/save`, {
+            method: "POST",
+            headers: this.headers(),
+            body: JSON.stringify(observation),
+        });
+        if (!res.ok) {
+            throw new Error(`save failed: ${res.status}`);
+        }
+        const body = (await res.json()) as SaveResponse;
+        return body.data?.id ?? observation.id ?? "";
+    }
+
+    /**
+     * Resolves a vault secret for runtime injection. Returns null when unknown,
+     * expired (410), or the hub is unreachable.
+     */
+    async resolveSecret(reference: string): Promise<string | null> {
+        if (!this.configured() || !reference) {
+            return null;
+        }
+        try {
+            const url = `${this.base()}/api/vault/secrets/resolve?reference=${encodeURIComponent(reference)}`;
+            const res = await fetch(url, { headers: this.headers() });
+            if (!res.ok) {
+                return null; // 404 unknown / 410 expired / 401 etc.
+            }
+            const body = (await res.json()) as { value?: string };
+            return body.value ?? null;
+        } catch {
+            return null;
+        }
+    }
+}

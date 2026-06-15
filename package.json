@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.68.0",
+  "version": "0.69.0",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -185,6 +185,21 @@
           "type": "string",
           "default": "",
           "description": "Local root for vendor-neutral agent knowledge (agents/skills/tools/instructions, sync state). Empty uses ~/.symposium."
+        },
+        "symposium.hub.url": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the sufficit-ai memory/vault hub (e.g. https://ai.sufficit.com.br). Empty disables sync; agents still work offline from local files."
+        },
+        "symposium.hub.token": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token for the sufficit-ai hub REST API."
+        },
+        "symposium.hub.contextId": {
+          "type": "string",
+          "default": "",
+          "description": "Optional memory context (tenant boundary) sent as X-MEMORY-CONTEXT-ID."
         },
         "symposium.bridge.enabled": {
           "type": "boolean",

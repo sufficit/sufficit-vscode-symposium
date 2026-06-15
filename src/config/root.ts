@@ -179,12 +179,23 @@ export function scanAll(): Record<ResourceKind, ResourceEntry[]> {
 
 /** Absolute path where a single-file resource of `kind`/`name` lives. */
 export function resourcePath(kind: Exclude<ResourceKind, "skill">, name: string): string {
-    const ext = kind === "tool" ? "md" : "md";
-    return path.join(repoDir(), KIND_DIR[kind], `${sanitize(name)}.${ext}`);
+    return path.join(repoDir(), KIND_DIR[kind], `${sanitize(name)}.md`);
+}
+
+/**
+ * Absolute path to the content file for any resource: the single `.md` for
+ * agent/tool/instruction, or the `SKILL.md` manifest for a skill bundle. This is
+ * the file the sync engine reads/writes as the resource's canonical content.
+ */
+export function resourceContentPath(kind: ResourceKind, name: string): string {
+    if (kind === "skill") {
+        return path.join(repoDir(), KIND_DIR.skill, sanitize(name), "SKILL.md");
+    }
+    return resourcePath(kind, name);
 }
 
 /** Strips path separators and unsafe chars from a resource name. */
-function sanitize(name: string): string {
+export function sanitize(name: string): string {
     return name.replace(/[^a-zA-Z0-9._-]/g, "-");
 }
 

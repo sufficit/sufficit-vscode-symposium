@@ -153,6 +153,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
                             removed: counts?.removed,
                             todos: extractTodos(block.name, block.input),
                             path: filePath,
+                            diff: editDiff(block.name, block.input),
                         });
                     }
                 }
@@ -293,6 +294,23 @@ function diffCounts(name: string, input: unknown): { added: number; removed: num
         let added = 0, removed = 0;
         for (const e of o.edits as any[]) { added += lineCount(e?.new_string); removed += lineCount(e?.old_string); }
         return { added, removed };
+    }
+    return undefined;
+}
+
+/** Old/new hunks for an edit tool, for a red/green diff view. */
+function editDiff(name: string, input: unknown): { old: string; new: string }[] | undefined {
+    const o = (input ?? {}) as Record<string, unknown>;
+    if (name === "Edit" && typeof o.old_string === "string") {
+        return [{ old: o.old_string, new: typeof o.new_string === "string" ? o.new_string : "" }];
+    }
+    if (name === "MultiEdit" && Array.isArray(o.edits)) {
+        return (o.edits as any[])
+            .map((e) => ({ old: String(e?.old_string ?? ""), new: String(e?.new_string ?? "") }))
+            .filter((e) => e.old || e.new);
+    }
+    if (name === "Write" && typeof o.content === "string") {
+        return [{ old: "", new: o.content }];
     }
     return undefined;
 }
@@ -649,6 +667,7 @@ function parseTranscriptLine(line: string): HistoryMessage[] {
                     added: counts?.added, removed: counts?.removed,
                     todos: extractTodos(block.name, block.input),
                     path: toolFilePath(block.input),
+                    diff: editDiff(block.name, block.input),
                 });
             }
         }
