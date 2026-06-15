@@ -216,6 +216,10 @@ export function renderHtml(): string {
     #log > .msg.user:first-child, #log > .msg.assistant:first-child { margin-top: 0; border-top: none; }
     .role { font-size: 0.82em; opacity: 1; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: 0.02em; color: var(--vscode-foreground); }
     .role .msgTime { font-weight: 400; opacity: 0; font-size: 0.92em; color: var(--vscode-descriptionForeground); transition: opacity 150ms ease; }
+    /* messages that an in-progress edit will replace on resend */
+    .msg.willReplace { opacity: 0.4; }
+    #composer.editing { box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); border-radius: 6px; }
+    #composer.editing #input::placeholder { color: var(--vscode-focusBorder); }
     .msg:hover .role .msgTime { opacity: 0.7; }
     .role .avatar {
         width: 19px; height: 19px; border-radius: 5px; flex-shrink: 0;
@@ -1143,13 +1147,17 @@ export function renderHtml(): string {
         else { body.className = "ubody"; body.textContent = text; }
         wrap.appendChild(body);
         const tools = document.createElement("div"); tools.className = "msgTools";
-        const restart = document.createElement("button"); restart.className = "msgCopy"; restart.title = "Restart conversation from this message";
-        restart.appendChild(svgIcon("history"));
-        restart.addEventListener("click", () => {
-            const idx = Number(wrap.dataset.msgIndex || "-1");
-            if (idx >= 0) { vscode.postMessage({ type: "restart-from-message", index: idx }); }
-        });
-        tools.appendChild(restart);
+        if (role === "user") {
+            // Edit & resend from here: load this message back into the composer;
+            // re-sending rewinds the conversation to this point (Esc cancels).
+            const edit = document.createElement("button"); edit.className = "msgCopy"; edit.title = "Edit & resend from here";
+            edit.appendChild(svgIcon("edit"));
+            edit.addEventListener("click", () => {
+                const idx = Number(wrap.dataset.msgIndex || "-1");
+                if (idx >= 0) { beginEdit(idx, wrap._raw != null ? wrap._raw : text); }
+            });
+            tools.appendChild(edit);
+        }
         if (role === "assistant") {
             const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy this reply";
             cp.appendChild(svgIcon("copy"));
@@ -2011,6 +2019,29 @@ export function renderHtml(): string {
         ctxMenu.style.top = Math.max(4, r.top - ht - 6) + "px";
     }
 
+    // ---- edit & resend from an earlier user message ----
+    let editAnchor = null;
+    function markEditing() {
+        log.querySelectorAll("[data-msg-index]").forEach((el) => {
+            const i = Number(el.dataset.msgIndex || "-1");
+            el.classList.toggle("willReplace", editAnchor != null && i >= editAnchor);
+        });
+        document.getElementById("composer").classList.toggle("editing", editAnchor != null);
+    }
+    function beginEdit(idx, text) {
+        editAnchor = idx;
+        input.value = text;
+        input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 180) + "px";
+        markEditing();
+        input.focus();
+    }
+    function cancelEdit() {
+        if (editAnchor == null) { return; }
+        editAnchor = null; input.value = "";
+        input.style.height = "auto";
+        markEditing();
+    }
+
     function send(modeOverride) {
         const text = input.value.trim();
         if (!text) return;
@@ -2021,6 +2052,7 @@ export function renderHtml(): string {
         reasoningPicker.disabled = true;
         const atts = attachments.map((a) => a.path);
         if (activeFile && !activeFileDismissed) atts.unshift(activeFile + (activeFileRange ? " (selected lines " + activeFileRange.start + "-" + activeFileRange.end + ")" : ""));
+        const editFrom = editAnchor;
         vscode.postMessage({
             type: "send",
             text,
@@ -2030,8 +2062,10 @@ export function renderHtml(): string {
             permission: permissionValue,
             mode: modeOverride || sendMode.value,
             autonomy: autonomyValue,
+            editFrom: editFrom,
         });
-        if (!busy) { busy = true; setStatus(); }
+        if (editAnchor != null) { editAnchor = null; markEditing(); }
+        if (!busy && editFrom == null) { busy = true; setStatus(); }
         attachments = [];
         renderChips();
     }
@@ -2095,7 +2129,10 @@ export function renderHtml(): string {
             else if (e.altKey) send("queue");
             else send();
         }
-        if (e.key === "Escape" && busy) { vscode.postMessage({ type: "cancel" }); }
+        if (e.key === "Escape") {
+            if (editAnchor != null) { e.preventDefault(); cancelEdit(); }
+            else if (busy) { vscode.postMessage({ type: "cancel" }); }
+        }
     });
     input.addEventListener("input", () => {
         input.style.height = "auto";

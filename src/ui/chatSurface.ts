@@ -291,6 +291,11 @@ export class ChatSurface {
                     if (this.terminalSession && message?.type === "cancel") {
                         return; // the user interrupts in the terminal itself
                     }
+                    // Edit & resend: rewind to before the edited message, then send.
+                    if (message?.type === "send" && message.editFrom != null && this.controller) {
+                        this.editResend(message.editFrom, message);
+                        return;
+                    }
                     if (!this.controller && message?.type === "send") {
                         // Composer used before any dialogue was opened — start one now,
                         // then deliver this message to it.
@@ -369,6 +374,41 @@ export class ChatSurface {
                 title: "Branched from earlier message",
                 detail: `${messages.length} message${messages.length === 1 ? "" : "s"} carried into this new conversation`,
             },
+        });
+    }
+
+    /**
+     * Edit & resend: branch a fresh session seeded with the conversation BEFORE
+     * the edited message (anchorIndex excluded), then deliver the edited text as
+     * the new message — so we genuinely "restart from this point".
+     */
+    private editResend(anchorIndex: number, sendMsg: any): void {
+        const from = this.controller;
+        if (!from || !Number.isInteger(anchorIndex) || anchorIndex < 0) {
+            // Nothing to rewind to — treat as a normal send.
+            void this.controller?.handleMessage({ ...sendMsg, editFrom: undefined });
+            return;
+        }
+        const keepTo = anchorIndex - 1;   // exclude the message being edited
+        const messages = from.transcriptMessagesUpTo(keepTo);
+        const transcript = from.transcriptUpTo(keepTo);
+        const seedHistory = transcript
+            ? `[Conversation continued from an earlier point] Treat the conversation below as the complete history so far.\n\n` +
+              `=== Conversation so far ===\n${transcript}\n=== End of conversation so far ===`
+            : undefined;
+        this.openDialogue(from.backend, { cwd: from.cwd, seedHistory }, from.title);
+        if (messages.length) {
+            this.post({ type: "history", messages, carried: true });
+        }
+        void this.controller?.handleMessage({
+            type: "send",
+            text: sendMsg.text,
+            attachments: sendMsg.attachments ?? [],
+            model: sendMsg.model,
+            reasoning: sendMsg.reasoning,
+            permission: sendMsg.permission,
+            autonomy: sendMsg.autonomy,
+            mode: "send",
         });
     }
 
