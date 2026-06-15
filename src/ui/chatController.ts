@@ -45,6 +45,10 @@ export class ChatController {
     private readonly queue: PendingMessage[] = [];
     private readonly log: unknown[] = [];   // replayable render messages
     private sink: ((message: unknown) => void) | null = null;
+    // Read-only followers (public API / remote bridge) that observe the same
+    // render stream as the active webview without stealing it. The webview uses
+    // attach()/sink; observers use subscribe().
+    private readonly observers = new Set<(message: unknown) => void>();
 
     constructor(
         private readonly adapter: AgentAdapter,
@@ -94,12 +98,38 @@ export class ChatController {
         this.sink = null;
     }
 
+    /**
+     * Subscribes a read-only follower to the render stream and replays the log
+     * so a late joiner (remote viewer) sees the full conversation. Returns an
+     * unsubscribe function. Does not affect the active webview sink.
+     */
+    subscribe(observer: (message: unknown) => void): () => void {
+        this.observers.add(observer);
+        for (const message of this.log) {
+            observer(message);
+        }
+        return () => { this.observers.delete(observer); };
+    }
+
     private emit(message: unknown): void {
         this.log.push(message);
         if (this.log.length > 5000) {
             this.log.shift();
         }
         this.sink?.(message);
+        for (const observer of this.observers) {
+            observer(message);
+        }
+    }
+
+    /** Sends a message to this session programmatically (public API / bridge). */
+    sendText(text: string, mode: SendMode = "send"): void {
+        this.onSend({ text, attachments: [] }, mode);
+    }
+
+    /** Interrupts the running turn, if any (public API / bridge). */
+    interrupt(): void {
+        this.session?.cancel();
     }
 
     async loadHistory(info: SessionInfo): Promise<void> {

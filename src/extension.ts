@@ -30,6 +30,9 @@ import { ChatPanel } from "./ui/chatPanel";
 import { ChatSurfaceDeps } from "./ui/chatSurface";
 import { ChatViewProvider } from "./ui/chatView";
 import { ConfigPanel } from "./ui/configPanel";
+import { createSymposiumApi, SymposiumApi } from "./api/symposiumApi";
+import { RemoteBridge } from "./api/bridge";
+import { seedExamples } from "./config/seed";
 import { snapshots } from "./snapshots";
 
 function claudeConfig(): ClaudeAdapterConfig {
@@ -130,7 +133,7 @@ export function symposiumLog(message: string): void {
 // Backends that run as a CLI in a terminal (the rest are HTTP API adapters).
 const CLI_BACKENDS = new Set(["claude", "codex", "copilot"]);
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext): SymposiumApi {
     output = vscode.window.createOutputChannel("Symposium");
     context.subscriptions.push(output);
     const adapters: AgentAdapter[] = [
@@ -149,6 +152,9 @@ export function activate(context: vscode.ExtensionContext): void {
     let notifyStatus = () => { };
     const runtime = new LiveSessions(() => notifyStatus());
     context.subscriptions.push({ dispose: () => runtime.disposeAll() });
+    // Public API consumers (in-process exports + remote bridge) subscribe here.
+    const sessionsChanged = new vscode.EventEmitter<void>();
+    context.subscriptions.push(sessionsChanged);
 
     const rawSessions = async (): Promise<SessionInfo[]> => {
         const all = await Promise.all(adapters.map((adapter) =>
@@ -198,6 +204,7 @@ export function activate(context: vscode.ExtensionContext): void {
             clearTimeout(statusTimer);
         }
         statusTimer = setTimeout(refreshAll, 250);
+        sessionsChanged.fire();
     };
     const infoOf = (item: { info?: SessionInfo } | SessionInfo): SessionInfo =>
         "info" in item && item.info ? item.info : item as SessionInfo;
@@ -475,6 +482,41 @@ export function activate(context: vscode.ExtensionContext): void {
             }
         }),
     );
+
+    // Public API facade (in-process exports + remote bridge share this object).
+    const api = createSymposiumApi({
+        live: runtime,
+        adapters,
+        onSessionsChanged: sessionsChanged.event,
+    });
+
+    // Opt-in remote control bridge (off unless symposium.bridge.enabled).
+    const bridge = new RemoteBridge(api, (msg) => output?.appendLine(msg));
+    bridge.start();
+    context.subscriptions.push({ dispose: () => bridge.stop() });
+
+    context.subscriptions.push(
+        // Writes example resources into ~/.symposium so the config UI and API
+        // can be validated fully offline.
+        vscode.commands.registerCommand("symposium.seedExamples", async () => {
+            const created = seedExamples();
+            void vscode.window.showInformationMessage(
+                created > 0
+                    ? `Symposium: ${created} exemplo(s) criado(s) em ~/.symposium/repo.`
+                    : "Symposium: exemplos já existiam (nada criado).");
+            ConfigPanel.show(context, { adapters });
+        }),
+
+        // Restart the bridge to apply changed bridge settings.
+        vscode.commands.registerCommand("symposium.restartBridge", () => {
+            bridge.stop();
+            const url = bridge.start();
+            void vscode.window.showInformationMessage(
+                url ? `Symposium bridge: ${url}` : "Symposium bridge desativado (symposium.bridge.enabled=false).");
+        }),
+    );
+
+    return api;
 }
 
 export function deactivate(): void { }

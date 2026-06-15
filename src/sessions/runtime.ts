@@ -56,10 +56,19 @@ export class LiveSessions {
 
     /** Creates and registers a new controller. */
     create(adapter: AgentAdapter, options: SessionStartOptions): ChatController {
+        return this.createWithKey(adapter, options).controller;
+    }
+
+    /**
+     * Like {@link create} but also returns the registry key, so a programmatic
+     * caller (public API / remote bridge) can address a brand-new session whose
+     * backend id has not arrived yet.
+     */
+    createWithKey(adapter: AgentAdapter, options: SessionStartOptions): { key: string; controller: ChatController } {
         const controller = new ChatController(adapter, options, () => this.onChange?.());
         const key = options.resumeSessionId ?? `new-${++this.seq}`;
         this.controllers.set(key, controller);
-        return controller;
+        return { key, controller };
     }
 
     /** Stops and unregisters the controller for a session id, if any. */

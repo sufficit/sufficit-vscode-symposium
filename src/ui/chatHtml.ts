@@ -68,6 +68,21 @@ export function renderHtml(): string {
     }
     #root.loading #loadingState { display: flex; }
     #root.loading #log { display: none; }
+    /* empty state: friendly placeholder before/without any conversation */
+    #emptyState {
+        display: none; flex-direction: column; align-items: center; justify-content: center;
+        gap: 8px; flex: 1; text-align: center; padding: 24px; opacity: 0.65;
+    }
+    #root.empty:not(.loading) #emptyState { display: flex; }
+    #root.empty:not(.loading) #log { display: none; }
+    #emptyState .esLogo {
+        width: 46px; height: 46px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
+        background: var(--vscode-chat-avatarBackground, var(--vscode-badge-background, rgba(128,128,128,0.18)));
+        color: var(--vscode-icon-foreground, var(--vscode-foreground));
+    }
+    #emptyState .esLogo svg { width: 24px; height: 24px; }
+    #emptyState .esTitle { font-size: 1.05em; font-weight: 600; opacity: 0.9; }
+    #emptyState .esHint { font-size: 0.86em; opacity: 0.7; }
     @media (prefers-reduced-motion: reduce) {
         #progress::before, .spinner { animation: none; }
         #progress.on { opacity: 1; }
@@ -595,6 +610,11 @@ export function renderHtml(): string {
             <span id="chatTitle"></span>
         </div>
         <div id="log"></div>
+        <div id="emptyState">
+            <div class="esLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
+            <div class="esTitle">Symposium</div>
+            <div class="esHint">Type below to start a conversation.</div>
+        </div>
         <div id="loadingState"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
         <div id="queued"></div>
         <div id="plan"></div>
@@ -610,8 +630,8 @@ export function renderHtml(): string {
                 <button id="configBtn" class="iconBtn" title="Tools & configuration">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 3a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 3Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Zm6 4.5a2 2 0 0 1 3.9-.5H14v1h-2.1A2 2 0 0 1 8 8Zm-6 .5h4.2a2 2 0 0 0 0-1H2v1Zm2 4.5a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 13Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Z"/></svg>
                 </button>
-                <button id="modelPicker" class="ctl menubtn" title="Model (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
-                <button id="reasoningPicker" class="ctl menubtn" title="Reasoning effort (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="modelPicker" class="ctl menubtn" style="display:none" title="Model (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="reasoningPicker" class="ctl menubtn" style="display:none" title="Reasoning effort (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <button id="presencePicker" class="ctl menubtn" title="Presence — can be changed any time"><span class="picon"></span><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <span id="status"></span>
                 <span class="grow"></span>
@@ -822,7 +842,10 @@ export function renderHtml(): string {
         ev.stopPropagation();
         openChoiceMenu(presencePicker, PRESENCE, autonomyValue, (v) => { autonomyValue = v; saveState({ autonomy: v }); setPresenceLabel(); });
     });
-    setPresenceLabel();
+    // Initial paint deferred: setPresenceLabel() calls svgIcon(), which reads
+    // the ICONS const declared further down. Calling it here would hit ICONS's
+    // temporal dead zone and throw, aborting the whole composer script (blank
+    // chat). Invoked once ICONS is initialized instead.
 
     // ---- tools & configuration menu (sliders) ----
     const configBtn = document.getElementById("configBtn");
@@ -913,6 +936,8 @@ export function renderHtml(): string {
     // scrollback isn't yanked away mid-stream.
     function nearBottom() { return log.scrollHeight - log.scrollTop - log.clientHeight < 80; }
     function autoScroll(stick) { if (stick) log.scrollTop = log.scrollHeight; }
+    // Show the empty-state placeholder when the log has no messages yet.
+    function refreshEmpty() { root.classList.toggle("empty", log.childElementCount === 0); }
 
     function append(cls, text) {
         const stick = nearBottom();
@@ -921,6 +946,7 @@ export function renderHtml(): string {
         el.className = "msg plain " + cls;
         el.textContent = text;
         log.appendChild(el);
+        refreshEmpty();
         autoScroll(stick);
         return el;
     }
@@ -943,6 +969,7 @@ export function renderHtml(): string {
         g.appendChild(head); g.appendChild(body);
         g._body = body; g._sum = sum; g._n = 0; g._add = 0; g._del = 0;
         log.appendChild(g);
+        refreshEmpty();
         curToolGroup = g;
         autoScroll(stick);
         return body;
@@ -1004,6 +1031,7 @@ export function renderHtml(): string {
         }
         wrap._raw = text;
         log.appendChild(wrap);
+        refreshEmpty();
         autoScroll(stick);
         return wrap;
     }
@@ -1156,6 +1184,8 @@ export function renderHtml(): string {
         mdfile: "M2.5 4h11v8h-11V4Zm1.2 6V6h1.1l1.2 1.5L7.2 6h1.1v4H7.2V7.9L6 9.3 4.8 7.9V10H3.7Zm6.4 0V6h1.1v2.6h1.4V10h-2.5Z",
         image: "M2 3h12v10H2V3Zm1 1v5.6l3-3 2.2 2.2 2.8-2.8L13 8V4H3Zm2.2 1.2a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z",
     };
+    // ICONS is now initialized — safe to paint the presence picker's icon.
+    setPresenceLabel();
     // Per-extension icon + a language-ish tint (webviews can't read VS Code's
     // file-icon theme, so this approximates it by file type).
     const FILE_ICONS = {
@@ -1854,6 +1884,7 @@ export function renderHtml(): string {
                 log.textContent = "";
                 activeModel = ""; busy = false; queued = 0;
                 resetWorkingState();
+                refreshEmpty();
                 sendBtn.disabled = false;
                 document.getElementById("composer").style.display = "flex";
                 setStatus();
@@ -1950,6 +1981,7 @@ export function renderHtml(): string {
     });
 
     setStatus();
+    refreshEmpty();   // show the placeholder until a conversation loads
     // Handshake: the extension queues everything until this script is live,
     // so meta/history posted right after construction are never lost.
     vscode.postMessage({ type: "ready" });

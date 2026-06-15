@@ -1,6 +1,10 @@
 import * as vscode from "vscode";
 import { AgentAdapter } from "../adapters/types";
-import { ensureScaffold, readState, rootDir, scanAll } from "../config/root";
+import {
+    createResource, deleteResource, ensureScaffold, readState, ResourceKind,
+    rootDir, scanAll,
+} from "../config/root";
+import { seedExamples } from "../config/seed";
 import { renderConfigHtml } from "./configHtml";
 
 export interface ConfigPanelDeps {
@@ -56,11 +60,9 @@ export class ConfigPanel {
         this.panel.onDidDispose(() => this.dispose(), undefined, context.subscriptions);
     }
 
-    private async onMessage(message: { type: string; path?: string }): Promise<void> {
+    private async onMessage(message: { type: string; path?: string; kind?: ResourceKind; name?: string; backend?: string; value?: string }): Promise<void> {
         switch (message.type) {
             case "ready":
-                await this.pushState();
-                return;
             case "refresh":
                 await this.pushState();
                 return;
@@ -73,6 +75,43 @@ export class ConfigPanel {
                     await vscode.window.showTextDocument(doc, { preview: true });
                 }
                 return;
+            case "seed": {
+                const created = seedExamples();
+                void vscode.window.showInformationMessage(
+                    created > 0 ? `${created} exemplo(s) criado(s).` : "Exemplos já existiam.");
+                await this.pushState();
+                return;
+            }
+            case "new-resource": {
+                if (!message.kind) {
+                    return;
+                }
+                const name = await vscode.window.showInputBox({
+                    prompt: `Nome do novo ${message.kind}`,
+                    validateInput: (v) => v.trim() ? undefined : "Informe um nome.",
+                });
+                if (!name) {
+                    return;
+                }
+                const description = await vscode.window.showInputBox({ prompt: "Descrição (opcional)" }) ?? "";
+                const file = createResource(message.kind, name.trim(), description);
+                await this.pushState();
+                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+                await vscode.window.showTextDocument(doc);
+                return;
+            }
+            case "delete-resource": {
+                if (!message.kind || !message.name) {
+                    return;
+                }
+                const ok = await vscode.window.showWarningMessage(
+                    `Excluir ${message.kind} "${message.name}"?`, { modal: true }, "Excluir");
+                if (ok === "Excluir") {
+                    deleteResource(message.kind, message.name);
+                    await this.pushState();
+                }
+                return;
+            }
         }
     }
 

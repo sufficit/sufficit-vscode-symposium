@@ -177,6 +177,64 @@ export function scanAll(): Record<ResourceKind, ResourceEntry[]> {
     };
 }
 
+/** Absolute path where a single-file resource of `kind`/`name` lives. */
+export function resourcePath(kind: Exclude<ResourceKind, "skill">, name: string): string {
+    const ext = kind === "tool" ? "md" : "md";
+    return path.join(repoDir(), KIND_DIR[kind], `${sanitize(name)}.${ext}`);
+}
+
+/** Strips path separators and unsafe chars from a resource name. */
+function sanitize(name: string): string {
+    return name.replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
+/** Builds a minimal canonical frontmatter body for a new single-file resource. */
+function template(kind: ResourceKind, name: string, description: string): string {
+    const fm = [`name: ${name}`, `description: ${description}`, "version: 1"];
+    if (kind === "agent") {
+        fm.push("model: default", "tools: []", "skills: []", "instructions: []");
+        return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nInstruções do agente aqui.\n`;
+    }
+    if (kind === "tool") {
+        fm.push("transport: stdio", "command: ''", "capabilities: []", "credentialRef: ''");
+        return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nDescrição da tool.\n`;
+    }
+    return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nConteúdo aqui.\n`;
+}
+
+/**
+ * Creates a resource if absent and returns the path to open. Skills become a
+ * bundle directory with a SKILL.md manifest; others are a single file.
+ */
+export function createResource(kind: ResourceKind, name: string, description = ""): string {
+    ensureScaffold();
+    if (kind === "skill") {
+        const dir = path.join(repoDir(), KIND_DIR.skill, sanitize(name));
+        fs.mkdirSync(path.join(dir, "scripts"), { recursive: true });
+        fs.mkdirSync(path.join(dir, "assets"), { recursive: true });
+        const manifest = path.join(dir, "SKILL.md");
+        if (!fs.existsSync(manifest)) {
+            fs.writeFileSync(manifest, template("skill", name, description), "utf8");
+        }
+        return manifest;
+    }
+    const file = resourcePath(kind, name);
+    if (!fs.existsSync(file)) {
+        fs.writeFileSync(file, template(kind, name, description), "utf8");
+    }
+    return file;
+}
+
+/** Deletes a resource (single file, or the whole skill bundle directory). */
+export function deleteResource(kind: ResourceKind, name: string): void {
+    if (kind === "skill") {
+        const dir = path.join(repoDir(), KIND_DIR.skill, sanitize(name));
+        fs.rmSync(dir, { recursive: true, force: true });
+        return;
+    }
+    fs.rmSync(resourcePath(kind, name), { force: true });
+}
+
 export function readState(): SyncState {
     try {
         const raw = fs.readFileSync(path.join(rootDir(), "state.json"), "utf8");

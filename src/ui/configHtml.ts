@@ -59,11 +59,23 @@ export function renderConfigHtml(): string {
     .row .name { font-weight: 600; }
     .row .badge { font-size: 10px; opacity: 0.7; border: 1px solid var(--vscode-panel-border); padding: 0 5px; border-radius: 8px; }
     .row .desc { opacity: 0.75; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .del { opacity: 0; cursor: pointer; padding: 0 6px; color: var(--vscode-errorForeground); }
+    .row:hover .del { opacity: 0.8; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 8px; }
     .empty { opacity: 0.6; padding: 24px 8px; text-align: center; }
-    .backend { display: flex; align-items: center; gap: 10px; padding: 7px 8px; }
-    .backend .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vscode-badge-background); }
-    .backend .dot.ok { background: #2ea043; }
-    .backend .dot.no { background: #d1242f; }
+    .bk { padding: 9px 8px; border-bottom: 1px solid var(--vscode-panel-border); }
+    .bk-head { display: flex; align-items: center; gap: 10px; }
+    .bk-cfg { display: flex; gap: 8px; margin: 8px 0 0 18px; align-items: center; flex-wrap: wrap; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vscode-badge-background); flex: 0 0 auto; }
+    .dot.ok { background: #2ea043; }
+    .dot.no { background: #d1242f; }
+    input, select {
+        font: inherit; color: var(--vscode-input-foreground);
+        background: var(--vscode-input-background);
+        border: 1px solid var(--vscode-input-border, transparent);
+        padding: 3px 6px; border-radius: 3px;
+    }
+    input.exec { min-width: 200px; }
 </style>
 </head>
 <body>
@@ -72,6 +84,7 @@ export function renderConfigHtml(): string {
     <span id="health" class="health unknown">hub: —</span>
     <span class="root" id="root"></span>
     <span style="flex:1"></span>
+    <button class="secondary" id="seed">Seed exemplos</button>
     <button class="secondary" id="open-root">Abrir pasta</button>
     <button id="refresh">Atualizar</button>
 </header>
@@ -110,26 +123,49 @@ export function renderConfigHtml(): string {
         }
     }
 
+    const LABEL = { agent: "agente", skill: "skill", tool: "tool", instruction: "instrução" };
+
     function resourceList(kind) {
         const items = (state?.resources[kind]) || [];
-        if (!items.length) { return '<div class="empty">Nenhum recurso. Importe de um CLI ou crie um novo.</div>'; }
-        return items.map(r =>
-            '<div class="row" data-path="' + esc(r.path) + '">' +
+        const toolbar = '<div class="toolbar"><button id="new-res">+ Novo ' + esc(LABEL[kind]) + "</button></div>";
+        if (!items.length) {
+            return toolbar + '<div class="empty">Nenhum recurso. Importe de um CLI ou crie um novo.</div>';
+        }
+        return toolbar + items.map(r =>
+            '<div class="row" data-path="' + esc(r.path) + '" data-name="' + esc(r.name) + '">' +
                 '<span class="name">' + esc(r.name) + "</span>" +
                 (r.bundle ? '<span class="badge">bundle</span>' : "") +
                 '<span class="desc">' + esc(r.description) + "</span>" +
+                '<span class="del" title="Excluir">✕</span>' +
             "</div>").join("");
     }
 
     function backendsView() {
         const list = (state?.backends) || [];
         if (!list.length) { return '<div class="empty">Nenhum backend configurado.</div>'; }
-        return list.map(b =>
-            '<div class="backend">' +
-                '<span class="dot ' + (b.available ? "ok" : "no") + '"></span>' +
-                '<span class="name">' + esc(b.backend) + "</span>" +
-                '<span class="desc">' + esc(b.detail || "") + "</span>" +
-            "</div>").join("");
+        return list.map(b => {
+            const opts = (b.models || []);
+            const hasCurrent = b.model && opts.indexOf(b.model) < 0;
+            const modelOptions = (hasCurrent ? [b.model] : [])
+                .concat([""]).concat(opts)
+                .map(m => '<option value="' + esc(m) + '"' + (m === (b.model || "") ? " selected" : "") + ">" +
+                    esc(m === "" ? "(default)" : m) + "</option>").join("");
+            const modelCtl = b.modelEditable
+                ? '<select class="model" data-backend="' + esc(b.backend) + '">' + modelOptions + "</select>"
+                : '<span class="desc">model: ' + esc(b.model || "(default)") + "</span>";
+            const execCtl = b.executableEditable
+                ? '<input class="exec" data-backend="' + esc(b.backend) + '" value="' + esc(b.executable || "") + '" placeholder="executável" />'
+                : "";
+            return '<div class="bk">' +
+                '<div class="bk-head">' +
+                    '<span class="dot ' + (b.available ? "ok" : "no") + '"></span>' +
+                    '<span class="name">' + esc(b.backend) + "</span>" +
+                    '<span class="desc">' + esc(b.detail || "") + "</span>" +
+                    '<button class="secondary test" data-backend="' + esc(b.backend) + '">Testar</button>' +
+                "</div>" +
+                '<div class="bk-cfg">' + execCtl + modelCtl + "</div>" +
+            "</div>";
+        }).join("");
     }
 
     function syncView() {
@@ -143,12 +179,33 @@ export function renderConfigHtml(): string {
         renderTabs();
         const main = document.getElementById("content");
         if (!state) { main.innerHTML = '<div class="empty">Carregando…</div>'; return; }
-        if (active === "backends") { main.innerHTML = backendsView(); }
-        else if (active === "sync") { main.innerHTML = syncView(); }
-        else { main.innerHTML = resourceList(active); }
+        if (active === "backends") {
+            main.innerHTML = backendsView();
+            main.querySelectorAll("button.test").forEach(el => {
+                el.onclick = () => vscode.postMessage({ type: "test-backend", backend: el.getAttribute("data-backend") });
+            });
+            main.querySelectorAll("select.model").forEach(el => {
+                el.onchange = () => vscode.postMessage({ type: "set-model", backend: el.getAttribute("data-backend"), value: el.value });
+            });
+            main.querySelectorAll("input.exec").forEach(el => {
+                el.onchange = () => vscode.postMessage({ type: "set-executable", backend: el.getAttribute("data-backend"), value: el.value });
+            });
+            return;
+        }
+        if (active === "sync") { main.innerHTML = syncView(); return; }
+        main.innerHTML = resourceList(active);
         main.querySelectorAll(".row[data-path]").forEach(el => {
-            el.onclick = () => vscode.postMessage({ type: "open-file", path: el.getAttribute("data-path") });
+            el.onclick = (ev) => {
+                if (ev.target && ev.target.classList.contains("del")) {
+                    ev.stopPropagation();
+                    vscode.postMessage({ type: "delete-resource", kind: active, name: el.getAttribute("data-name") });
+                    return;
+                }
+                vscode.postMessage({ type: "open-file", path: el.getAttribute("data-path") });
+            };
         });
+        const nb = document.getElementById("new-res");
+        if (nb) { nb.onclick = () => vscode.postMessage({ type: "new-resource", kind: active }); }
     }
 
     function applyState(s) {
@@ -163,6 +220,7 @@ export function renderConfigHtml(): string {
 
     document.getElementById("refresh").onclick = () => vscode.postMessage({ type: "refresh" });
     document.getElementById("open-root").onclick = () => vscode.postMessage({ type: "open-root" });
+    document.getElementById("seed").onclick = () => vscode.postMessage({ type: "seed" });
 
     window.addEventListener("message", (e) => {
         if (e.data?.type === "state") { applyState(e.data.state); }

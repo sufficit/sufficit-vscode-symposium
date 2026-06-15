@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.64.0",
+  "version": "0.65.0",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -122,6 +122,16 @@
         "command": "symposium.openConfig",
         "title": "Symposium: Configuration",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "symposium.seedExamples",
+        "title": "Symposium: Seed Example Agents/Skills/Tools",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "symposium.restartBridge",
+        "title": "Symposium: Restart Remote Bridge",
+        "icon": "$(broadcast)"
       }
     ],
     "menus": {
@@ -175,6 +185,26 @@
           "type": "string",
           "default": "",
           "description": "Local root for vendor-neutral agent knowledge (agents/skills/tools/instructions, sync state). Empty uses ~/.symposium."
+        },
+        "symposium.bridge.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable the remote control bridge (HTTP + SSE) that re-publishes the Symposium public API for remote commands and chat following. Off by default."
+        },
+        "symposium.bridge.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Bind address for the remote bridge. Keep localhost unless fronted by an authenticated tunnel."
+        },
+        "symposium.bridge.port": {
+          "type": "number",
+          "default": 47600,
+          "description": "TCP port for the remote bridge."
+        },
+        "symposium.bridge.token": {
+          "type": "string",
+          "default": "",
+          "description": "Bearer token required by the remote bridge. Empty generates an ephemeral token logged to the Symposium output channel."
         },
         "symposium.claude.executable": {
           "type": "string",
