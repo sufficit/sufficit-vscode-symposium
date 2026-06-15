@@ -50,7 +50,8 @@ export class SufficitAuth {
         return vscode.workspace.getConfiguration("symposium.identity");
     }
     private issuer(): string {
-        return this.cfg().get<string>("url", "https://identity.sufficit.com.br").replace(/\/+$/, "");
+        const v = this.cfg().get<string>("url", "");
+        return (v && v.trim() ? v : "https://identity.sufficit.com.br").replace(/\/+$/, "");
     }
     private clientId(): string {
         return this.cfg().get<string>("clientId", "");
@@ -60,9 +61,10 @@ export class SufficitAuth {
     }
 
     private async discovery(): Promise<Discovery> {
-        const res = await fetch(`${this.issuer()}/.well-known/openid-configuration`);
+        const url = `${this.issuer()}/.well-known/openid-configuration`;
+        const res = await fetch(url);
         if (!res.ok) {
-            throw new Error(`discovery failed: ${res.status}`);
+            throw new Error(`discovery failed: ${res.status} (${url})`);
         }
         return (await res.json()) as Discovery;
     }
