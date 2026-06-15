@@ -23,7 +23,7 @@ import { ClaudeAdapter, ClaudeAdapterConfig } from "./adapters/claude";
 import { CodexAdapter, CodexAdapterConfig } from "./adapters/codex";
 import { CopilotAdapter, CopilotAdapterConfig } from "./adapters/copilot";
 import { OpenAIAdapter, OpenAIAdapterConfig } from "./adapters/openai";
-import { AgentAdapter, SessionInfo } from "./adapters/types";
+import { AgentAdapter, SessionInfo, SessionStartOptions } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
 import { LiveSessions } from "./sessions/runtime";
 import { ChatPanel } from "./ui/chatPanel";
@@ -33,8 +33,40 @@ import { ConfigPanel } from "./ui/configPanel";
 import { createSymposiumApi, SymposiumApi } from "./api/symposiumApi";
 import { RemoteBridge } from "./api/bridge";
 import { seedExamples } from "./config/seed";
-import { scanKind, readAgentBody, readAgentTools } from "./config/root";
+import { scanKind, readAgentBody, readAgentModel, readAgentTools } from "./config/root";
 import { aiToolsForAgent } from "./adapters/aiTools";
+
+/** Normalizes a model label for pin matching: lowercase, drop "(...)", collapse spaces. */
+function normModel(s: string): string {
+    return s.toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Resolves an agent-def model pin (a label like "Sufficit AI - Development (ollama)")
+ * to a real model id offered by the backend, via its discovered id→name labels.
+ * Returns undefined when the backend isn't label-aware or no match is found
+ * (caller then leaves the model unset → backend default).
+ */
+async function resolveModelPin(adapter: AgentAdapter, pin: string): Promise<string | undefined> {
+    if (!pin) { return undefined; }
+    const oa = adapter as unknown as {
+        refreshModels?: () => Promise<{ models: string[]; labels?: Record<string, string> }>;
+        modelLabels?: () => Record<string, string>;
+        models?: () => string[];
+    };
+    if (!oa.modelLabels) { return undefined; }
+    // If the pin is already a known model id, use it directly.
+    if (oa.models && oa.models().includes(pin)) { return pin; }
+    let labels = oa.modelLabels();
+    if ((!labels || Object.keys(labels).length === 0) && oa.refreshModels) {
+        labels = (await oa.refreshModels().catch(() => undefined))?.labels ?? labels;
+    }
+    const want = normModel(pin);
+    for (const [id, name] of Object.entries(labels ?? {})) {
+        if (normModel(name) === want) { return id; }
+    }
+    return undefined;
+}
 import { snapshots } from "./snapshots";
 
 function claudeConfig(): ClaudeAdapterConfig {
@@ -342,10 +374,12 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 void vscode.window.showWarningMessage(`${choice.label} indisponível: ${choice.description}`);
                 return;
             }
-            const options = {
+            const model = await resolveModelPin(choice.adapter, readAgentModel(agent.name));
+            const options: SessionStartOptions = {
                 cwd: defaultCwd(),
                 systemPrompt: readAgentBody(agent.name),
                 aiTools: aiToolsForAgent(readAgentTools(agent.name)),
+                ...(model ? { model } : {}),
             };
             const title = `Agente: ${agent.name}`;
             if (inEditor()) {

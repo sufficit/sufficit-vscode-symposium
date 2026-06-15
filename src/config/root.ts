@@ -281,6 +281,15 @@ export function readAgentTools(name: string): string[] {
     }
 }
 
+/** Reads an agent-def's `model:` pin (a label or id). Empty when absent. */
+export function readAgentModel(name: string): string {
+    try {
+        return parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))["model"] ?? "";
+    } catch {
+        return "";
+    }
+}
+
 /** Returns an agent-def's body (the markdown after frontmatter) = its instructions. */
 export function readAgentBody(name: string): string {
     try {

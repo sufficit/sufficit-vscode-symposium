@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { LiveSessions } from "../sessions/runtime";
 import {
-    createResource, deleteResource, readAgentTools, readState, readToolCredential,
+    createResource, deleteResource, readAgentBody, readAgentTools, readState, readToolCredential,
     ResourceEntry, ResourceKind, rootDir, scanAll, SyncState,
 } from "../config/root";
 import { aiToolsForAgent } from "../adapters/aiTools";
@@ -210,9 +210,11 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                 if (options.tools && options.tools.length > 0) {
                     opts.env = (await resolveToolEnv(options.tools)).env;
                 }
-                // Gate AI tools (memory/web) by the bound agent-def's declared tools.
+                // Bind agent-def: gate AI tools + seed the system prompt.
                 if (options.agent) {
                     opts.aiTools = aiToolsForAgent(readAgentTools(options.agent));
+                    const sp = readAgentBody(options.agent);
+                    if (sp) { opts.systemPrompt = sp; }
                 }
                 return deps.live.createWithKey(adapter, opts).key;
             },
