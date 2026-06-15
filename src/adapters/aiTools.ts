@@ -89,6 +89,36 @@ export const AI_TOOLS_RESPONSES = AI_TOOLS.map((t) => ({
     parameters: t.function.parameters,
 }));
 
+/** All AI tool names this bridge can expose. */
+export const ALL_AI_TOOL_NAMES = AI_TOOLS.map((t) => t.function.name);
+
+/**
+ * Maps an agent-def's declared capability tokens to the concrete AI tool names
+ * to expose. Memory tools require a `sufficit-ai/*` (or `memory`) capability;
+ * `web`/`search`/`web_search` enable web search. Returns null when the agent
+ * declares no relevant capability — meaning "expose nothing" (gated off).
+ */
+export function aiToolsForAgent(declared: string[]): string[] {
+    const has = (re: RegExp) => declared.some((d) => re.test(d));
+    const names: string[] = [];
+    if (has(/^sufficit-ai\b|^sufficit-ai\/|^memory\b/i)) {
+        names.push("memory_search", "memory_get_observations", "memory_save");
+    }
+    if (has(/^web\b|^search\b|^web_search\b/i)) {
+        names.push("web_search");
+    }
+    return names;
+}
+
+/** Filters tool definitions to an allowlist of names (undefined = all). */
+export function filterTools<T extends { function?: { name: string }; name?: string }>(tools: T[], allow?: string[]): T[] {
+    if (!allow) {
+        return tools;
+    }
+    const set = new Set(allow);
+    return tools.filter((t) => set.has((t.function?.name ?? t.name) as string));
+}
+
 /** Executes one tool call against the hub. Returns a JSON string for the model. */
 export async function runAiTool(name: string, args: Record<string, unknown>, hub: HubClient): Promise<string> {
     try {

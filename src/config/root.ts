@@ -261,6 +261,26 @@ export function readToolCredential(name: string): { ref: string | null; env: str
     }
 }
 
+/**
+ * Reads an agent-def's declared capability tokens from its `tools:` frontmatter
+ * (e.g. `tools: [read, edit, 'sufficit-ai/*', web]`). Returns [] when absent.
+ */
+export function readAgentTools(name: string): string[] {
+    try {
+        const fm = parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"));
+        const raw = fm["tools"];
+        if (!raw) {
+            return [];
+        }
+        return raw.replace(/^\[|\]$/g, "")
+            .split(",")
+            .map((t) => t.trim().replace(/^["']|["']$/g, ""))
+            .filter(Boolean);
+    } catch {
+        return [];
+    }
+}
+
 /** Parses all simple `key: value` pairs from a leading frontmatter block. */
 function parseFrontmatterRaw(text: string): Record<string, string> {
     const out: Record<string, string> = {};

@@ -12,7 +12,7 @@ import {
 } from "./types";
 import { TODO_INJECTION } from "./todos";
 import { HubClient } from "../sync/hubClient";
-import { AI_TOOLS, AI_TOOLS_RESPONSES, runAiTool } from "./aiTools";
+import { AI_TOOLS, AI_TOOLS_RESPONSES, filterTools, runAiTool } from "./aiTools";
 
 /** OpenAI tool call as streamed/accumulated from chat completions deltas. */
 interface ToolCall {
@@ -156,8 +156,13 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 const body: Record<string, unknown> = responses
                     ? { model: this.model(), input: toResponsesInput(this.messages), stream: true }
                     : { model: this.model(), messages: this.messages, stream: true };
-                if (useTools) {
-                    body.tools = responses ? AI_TOOLS_RESPONSES : AI_TOOLS;
+                // Gate by the bound agent-def's allowlist (options.aiTools); when
+                // unset, expose all; when set to [], expose none (tools off).
+                const allow = this.options.aiTools;
+                const toolList = filterTools<{ function?: { name: string }; name?: string }>(
+                    (responses ? AI_TOOLS_RESPONSES : AI_TOOLS) as { function?: { name: string }; name?: string }[], allow);
+                if (useTools && toolList.length > 0) {
+                    body.tools = toolList;
                     body.tool_choice = "auto";
                 }
                 if (effort && effort !== "default") {

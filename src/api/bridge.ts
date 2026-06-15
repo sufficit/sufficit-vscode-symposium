@@ -76,7 +76,7 @@ export class RemoteBridge {
             // POST /sessions  {backend, cwd, model?, tools?}
             if (method === "POST" && parts[0] === "sessions" && parts.length === 1) {
                 const body = await readBody(req);
-                const id = await this.api.sessions.create(body.backend, { cwd: body.cwd, model: body.model, tools: body.tools });
+                const id = await this.api.sessions.create(body.backend, { cwd: body.cwd, model: body.model, tools: body.tools, agent: body.agent });
                 return id ? json(res, 200, { id }) : json(res, 400, { error: "unknown backend" });
             }
             // POST /sessions/:id/send  {text, mode?}

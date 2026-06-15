@@ -96,6 +96,12 @@ export interface SessionStartOptions {
      * from the vault at spawn time). Merged after the adapter's static config env.
      */
     env?: Record<string, string>;
+    /**
+     * Allowlist of AI function-tool names (memory/web) exposed to API backends,
+     * derived from the bound agent-def's declared tools. Undefined = expose all
+     * (no agent gating); empty array = expose none.
+     */
+    aiTools?: string[];
 }
 
 /**

@@ -2,9 +2,10 @@ import * as vscode from "vscode";
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { LiveSessions } from "../sessions/runtime";
 import {
-    createResource, deleteResource, readState, readToolCredential, ResourceEntry,
-    ResourceKind, rootDir, scanAll, SyncState,
+    createResource, deleteResource, readAgentTools, readState, readToolCredential,
+    ResourceEntry, ResourceKind, rootDir, scanAll, SyncState,
 } from "../config/root";
+import { aiToolsForAgent } from "../adapters/aiTools";
 import { seedExamples } from "../config/seed";
 import { HubClient } from "../sync/hubClient";
 import { SyncEngine, SyncResult } from "../sync/sync";
@@ -71,7 +72,7 @@ export interface SymposiumApi {
          * the backend reports its own session id. When `tools` are given, their
          * vault secrets are resolved and injected into the process env at spawn.
          */
-        create(backend: string, options: { cwd: string; model?: string; tools?: string[] }): Promise<string | undefined>;
+        create(backend: string, options: { cwd: string; model?: string; tools?: string[]; agent?: string }): Promise<string | undefined>;
         /** Sends a message to a session. `steer` interrupts the running turn. */
         send(id: string, text: string, mode?: SendMode): boolean;
         /** Interrupts the running turn, if any. */
@@ -208,6 +209,10 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                 const opts: SessionStartOptions = { cwd: options.cwd, model: options.model };
                 if (options.tools && options.tools.length > 0) {
                     opts.env = (await resolveToolEnv(options.tools)).env;
+                }
+                // Gate AI tools (memory/web) by the bound agent-def's declared tools.
+                if (options.agent) {
+                    opts.aiTools = aiToolsForAgent(readAgentTools(options.agent));
                 }
                 return deps.live.createWithKey(adapter, opts).key;
             },
