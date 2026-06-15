@@ -100,8 +100,8 @@ export interface AgentSession extends EventEmitter {
     readonly backend: AgentBackend;
     /** Undefined until the backend reports the session id. */
     readonly sessionId: string | undefined;
-    /** Send one user message; events stream until turn-end. */
-    send(text: string): void;
+    /** Send one user message (optionally with image file paths to inline as vision). */
+    send(text: string, images?: string[]): void;
     /** Interrupt the current turn if the backend supports it. */
     cancel(): void;
     dispose(): void;
@@ -142,6 +142,8 @@ export interface AgentAdapter {
     hasNativeTodo?(): boolean;
     /** Instruction injected to give a plan capability when there's no native one. */
     todoInjection?(): string | undefined;
+    /** True if the backend accepts images inlined in the message (vision). */
+    supportsImages?(): boolean;
     /**
      * Permanently scrubs a session's stored data from disk (transcript plus
      * any shared history/index files). Returns the names of stores that may

@@ -248,10 +248,16 @@ export class ChatController {
             this.session = this.adapter.start(this.options);
             this.session.on("event", (event: AgentEvent) => this.onEvent(event));
         }
+        // Images are inlined as vision blocks when the backend supports it
+        // (more reliable than asking the agent to Read them from disk).
+        const isImage = (p: string) => /\.(png|jpe?g|gif|webp)$/i.test(p);
+        const canVision = this.adapter.supportsImages?.() === true;
+        const images = canVision ? msg.attachments.filter(isImage) : [];
+        const fileAtts = canVision ? msg.attachments.filter((p) => !isImage(p)) : msg.attachments;
         let fullText = msg.text;
-        if (msg.attachments.length) {
+        if (fileAtts.length) {
             fullText += "\n\nAttached files (read them from disk):\n" +
-                msg.attachments.map((p) => `- ${p}`).join("\n");
+                fileAtts.map((p) => `- ${p}`).join("\n");
         }
         // Inject a todo capability once, for CLIs without a native plan tool.
         if (!this.todoInjected && this.adapter.hasNativeTodo?.() === false) {
@@ -269,7 +275,7 @@ export class ChatController {
         this.busy = true;
         this.onStatusChange?.();
         this.emit({ type: "user", text: msg.text, attachments: msg.attachments });
-        this.session.send(fullText);
+        this.session.send(fullText, images);
     }
 
     private onEvent(event: AgentEvent): void {

@@ -199,12 +199,15 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         }
     }
 
-    send(text: string): void {
+    send(text: string, images?: string[]): void {
         const child = this.ensureStarted();
-        const message = {
-            type: "user",
-            message: { role: "user", content: [{ type: "text", text }] },
-        };
+        const content: any[] = [];
+        for (const img of images ?? []) {
+            const block = imageBlock(img);
+            if (block) { content.push(block); }
+        }
+        content.push({ type: "text", text });
+        const message = { type: "user", message: { role: "user", content } };
         child.stdin.write(JSON.stringify(message) + "\n");
     }
 
@@ -256,6 +259,18 @@ function summarizeToolInput(input: unknown): string {
         s = first ?? "";
     }
     return s.length > 160 ? s.slice(0, 157) + "..." : s;
+}
+
+/** Reads an image file into an Anthropic base64 image content block. */
+function imageBlock(file: string): any | undefined {
+    const ext = (file.split(".").pop() || "").toLowerCase();
+    const media = ext === "jpg" || ext === "jpeg" ? "image/jpeg"
+        : ext === "gif" ? "image/gif" : ext === "webp" ? "image/webp" : ext === "png" ? "image/png" : "";
+    if (!media) { return undefined; }
+    try {
+        const data = fs.readFileSync(file).toString("base64");
+        return { type: "image", source: { type: "base64", media_type: media, data } };
+    } catch { return undefined; }
 }
 
 /** Context window (tokens) for a Claude model; default 200k. */
@@ -418,6 +433,7 @@ export class ClaudeAdapter implements AgentAdapter {
     }
 
     hasNativeTodo(): boolean { return true; }   // TodoWrite
+    supportsImages(): boolean { return true; }
 
     // claude --effort <level> (2.1.177). "default" means: don't pass the flag.
     reasoningLevels(): string[] {
