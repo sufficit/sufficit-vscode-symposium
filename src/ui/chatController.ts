@@ -11,7 +11,14 @@ interface PendingMessage {
     model?: string;
     reasoning?: string;
     permission?: string;
+    autonomy?: string;
 }
+
+// Injected once when the user marks themselves "away": full autonomy, no prompts.
+const AUTONOMY_PREAMBLE =
+    "[Autonomy mode] The user is not present to answer questions or make decisions and has given you full autonomy. " +
+    "Do not wait for input or use interactive prompts (e.g. AskUserQuestion); make reasonable assumptions, decide, " +
+    "and carry the task through end-to-end. Briefly state any assumptions and keep going.";
 
 /**
  * Backend-side state of one dialogue. Owns the agent process and KEEPS IT
@@ -29,6 +36,7 @@ export class ChatController {
     private busy = false;
     private firstTitle = "";
     private todoInjected = false;
+    private autonomyInjected = false;
     private queueSeq = 0;
     // Files this session edited and their net +/- — owned here so it survives
     // view switches (the runtime keeps the controller alive) and approval state
@@ -113,7 +121,7 @@ export class ChatController {
         switch (message?.type) {
             case "send":
                 this.onSend(
-                    { text: message.text, attachments: message.attachments ?? [], model: message.model, reasoning: message.reasoning, permission: message.permission },
+                    { text: message.text, attachments: message.attachments ?? [], model: message.model, reasoning: message.reasoning, permission: message.permission, autonomy: message.autonomy },
                     (message.mode as SendMode) ?? "send",
                 );
                 return true;
@@ -209,6 +217,12 @@ export class ChatController {
             const inj = this.adapter.todoInjection?.();
             if (inj) { fullText = inj + "\n\n---\n\n" + fullText; }
             this.todoInjected = true;
+        }
+        // Autonomy: prepend the preamble once per "away" streak; reset on return.
+        if (msg.autonomy === "away") {
+            if (!this.autonomyInjected) { fullText = AUTONOMY_PREAMBLE + "\n\n---\n\n" + fullText; this.autonomyInjected = true; }
+        } else {
+            this.autonomyInjected = false;
         }
         if (!this.firstTitle && msg.text.trim()) { this.firstTitle = msg.text.trim().slice(0, 60); }
         this.busy = true;

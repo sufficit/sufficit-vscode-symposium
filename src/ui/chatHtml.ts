@@ -798,6 +798,12 @@ export function renderHtml(): string {
     // ---- tools & configuration menu (sliders) ----
     const configBtn = document.getElementById("configBtn");
     let permissionModes = [], permissionValue = "default", permissionDefault = "default";
+    // Presence: "present" = the agent may ask; "away" = full autonomy, no prompts.
+    let autonomyValue = (saved && saved.autonomy) || "present";
+    const PRESENCE = [
+        { id: "present", label: "Present — agent may ask", desc: "Normal: the agent can pause to ask you questions." },
+        { id: "away", label: "Away — full autonomy", desc: "The agent proceeds without asking; it won't wait for you (auto-answers prompts)." },
+    ];
     const PERM_DESC = {
         "default": "Ask for permission as needed",
         "acceptEdits": "Auto-accept file edits",
@@ -820,6 +826,17 @@ export function renderHtml(): string {
             }
             const sep = document.createElement("div"); sep.className = "sep"; list.appendChild(sep);
         }
+        // Presence / autonomy.
+        const ph = document.createElement("div"); ph.className = "menuGroup"; ph.textContent = "Presence"; list.appendChild(ph);
+        for (const p of PRESENCE) {
+            const mi = document.createElement("div"); mi.className = "mi";
+            const tick = document.createElement("span"); tick.className = "tick"; tick.textContent = p.id === autonomyValue ? "✓" : "";
+            const lbl = document.createElement("span"); lbl.className = "milbl"; lbl.textContent = p.label;
+            mi.appendChild(tick); mi.appendChild(lbl); mi.title = p.desc;
+            mi.addEventListener("click", () => { autonomyValue = p.id; saveState({ autonomy: p.id }); hideCtx(); });
+            list.appendChild(mi);
+        }
+        const sep2 = document.createElement("div"); sep2.className = "sep"; list.appendChild(sep2);
         const open = document.createElement("div"); open.className = "mi";
         const t = document.createElement("span"); t.className = "tick"; const l = document.createElement("span"); l.className = "milbl"; l.textContent = "Open Settings…";
         open.appendChild(t); open.appendChild(l);
@@ -1675,6 +1692,7 @@ export function renderHtml(): string {
             reasoning: reasoningValue,
             permission: permissionValue,
             mode: modeOverride || sendMode.value,
+            autonomy: autonomyValue,
         });
         if (!busy) { busy = true; setStatus(); }
         attachments = [];
