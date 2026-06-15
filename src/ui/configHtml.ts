@@ -65,6 +65,8 @@ export function renderConfigHtml(): string {
     .empty { opacity: 0.6; padding: 24px 8px; text-align: center; }
     .bk { padding: 9px 8px; border-bottom: 1px solid var(--vscode-panel-border); }
     .bk-head { display: flex; align-items: center; gap: 10px; }
+    .bk-head .desc { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bk-test { font-size: 0.85em; opacity: 0.7; flex: 0 0 auto; }
     .bk-cfg { display: flex; gap: 8px; margin: 8px 0 0 18px; align-items: center; flex-wrap: wrap; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vscode-badge-background); flex: 0 0 auto; }
     .dot.ok { background: #2ea043; }
@@ -161,7 +163,9 @@ export function renderConfigHtml(): string {
                     '<span class="dot ' + (b.available ? "ok" : "no") + '"></span>' +
                     '<span class="name">' + esc(b.backend) + "</span>" +
                     '<span class="desc">' + esc(b.detail || "") + "</span>" +
+                    '<span class="bk-test" data-backend="' + esc(b.backend) + '"></span>' +
                     '<button class="secondary test" data-backend="' + esc(b.backend) + '">Testar</button>' +
+                    '<button class="secondary edit" data-backend="' + esc(b.backend) + '">Editar</button>' +
                 "</div>" +
                 '<div class="bk-cfg">' + execCtl + modelCtl + "</div>" +
             "</div>";
@@ -182,7 +186,15 @@ export function renderConfigHtml(): string {
         if (active === "backends") {
             main.innerHTML = backendsView();
             main.querySelectorAll("button.test").forEach(el => {
-                el.onclick = () => vscode.postMessage({ type: "test-backend", backend: el.getAttribute("data-backend") });
+                el.onclick = () => {
+                    const b = el.getAttribute("data-backend");
+                    const fb = main.querySelector('.bk-test[data-backend="' + b + '"]');
+                    if (fb) { fb.textContent = "testando…"; }
+                    vscode.postMessage({ type: "test-backend", backend: b });
+                };
+            });
+            main.querySelectorAll("button.edit").forEach(el => {
+                el.onclick = () => vscode.postMessage({ type: "edit-backend", backend: el.getAttribute("data-backend") });
             });
             main.querySelectorAll("select.model").forEach(el => {
                 el.onchange = () => vscode.postMessage({ type: "set-model", backend: el.getAttribute("data-backend"), value: el.value });

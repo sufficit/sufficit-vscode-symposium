@@ -113,8 +113,25 @@ export class RemoteBridge {
                 return json(res, 200, { ok: true });
             }
             // GET /backends
-            if (method === "GET" && parts[0] === "backends") {
+            if (method === "GET" && parts[0] === "backends" && parts.length === 1) {
                 return json(res, 200, await this.api.backends.list());
+            }
+            // POST /backends/:backend/test
+            if (method === "POST" && parts[0] === "backends" && parts[2] === "test") {
+                const s = await this.api.backends.test(parts[1]);
+                return json(res, s ? 200 : 404, s ?? { error: "unknown backend" });
+            }
+            // POST /backends/:backend/model  {value}
+            if (method === "POST" && parts[0] === "backends" && parts[2] === "model") {
+                const body = await readBody(req);
+                const ok = await this.api.backends.setModel(parts[1], body.value ?? "");
+                return json(res, ok ? 200 : 400, { ok });
+            }
+            // POST /backends/:backend/executable  {value}
+            if (method === "POST" && parts[0] === "backends" && parts[2] === "executable") {
+                const body = await readBody(req);
+                const ok = await this.api.backends.setExecutable(parts[1], body.value ?? "");
+                return json(res, ok ? 200 : 400, { ok });
             }
             // GET /sync
             if (method === "GET" && parts[0] === "sync") {

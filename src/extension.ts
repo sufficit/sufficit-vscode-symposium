@@ -155,6 +155,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // Public API consumers (in-process exports + remote bridge) subscribe here.
     const sessionsChanged = new vscode.EventEmitter<void>();
     context.subscriptions.push(sessionsChanged);
+    // Public API facade (in-process exports, config UI and remote bridge all
+    // share this object so every surface stays in lock-step).
+    const api = createSymposiumApi({ live: runtime, adapters, onSessionsChanged: sessionsChanged.event });
 
     const rawSessions = async (): Promise<SessionInfo[]> => {
         const all = await Promise.all(adapters.map((adapter) =>
@@ -280,7 +283,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
 
         // Dynamic configuration surface: agents/skills/tools/backends/sync.
         vscode.commands.registerCommand("symposium.openConfig", () =>
-            ConfigPanel.show(context, { adapters })),
+            ConfigPanel.show(context, { api })),
 
         vscode.commands.registerCommand("symposium.newSession", async () => {
             const picks = await Promise.all(adapters.map(async (adapter) => {
@@ -483,13 +486,6 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         }),
     );
 
-    // Public API facade (in-process exports + remote bridge share this object).
-    const api = createSymposiumApi({
-        live: runtime,
-        adapters,
-        onSessionsChanged: sessionsChanged.event,
-    });
-
     // Opt-in remote control bridge (off unless symposium.bridge.enabled).
     const bridge = new RemoteBridge(api, (msg) => output?.appendLine(msg));
     bridge.start();
@@ -504,7 +500,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 created > 0
                     ? `Symposium: ${created} exemplo(s) criado(s) em ~/.symposium/repo.`
                     : "Symposium: exemplos já existiam (nada criado).");
-            ConfigPanel.show(context, { adapters });
+            ConfigPanel.show(context, { api });
         }),
 
         // Restart the bridge to apply changed bridge settings.
