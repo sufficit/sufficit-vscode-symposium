@@ -12,7 +12,7 @@ import {
 } from "./types";
 import { TODO_INJECTION } from "./todos";
 import { HubClient } from "../sync/hubClient";
-import { AI_TOOLS, runAiTool } from "./aiTools";
+import { AI_TOOLS, AI_TOOLS_RESPONSES, runAiTool } from "./aiTools";
 
 /** OpenAI tool call as streamed/accumulated from chat completions deltas. */
 interface ToolCall {
@@ -145,18 +145,21 @@ class OpenAISession extends EventEmitter implements AgentSession {
         const base = this.cfg.baseUrl.replace(/\/+$/, "");
         const url = base + (responses ? "/responses" : "/chat/completions");
         const effort = this.options.reasoning;
-        // Memory/web tools only on the chat-completions path and when the hub is
+        // Memory/web tools on both chat and responses APIs, when the hub is
         // configured. The model calls them; we execute against the sufficit hub.
-        const useTools = !responses && this.hub.configured();
+        const useTools = this.hub.configured();
 
         try {
             // Tool-call loop: keep round-tripping while the model requests tools.
             for (let hop = 0; hop < 8; hop++) {
                 this.abort = new AbortController();
                 const body: Record<string, unknown> = responses
-                    ? { model: this.model(), input: this.messages, stream: true }
+                    ? { model: this.model(), input: toResponsesInput(this.messages), stream: true }
                     : { model: this.model(), messages: this.messages, stream: true };
-                if (useTools) { body.tools = AI_TOOLS; body.tool_choice = "auto"; }
+                if (useTools) {
+                    body.tools = responses ? AI_TOOLS_RESPONSES : AI_TOOLS;
+                    body.tool_choice = "auto";
+                }
                 if (effort && effort !== "default") {
                     if (responses) { body.reasoning = { effort }; }
                     else { body.reasoning_effort = effort; }
@@ -224,9 +227,17 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 try {
                     const json = JSON.parse(payload);
                     if (responses) {
-                        if (json?.type === "response.output_text.delta" && typeof json.delta === "string") {
+                        const ty = json?.type;
+                        if (ty === "response.output_text.delta" && typeof json.delta === "string") {
                             assistant += json.delta; this.emit("event", { kind: "text", text: json.delta });
-                        } else if (json?.type === "response.error") {
+                        } else if (ty === "response.output_item.added" && json?.item?.type === "function_call") {
+                            // New function call: index by output_index; carry call_id + name.
+                            const i = json.output_index ?? calls.length;
+                            calls[i] = { id: json.item.call_id ?? json.item.id ?? "", type: "function", function: { name: json.item.name ?? "", arguments: "" } };
+                        } else if (ty === "response.function_call_arguments.delta" && typeof json.delta === "string") {
+                            const i = json.output_index ?? 0;
+                            if (calls[i]) { calls[i].function.arguments += json.delta; }
+                        } else if (ty === "response.error") {
                             this.emit("event", { kind: "error", message: String(json?.error?.message ?? "response error") });
                         }
                         continue;
@@ -250,6 +261,30 @@ class OpenAISession extends EventEmitter implements AgentSession {
         }
         return done();
     }
+}
+
+/**
+ * Converts the internal chat-shaped message log into Responses API `input`
+ * items: plain messages stay {role,content}; an assistant tool turn becomes one
+ * `function_call` item per call; a tool result becomes a `function_call_output`.
+ */
+function toResponsesInput(messages: ChatMessage[]): unknown[] {
+    const out: unknown[] = [];
+    for (const m of messages) {
+        if (m.role === "tool") {
+            out.push({ type: "function_call_output", call_id: m.tool_call_id, output: m.content ?? "" });
+            continue;
+        }
+        if (m.role === "assistant" && m.tool_calls?.length) {
+            if (m.content) { out.push({ role: "assistant", content: m.content }); }
+            for (const tc of m.tool_calls) {
+                out.push({ type: "function_call", call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments });
+            }
+            continue;
+        }
+        out.push({ role: m.role, content: m.content ?? "" });
+    }
+    return out;
 }
 
 export class OpenAIAdapter implements AgentAdapter {

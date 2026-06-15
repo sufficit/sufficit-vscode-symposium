@@ -78,6 +78,17 @@ export const AI_TOOLS: OpenAITool[] = [
     },
 ];
 
+/**
+ * Same tools in the Responses API shape (flat: type/name/description/parameters,
+ * no nested "function" wrapper).
+ */
+export const AI_TOOLS_RESPONSES = AI_TOOLS.map((t) => ({
+    type: "function" as const,
+    name: t.function.name,
+    description: t.function.description,
+    parameters: t.function.parameters,
+}));
+
 /** Executes one tool call against the hub. Returns a JSON string for the model. */
 export async function runAiTool(name: string, args: Record<string, unknown>, hub: HubClient): Promise<string> {
     try {
