@@ -639,15 +639,20 @@ export function renderHtml(): string {
     /* Busy indicator: a subtle light sweeping around the composer border (like
        the native chat), instead of a top bar that looks global. */
     @property --symAng { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+    /* While working, neutralize the static border so the moving arc stands out
+       (otherwise the blue sweep is lost against the blue focus border). */
+    #composer.working, #composer.working:focus-within { border-color: color-mix(in srgb, var(--vscode-foreground) 25%, transparent); }
     #composer.working::after {
-        content: ""; position: absolute; inset: -1px; border-radius: 9px; padding: 1.5px;
+        content: ""; position: absolute; inset: -1px; border-radius: 9px; padding: 2px;
         background: conic-gradient(from var(--symAng),
-            transparent 0deg, transparent 250deg,
-            var(--vscode-progressBar-background, var(--vscode-focusBorder, #0e70c0)) 320deg,
+            transparent 0deg, transparent 200deg,
+            color-mix(in srgb, var(--vscode-progressBar-background, var(--vscode-focusBorder, #2aa0ff)) 60%, #ffffff) 300deg,
+            #ffffff 330deg,
             transparent 360deg);
         -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
         -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
-        animation: symspin 1.6s linear infinite; pointer-events: none; z-index: 2;
+        animation: symspin 1.2s linear infinite; pointer-events: none; z-index: 2;
+        filter: drop-shadow(0 0 3px var(--vscode-progressBar-background, var(--vscode-focusBorder, #2aa0ff)));
     }
     @keyframes symspin { to { --symAng: 360deg; } }
     #chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px 0 8px; }
