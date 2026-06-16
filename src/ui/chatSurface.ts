@@ -10,6 +10,7 @@ import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
 import { approveChange, gitRoot, headContent, pendingChanges, rejectChange } from "../git";
 import { snapshots } from "../snapshots";
+import { HubClient } from "../sync/hubClient";
 
 /** Directory to run git in for a file — git discovers the enclosing repo upward. */
 function repoCwd(file: string): string {
@@ -118,6 +119,43 @@ export class ChatSurface {
         }
     }
 
+    private readonly hub = new HubClient();
+
+    /** Display name of the current project (drives the task scope/cache key). */
+    private projectName(): string {
+        const cwd = this.controller?.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+        return cwd ? path.basename(cwd) : "";
+    }
+
+    /**
+     * Loads the project's Sufficit-memory tasks (task-anchor + task-checkpoint)
+     * and pushes them to the webview's Tasks panel. The result is mirrored to a
+     * local cache file so the panel still works offline / when the hub is down.
+     */
+    private async refreshTasks(): Promise<void> {
+        const project = this.projectName();
+        const cacheFile = path.join(os.homedir(), ".symposium", "tasks-cache",
+            `${(project || "default").replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
+        let items: unknown[] = [];
+        try {
+            if (!this.hub.configured()) { throw new Error("hub not configured"); }
+            const recs = await this.hub.searchMemory({ query: project, limit: 40 });
+            items = (recs as any[])
+                .filter((r) => String(r.type || "").startsWith("task"))
+                .sort((a, b) => Date.parse(b.createdAtUtc || 0) - Date.parse(a.createdAtUtc || 0))
+                .slice(0, 25)
+                .map((r) => ({ id: r.id, type: r.type, title: r.title, summary: r.summary, ts: r.createdAtUtc, tags: r.tags }));
+            try {
+                fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+                fs.writeFileSync(cacheFile, JSON.stringify(items), "utf8");
+            } catch { /* cache best-effort */ }
+        } catch {
+            // Fall back to the local mirror when the hub is unavailable.
+            try { items = JSON.parse(fs.readFileSync(cacheFile, "utf8")); } catch { items = []; }
+        }
+        this.post({ type: "tasks", items, project });
+    }
+
     private async onMessage(message: any): Promise<void> {
         symposiumLog(`[surface] <- webview: ${message?.type}${message?.type === "send" ? ` (${(message.text ?? "").length} chars)` : ""}`);
         try {
@@ -130,6 +168,7 @@ export class ChatSurface {
                     this.queue = [];
                     void this.refreshSessions();
                     void this.pushAccount();
+                    void this.refreshTasks();
                     // Nothing bound yet (view just opened): restore the last
                     // active session if we have one, else start a fresh dialogue.
                     if (!this.controller && !this.followHandle && !this.terminalSession) {
@@ -162,6 +201,10 @@ export class ChatSurface {
                     if (file) {
                         this.post({ type: "attachments-picked", files: [file] });
                     }
+                    return;
+                }
+                case "refresh-tasks": {
+                    void this.refreshTasks();
                     return;
                 }
                 case "new-session": {

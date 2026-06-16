@@ -467,6 +467,37 @@ export function renderHtml(): string {
     .qitem .qbtn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
     /* plan / todo — rounded card pinned above the textarea, matching the
        Copilot Chat todo-list widget (bordered, inset, collapsible). */
+    /* Tasks panel: a local mirror of the Sufficit-memory task list (task-anchor
+       + checkpoints) for this project — the persistent "where are we" view,
+       distinct from the per-conversation Plan below it. */
+    #tasks { display: none; margin: 0 12px 8px 12px; }
+    #tasks.has { display: block; }
+    #tasks .tkcard {
+        border: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(128,128,128,0.25)));
+        border-radius: 6px;
+        background: var(--vscode-chat-requestBackground, var(--vscode-input-background, transparent));
+        overflow: hidden;
+    }
+    #tasks .tkhead {
+        display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer;
+        font-size: 0.9em; user-select: none;
+    }
+    #tasks .tkhead:hover { background: var(--vscode-list-hoverBackground, rgba(128,128,128,0.08)); }
+    #tasks .tkhead .tktitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    #tasks .tkhead .tkcount { flex-shrink: 0; opacity: 0.75; font-weight: 400; font-size: 0.92em; font-variant-numeric: tabular-nums; }
+    #tasks .tkhead .tkbtn { flex-shrink: 0; background: none; border: none; cursor: pointer; padding: 2px; opacity: 0.7; color: var(--vscode-foreground); display: inline-flex; }
+    #tasks .tkhead .tkbtn:hover { opacity: 1; }
+    #tasks .tkhead .tkbtn svg { width: 13px; height: 13px; }
+    #tasks .tkhead svg.tkchev { width: 12px; height: 12px; flex-shrink: 0; opacity: 0.8; transition: transform 150ms ease; }
+    #tasks.collapsed .tkhead svg.tkchev { transform: rotate(-90deg); }
+    #tasks .tklist { max-height: 180px; overflow-y: auto; padding: 2px 8px 8px 8px; border-top: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(128,128,128,0.18))); }
+    #tasks.collapsed .tklist { display: none; }
+    .tkitem { display: flex; align-items: baseline; gap: 8px; padding: 3px 2px; line-height: 1.5; font-size: 0.9em; }
+    .tkitem .tkbadge { flex-shrink: 0; font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 4px; background: var(--vscode-badge-background, rgba(128,128,128,0.25)); color: var(--vscode-badge-foreground, var(--vscode-foreground)); }
+    .tkitem .tkbadge.anchor { background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 35%, transparent); }
+    .tkitem .tktext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tkitem .tkwhen { flex-shrink: 0; opacity: 0.55; font-size: 0.82em; font-variant-numeric: tabular-nums; }
+    #tasks .tkempty { padding: 8px 10px; opacity: 0.6; font-size: 0.88em; }
     #plan { display: none; margin: 0 12px 8px 12px; }
     #plan.has { display: block; }
     #plan .plcard {
@@ -736,6 +767,7 @@ export function renderHtml(): string {
         </div>
         <div id="loadingState"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
         <div id="queued"></div>
+        <div id="tasks"></div>
         <div id="plan"></div>
         <div id="changedFiles"></div>
         <div id="composer">
@@ -1406,6 +1438,7 @@ export function renderHtml(): string {
         history: "M8 2a6 6 0 1 0 4.24 1.76l-.7.7A5 5 0 1 1 8 3a4.98 4.98 0 0 1 3.54 1.46L9.5 6.5H14V2l-1.76 1.76A5.96 5.96 0 0 0 8 2Zm-.5 3h1v3.2l2.2 1.3-.5.86L7.5 8.75V5Z",
         plus: "M8 1.5a.5.5 0 0 1 .5.5V7.5h5.5a.5.5 0 0 1 0 1H8.5V14a.5.5 0 0 1-1 0V8.5H2a.5.5 0 0 1 0-1h5.5V2a.5.5 0 0 1 .5-.5Z",
         chevron: "M4 6l4 4 4-4H4Z",
+        refresh: "M13.6 2.7v3.2h-3.2l1.2-1.2A4 4 0 1 0 12 8h1.3A5.3 5.3 0 1 1 12.5 4l1.1-1.3Z",
         edit: "M12.1 1.6a1.4 1.4 0 0 1 2 2L5 12.7l-2.8.8.8-2.8 9.1-9.1Zm-1 1.4L3.6 10.4l-.4 1.4 1.4-.4 7.5-7.4-1-1Z",
         search: "M6.5 1a5.5 5.5 0 0 1 4.3 8.9l3.1 3.2-.7.7-3.2-3.1A5.5 5.5 0 1 1 6.5 1Zm0 1a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Z",
         globe: "M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM6.1 5.5h3.8a12 12 0 0 1 0 3H6.1a12 12 0 0 1 0-3ZM8 2.5c.6 0 1.4 1.3 1.8 3.5H6.2C6.6 3.8 7.4 2.5 8 2.5Zm0 11c-.6 0-1.4-1.3-1.8-3.5h3.6c-.4 2.2-1.2 3.5-1.8 3.5Zm3.2-1.3a10 10 0 0 0 .8-2.7h2a5.5 5.5 0 0 1-2.8 2.7Zm.8-3.7a14 14 0 0 0 0-3h2.1A5.5 5.5 0 0 1 13.5 8c0 .5-.1 1-.2 1.5H12Zm.9-4.5H11a10 10 0 0 0-.8-2.7A5.5 5.5 0 0 1 12.9 6ZM3.1 6h2a14 14 0 0 0 0 3h-2A5.5 5.5 0 0 1 2.5 8c0-.7.1-1.4.6-2Zm.2 4.5H5a10 10 0 0 0 .8 2.7 5.5 5.5 0 0 1-2.5-2.7Z",
@@ -1659,6 +1692,58 @@ export function renderHtml(): string {
         }
         card.appendChild(head); card.appendChild(list);
         planEl.appendChild(card);
+    }
+
+    // ---- Tasks panel (Sufficit-memory task list, local mirror) ----
+    const tasksEl = document.getElementById("tasks");
+    function relWhen(iso) {
+        const t = Date.parse(iso); if (!t) { return ""; }
+        const s = Math.max(0, (Date.now() - t) / 1000);
+        if (s < 90) { return "agora"; }
+        if (s < 3600) { return Math.round(s / 60) + "m"; }
+        if (s < 86400) { return Math.round(s / 3600) + "h"; }
+        if (s < 2592000) { return Math.round(s / 86400) + "d"; }
+        return new Date(t).toLocaleDateString([], { day: "2-digit", month: "short" });
+    }
+    function renderTasks(items, project) {
+        tasksEl.textContent = "";
+        const card = document.createElement("div"); card.className = "tkcard";
+        const head = document.createElement("div"); head.className = "tkhead";
+        head.appendChild(svgIcon("list"));
+        const ttl = document.createElement("span"); ttl.className = "tktitle";
+        ttl.textContent = "Tasks" + (project ? " · " + project : "");
+        ttl.title = "Tarefas da memória Sufficit (espelho local)" + (project ? " — " + project : "");
+        const cnt = document.createElement("span"); cnt.className = "tkcount"; cnt.textContent = String(items.length);
+        const refresh = document.createElement("button"); refresh.className = "tkbtn"; refresh.title = "Atualizar da memória";
+        refresh.appendChild(svgIcon("refresh"));
+        refresh.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "refresh-tasks" }); });
+        const chev = svgIcon("chevron"); chev.classList.add("tkchev");
+        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(refresh); head.appendChild(chev);
+        head.addEventListener("click", () => tasksEl.classList.toggle("collapsed"));
+        card.appendChild(head);
+        if (!items.length) {
+            const empty = document.createElement("div"); empty.className = "tkempty";
+            empty.textContent = "Nenhuma task na memória para este projeto.";
+            card.appendChild(empty);
+        } else {
+            const list = document.createElement("div"); list.className = "tklist";
+            for (const it of items) {
+                const row = document.createElement("div"); row.className = "tkitem";
+                const isAnchor = String(it.type || "").indexOf("anchor") >= 0;
+                const badge = document.createElement("span");
+                badge.className = "tkbadge" + (isAnchor ? " anchor" : "");
+                badge.textContent = isAnchor ? "anchor" : "check";
+                const txt = document.createElement("span"); txt.className = "tktext";
+                txt.textContent = it.title || it.summary || "(sem título)";
+                txt.title = (it.title ? it.title + "\\n\\n" : "") + (it.summary || "");
+                const when = document.createElement("span"); when.className = "tkwhen"; when.textContent = relWhen(it.ts);
+                row.appendChild(badge); row.appendChild(txt); row.appendChild(when);
+                list.appendChild(row);
+            }
+            card.appendChild(list);
+        }
+        tasksEl.appendChild(card);
+        tasksEl.classList.add("has");
     }
 
     // ---- queued messages (editable until dispatched) ----
@@ -2511,6 +2596,10 @@ export function renderHtml(): string {
             case "changed-files": {
                 changedItems = data.items || [];
                 renderChangedFiles();
+                break;
+            }
+            case "tasks": {
+                renderTasks(data.items || [], data.project || "");
                 break;
             }
             case "event": {
