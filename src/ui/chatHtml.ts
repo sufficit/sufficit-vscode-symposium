@@ -1536,6 +1536,12 @@ export function renderHtml(): string {
         opts = opts || {};
         // A plan/todo update renders as the evolving checklist panel, not a row.
         if (opts.todos) { renderTodos(opts.todos); return null; }
+        // Skip an empty tool row: some backends (responses-API function_call)
+        // can emit a tool-start with no name/detail/input/result yet, which would
+        // otherwise paint a blank grey placeholder box in the log.
+        const hasName = typeof name === "string" && name.trim();
+        const hasContent = (detail && String(detail).trim()) || opts.input || opts.result || (opts.diff && opts.diff.length) || opts.path;
+        if (!hasName && !hasContent) { return null; }
         const stick = nearBottom();
         const meta = TOOL_META[name] || { icon: "tool", verb: name };
         const wrap = document.createElement("div"); wrap.className = "msg toolwrap";
