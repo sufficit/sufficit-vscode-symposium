@@ -115,6 +115,12 @@ export class ChatSurface {
         if (this.deps.account) {
             this.disposables.push(this.deps.account.onDidChange(() => void this.pushAccount()));
         }
+        // Live-apply preference changes (e.g. sessions side) without a reload.
+        this.disposables.push(vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration("symposium.chat.sessionsSide")) {
+                this.post({ type: "prefs", sessionsSide: vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto") });
+            }
+        }));
     }
 
     private post(message: unknown): void {

@@ -2493,6 +2493,11 @@ export function renderHtml(): string {
                 renderChips();
                 break;
             }
+            case "prefs": {
+                // Live preference updates (no reload needed), e.g. sessions side.
+                if (typeof data.sessionsSide === "string") { sideMode = data.sessionsSide; layout(); }
+                break;
+            }
             case "clear": {
                 conversationRows = [];
                 log.textContent = "";
