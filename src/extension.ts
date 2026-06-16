@@ -111,6 +111,7 @@ function openaiConfig(): OpenAIAdapterConfig {
         models: config.get<string[]>("models", []),
         headers: config.get<Record<string, string>>("headers", {}),
         apiKey: config.get<string>("apiKey", ""),
+        maxToolHops: config.get<number>("maxToolHops", 50),
         log: symposiumLog,
     };
 }
@@ -160,6 +161,7 @@ function buildCustomAdapters(defs: CustomAdapterDef[]): OpenAIAdapter[] {
                 models: e.models ?? [],
                 headers: e.headers ?? {},
                 apiKey: e.apiKey ?? "",
+                maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
                 log: symposiumLog,
             };
         }));

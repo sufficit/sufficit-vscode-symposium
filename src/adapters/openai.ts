@@ -70,6 +70,8 @@ export interface OpenAIAdapterConfig {
     headers: Record<string, string>;
     /** Convenience: if set and no Authorization header, sent as Bearer. */
     apiKey?: string;
+    /** Max tool round-trips per turn before pausing (default 50). */
+    maxToolHops?: number;
     log?: (message: string) => void;
 }
 
@@ -189,9 +191,13 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // computed fresh each turn so registry/setting changes take effect.
         const vscodeTools = responses ? lmToolDefsResponses() : lmToolDefs();
 
+        // How many tool round-trips one turn may run before pausing. The old cap
+        // of 8 made long agentic tasks stop and wait for "continue"; default high.
+        const maxHops = Math.max(1, this.cfg.maxToolHops ?? 50);
+        let hitCap = true;   // cleared when the model finishes on its own
         try {
             // Tool-call loop: keep round-tripping while the model requests tools.
-            for (let hop = 0; hop < 8; hop++) {
+            for (let hop = 0; hop < maxHops; hop++) {
                 this.abort = new AbortController();
                 const body: Record<string, unknown> = responses
                     ? { model: this.model(), input: toResponsesInput(this.messages), stream: true }
@@ -216,12 +222,14 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 if (!res.ok || !res.body) {
                     const detail = await res.text().catch(() => "");
                     this.emit("event", { kind: "error", message: `HTTP ${res.status} ${res.statusText} ${detail}`.trim() });
+                    hitCap = false;
                     break;
                 }
                 const { text, toolCalls } = await this.consume(res.body);
 
                 if (toolCalls.length === 0) {
                     if (text) { this.messages.push({ role: "assistant", content: text }); }
+                    hitCap = false;
                     break;
                 }
 
@@ -245,6 +253,9 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
                 }
                 // loop again so the model can use the tool results
+            }
+            if (hitCap) {
+                this.emit("event", { kind: "text", text: `\n\n_(pausei após ${maxHops} passos de ferramenta — envie "continue" para seguir)_` });
             }
         } catch (error) {
             if ((error as any)?.name !== "AbortError") {
