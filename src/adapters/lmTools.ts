@@ -16,8 +16,10 @@ import { OpenAITool } from "./aiTools";
 export type LmToolMode = "off" | "terminal" | "all";
 
 // The "terminal/execute" family from the screenshot — matched by substring so
-// it survives provider/extension renames across VS Code versions.
-const TERMINAL_MATCH = /terminal|task|test|notebook|exec/i;
+// it survives provider/extension renames across VS Code versions. Notebook
+// execution is intentionally excluded from the default set (still reachable via
+// the "all" mode for tool-discovery skills); it only matters for .ipynb work.
+const TERMINAL_MATCH = /terminal|task|test|exec/i;
 
 function mode(): LmToolMode {
     const v = vscode.workspace.getConfiguration("symposium").get<string>("lmTools", "terminal");
