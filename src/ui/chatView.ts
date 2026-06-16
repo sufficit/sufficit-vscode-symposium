@@ -47,6 +47,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.surface?.refreshSessions();
     }
 
+    /** Resets the surface if it currently shows the just-deleted session. */
+    sessionDeleted(sessionId: string): void {
+        this.surface?.sessionDeleted(sessionId);
+    }
+
     async openSession(info: SessionInfo): Promise<void> {
         this.pending = { kind: "session", info };
         await this.reveal();

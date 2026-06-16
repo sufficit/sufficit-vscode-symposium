@@ -584,6 +584,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 const residual = await adapter.deleteSession(info);
                 await store.forget(info);
                 refreshAll();
+                // Close the conversation pane if it's showing the deleted session.
+                chatView.sessionDeleted(info.sessionId);
+                ChatPanel.sessionDeleted(info.sessionId);
                 if (Array.isArray(residual) && residual.length) {
                     void vscode.window.showWarningMessage(
                         `Session deleted. Residual data may remain in: ${residual.join(", ")} — clear it manually if required.`);

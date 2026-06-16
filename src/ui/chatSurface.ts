@@ -858,6 +858,23 @@ export class ChatSurface {
         this.followHandle = undefined;
     }
 
+    /**
+     * The session shown here was deleted elsewhere: if it's the one currently
+     * open, tear the binding down and fall back to another session (or the empty
+     * state) so a deleted session can't stay open in the conversation pane.
+     */
+    sessionDeleted(sessionId: string): void {
+        if (this.sid() !== sessionId) { return; }
+        // The runtime already disposed the controller on delete; just drop refs.
+        this.controller = undefined;
+        this.terminalSession?.dispose();
+        this.terminalSession = undefined;
+        this.followHandle?.dispose();
+        this.followHandle = undefined;
+        this.post({ type: "clear" });
+        void this.restoreOrStart();
+    }
+
     /** Working directory of the active session (for git operations). */
     private cwd(): string {
         return this.controller?.cwd

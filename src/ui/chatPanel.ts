@@ -26,6 +26,11 @@ export class ChatPanel {
         void ChatPanel.current?.surface.refreshSessions();
     }
 
+    /** Resets the panel if it currently shows the just-deleted session. */
+    static sessionDeleted(sessionId: string): void {
+        ChatPanel.current?.surface.sessionDeleted(sessionId);
+    }
+
     private constructor(context: vscode.ExtensionContext, deps: ChatSurfaceDeps) {
         this.panel = vscode.window.createWebviewPanel(
             "symposium.chat",
