@@ -191,10 +191,12 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // computed fresh each turn so registry/setting changes take effect.
         const vscodeTools = responses ? lmToolDefsResponses() : lmToolDefs();
 
-        // How many tool round-trips one turn may run before pausing. The old cap
-        // of 8 made long agentic tasks stop and wait for "continue"; default high.
-        const maxHops = Math.max(1, this.cfg.maxToolHops ?? 50);
-        let hitCap = true;   // cleared when the model finishes on its own
+        // How many tool round-trips one turn may run before pausing. In
+        // autonomous mode (presence "away") there is NO limit; otherwise the
+        // configurable cap applies (default 50) so it pauses for "continue".
+        const unlimited = this.options.autonomy === "away";
+        const maxHops = unlimited ? Infinity : Math.max(1, this.cfg.maxToolHops ?? 50);
+        let hitCap = !unlimited;   // cleared when the model finishes on its own
         try {
             // Tool-call loop: keep round-tripping while the model requests tools.
             for (let hop = 0; hop < maxHops; hop++) {

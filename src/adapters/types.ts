@@ -107,6 +107,8 @@ export interface SessionStartOptions {
      * instructions). Applied by API backends; ignored on resume.
      */
     systemPrompt?: string;
+    /** Current presence: "away" = autonomous (API backends run tools unbounded). */
+    autonomy?: string;
 }
 
 /**

@@ -322,6 +322,8 @@ export class ChatController {
         if (msg.permission) {
             this.options.permission = msg.permission;
         }
+        // Presence drives unbounded tool loops for API backends (autonomous mode).
+        this.options.autonomy = msg.autonomy;
         if (!this.session) {
             this.session = this.adapter.start(this.options);
             this.session.on("event", (event: AgentEvent) => this.onEvent(event));

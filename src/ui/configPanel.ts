@@ -153,7 +153,11 @@ export class ConfigPanel {
                 return;
             case "set-pref":
                 if (typeof message.key === "string") {
-                    await vscode.workspace.getConfiguration().update(message.key, message.value, vscode.ConfigurationTarget.Global);
+                    // Numeric prefs (e.g. maxToolHops) must be stored as numbers.
+                    const value: unknown = message.key.endsWith("maxToolHops")
+                        ? Math.max(1, Number(message.value) || 50)
+                        : message.value;
+                    await vscode.workspace.getConfiguration().update(message.key, value, vscode.ConfigurationTarget.Global);
                     await this.pushState();
                 }
                 return;
@@ -205,6 +209,7 @@ export class ConfigPanel {
                 sessionsSide: chat.get<string>("sessionsSide", "auto"),
                 openIn: chat.get<string>("openIn", "editor"),
                 lmTools: root.get<string>("lmTools", "terminal"),
+                maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
             },
         };
         await this.panel.webview.postMessage({ type: "state", state });

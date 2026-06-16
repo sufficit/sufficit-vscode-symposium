@@ -209,7 +209,10 @@ export function renderConfigHtml(): string {
                     [{ v: "editor", l: "Editor (aba central)" }, { v: "sidebar", l: "Barra lateral" }])) +
             row("Ferramentas do VS Code", "Quais Language Model Tools o backend Sufficit AI pode usar.",
                 sel("symposium.lmTools", p.lmTools || "terminal",
-                    [{ v: "off", l: "Desligado" }, { v: "terminal", l: "Terminal/tarefas/testes" }, { v: "all", l: "Todas" }]))
+                    [{ v: "off", l: "Desligado" }, { v: "terminal", l: "Terminal/tarefas/testes" }, { v: "all", l: "Todas" }])) +
+            row("Limite de passos por turno", "Máx. de ações de ferramenta antes de pausar (pede 'continue'). No modo autônomo (presença Away) não há limite.",
+                sel("symposium.openai.maxToolHops", String(p.maxToolHops || 50),
+                    [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }]))
         );
     }
 

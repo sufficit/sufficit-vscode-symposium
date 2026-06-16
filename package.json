@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.38",
+  "version": "0.79.39",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -242,7 +242,7 @@
         "symposium.openai.maxToolHops": {
           "type": "number",
           "default": 50,
-          "description": "Max tool round-trips an API backend (Sufficit AI / OpenAI-compatible) may run in a single turn before pausing for 'continue'. Higher = longer autonomous runs."
+          "description": "Max tool round-trips an API backend (Sufficit AI / OpenAI-compatible) may run in a single turn before pausing for 'continue'. Ignored in autonomous mode (presence Away = no limit)."
         },
         "symposium.hub.contextId": {
           "type": "string",
