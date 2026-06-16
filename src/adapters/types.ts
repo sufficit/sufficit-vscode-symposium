@@ -42,7 +42,7 @@ export interface SessionInfo {
 
 /** One past message reconstructed from a stored transcript. */
 export interface HistoryMessage {
-    role: "user" | "assistant" | "tool";
+    role: "user" | "assistant" | "tool" | "error";
     text: string;
     // For tool rows: the backend tool name and a short human target, so stored
     // transcripts render the same icon+verb+target as live events. input/result

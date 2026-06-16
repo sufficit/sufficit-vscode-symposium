@@ -2368,6 +2368,7 @@ export function renderHtml(): string {
                 for (const m of data.messages) {
                     if (m.role === "user") message("user", m.text, m.ts);
                     else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path, diff: m.diff });
+                    else if (m.role === "error") append("error", "✖ " + m.text);
                     else message("assistant", m.text, m.ts);
                 }
                 // carried history is a handoff replay shown inline as a

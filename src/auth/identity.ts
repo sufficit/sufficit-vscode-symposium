@@ -35,6 +35,7 @@ interface Discovery {
 }
 
 const SECRET_KEY = "sufficit.identity.tokens";
+const PROFILE_KEY = "sufficit.identity.profile";
 
 export class SufficitAuth {
     private profileCache: SufficitProfile | undefined;
@@ -186,26 +187,39 @@ export class SufficitAuth {
 
     async getProfile(force = false): Promise<SufficitProfile | undefined> {
         if (this.profileCache && !force) { return this.profileCache; }
+        // Instant restore after a window reload: a persisted profile lets the UI
+        // show the logged-in account immediately, even before the network call
+        // (and even if userinfo/refresh hiccups). Background-refresh once.
+        if (!force) {
+            const saved = this.context.globalState.get<SufficitProfile>(PROFILE_KEY);
+            if (saved && (await this.readTokens())) {
+                this.profileCache = saved;
+                void this.getProfile(true).then((p) => { if (p) { this.onChangeEmitter.fire(); } });
+                return saved;
+            }
+        }
         const token = await this.getAccessToken();
         if (!token) { return undefined; }
         try {
             const disco = await this.discovery();
             const res = await fetch(disco.userinfo_endpoint ?? `${this.issuer()}/connect/userinfo`, { headers: { authorization: `Bearer ${token}` } });
-            if (!res.ok) { return undefined; }
+            if (!res.ok) { return this.profileCache; }   // keep what we have on a transient failure
             const j = await res.json() as any;
             // Avatar comes from the Sufficit contact endpoint keyed by the user id.
             const picture = j.sub
                 ? `https://endpoints.sufficit.com.br/contact/avatar?contextid=${encodeURIComponent(j.sub)}`
                 : j.picture;
             this.profileCache = { sub: j.sub, name: j.name ?? j.preferred_username, email: j.email, picture };
+            await this.context.globalState.update(PROFILE_KEY, this.profileCache);
             return this.profileCache;
         } catch {
-            return undefined;
+            return this.profileCache;
         }
     }
 
     async logout(): Promise<void> {
         await this.context.secrets.delete(SECRET_KEY);
+        await this.context.globalState.update(PROFILE_KEY, undefined);
         this.profileCache = undefined;
         this.onChangeEmitter.fire();
     }
