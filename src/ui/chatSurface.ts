@@ -11,6 +11,7 @@ import { symposiumLog } from "../extension";
 import { approveChange, gitRoot, headContent, pendingChanges, rejectChange } from "../git";
 import { snapshots } from "../snapshots";
 import { HubClient } from "../sync/hubClient";
+import { fetchSessionTasks, TaskItem } from "../sync/tasks";
 
 /** Directory to run git in for a file — git discovers the enclosing repo upward. */
 function repoCwd(file: string): string {
@@ -121,39 +122,39 @@ export class ChatSurface {
 
     private readonly hub = new HubClient();
 
-    /** Display name of the current project (drives the task scope/cache key). */
-    private projectName(): string {
-        const cwd = this.controller?.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
-        return cwd ? path.basename(cwd) : "";
+    /** Project-local mirror of this session's tasks (in .vscode, versionable). */
+    private taskMirrorFile(): string | undefined {
+        const cwd = this.controller?.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        return cwd ? path.join(cwd, ".vscode", "symposium.tasks.json") : undefined;
     }
 
     /**
-     * Loads the project's Sufficit-memory tasks (task-anchor + task-checkpoint)
-     * and pushes them to the webview's Tasks panel. The result is mirrored to a
-     * local cache file so the panel still works offline / when the hub is down.
+     * Loads the Sufficit-memory tasks bound to THIS chat session (task-anchor +
+     * task-checkpoint, tagged with the session id) and pushes them to the Tasks
+     * panel. Mirrored to .vscode/symposium.tasks.json so it shows offline / when
+     * the hub is down. The session id is the binding key.
      */
     private async refreshTasks(): Promise<void> {
-        const project = this.projectName();
-        const cacheFile = path.join(os.homedir(), ".symposium", "tasks-cache",
-            `${(project || "default").replace(/[^A-Za-z0-9_.-]/g, "_")}.json`);
-        let items: unknown[] = [];
+        const sessionId = this.controller?.sessionId ?? "";
+        const mirror = this.taskMirrorFile();
+        let items: TaskItem[] = [];
         try {
-            if (!this.hub.configured()) { throw new Error("hub not configured"); }
-            const recs = await this.hub.searchMemory({ query: project, limit: 40 });
-            items = (recs as any[])
-                .filter((r) => String(r.type || "").startsWith("task"))
-                .sort((a, b) => Date.parse(b.createdAtUtc || 0) - Date.parse(a.createdAtUtc || 0))
-                .slice(0, 25)
-                .map((r) => ({ id: r.id, type: r.type, title: r.title, summary: r.summary, ts: r.createdAtUtc, tags: r.tags }));
-            try {
-                fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-                fs.writeFileSync(cacheFile, JSON.stringify(items), "utf8");
-            } catch { /* cache best-effort */ }
+            if (!this.hub.configured() || !sessionId) { throw new Error("no hub/session"); }
+            items = await fetchSessionTasks(this.hub, sessionId);
+            if (mirror) {
+                try {
+                    fs.mkdirSync(path.dirname(mirror), { recursive: true });
+                    fs.writeFileSync(mirror, JSON.stringify({ sessionId, items }, null, 2), "utf8");
+                } catch { /* mirror best-effort */ }
+            }
         } catch {
-            // Fall back to the local mirror when the hub is unavailable.
-            try { items = JSON.parse(fs.readFileSync(cacheFile, "utf8")); } catch { items = []; }
+            // Offline / hub down: read the project-local mirror for this session.
+            try {
+                const cached = JSON.parse(fs.readFileSync(mirror ?? "", "utf8"));
+                items = cached?.sessionId === sessionId ? (cached.items ?? []) : [];
+            } catch { items = []; }
         }
-        this.post({ type: "tasks", items, project });
+        this.post({ type: "tasks", items, project: sessionId });
     }
 
     private async onMessage(message: any): Promise<void> {
@@ -737,6 +738,7 @@ export class ChatSurface {
             : undefined;
         const controller = existing ?? this.deps.runtime.create(adapter, options);
         this.controller = controller;
+        void this.refreshTasks();   // load this session's tasks into the panel
 
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
         this.post({

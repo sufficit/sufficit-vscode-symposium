@@ -29,6 +29,8 @@ export interface Observation {
     summary: string;
     payload?: string;
     tags?: string;
+    /** ISO-8601 expiry; set in the past to soft-delete on the next save (upsert). */
+    expiresAtUtc?: string;
 }
 
 export interface SaveResponse {

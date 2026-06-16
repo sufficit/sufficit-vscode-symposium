@@ -206,6 +206,8 @@ export interface ToolContext {
     cwd: string;
     /** Permission mode; "plan" forbids mutating/executing tools (read-only). */
     permission?: string;
+    /** Symposium chat session id — tasks saved to memory are bound to it. */
+    sessionId?: string;
 }
 
 /** Resolves a tool path against the session cwd (absolute paths pass through). */
@@ -277,12 +279,22 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                 return JSON.stringify(await hub.getByIds(ids));
             }
             case "memory_save": {
+                // Bind task observations to the current Symposium chat session so
+                // they can be listed in the Tasks panel and removed with it.
+                let tags = args.tags ? String(args.tags) : "";
+                const type = String(args.type ?? "note");
+                if (ctx.sessionId && type.startsWith("task")) {
+                    const tag = `symposium-session:${ctx.sessionId}`;
+                    if (!tags.split(",").map((t) => t.trim()).includes(tag)) {
+                        tags = tags ? `${tags},${tag}` : tag;
+                    }
+                }
                 const id = await hub.save({
-                    type: String(args.type ?? "note"),
+                    type,
                     title: String(args.title ?? ""),
                     summary: String(args.summary ?? ""),
                     payload: args.payload ? String(args.payload) : undefined,
-                    tags: args.tags ? String(args.tags) : undefined,
+                    tags: tags || undefined,
                 });
                 return JSON.stringify({ id });
             }

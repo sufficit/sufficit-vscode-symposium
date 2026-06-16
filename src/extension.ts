@@ -37,7 +37,8 @@ import { scanKind, readAgentBody, readAgentModel, readAgentTools } from "./confi
 import { aiToolsForAgent } from "./adapters/aiTools";
 import { SufficitAuth } from "./auth/identity";
 import { SufficitAuthProvider } from "./auth/provider";
-import { setHubTokenProvider } from "./sync/hubClient";
+import { setHubTokenProvider, HubClient } from "./sync/hubClient";
+import { expireSessionTasks } from "./sync/tasks";
 
 /** Normalizes a model label for pin matching: lowercase, drop "(...)", collapse spaces. */
 function normModel(s: string): string {
@@ -583,10 +584,15 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 snapshots.clearSession(info.sessionId);      // drop in-memory baselines
                 const residual = await adapter.deleteSession(info);
                 await store.forget(info);
+                // Remove the session's tasks from Sufficit memory (soft-delete via
+                // expiry) — tasks are bound to the session id.
+                let expired = 0;
+                try { expired = await expireSessionTasks(new HubClient(), info.sessionId); } catch { /* best-effort */ }
                 refreshAll();
                 // Close the conversation pane if it's showing the deleted session.
                 chatView.sessionDeleted(info.sessionId);
                 ChatPanel.sessionDeleted(info.sessionId);
+                if (expired) { symposiumLog(`[delete] expired ${expired} memory task(s) for ${info.sessionId}`); }
                 if (Array.isArray(residual) && residual.length) {
                     void vscode.window.showWarningMessage(
                         `Session deleted. Residual data may remain in: ${residual.join(", ")} — clear it manually if required.`);

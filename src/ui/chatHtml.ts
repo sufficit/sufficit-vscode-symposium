@@ -1711,8 +1711,8 @@ export function renderHtml(): string {
         const head = document.createElement("div"); head.className = "tkhead";
         head.appendChild(svgIcon("list"));
         const ttl = document.createElement("span"); ttl.className = "tktitle";
-        ttl.textContent = "Tasks" + (project ? " · " + project : "");
-        ttl.title = "Tarefas da memória Sufficit (espelho local)" + (project ? " — " + project : "");
+        ttl.textContent = "Tasks";
+        ttl.title = "Tarefas da memória Sufficit desta sessão (espelho em .vscode/symposium.tasks.json)" + (project ? " — sessão " + project : "");
         const cnt = document.createElement("span"); cnt.className = "tkcount"; cnt.textContent = String(items.length);
         const refresh = document.createElement("button"); refresh.className = "tkbtn"; refresh.title = "Atualizar da memória";
         refresh.appendChild(svgIcon("refresh"));

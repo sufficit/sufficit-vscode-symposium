@@ -206,7 +206,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     this.emit("event", { kind: "tool-start", toolName: tc.function.name, detail: tc.function.arguments?.slice(0, 200), toolId: tc.id, input: tc.function.arguments });
                     const result = isLmTool(tc.function.name)
                         ? await invokeLmTool(tc.function.name, args)
-                        : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission });
+                        : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission, sessionId: this.sessionId });
                     this.emit("event", { kind: "tool-end", toolName: tc.function.name, toolId: tc.id, result });
                     this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
                 }
