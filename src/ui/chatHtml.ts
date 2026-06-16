@@ -1079,11 +1079,15 @@ export function renderHtml(): string {
         endToolGroup(); endStream();
         const el = document.createElement("div"); el.className = "msg plain error";
         const txt = document.createElement("div"); txt.textContent = "✖ " + message; el.appendChild(txt);
-        if (lastSendPayload) {
+        // Retry is just "edit & resend the last user message": it loads that
+        // message back into the composer (so you can change the model, text, or
+        // mode) and resending rewinds the history to that point.
+        const lastUser = lastUserRow();
+        if (lastUser) {
             const bar = document.createElement("div"); bar.className = "errActions";
             const b = document.createElement("button"); b.className = "retryBtn";
-            b.appendChild(svgIcon("history")); b.appendChild(document.createTextNode(" Retry"));
-            b.addEventListener("click", () => retryLast());
+            b.appendChild(svgIcon("history")); b.appendChild(document.createTextNode(" Edit & retry"));
+            b.addEventListener("click", () => beginEdit(lastUser.idx, lastUser.text));
             bar.appendChild(b); el.appendChild(bar);
         }
         log.appendChild(el); refreshEmpty(); autoScroll(stick);
@@ -1366,6 +1370,11 @@ export function renderHtml(): string {
     function setStatus() {
         const q = queued > 0 ? " · " + queued + " queued" : "";
         status.textContent = busy ? ("thinking..." + q) : (activeModel ? "model: " + activeModel : "");
+        // Model/reasoning are locked while a turn runs, but must unlock the moment
+        // it ends (or errors) — otherwise you can never change the model again
+        // after the first send (e.g. to retry on a different model).
+        if (modelList.length) { modelPicker.disabled = busy; }
+        if (reasoningList.length) { reasoningPicker.disabled = busy; }
         updateSendTitle();   // mode caret/icon depends on busy state
         syncProgress();
     }
@@ -2121,6 +2130,13 @@ export function renderHtml(): string {
             el.classList.toggle("willReplace", editAnchor != null && i >= editAnchor);
         });
         document.getElementById("composer").classList.toggle("editing", editAnchor != null);
+    }
+    // Most recent user turn (index + raw text), for "edit & retry".
+    function lastUserRow() {
+        for (let i = conversationRows.length - 1; i >= 0; i--) {
+            if (conversationRows[i].role === "user") { return { idx: i, text: conversationRows[i].text || "" }; }
+        }
+        return null;
     }
     function beginEdit(idx, text) {
         editAnchor = idx;
