@@ -554,6 +554,16 @@ export function renderHtml(): string {
     .cfbtn.ok:hover { color: var(--vscode-gitDecoration-addedResourceForeground, #4ec94e); }
     .cfbtn.no:hover { color: var(--vscode-gitDecoration-deletedResourceForeground, #d16969); }
     .error { color: var(--vscode-errorForeground); }
+    .errActions { margin-top: 6px; }
+    .retryBtn {
+        display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+        font: inherit; font-size: 0.9em; padding: 3px 10px; border-radius: 5px;
+        color: var(--vscode-button-secondaryForeground, inherit);
+        background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2));
+        border: none;
+    }
+    .retryBtn:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.3)); }
+    .retryBtn svg { width: 13px; height: 13px; }
     .meta { opacity: 0.55; font-size: 0.82em; text-align: center; margin: 10px 0; }
 
     /* ---- slash command autocomplete ---- */
@@ -1062,6 +1072,21 @@ export function renderHtml(): string {
     // Show the empty-state placeholder when the log has no messages yet.
     function refreshEmpty() { root.classList.toggle("empty", log.childElementCount === 0); }
 
+    // Error block with a Retry action (re-sends the last user message).
+    function renderError(message) {
+        const stick = nearBottom();
+        endToolGroup(); endStream();
+        const el = document.createElement("div"); el.className = "msg plain error";
+        const txt = document.createElement("div"); txt.textContent = "✖ " + message; el.appendChild(txt);
+        if (lastSendPayload) {
+            const bar = document.createElement("div"); bar.className = "errActions";
+            const b = document.createElement("button"); b.className = "retryBtn";
+            b.appendChild(svgIcon("history")); b.appendChild(document.createTextNode(" Retry"));
+            b.addEventListener("click", () => retryLast());
+            bar.appendChild(b); el.appendChild(bar);
+        }
+        log.appendChild(el); refreshEmpty(); autoScroll(stick);
+    }
     function append(cls, text) {
         const stick = nearBottom();
         endToolGroup(); endStream();
@@ -2110,6 +2135,12 @@ export function renderHtml(): string {
         markEditing();
     }
 
+    let lastSendPayload = null;   // last user submission, for error Retry
+    function retryLast() {
+        if (!lastSendPayload) { return; }
+        vscode.postMessage(lastSendPayload);
+        if (!busy) { busy = true; setStatus(); }
+    }
     function send(modeOverride) {
         const text = input.value.trim();
         if (!text) return;
@@ -2121,7 +2152,7 @@ export function renderHtml(): string {
         const atts = attachments.map((a) => a.path);
         if (activeFile && !activeFileDismissed) atts.unshift(activeFile + (activeFileRange ? " (selected lines " + activeFileRange.start + "-" + activeFileRange.end + ")" : ""));
         const editFrom = editAnchor;
-        vscode.postMessage({
+        const payload = {
             type: "send",
             text,
             attachments: atts,
@@ -2131,7 +2162,9 @@ export function renderHtml(): string {
             mode: modeOverride || sendMode.value,
             autonomy: autonomyValue,
             editFrom: editFrom,
-        });
+        };
+        lastSendPayload = { ...payload, editFrom: null };   // remember for Retry
+        vscode.postMessage(payload);
         if (editAnchor != null) { editAnchor = null; markEditing(); }
         if (!busy && editFrom == null) { busy = true; setStatus(); }
         attachments = [];
@@ -2456,7 +2489,11 @@ export function renderHtml(): string {
                 else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }
                 else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);
                 else if (ev.kind === "usage") { lastUsage = ev; renderStatusbar(); }
-                else if (ev.kind === "error") append("error", "✖ " + ev.message);
+                else if (ev.kind === "error") {
+                    // Defensive: an error must never leave the composer stuck busy.
+                    busy = false; sendBtn.disabled = false; setStatus();
+                    renderError(ev.message);
+                }
                 else if (ev.kind === "session") {
                     if (ev.model) { activeModel = ev.model; }
                     activeSessionId = ev.sessionId || activeSessionId;
