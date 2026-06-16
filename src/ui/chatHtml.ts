@@ -1512,6 +1512,8 @@ export function renderHtml(): string {
         memory_get_observations: { icon: "search", verb: "Memory" },
         memory_save: { icon: "file", verb: "Saved memory" },
         web_search: { icon: "globe", verb: "Searched web" },
+        fetch_url: { icon: "globe", verb: "Fetched" },
+        open_url: { icon: "globe", verb: "Opened" },
         Glob: { icon: "search", verb: "Searched" },
         Grep: { icon: "search", verb: "Searched" },
         LS: { icon: "file", verb: "Listed" },

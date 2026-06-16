@@ -2,6 +2,7 @@ import { HubClient } from "../sync/hubClient";
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as vscode from "vscode";
 
 /**
  * Sufficit memory + web tools exposed to OpenAI-compatible models as function
@@ -148,6 +149,33 @@ export const LOCAL_TOOLS: OpenAITool[] = [
             },
         },
     },
+    {
+        type: "function",
+        function: {
+            name: "fetch_url",
+            description: "Fetch a web page (HTTP GET) and return its readable text content (HTML stripped). Use to read documentation, release notes, install instructions — anything you'd open in a browser. Navigate by fetching successive URLs (e.g. links found in the page).",
+            parameters: {
+                type: "object",
+                properties: {
+                    url: { type: "string", description: "Absolute URL (http/https)." },
+                    max_chars: { type: "integer", description: "Optional cap on characters returned (default 30000)." },
+                },
+                required: ["url"],
+            },
+        },
+    },
+    {
+        type: "function",
+        function: {
+            name: "open_url",
+            description: "Open a URL in the VS Code built-in Simple Browser so the user can see the page on screen. Use alongside fetch_url when the user should watch/inspect the site.",
+            parameters: {
+                type: "object",
+                properties: { url: { type: "string", description: "Absolute URL (http/https) to display." } },
+                required: ["url"],
+            },
+        },
+    },
 ];
 
 /** Names of the local workspace tools (shell/fs). */
@@ -181,8 +209,8 @@ export function aiToolsForAgent(declared: string[]): string[] {
     if (has(/^sufficit-ai\b|^sufficit-ai\/|^memory\b/i)) {
         names.push("memory_search", "memory_get_observations", "memory_save");
     }
-    if (has(/^web\b|^search\b|^web_search\b/i)) {
-        names.push("web_search");
+    if (has(/^web\b|^search\b|^web_search\b|^browse\b|^fetch\b/i)) {
+        names.push("web_search", "fetch_url", "open_url");
     }
     // Shell/filesystem parity tools, enabled by a shell/exec/bash/fs capability.
     if (has(/^shell\b|^exec\b|^bash\b|^terminal\b|^fs\b|^filesystem\b/i)) {
@@ -232,11 +260,41 @@ function runShell(command: string, cwd: string, timeoutMs: number): Promise<{ st
     });
 }
 
+/** Strips HTML to readable text (drops script/style, tags → spaces). */
+function htmlToText(html: string): string {
+    return html
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<!--[\s\S]*?-->/g, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/[ \t\f\r]+/g, " ")
+        .replace(/\n\s*\n\s*\n+/g, "\n\n")
+        .trim();
+}
+
 /** Executes one tool call. Returns a JSON string for the model. */
 export async function runAiTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const hub = ctx.hub;
     const planMode = ctx.permission === "plan";
     try {
+        // ---- web navigation ----
+        if (name === "fetch_url") {
+            const url = String(args.url ?? "").trim();
+            if (!/^https?:\/\//i.test(url)) { return JSON.stringify({ error: "url must start with http(s)://" }); }
+            const max = Number(args.max_chars) || 30000;
+            const res = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (Symposium VS Code agent)" } });
+            const ct = res.headers.get("content-type") || "";
+            const raw = await res.text();
+            const body = /html/i.test(ct) ? htmlToText(raw) : raw;
+            return JSON.stringify({ url, status: res.status, content_type: ct, content: body.slice(0, max), truncated: body.length > max });
+        }
+        if (name === "open_url") {
+            const url = String(args.url ?? "").trim();
+            if (!/^https?:\/\//i.test(url)) { return JSON.stringify({ error: "url must start with http(s)://" }); }
+            await vscode.commands.executeCommand("simpleBrowser.show", url);
+            return JSON.stringify({ opened: url });
+        }
         // ---- local workspace tools (shell / filesystem) ----
         if (name === "shell") {
             if (planMode) { return JSON.stringify({ error: "plan mode: command execution is disabled" }); }
