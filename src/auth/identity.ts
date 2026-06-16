@@ -55,7 +55,10 @@ export class SufficitAuth {
         return (v && v.trim() ? v : "https://identity.sufficit.com.br").replace(/\/+$/, "");
     }
     private clientId(): string {
-        return this.cfg().get<string>("clientId", "");
+        // Public OAuth client id (not a secret) — baked in so login works out of
+        // the box; override via settings only for a custom identity tenant.
+        const v = this.cfg().get<string>("clientId", "");
+        return v && v.trim() ? v : "sufficit-vscode-symposium";
     }
     private scope(): string {
         return this.cfg().get<string>("scope", "openid profile email offline_access");

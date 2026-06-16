@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.32",
+  "version": "0.79.33",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -226,8 +226,8 @@
         },
         "symposium.identity.clientId": {
           "type": "string",
-          "default": "",
-          "description": "OAuth client id registered in Sufficit Identity for Symposium (public client with the device_code grant). Required for login."
+          "default": "sufficit-vscode-symposium",
+          "description": "OAuth client id registered in Sufficit Identity for Symposium (public client with the device_code grant). Defaults to the standard Symposium client; override only for a custom identity tenant."
         },
         "symposium.identity.scope": {
           "type": "string",
