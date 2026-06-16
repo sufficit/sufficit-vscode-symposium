@@ -22,7 +22,7 @@ function defaultCwd(): string {
 import { ClaudeAdapter, ClaudeAdapterConfig } from "./adapters/claude";
 import { CodexAdapter, CodexAdapterConfig } from "./adapters/codex";
 import { CopilotAdapter, CopilotAdapterConfig } from "./adapters/copilot";
-import { OpenAIAdapter, OpenAIAdapterConfig } from "./adapters/openai";
+import { OpenAIAdapter, OpenAIAdapterConfig, setOpenAITokenProvider } from "./adapters/openai";
 import { AgentAdapter, SessionInfo, SessionStartOptions } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
 import { LiveSessions } from "./sessions/runtime";
@@ -104,7 +104,9 @@ function openaiConfig(): OpenAIAdapterConfig {
     const config = vscode.workspace.getConfiguration("symposium.openai");
     return {
         api: config.get<"chat" | "responses">("api", "chat"),
-        baseUrl: config.get<string>("baseUrl", "https://api.openai.com/v1"),
+        // The built-in "Sufficit AI" backend points at the Sufficit gateway by
+        // default and authenticates with the logged-in token — no manual setup.
+        baseUrl: config.get<string>("baseUrl", "https://ai.sufficit.com.br/openai/v1"),
         model: config.get<string>("model", ""),
         models: config.get<string[]>("models", []),
         headers: config.get<Record<string, string>>("headers", {}),
@@ -174,11 +176,12 @@ const CLI_BACKENDS = new Set(["claude", "codex", "copilot"]);
 export function activate(context: vscode.ExtensionContext): SymposiumApi {
     output = vscode.window.createOutputChannel("Symposium");
     context.subscriptions.push(output);
+    const sufficitAdapter = new OpenAIAdapter("openai", "Sufficit AI", openaiConfig);
     const adapters: AgentAdapter[] = [
         new ClaudeAdapter(claudeConfig),
         new CodexAdapter(codexConfig),
         new CopilotAdapter(copilotConfig),
-        new OpenAIAdapter("openai", "Sufficit AI", openaiConfig),
+        sufficitAdapter,
         ...buildCustomAdapters(normalizeAdapterDefs()),
     ];
     const adapterByBackend = new Map<string, AgentAdapter>(
@@ -204,6 +207,27 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     SufficitAuthProvider.register(context, auth);
     // Hub/MCP requests use the logged-in identity token when available.
     setHubTokenProvider(() => auth.getAccessToken());
+    // The native "Sufficit AI" backend authenticates with the same login token —
+    // so right after login it works with no manual adapter config.
+    setOpenAITokenProvider(() => auth.getAccessToken());
+    // Verify the Sufficit AI backend in the background (never blocks the UI):
+    // on activation/reload and whenever login state changes. Discovery primes
+    // the model picker; only warn (non-modal) when logged in but unreachable.
+    const checkSufficit = () => {
+        void (async () => {
+            try {
+                const r = await sufficitAdapter.available();
+                symposiumLog(`[sufficit-ai] health: ${r.ok ? "ok" : "FAIL " + (r.error ?? "")}`);
+                if (!r.ok && (await auth.isLoggedIn())) {
+                    void vscode.window.showWarningMessage(`Sufficit AI indisponível: ${r.error ?? "verifique a conexão"}`);
+                }
+            } catch (e) {
+                symposiumLog(`[sufficit-ai] health check error: ${e}`);
+            }
+        })();
+    };
+    context.subscriptions.push(auth.onDidChange(checkSufficit));
+    checkSufficit();
 
     const rawSessions = async (): Promise<SessionInfo[]> => {
         const all = await Promise.all(adapters.map((adapter) =>

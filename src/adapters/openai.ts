@@ -77,6 +77,17 @@ export interface OpenAIAdapterConfig {
 const discoveredModels = new Map<string, string[]>();
 const discoveredLabels = new Map<string, Record<string, string>>();
 
+/**
+ * Optional Sufficit login access-token provider. When set (at activation) and an
+ * adapter has no explicit apiKey/Authorization, the logged-in token is used as
+ * the Bearer — so the native "Sufficit AI" backend works right after login with
+ * no manual config.
+ */
+let openaiTokenProvider: (() => Promise<string | null>) | undefined;
+export function setOpenAITokenProvider(fn: () => Promise<string | null>): void {
+    openaiTokenProvider = fn;
+}
+
 type ChatMessage = ChatMsg;
 
 /**
@@ -126,12 +137,23 @@ class OpenAISession extends EventEmitter implements AgentSession {
             || discoveredModels.get(this.cfg.baseUrl)?.[0] || "";
     }
 
-    private headers(): Record<string, string> {
+    private headers(loginToken?: string | null): Record<string, string> {
         const h: Record<string, string> = { "content-type": "application/json", ...this.cfg.headers };
-        if (this.cfg.apiKey && !Object.keys(h).some((k) => k.toLowerCase() === "authorization")) {
+        const hasAuth = Object.keys(h).some((k) => k.toLowerCase() === "authorization");
+        if (!hasAuth && this.cfg.apiKey) {
             h["authorization"] = `Bearer ${this.cfg.apiKey}`;
+        } else if (!hasAuth && loginToken) {
+            // Fall back to the logged-in Sufficit token (native backend).
+            h["authorization"] = `Bearer ${loginToken}`;
         }
         return h;
+    }
+
+    /** Resolves the login token only when needed (no explicit auth configured). */
+    private async authToken(): Promise<string | null> {
+        const hasAuth = Object.keys(this.cfg.headers).some((k) => k.toLowerCase() === "authorization");
+        if (hasAuth || this.cfg.apiKey || !openaiTokenProvider) { return null; }
+        try { return await openaiTokenProvider(); } catch { return null; }
     }
 
     send(text: string): void {
@@ -155,6 +177,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
         const base = this.cfg.baseUrl.replace(/\/+$/, "");
         const url = base + (responses ? "/responses" : "/chat/completions");
         const effort = this.options.reasoning;
+        const loginToken = await this.authToken();   // logged-in Bearer, if needed
         // Tools exposed to the model: local shell/filesystem tools (always — the
         // parity with the CLI backends) plus memory/web tools when the hub is
         // configured. The model calls them; we execute and feed results back.
@@ -188,7 +211,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 }
                 this.cfg.log?.(`[${this.backend}] POST ${url} api=${this.cfg.api} model=${this.model()} tools=${toolList.length} hop=${hop}`);
                 const res = await fetch(url, {
-                    method: "POST", headers: this.headers(), body: JSON.stringify(body), signal: this.abort.signal,
+                    method: "POST", headers: this.headers(loginToken), body: JSON.stringify(body), signal: this.abort.signal,
                 });
                 if (!res.ok || !res.body) {
                     const detail = await res.text().catch(() => "");
@@ -409,8 +432,12 @@ export class OpenAIAdapter implements AgentAdapter {
     private async discoverModels(cfg: OpenAIAdapterConfig): Promise<void> {
         const url = cfg.baseUrl.replace(/\/+$/, "") + "/models";
         const headers: Record<string, string> = { ...cfg.headers };
-        if (cfg.apiKey && !Object.keys(headers).some((k) => k.toLowerCase() === "authorization")) {
+        const hasAuth = Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
+        if (!hasAuth && cfg.apiKey) {
             headers["authorization"] = `Bearer ${cfg.apiKey}`;
+        } else if (!hasAuth && openaiTokenProvider) {
+            const t = await openaiTokenProvider().catch(() => null);
+            if (t) { headers["authorization"] = `Bearer ${t}`; }
         }
         const res = await fetch(url, { headers });
         if (!res.ok) { return; }
