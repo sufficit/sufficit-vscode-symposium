@@ -107,6 +107,7 @@ export function renderConfigHtml(): string {
         { id: "tool", label: "Tools", key: "tool" },
         { id: "instruction", label: "Instruções", key: "instruction" },
         { id: "backends", label: "Backends" },
+        { id: "prefs", label: "Preferências" },
         { id: "sync", label: "Sync" },
     ];
 
@@ -191,10 +192,38 @@ export function renderConfigHtml(): string {
             '<div class="row"><span class="name">Push pendente</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || "nenhum") + "</span></div>";
     }
 
+    function prefsView() {
+        const p = (state && state.prefs) || {};
+        const sel = (key, value, opts) =>
+            '<select class="pref" data-key="' + esc(key) + '">' +
+            opts.map(o => '<option value="' + esc(o.v) + '"' + (o.v === value ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") +
+            "</select>";
+        const row = (name, desc, ctl) =>
+            '<div class="row"><span class="name">' + esc(name) + '</span><span class="desc">' + esc(desc) + "</span>" + ctl + "</div>";
+        return (
+            row("Lista de sessões", "De que lado a lista de sessões aparece.",
+                sel("symposium.chat.sessionsSide", p.sessionsSide || "auto",
+                    [{ v: "auto", l: "Automático" }, { v: "left", l: "Esquerda" }, { v: "right", l: "Direita" }])) +
+            row("Abrir sessão em", "Onde uma sessão abre ao iniciar.",
+                sel("symposium.chat.openIn", p.openIn || "editor",
+                    [{ v: "editor", l: "Editor (aba central)" }, { v: "sidebar", l: "Barra lateral" }])) +
+            row("Ferramentas do VS Code", "Quais Language Model Tools o backend Sufficit AI pode usar.",
+                sel("symposium.lmTools", p.lmTools || "terminal",
+                    [{ v: "off", l: "Desligado" }, { v: "terminal", l: "Terminal/tarefas/testes" }, { v: "all", l: "Todas" }]))
+        );
+    }
+
     function render() {
         renderTabs();
         const main = document.getElementById("content");
         if (!state) { main.innerHTML = '<div class="empty">Carregando…</div>'; return; }
+        if (active === "prefs") {
+            main.innerHTML = prefsView();
+            main.querySelectorAll("select.pref").forEach(el => {
+                el.onchange = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
+            });
+            return;
+        }
         if (active === "backends") {
             main.innerHTML = backendsView();
             main.querySelectorAll("button.test").forEach(el => {

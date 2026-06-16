@@ -61,7 +61,7 @@ export class ConfigPanel {
     }
 
     private async onMessage(message: {
-        type: string; path?: string; kind?: ResourceKind; name?: string; backend?: string; value?: string;
+        type: string; path?: string; kind?: ResourceKind; name?: string; backend?: string; value?: string; key?: string;
     }): Promise<void> {
         const api = this.deps.api;
         switch (message.type) {
@@ -151,6 +151,12 @@ export class ConfigPanel {
             case "config-hub":
                 await vscode.commands.executeCommand("workbench.action.openSettings", "symposium.hub");
                 return;
+            case "set-pref":
+                if (typeof message.key === "string") {
+                    await vscode.workspace.getConfiguration().update(message.key, message.value, vscode.ConfigurationTarget.Global);
+                    await this.pushState();
+                }
+                return;
             case "login":
                 await vscode.commands.executeCommand("symposium.login");
                 await this.pushState();
@@ -186,6 +192,8 @@ export class ConfigPanel {
     private async pushState(): Promise<void> {
         const api = this.deps.api;
         const profile = this.deps.auth ? await this.deps.auth.getProfile().catch(() => undefined) : undefined;
+        const chat = vscode.workspace.getConfiguration("symposium.chat");
+        const root = vscode.workspace.getConfiguration("symposium");
         const state = {
             root: api.resources.root(),
             resources: api.resources.scan(),
@@ -193,6 +201,11 @@ export class ConfigPanel {
             sync: api.sync.status(),
             hubConfigured: api.sync.configured(),
             profile: profile ?? null,
+            prefs: {
+                sessionsSide: chat.get<string>("sessionsSide", "auto"),
+                openIn: chat.get<string>("openIn", "editor"),
+                lmTools: root.get<string>("lmTools", "terminal"),
+            },
         };
         await this.panel.webview.postMessage({ type: "state", state });
     }
