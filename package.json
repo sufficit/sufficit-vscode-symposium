@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.19",
+  "version": "0.79.20",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -248,6 +248,21 @@
           "type": "string",
           "default": "symposium",
           "description": "Source system id sent as X-MEMORY-SOURCE-ID (identifies this machine/system in shared memory)."
+        },
+        "symposium.lmTools": {
+          "type": "string",
+          "enum": [
+            "off",
+            "terminal",
+            "all"
+          ],
+          "enumDescriptions": [
+            "Don't expose VS Code Language Model Tools to the native AI backend.",
+            "Expose the terminal/task/test/notebook tools (runInTerminal, runTask, runTests, …).",
+            "Expose every registered VS Code Language Model Tool (may flood the model with many tools)."
+          ],
+          "default": "terminal",
+          "description": "Which VS Code Language Model Tools (vscode.lm.tools) the native 'Sufficit AI' backend may call, alongside its own shell/filesystem tools. These integrate with the VS Code UI (a real terminal, the test runner, tasks.json)."
         },
         "symposium.bridge.enabled": {
           "type": "boolean",

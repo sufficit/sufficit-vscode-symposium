@@ -13,6 +13,7 @@ import {
 import { TODO_INJECTION } from "./todos";
 import { HubClient } from "../sync/hubClient";
 import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, filterTools, runAiTool } from "./aiTools";
+import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "./lmTools";
 
 /** OpenAI tool call as streamed/accumulated from chat completions deltas. */
 interface ToolCall {
@@ -157,6 +158,9 @@ class OpenAISession extends EventEmitter implements AgentSession {
             ? (responses ? AI_TOOLS_RESPONSES : AI_TOOLS)
             : [];
         const localTools = responses ? LOCAL_TOOLS_RESPONSES : LOCAL_TOOLS;
+        // VS Code Language Model Tools (runInTerminal, runTask, runTests, …):
+        // computed fresh each turn so registry/setting changes take effect.
+        const vscodeTools = responses ? lmToolDefsResponses() : lmToolDefs();
 
         try {
             // Tool-call loop: keep round-tripping while the model requests tools.
@@ -169,7 +173,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 // unset, expose all; when set to [], expose none (tools off).
                 const allow = this.options.aiTools;
                 const toolList = filterTools<{ function?: { name: string }; name?: string }>(
-                    [...memoryTools, ...localTools] as { function?: { name: string }; name?: string }[], allow);
+                    [...memoryTools, ...localTools, ...vscodeTools] as { function?: { name: string }; name?: string }[], allow);
                 if (toolList.length > 0) {
                     body.tools = toolList;
                     body.tool_choice = "auto";
@@ -200,7 +204,9 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     let args: Record<string, unknown> = {};
                     try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* leave empty */ }
                     this.emit("event", { kind: "tool-start", toolName: tc.function.name, detail: tc.function.arguments?.slice(0, 200), toolId: tc.id, input: tc.function.arguments });
-                    const result = await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission });
+                    const result = isLmTool(tc.function.name)
+                        ? await invokeLmTool(tc.function.name, args)
+                        : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission });
                     this.emit("event", { kind: "tool-end", toolName: tc.function.name, toolId: tc.id, result });
                     this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
                 }
