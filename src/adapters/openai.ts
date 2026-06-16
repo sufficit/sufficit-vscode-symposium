@@ -207,7 +207,14 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 for (const tc of toolCalls) {
                     let args: Record<string, unknown> = {};
                     try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* leave empty */ }
-                    this.emit("event", { kind: "tool-start", toolName: tc.function.name, detail: tc.function.arguments?.slice(0, 200), toolId: tc.id, input: tc.function.arguments });
+                    this.emit("event", {
+                        kind: "tool-start",
+                        toolName: tc.function.name,
+                        detail: friendlyToolDetail(tc.function.name, args),
+                        path: toolPath(tc.function.name, args),
+                        toolId: tc.id,
+                        input: tc.function.arguments,
+                    });
                     const result = isLmTool(tc.function.name)
                         ? await invokeLmTool(tc.function.name, args)
                         : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission, sessionId: this.sessionId });
@@ -291,6 +298,32 @@ class OpenAISession extends EventEmitter implements AgentSession {
         }
         return done();
     }
+}
+
+/** A human-readable one-liner for a tool call, instead of raw JSON args. */
+function friendlyToolDetail(name: string, args: Record<string, unknown>): string {
+    const s = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
+    let d = "";
+    switch (name) {
+        case "shell": d = s(args.command).split("\n")[0]; break;
+        case "fetch_url": case "open_url": d = s(args.url); break;
+        case "read_file": case "write_file": case "list_dir": d = s(args.path); break;
+        case "memory_search": case "web_search": d = s(args.query); break;
+        case "memory_save": d = s(args.title); break;
+        default: {
+            const first = Object.values(args).find((v) => typeof v === "string");
+            d = first ? s(first) : (Object.keys(args).length ? JSON.stringify(args) : "");
+        }
+    }
+    return d.length > 160 ? d.slice(0, 159) + "…" : d;
+}
+
+/** File path a tool acts on (gives the row a file icon); else undefined. */
+function toolPath(name: string, args: Record<string, unknown>): string | undefined {
+    if ((name === "read_file" || name === "write_file" || name === "list_dir") && typeof args.path === "string") {
+        return args.path;
+    }
+    return undefined;
 }
 
 /**
