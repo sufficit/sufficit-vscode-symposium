@@ -623,6 +623,19 @@ export function renderHtml(): string {
         display: flex; flex-direction: column;
     }
     #composer:focus-within { border-color: var(--vscode-focusBorder); }
+    /* Scroll-to-bottom button: floats just above the composer, only when scrolled up. */
+    #scrollBottom {
+        position: absolute; bottom: calc(100% + 8px); right: 8px; z-index: 5;
+        width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+        display: none; align-items: center; justify-content: center;
+        background: var(--vscode-button-secondaryBackground, var(--vscode-editorWidget-background, #2a2a2a));
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+        border: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.35));
+        box-shadow: 0 2px 8px rgba(0,0,0,0.35); opacity: 0.9;
+    }
+    #scrollBottom.show { display: inline-flex; }
+    #scrollBottom:hover { opacity: 1; background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
+    #scrollBottom svg { width: 15px; height: 15px; }
     /* Busy indicator: a subtle light sweeping around the composer border (like
        the native chat), instead of a top bar that looks global. */
     @property --symAng { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
@@ -789,6 +802,7 @@ export function renderHtml(): string {
         <div id="plan"></div>
         <div id="changedFiles"></div>
         <div id="composer">
+            <button id="scrollBottom" title="Ir para o fim"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z"/></svg></button>
             <div id="slash"></div>
             <div id="chips"></div>
             <textarea id="input" placeholder="Ask the agent…  (Enter sends · Shift+Enter newline)"></textarea>
@@ -1122,6 +1136,21 @@ export function renderHtml(): string {
     // scrollback isn't yanked away mid-stream.
     function nearBottom() { return log.scrollHeight - log.scrollTop - log.clientHeight < 80; }
     function autoScroll(stick) { if (stick) log.scrollTop = log.scrollHeight; }
+    // Force-scroll to the very bottom, after layout settles (history/images can
+    // change height a frame later, so do it now + on the next frame).
+    function scrollToBottom() {
+        log.scrollTop = log.scrollHeight;
+        requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; updateScrollBtn(); });
+    }
+    // Floating "scroll to bottom" button: visible only when scrolled up.
+    let scrollBtn = null;
+    function updateScrollBtn() {
+        if (!scrollBtn) { return; }
+        scrollBtn.classList.toggle("show", !nearBottom() && log.childElementCount > 0);
+    }
+    log.addEventListener("scroll", updateScrollBtn);
+    scrollBtn = document.getElementById("scrollBottom");
+    if (scrollBtn) { scrollBtn.addEventListener("click", scrollToBottom); }
     // Show the empty-state placeholder when the log has no messages yet.
     function refreshEmpty() { root.classList.toggle("empty", log.childElementCount === 0); }
 
@@ -2481,6 +2510,7 @@ export function renderHtml(): string {
                 activeFilePreview = !!data.activeFilePreview; activeFilePinned = false;
                 activeFileDismissed = false; renderChips();
                 setLoading(false);   // session resolved — reveal the conversation
+                scrollToBottom();    // start at the latest message
                 break;
             }
             case "active-file": {
@@ -2583,6 +2613,7 @@ export function renderHtml(): string {
                 if (!data.carried) {
                     append("meta", data.messages.length ? "— end of stored transcript —" : "(empty transcript)");
                 }
+                scrollToBottom();   // land at the latest message when a session opens
                 break;
             }
             case "backends": {
