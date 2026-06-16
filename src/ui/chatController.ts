@@ -309,16 +309,20 @@ export class ChatController {
     }
 
     private dispatch(msg: PendingMessage): void {
+        // Apply per-message model/reasoning to the live options BEFORE (re)starting
+        // or sending. Stateless backends (OpenAI HTTP) read options.model on each
+        // request, so this lets the user switch model between messages. A running
+        // CLI process keeps its spawn-time model (it's pinned there).
+        if (msg.model && msg.model !== "default" && msg.model !== "auto") {
+            this.options.model = msg.model;
+        }
+        if (msg.reasoning && msg.reasoning !== "default") {
+            this.options.reasoning = msg.reasoning;
+        }
+        if (msg.permission) {
+            this.options.permission = msg.permission;
+        }
         if (!this.session) {
-            if (msg.model && msg.model !== "default" && msg.model !== "auto") {
-                this.options.model = msg.model;
-            }
-            if (msg.reasoning && msg.reasoning !== "default") {
-                this.options.reasoning = msg.reasoning;
-            }
-            if (msg.permission) {
-                this.options.permission = msg.permission;
-            }
             this.session = this.adapter.start(this.options);
             this.session.on("event", (event: AgentEvent) => this.onEvent(event));
         }

@@ -781,8 +781,8 @@ export function renderHtml(): string {
                 <button id="configBtn" class="iconBtn" title="Tools & configuration">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 3a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 3Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Zm6 4.5a2 2 0 0 1 3.9-.5H14v1h-2.1A2 2 0 0 1 8 8Zm-6 .5h4.2a2 2 0 0 0 0-1H2v1Zm2 4.5a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 13Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Z"/></svg>
                 </button>
-                <button id="modelPicker" class="ctl menubtn" style="display:none" title="Model (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
-                <button id="reasoningPicker" class="ctl menubtn" style="display:none" title="Reasoning effort (locked after first message)"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="modelPicker" class="ctl menubtn" style="display:none" title="Model — change anytime; applies to the next message"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="reasoningPicker" class="ctl menubtn" style="display:none" title="Reasoning effort — change anytime; applies to the next message"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <button id="presencePicker" class="ctl menubtn" title="Presence — can be changed any time"><span class="picon"></span><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <span id="status"></span>
                 <span class="grow"></span>
@@ -1402,11 +1402,11 @@ export function renderHtml(): string {
     function setStatus() {
         const q = queued > 0 ? " · " + queued + " queued" : "";
         status.textContent = busy ? ("thinking..." + q) : (activeModel ? "model: " + activeModel : "");
-        // Model/reasoning are locked while a turn runs, but must unlock the moment
-        // it ends (or errors) — otherwise you can never change the model again
-        // after the first send (e.g. to retry on a different model).
-        if (modelList.length) { modelPicker.disabled = busy; }
-        if (reasoningList.length) { reasoningPicker.disabled = busy; }
+        // Model/reasoning stay changeable at all times (even while a turn runs):
+        // a change applies to the next/queued message. Only disabled when there
+        // are no options to pick.
+        modelPicker.disabled = !modelList.length;
+        reasoningPicker.disabled = !reasoningList.length;
         updateSendTitle();   // mode caret/icon depends on busy state
         syncProgress();
     }
@@ -2270,8 +2270,6 @@ export function renderHtml(): string {
         // While a turn runs, only queue/steer may submit; plain send waits too
         // (the extension queues it), so allow submitting in every mode.
         input.value = "";
-        modelPicker.disabled = true;
-        reasoningPicker.disabled = true;
         const atts = attachments.map((a) => a.path);
         if (activeFile && !activeFileDismissed) atts.unshift(activeFile + (activeFileRange ? " (selected lines " + activeFileRange.start + "-" + activeFileRange.end + ")" : ""));
         const editFrom = editAnchor;
@@ -2405,8 +2403,12 @@ export function renderHtml(): string {
                 modelLabels = data.modelLabels || {};
                 reasoningDefault = data.reasoningDefault || "";
                 modelList = data.models || [];
-                modelValue = modelList[0] || "";
-                modelPicker.disabled = false;
+                // Keep the user's chosen model across re-meta (e.g. edit-resend,
+                // handoff) when it's still offered; only fall back to the default.
+                if (!modelValue || (modelValue !== "default" && !modelList.includes(modelValue))) {
+                    modelValue = modelList[0] || "";
+                }
+                modelPicker.disabled = !modelList.length;
                 modelPicker.style.display = modelList.length ? "" : "none";
                 setModelLabel();
                 reasoningList = data.reasoningLevels || [];
