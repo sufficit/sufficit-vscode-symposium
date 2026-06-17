@@ -11,6 +11,12 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
     todoInjection?: string;
     seedHistory?: string;
     autonomy?: string;
+    /**
+     * When true (role-aware backends, e.g. the HTTP Sufficit AI), the one-shot
+     * preambles are returned in `preamble` to be sent as `developer` messages
+     * instead of being glued onto the user text. CLIs keep the prepend.
+     */
+    asRoles?: boolean;
 }
 
 export const CANCELED_RETRY_PREAMBLE =
@@ -25,7 +31,7 @@ export const AUTONOMY_PREAMBLE =
     "and carry the task through end-to-end. Briefly state any assumptions and keep going.";
 
 /** Composes the outbound prompt with one-shot policy/context preambles. */
-export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text: string; state: OutboundPromptState } {
+export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text: string; preamble: string[]; state: OutboundPromptState } {
     let fullText = options.text;
     if (options.fileAttachments.length) {
         fullText += "\n\nAttached files (read them from disk):\n" +
@@ -60,8 +66,10 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
         state.seedInjected = true;
     }
 
-    if (prefixes.length) {
+    // Role-aware backends carry the preambles as separate developer messages;
+    // CLIs (and the default) keep them prepended to the user text.
+    if (prefixes.length && !options.asRoles) {
         fullText = [...prefixes, fullText].join("\n\n---\n\n");
     }
-    return { text: fullText, state };
+    return { text: fullText, preamble: options.asRoles ? prefixes : [], state };
 }

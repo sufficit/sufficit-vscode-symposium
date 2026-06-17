@@ -330,6 +330,9 @@ export class ChatController {
         const canVision = this.adapter.supportsImages?.() === true;
         const images = canVision ? msg.attachments.filter(isImage) : [];
         const fileAtts = canVision ? msg.attachments.filter((p) => !isImage(p)) : msg.attachments;
+        // Role-aware backends (HTTP API) carry one-shot app instructions as
+        // `developer` messages; CLIs get them prepended to the user text.
+        const roleAware = this.adapter.roleAware?.() === true;
         const outbound = buildOutboundPrompt({
             text: msg.text,
             fileAttachments: fileAtts,
@@ -340,6 +343,7 @@ export class ChatController {
             todoInjection: this.adapter.hasNativeTodo?.() === false ? this.adapter.todoInjection?.() : undefined,
             seedHistory: this.options.seedHistory,
             autonomy: msg.autonomy,
+            asRoles: roleAware,
         });
         this.outboundPolicyInjected = outbound.state.policyInjected;
         this.todoInjected = outbound.state.todoInjected;
@@ -349,7 +353,7 @@ export class ChatController {
         this.busy = true;
         this.onStatusChange?.();
         this.emit({ type: "user", text: msg.text, attachments: msg.attachments });
-        this.session.send(outbound.text, images);
+        this.session.send(outbound.text, images, outbound.preamble);
     }
 
     private onEvent(event: AgentEvent): void {

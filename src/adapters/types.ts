@@ -127,8 +127,13 @@ export interface AgentSession extends EventEmitter {
     readonly backend: AgentBackend;
     /** Undefined until the backend reports the session id. */
     readonly sessionId: string | undefined;
-    /** Send one user message (optionally with image file paths to inline as vision). */
-    send(text: string, images?: string[]): void;
+    /**
+     * Send one user message (optionally with image file paths to inline as
+     * vision). `preamble` carries one-shot app instructions to insert as
+     * `developer` messages before the user turn (role-aware backends only; CLIs
+     * ignore it — they get the instructions prepended to `text` instead).
+     */
+    send(text: string, images?: string[], preamble?: string[]): void;
     /** Interrupt the current turn if the backend supports it. */
     cancel(): void;
     dispose(): void;
@@ -143,6 +148,12 @@ export interface AgentAdapter {
     listSessions(): Promise<SessionInfo[]>;
     /** Start a new live session (or resume one). */
     start(options: SessionStartOptions): AgentSession;
+    /**
+     * True when the backend can take one-shot app instructions as `developer`
+     * messages (via send's `preamble`) instead of glued onto the user text.
+     * API backends return true; CLIs omit it (instructions are prepended).
+     */
+    roleAware?(): boolean;
     /** Reconstruct past messages of a stored session, newest last. */
     history?(info: SessionInfo): Promise<HistoryMessage[]>;
     /**

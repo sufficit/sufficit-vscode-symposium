@@ -50,6 +50,28 @@ test("buildOutboundPrompt classifies autonomy and attachments", () => {
     assert.equal(out.state.seedInjected, true);
 });
 
+test("buildOutboundPrompt asRoles returns preambles separately, not glued to text", () => {
+    const out = buildOutboundPrompt({
+        text: "Investigate",
+        fileAttachments: ["/tmp/a.txt"],
+        policyInjected: false,
+        todoInjected: false,
+        seedInjected: false,
+        autonomyInjected: false,
+        autonomy: "away",
+        todoInjection: "TODO BLOCK",
+        asRoles: true,
+    });
+    // Preambles go to the developer channel...
+    assert.ok(out.preamble.includes(CANCELED_RETRY_PREAMBLE));
+    assert.ok(out.preamble.includes(AUTONOMY_PREAMBLE));
+    assert.ok(out.preamble.includes("TODO BLOCK"));
+    // ...and are NOT glued onto the user text (only the attachments note is).
+    assert.equal(out.text.includes(CANCELED_RETRY_PREAMBLE), false);
+    assert.equal(out.text.includes("TODO BLOCK"), false);
+    assert.ok(out.text.includes("Attached files (read them from disk):"));
+});
+
 test("buildOutboundPrompt resets autonomy flag when user returns", () => {
     const out = buildOutboundPrompt({
         text: "Back again",

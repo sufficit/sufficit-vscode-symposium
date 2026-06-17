@@ -175,7 +175,15 @@ class OpenAISession extends EventEmitter implements AgentSession {
         try { return await openaiTokenProvider(); } catch { return null; }
     }
 
-    send(text: string): void {
+    send(text: string, _images?: string[], preamble?: string[]): void {
+        // One-shot app instructions (todo capability, autonomy, policy) go in as
+        // `developer` messages — above the user turn, below the preset's system —
+        // instead of being glued onto the user text. Downgraded to `system` for
+        // gateways that don't accept the developer role.
+        const role = this.cfg.supportsDeveloperRole !== false ? "developer" : "system";
+        for (const p of preamble ?? []) {
+            if (p && p.trim()) { this.messages.push({ role, content: p }); }
+        }
         this.messages.push({ role: "user", content: text });
         if (!this.title) { this.title = text.trim().slice(0, 60); }
         this.persist();
@@ -457,6 +465,9 @@ export class OpenAIAdapter implements AgentAdapter {
     start(options: SessionStartOptions): AgentSession {
         return new OpenAISession(this.backend, this.getConfig(), options);
     }
+
+    /** API backend: takes one-shot app instructions as developer messages. */
+    roleAware(): boolean { return true; }
 
     /** GET <baseUrl>/models → cache the offered model ids (OpenAI shape). */
     private async discoverModels(cfg: OpenAIAdapterConfig): Promise<void> {
