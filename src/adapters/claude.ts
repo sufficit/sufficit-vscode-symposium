@@ -44,6 +44,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
     sessionId: string | undefined;
     private child: ChildProcessWithoutNullStreams | undefined;
     private disposed = false;
+    private turnActive = false;     // a turn is running (clear on result/exit)
     private streamedText = false;   // got token deltas this turn (skip the full block)
 
     constructor(
@@ -76,8 +77,12 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         if (permission && permission !== "default") {
             args.push("--permission-mode", permission);
         }
-        if (this.options.resumeSessionId) {
-            args.push("--resume", this.options.resumeSessionId);
+        // Resume the LIVE session id when respawning (e.g. after a steer/cancel
+        // killed the process) so the conversation continues instead of starting
+        // fresh; falls back to the explicit resume id.
+        const resume = this.options.resumeSessionId || this.sessionId;
+        if (resume) {
+            args.push("--resume", resume);
         }
         const executable = resolveExecutable(this.config.executable);
         this.config.log?.(`[claude] spawn ${executable} ${args.join(" ")} (cwd=${this.options.cwd})`);
@@ -96,6 +101,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         child.on("error", (error) => {
             this.config.log?.(`[claude] spawn error: ${error.message}`);
             this.emit("event", { kind: "error", message: `claude spawn failed (${executable}): ${error.message}` });
+            this.turnActive = false;
             this.emit("event", { kind: "turn-end" });
         });
         child.on("exit", (code) => {
@@ -104,6 +110,12 @@ class ClaudeSession extends EventEmitter implements AgentSession {
                 this.emit("event", { kind: "error", message: `claude exited with code ${code}: ${detail}` });
             }
             this.child = undefined;
+            // The process ended (incl. SIGINT from cancel/steer) without a final
+            // result event — close the turn so the UI unblocks and the queue runs.
+            if (this.turnActive && !this.disposed) {
+                this.turnActive = false;
+                this.emit("event", { kind: "turn-end" });
+            }
         });
         return child;
     }
@@ -191,6 +203,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
                         contextWindow: contextWindowFor(this.options.model || this.config.model),
                     });
                 }
+                this.turnActive = false;
                 this.emit("event", {
                     kind: "turn-end",
                     costUsd: event.total_cost_usd,
@@ -202,6 +215,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
     }
 
     send(text: string, images?: string[]): void {
+        this.turnActive = true;
         const child = this.ensureStarted();
         const content: any[] = [];
         for (const img of images ?? []) {
