@@ -803,7 +803,7 @@ export function renderHtml(): string {
         <div id="chatHeader">
             <button id="listToggle" class="iconBtn" title="Sessions">☰</button>
             <span id="chatTitle"></span>
-            <button id="switchAgentBtn" class="iconBtn" title="Continue with another agent" style="display:none">
+            <button id="switchAgentBtn" class="iconBtn" title="Switch to another model" style="display:none">
                 <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.5 1 6l3.5 3.5V7H10V5H4.5V2.5Zm7 4L15 10l-3.5 3.5V11H6V9h5.5V6.5Z"/></svg>
             </button>
         </div>
@@ -1650,6 +1650,18 @@ export function renderHtml(): string {
         sec.appendChild(lab); sec.appendChild(pre);
         return sec;
     }
+    // Shorten a file path for display: keep the start and the tail (filename +
+    // a few parent segments), dropping the middle with an ellipsis so the most
+    // meaningful parts stay visible. The full path is kept in the tooltip.
+    function middleEllipsisPath(text, max) {
+        const s = String(text);
+        if (s.length <= max) { return s; }
+        const ell = "…";
+        // Bias toward the end (filename) while still showing the root prefix.
+        const tail = Math.max(Math.ceil((max - ell.length) * 0.62), 1);
+        const head = Math.max(max - ell.length - tail, 1);
+        return s.slice(0, head) + ell + s.slice(s.length - tail);
+    }
     // Expandable tool panel (icon + verb + target, click to reveal input/result).
     function renderTool(name, detail, opts) {
         opts = opts || {};
@@ -1677,7 +1689,11 @@ export function renderHtml(): string {
         const verb = document.createElement("span"); verb.className = "tVerb"; verb.textContent = meta.verb;
         head.appendChild(ic); head.appendChild(verb);
         if (detail) {
-            const tg = document.createElement("span"); tg.className = "tTarget"; tg.textContent = detail;
+            const tg = document.createElement("span"); tg.className = "tTarget";
+            // For file paths, shorten the display by keeping the start and end
+            // and dropping the middle with an ellipsis; full path stays in the
+            // tooltip. Non-path details are shown verbatim.
+            tg.textContent = opts.path ? middleEllipsisPath(detail, 48) : detail;
             // A file-referencing tool: make the target a link (click = diff,
             // right-click = open file / open diff menu).
             if (opts.path) {
@@ -1969,7 +1985,7 @@ export function renderHtml(): string {
         if (cli) {
             list.push({ id: "watch", icon: "eye", label: "Watch live (read-only)" });
         }
-        list.push({ id: "switchAgent", icon: "arrow-swap", label: "Continue with another agent →" });
+        list.push({ id: "switchAgent", icon: "arrow-swap", label: "Switch model →" });
         if (s.pinned) {
             list.push({ id: "pinUp", icon: "up", label: "Move pin up" });
             list.push({ id: "pinDown", icon: "down", label: "Move pin down" });
@@ -2667,7 +2683,7 @@ export function renderHtml(): string {
                 ctxMenu.textContent = "";
                 const head = document.createElement("div");
                 head.className = "menuGroup";
-                head.textContent = "Continue with…";
+                head.textContent = "Switch to model…";
                 ctxMenu.appendChild(head);
                 for (const b of items) {
                     const mi = document.createElement("div"); mi.className = "mi";
@@ -2703,7 +2719,9 @@ export function renderHtml(): string {
                         a.title = "Abrir " + p;
                         const ic = svgIcon("file"); ic.classList.add("chipIcon"); a.appendChild(ic);
                         // strip any " (selected lines …)" suffix for the path to open
-                        const cleanPath = String(p).replace(/ \(selected lines.*$/, "");
+                        // NOTE: use [(] instead of \\( — this string is emitted inside a
+                        // template literal, where \\( collapses to ( and breaks the regex.
+                        const cleanPath = String(p).replace(/ [(]selected lines.*$/, "");
                         const lbl = document.createElement("span"); lbl.textContent = String(p).split("/").pop();
                         a.appendChild(lbl);
                         a.addEventListener("click", () => vscode.postMessage({ type: "open-file", path: cleanPath }));
