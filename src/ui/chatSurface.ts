@@ -887,8 +887,10 @@ export class ChatSurface {
         this.terminalSession = undefined;
         this.followHandle?.dispose();
         this.followHandle = undefined;
+        // Clear the pane to the empty state — do NOT auto-start a new dialogue
+        // (that spawned a stray live "New session" on every delete). The next
+        // send (or picking a session) starts one.
         this.post({ type: "clear" });
-        void this.restoreOrStart();
     }
 
     /** Working directory of the active session (for git operations). */
