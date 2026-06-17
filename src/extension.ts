@@ -80,6 +80,8 @@ function claudeConfig(): ClaudeAdapterConfig {
         model: config.get<string>("model", ""),
         permissionMode: config.get<string>("permissionMode", "default"),
         env: config.get<Record<string, string>>("env", {}),
+        playwright: config.get<boolean>("playwright", false),
+        mcpServers: config.get<Record<string, unknown>>("mcpServers", {}),
         log: symposiumLog,
     };
 }

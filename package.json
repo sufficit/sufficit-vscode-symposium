@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.56",
+  "version": "0.79.57",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -336,6 +336,16 @@
           },
           "default": {},
           "description": "Extra environment variables for the Claude CLI process (e.g. ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN for a gateway)."
+        },
+        "symposium.claude.playwright": {
+          "type": "boolean",
+          "default": false,
+          "description": "Give Claude the Playwright MCP browser tools (assisted navigation: open pages, click, type, snapshot, screenshot) via @playwright/mcp. Requires npx; first use downloads the browser."
+        },
+        "symposium.claude.mcpServers": {
+          "type": "object",
+          "default": {},
+          "description": "Extra MCP servers exposed to Claude, merged into --mcp-config. Shape: { \"name\": { \"command\": \"npx\", \"args\": [\"-y\", \"pkg\"] } }."
         },
         "symposium.claude.reasoning": {
           "type": "string",

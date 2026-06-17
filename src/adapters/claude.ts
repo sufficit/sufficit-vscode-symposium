@@ -30,6 +30,10 @@ export interface ClaudeAdapterConfig {
     model: string;
     permissionMode: string;
     env: Record<string, string>;
+    /** Add the Playwright MCP server (browser navigation tools) to the session. */
+    playwright?: boolean;
+    /** Extra MCP servers to expose, merged into the generated --mcp-config. */
+    mcpServers?: Record<string, unknown>;
 }
 
 /**
@@ -53,6 +57,30 @@ class ClaudeSession extends EventEmitter implements AgentSession {
     ) {
         super();
         this.options.resumeSessionId && (this.sessionId = this.options.resumeSessionId);
+    }
+
+    /**
+     * Writes an MCP config file for this session (Playwright browser tools +
+     * any servers from settings) and returns its path, or undefined when none.
+     * Playwright MCP (@playwright/mcp) is the same engine behind VS Code's
+     * Playwright tools, giving Claude assisted browser navigation.
+     */
+    private buildMcpConfig(): string | undefined {
+        const servers: Record<string, unknown> = { ...(this.config.mcpServers ?? {}) };
+        if (this.config.playwright && !servers.playwright) {
+            servers.playwright = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
+        }
+        if (Object.keys(servers).length === 0) { return undefined; }
+        try {
+            const dir = path.join(os.homedir(), ".symposium");
+            fs.mkdirSync(dir, { recursive: true });
+            const file = path.join(dir, "claude-mcp.json");
+            fs.writeFileSync(file, JSON.stringify({ mcpServers: servers }, null, 2), "utf8");
+            return file;
+        } catch (err) {
+            this.config.log?.(`[claude] mcp config write failed: ${err}`);
+            return undefined;
+        }
     }
 
     private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -83,6 +111,12 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         const resume = this.options.resumeSessionId || this.sessionId;
         if (resume) {
             args.push("--resume", resume);
+        }
+        // MCP servers: Playwright browser tools (assisted navigation) + any extra
+        // servers from settings. Written to a config file passed via --mcp-config.
+        const mcpConfig = this.buildMcpConfig();
+        if (mcpConfig) {
+            args.push("--mcp-config", mcpConfig);
         }
         const executable = resolveExecutable(this.config.executable);
         this.config.log?.(`[claude] spawn ${executable} ${args.join(" ")} (cwd=${this.options.cwd})`);
