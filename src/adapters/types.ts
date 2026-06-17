@@ -103,10 +103,16 @@ export interface SessionStartOptions {
      */
     aiTools?: string[];
     /**
-     * System prompt to seed a fresh session with (e.g. the bound agent-def's
-     * instructions). Applied by API backends; ignored on resume.
+     * System prompt to seed a fresh session with. Applied by API backends;
+     * ignored on resume. Use for true system-level policy/instructions.
      */
     systemPrompt?: string;
+    /**
+     * Developer prompt to seed a fresh session with (agent-def body / working
+     * instructions). Backends without native developer-role support should map
+     * this to `system`.
+     */
+    developerPrompt?: string;
     /** Current presence: "away" = autonomous (API backends run tools unbounded). */
     autonomy?: string;
 }

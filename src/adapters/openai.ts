@@ -23,7 +23,7 @@ interface ToolCall {
 }
 
 type ChatMsg = {
-    role: "system" | "user" | "assistant" | "tool";
+    role: "system" | "developer" | "user" | "assistant" | "tool";
     content: string | null;
     tool_calls?: ToolCall[];
     tool_call_id?: string;
@@ -116,9 +116,15 @@ class OpenAISession extends EventEmitter implements AgentSession {
         this.sessionId = resumed?.id ?? randomUUID();
         if (resumed) {
             this.messages.push(...resumed.messages); this.title = resumed.title;
-        } else if (options.systemPrompt) {
-            // Seed a fresh session with the bound agent-def's instructions.
-            this.messages.push({ role: "system", content: options.systemPrompt });
+        } else {
+            if (options.systemPrompt) {
+                this.messages.push({ role: "system", content: options.systemPrompt });
+            }
+            if (options.developerPrompt) {
+                // OpenAI-compatible APIs support `developer`; other adapters map
+                // developerPrompt to system (or ignore it) as needed.
+                this.messages.push({ role: "developer", content: options.developerPrompt });
+            }
         }
         queueMicrotask(() => this.emit("event", { kind: "session", sessionId: this.sessionId, model: this.model() }));
     }

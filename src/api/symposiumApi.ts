@@ -210,11 +210,11 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                 if (options.tools && options.tools.length > 0) {
                     opts.env = (await resolveToolEnv(options.tools)).env;
                 }
-                // Bind agent-def: gate AI tools + seed the system prompt.
+                // Bind agent-def: gate AI tools + seed the developer prompt.
                 if (options.agent) {
                     opts.aiTools = aiToolsForAgent(readAgentTools(options.agent));
-                    const sp = readAgentBody(options.agent);
-                    if (sp) { opts.systemPrompt = sp; }
+                    const dp = readAgentBody(options.agent);
+                    if (dp) { opts.developerPrompt = dp; }
                 }
                 return deps.live.createWithKey(adapter, opts).key;
             },

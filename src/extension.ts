@@ -435,7 +435,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             const model = await resolveModelPin(choice.adapter, readAgentModel(agent.name));
             const options: SessionStartOptions = {
                 cwd: defaultCwd(),
-                systemPrompt: readAgentBody(agent.name),
+                developerPrompt: readAgentBody(agent.name),
                 aiTools: aiToolsForAgent(readAgentTools(agent.name)),
                 ...(model ? { model } : {}),
             };
