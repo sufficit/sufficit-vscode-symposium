@@ -361,6 +361,20 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             }
         }),
 
+        // Diagnostic: list the VS Code Language Model Tools visible to the
+        // in-process backends (so we can confirm the integrated browser /
+        // Playwright tools are registered + their exact names).
+        vscode.commands.registerCommand("symposium.listLmTools", () => {
+            const tools = (vscode as unknown as { lm?: { tools?: ReadonlyArray<{ name: string; tags?: string[] }> } }).lm?.tools ?? [];
+            const names = tools.map((t) => t.name).sort();
+            symposiumLog(`[lm-tools] ${names.length} tools: ${names.join(", ")}`);
+            const browser = names.filter((n) => /browser|playwright|navigate|page/i.test(n));
+            void vscode.window.showInformationMessage(
+                `LM tools: ${names.length}. Browser-related: ${browser.length ? browser.join(", ") : "(none)"}`,
+                "Open Output",
+            ).then((p) => { if (p === "Open Output") { output?.show(); } });
+        }),
+
         // Opens VS Code's native Settings UI scoped to Symposium's chat config.
         vscode.commands.registerCommand("symposium.openSettings", () =>
             vscode.commands.executeCommand("workbench.action.openSettings", "@ext:sufficit.sufficit-vscode-symposium")),
