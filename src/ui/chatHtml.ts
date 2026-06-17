@@ -2469,6 +2469,7 @@ export function renderHtml(): string {
                 // Seed the default send mode once (don't override a saved choice).
                 if (data.whenBusy && !(saved && saved.sendMode)) { sendMode.value = data.whenBusy; }
                 root.classList.toggle("chat-only", !!data.chatOnly);
+                layout();   // apply the sessions-side now (meta sets sideMode)
                 layout();
                 activeSessionId = data.sessionId || "";
                 startWorkingSet(activeSessionId);   // bind edited-files set to this session
