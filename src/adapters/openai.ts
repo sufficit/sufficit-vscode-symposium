@@ -181,6 +181,14 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // instead of being glued onto the user text. Downgraded to `system` for
         // gateways that don't accept the developer role.
         const role = this.cfg.supportsDeveloperRole !== false ? "developer" : "system";
+        // If the previous turn was interrupted (steer/cancel) it left a dangling
+        // user message with no assistant reply. Sending another user message would
+        // break role alternation (Anthropic-backed providers 400 on user→user).
+        // Close the gap with a short assistant turn so the new user is valid.
+        const last = this.messages[this.messages.length - 1];
+        if (last && last.role === "user") {
+            this.messages.push({ role: "assistant", content: "(turno anterior interrompido)" });
+        }
         for (const p of preamble ?? []) {
             if (p && p.trim()) { this.messages.push({ role, content: p }); }
         }
