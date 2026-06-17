@@ -19,7 +19,7 @@ export type LmToolMode = "off" | "terminal" | "all";
 // it survives provider/extension renames across VS Code versions. Notebook
 // execution is intentionally excluded from the default set (still reachable via
 // the "all" mode for tool-discovery skills); it only matters for .ipynb work.
-const TERMINAL_MATCH = /terminal|task|test|exec/i;
+const TERMINAL_MATCH = /terminal|task|test|exec|browser|playwright|navigate/i;
 
 function mode(): LmToolMode {
     const v = vscode.workspace.getConfiguration("symposium").get<string>("lmTools", "terminal");

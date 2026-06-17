@@ -91,6 +91,8 @@ function copilotConfig(): CopilotAdapterConfig {
     return {
         executable: config.get<string>("executable", "copilot"),
         model: config.get<string>("model", ""),
+        playwright: config.get<boolean>("playwright", false),
+        mcpServers: config.get<Record<string, unknown>>("mcpServers", {}),
     };
 }
 
@@ -99,6 +101,8 @@ function codexConfig(): CodexAdapterConfig {
     return {
         executable: config.get<string>("executable", "codex"),
         model: config.get<string>("model", ""),
+        playwright: config.get<boolean>("playwright", false),
+        mcpServers: config.get<Record<string, { command?: string; args?: string[] }>>("mcpServers", {}),
     };
 }
 

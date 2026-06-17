@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.57",
+  "version": "0.79.58",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -370,6 +370,16 @@
           "default": "",
           "description": "Model passed to codex exec --model. Empty uses the CLI default."
         },
+        "symposium.codex.playwright": {
+          "type": "boolean",
+          "default": false,
+          "description": "Give Codex the Playwright MCP browser tools (assisted navigation) via @playwright/mcp. Requires npx; first use downloads the browser."
+        },
+        "symposium.codex.mcpServers": {
+          "type": "object",
+          "default": {},
+          "description": "Extra MCP servers for Codex ({ \"name\": { \"command\": \"npx\", \"args\": [...] } }), added as -c mcp_servers overrides."
+        },
         "symposium.codex.reasoning": {
           "type": "string",
           "enum": [
@@ -391,6 +401,16 @@
           "type": "string",
           "default": "",
           "description": "Model passed to copilot --model. Empty uses the CLI default."
+        },
+        "symposium.copilot.playwright": {
+          "type": "boolean",
+          "default": false,
+          "description": "Give Copilot the Playwright MCP browser tools via @playwright/mcp (--mcp-config). Experimental: depends on the Copilot CLI's MCP support."
+        },
+        "symposium.copilot.mcpServers": {
+          "type": "object",
+          "default": {},
+          "description": "Extra MCP servers for Copilot ({ \"name\": { \"command\": \"npx\", \"args\": [...] } })."
         },
         "symposium.copilot.reasoning": {
           "type": "string",

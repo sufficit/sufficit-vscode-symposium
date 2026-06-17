@@ -22,6 +22,10 @@ import {
 export interface CodexAdapterConfig {
     executable: string;
     model: string;
+    /** Add the Playwright MCP server (browser navigation tools). */
+    playwright?: boolean;
+    /** Extra MCP servers ({ name: { command, args } }). */
+    mcpServers?: Record<string, { command?: string; args?: string[] }>;
 }
 
 /**
@@ -53,6 +57,15 @@ class CodexSession extends EventEmitter implements AgentSession {
         }
         if (this.options.reasoning && this.options.reasoning !== "default") {
             base.push("-c", `model_reasoning_effort="${this.options.reasoning}"`);
+        }
+        // MCP servers (Playwright browser tools + extras) as `-c` TOML overrides.
+        const servers: Record<string, { command?: string; args?: string[] }> = { ...(this.config.mcpServers ?? {}) };
+        if (this.config.playwright && !servers.playwright) {
+            servers.playwright = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
+        }
+        for (const [name, s] of Object.entries(servers)) {
+            if (s.command) { base.push("-c", `mcp_servers.${name}.command=${JSON.stringify(s.command)}`); }
+            if (s.args) { base.push("-c", `mcp_servers.${name}.args=${JSON.stringify(s.args)}`); }
         }
         // `resume <id>` must precede the prompt; a fresh turn just passes the prompt.
         const args = this.sessionId

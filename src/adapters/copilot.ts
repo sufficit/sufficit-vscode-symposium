@@ -1,6 +1,7 @@
 import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import * as readline from "readline";
+import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { builtinCommands } from "./builtins";
@@ -18,6 +19,26 @@ import {
 export interface CopilotAdapterConfig {
     executable: string;
     model: string;
+    /** Add the Playwright MCP server (browser navigation tools). */
+    playwright?: boolean;
+    /** Extra MCP servers ({ name: { command, args } }). */
+    mcpServers?: Record<string, unknown>;
+}
+
+/** Writes a shared MCP config (Playwright + extras) and returns its path, or undefined. */
+function buildMcpConfigFile(cfg: { playwright?: boolean; mcpServers?: Record<string, unknown> }, name: string): string | undefined {
+    const servers: Record<string, unknown> = { ...(cfg.mcpServers ?? {}) };
+    if (cfg.playwright && !servers.playwright) {
+        servers.playwright = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
+    }
+    if (Object.keys(servers).length === 0) { return undefined; }
+    try {
+        const dir = path.join(os.homedir(), ".symposium");
+        fs.mkdirSync(dir, { recursive: true });
+        const file = path.join(dir, name);
+        fs.writeFileSync(file, JSON.stringify({ mcpServers: servers }, null, 2), "utf8");
+        return file;
+    } catch { return undefined; }
 }
 
 /**
@@ -53,6 +74,8 @@ class CopilotSession extends EventEmitter implements AgentSession {
         if (this.sessionId) {
             args.push("--resume", this.sessionId);
         }
+        const mcp = buildMcpConfigFile(this.config, "copilot-mcp.json");
+        if (mcp) { args.push("--mcp-config", mcp); }
         const child = spawn(resolveExecutable(this.config.executable), args, {
             cwd: this.options.cwd,
             env: { ...process.env, ...this.options.env },
