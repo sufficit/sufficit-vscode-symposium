@@ -51,6 +51,39 @@ export function contextWindowFor(model: string): number {
     return 200000;
 }
 
+/** Token usage extracted from a Codex event, normalized to the UI's shape. */
+export interface CodexUsage {
+    inputTokens: number;
+    outputTokens: number;
+    cacheRead: number;
+    contextWindow?: number;
+}
+
+/**
+ * Extract token usage from a Codex `exec --json` event. Codex reports usage in
+ * two shapes depending on version/transport:
+ *   1. turn.completed → { usage: { input_tokens, cached_input_tokens, output_tokens } }
+ *   2. event_msg/token_count → { info: { last_token_usage: {...}, model_context_window } }
+ * Returns undefined when the event carries no usage numbers, so the caller can
+ * skip emitting an empty usage event.
+ *
+ * NOTE: input_tokens from Codex ALREADY INCLUDES cached_input_tokens, so we must
+ * NOT add them again (unlike Claude, where cache reads are a separate bucket).
+ */
+export function parseCodexUsage(event: unknown): CodexUsage | undefined {
+    const e = (event ?? {}) as Record<string, any>;
+    // Shape 2: token_count carries the richest data (incl. context window).
+    const info = e.info ?? e.payload?.info;
+    const u = info?.last_token_usage ?? info?.total_token_usage ?? e.usage ?? e.message?.usage;
+    if (!u || typeof u !== "object") { return undefined; }
+    const input = Number(u.input_tokens ?? 0);
+    const output = Number(u.output_tokens ?? 0);
+    const cached = Number(u.cached_input_tokens ?? u.cache_read_input_tokens ?? 0);
+    if (!input && !output && !cached) { return undefined; }
+    const win = Number(info?.model_context_window ?? 0) || undefined;
+    return { inputTokens: input, outputTokens: output, cacheRead: cached, contextWindow: win };
+}
+
 /** Absolute file a tool acts on (Read/Edit/Write/NotebookEdit), if any. */
 export function toolFilePath(input: unknown): string | undefined {
     const o = (input ?? {}) as Record<string, unknown>;

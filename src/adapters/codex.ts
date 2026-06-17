@@ -6,6 +6,7 @@ import * as path from "path";
 import * as readline from "readline";
 import { builtinCommands } from "./builtins";
 import { resolveExecutable } from "./exec";
+import { contextWindowFor, parseCodexUsage } from "./parse";
 import { scrubJsonlLines, scrubSqliteRows } from "./scrub";
 import { discoverSlashCommands, findNamedDirs, mergeCommands } from "./skills";
 import { parseNativeTodos } from "./todos";
@@ -132,11 +133,17 @@ class CodexSession extends EventEmitter implements AgentSession {
                 }
                 break;
             }
+            case "token_count":
+                // Streamed during a turn (event_msg/token_count). Carries the
+                // richest usage incl. model_context_window — surface it live so
+                // the Context Window meter fills before the turn even ends.
+                this.emitUsage(event);
+                break;
             case "turn.completed":
-                this.emit("event", {
-                    kind: "turn-end",
-                    // usage is reported as { input_tokens, output_tokens }
-                });
+                // turn.completed may carry { usage: {...} }. Emit usage (if any)
+                // BEFORE turn-end so the meter reflects the final totals.
+                this.emitUsage(event);
+                this.emit("event", { kind: "turn-end" });
                 break;
             case "turn.failed":
                 this.reportedError = true;
@@ -155,6 +162,23 @@ class CodexSession extends EventEmitter implements AgentSession {
                 break;
             }
         }
+    }
+
+    /**
+     * Normalize a Codex usage-bearing event and emit a `usage` UI event. Falls
+     * back to the configured model's context window when Codex doesn't report
+     * one (older exec streams omit model_context_window).
+     */
+    private emitUsage(event: unknown): void {
+        const u = parseCodexUsage(event);
+        if (!u) { return; }
+        this.emit("event", {
+            kind: "usage",
+            inputTokens: u.inputTokens,
+            outputTokens: u.outputTokens,
+            cacheRead: u.cacheRead,
+            contextWindow: u.contextWindow ?? contextWindowFor(this.options.model || this.config.model),
+        });
     }
 
     cancel(): void {

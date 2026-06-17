@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
     summarizeToolInput, contextWindowFor, toolFilePath, lineCount,
-    diffCounts, editDiff, prettyJson, toolResultText,
+    diffCounts, editDiff, prettyJson, toolResultText, parseCodexUsage,
 } from "../adapters/parse";
 
 test("summarizeToolInput: file path → last two segments", () => {
@@ -30,6 +30,58 @@ test("contextWindowFor: default 200k, 1m variants", () => {
     assert.equal(contextWindowFor("opus"), 200000);
     assert.equal(contextWindowFor("sonnet[1m]"), 1000000);
     assert.equal(contextWindowFor("claude-1m"), 1000000);
+});
+
+test("parseCodexUsage: token_count event (info.last_token_usage + window)", () => {
+    const ev = {
+        type: "token_count",
+        info: {
+            last_token_usage: { input_tokens: 73659, cached_input_tokens: 28544, output_tokens: 190, total_tokens: 73849 },
+            model_context_window: 258400,
+        },
+    };
+    assert.deepEqual(parseCodexUsage(ev), {
+        inputTokens: 73659, outputTokens: 190, cacheRead: 28544, contextWindow: 258400,
+    });
+});
+
+test("parseCodexUsage: nested payload.info (event_msg wrapper)", () => {
+    const ev = {
+        type: "event_msg",
+        payload: { type: "token_count", info: { last_token_usage: { input_tokens: 100, output_tokens: 20 }, model_context_window: 200000 } },
+    };
+    assert.deepEqual(parseCodexUsage(ev), {
+        inputTokens: 100, outputTokens: 20, cacheRead: 0, contextWindow: 200000,
+    });
+});
+
+test("parseCodexUsage: turn.completed with usage (no context window)", () => {
+    const ev = { type: "turn.completed", usage: { input_tokens: 5000, cached_input_tokens: 1200, output_tokens: 300 } };
+    assert.deepEqual(parseCodexUsage(ev), {
+        inputTokens: 5000, outputTokens: 300, cacheRead: 1200, contextWindow: undefined,
+    });
+});
+
+test("parseCodexUsage: input_tokens already includes cached (not double-counted)", () => {
+    // Codex reports input_tokens INCLUDING cached; cacheRead is informational.
+    const ev = { type: "turn.completed", usage: { input_tokens: 73659, cached_input_tokens: 73600, output_tokens: 10 } };
+    const u = parseCodexUsage(ev)!;
+    assert.equal(u.inputTokens, 73659); // NOT 73659 + 73600
+    assert.equal(u.cacheRead, 73600);
+});
+
+test("parseCodexUsage: falls back to total_token_usage when no last_", () => {
+    const ev = { info: { total_token_usage: { input_tokens: 42, output_tokens: 7 } } };
+    assert.deepEqual(parseCodexUsage(ev), {
+        inputTokens: 42, outputTokens: 7, cacheRead: 0, contextWindow: undefined,
+    });
+});
+
+test("parseCodexUsage: undefined when no usage present", () => {
+    assert.equal(parseCodexUsage({ type: "turn.completed" }), undefined);
+    assert.equal(parseCodexUsage({ type: "turn.completed", usage: {} }), undefined);
+    assert.equal(parseCodexUsage(null), undefined);
+    assert.equal(parseCodexUsage({ info: { last_token_usage: { input_tokens: 0, output_tokens: 0 } } }), undefined);
 });
 
 test("toolFilePath: file_path/notebook_path or undefined", () => {
