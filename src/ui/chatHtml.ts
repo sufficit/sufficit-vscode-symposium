@@ -643,7 +643,7 @@ export function renderHtml(): string {
        (otherwise the blue sweep is lost against the blue focus border). */
     #composer.working, #composer.working:focus-within { border-color: color-mix(in srgb, var(--vscode-foreground) 25%, transparent); }
     #composer.working::after {
-        content: ""; position: absolute; inset: -1px; border-radius: 9px; padding: 2px;
+        content: ""; position: absolute; inset: -1px; border-radius: 9px; padding: 1.2px;
         background: conic-gradient(from var(--symAng),
             transparent 0deg, transparent 200deg,
             color-mix(in srgb, var(--vscode-progressBar-background, var(--vscode-focusBorder, #2aa0ff)) 60%, #ffffff) 300deg,
