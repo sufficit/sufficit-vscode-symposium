@@ -32,13 +32,29 @@ function sanitize(name: string): string {
     return name.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64);
 }
 
+/** Hard ceiling on bridged tools so the context never explodes (was 127+). */
+const MAX_LM_TOOLS = 48;
+
 /** Currently selected VS Code LM tools (honoring the `symposium.lmTools` mode). */
 function selectedTools(): readonly vscode.LanguageModelToolInformation[] {
     const m = mode();
     if (m === "off") { return []; }
     const all = vscode.lm?.tools ?? [];
-    if (m === "all") { return all; }
-    return all.filter((t) => TERMINAL_MATCH.test(t.name) || (t.tags ?? []).some((g) => TERMINAL_MATCH.test(g)));
+    const picked = m === "all"
+        ? all
+        : all.filter((t) => TERMINAL_MATCH.test(t.name) || (t.tags ?? []).some((g) => TERMINAL_MATCH.test(g)));
+    // De-dupe by sanitized name (collisions would map to one tool anyway) and
+    // cap the total to keep the tool payload small for the model.
+    const seen = new Set<string>();
+    const out: vscode.LanguageModelToolInformation[] = [];
+    for (const t of picked) {
+        const key = sanitize(t.name);
+        if (seen.has(key)) { continue; }
+        seen.add(key);
+        out.push(t);
+        if (out.length >= MAX_LM_TOOLS) { break; }
+    }
+    return out;
 }
 
 /** Reverse map (sanitized → real) rebuilt each call so it tracks the registry. */

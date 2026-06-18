@@ -346,8 +346,16 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // autonomous mode (presence "away") there is NO limit; otherwise the
         // configurable cap applies (default 50) so it pauses for "continue".
         const unlimited = this.options.autonomy === "away";
-        const maxHops = unlimited ? Infinity : Math.max(1, this.cfg.maxToolHops ?? 50);
+        // Even in unlimited (autonomy) mode keep an absolute hard ceiling so a
+        // runaway tool loop can never wedge the turn forever (busy stuck).
+        const HARD_CAP = 200;
+        const softCap = unlimited ? HARD_CAP : Math.max(1, this.cfg.maxToolHops ?? 50);
+        const maxHops = Math.min(softCap, HARD_CAP);
         let hitCap = !unlimited;   // cleared when the model finishes on its own
+        // Loop guard: if the model repeats the exact same tool+args many times
+        // in a row without progress, break out instead of spinning forever.
+        const recentCalls: string[] = [];
+        const REPEAT_LIMIT = 6;
         try {
             // Tool-call loop: keep round-tripping while the model requests tools.
             for (let hop = 0; hop < maxHops; hop++) {
@@ -405,6 +413,15 @@ class OpenAISession extends EventEmitter implements AgentSession {
 
                 // Record the assistant turn that requested tools, then run each.
                 this.messages.push({ role: "assistant", content: text || null, tool_calls: toolCalls });
+                // Loop guard: detect the model spinning on the same call(s).
+                const sig = toolCalls.map((tc) => `${tc.function.name}:${tc.function.arguments}`).join("|");
+                recentCalls.push(sig);
+                if (recentCalls.length > REPEAT_LIMIT) { recentCalls.shift(); }
+                if (recentCalls.length === REPEAT_LIMIT && recentCalls.every((c) => c === sig)) {
+                    this.emit("event", { kind: "text", text: `\n\n_(interrompi: o modelo repetiu a mesma chamada de ferramenta ${REPEAT_LIMIT}x sem progresso)_` });
+                    hitCap = false;
+                    break;
+                }
                 for (const tc of toolCalls) {
                     let args: Record<string, unknown> = {};
                     try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* leave empty */ }
