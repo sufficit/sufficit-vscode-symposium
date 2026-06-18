@@ -4,7 +4,6 @@ export interface OutboundPromptState {
     seedInjected: boolean;
     autonomyInjected: boolean;
     rtkInjected?: boolean;
-    fileToolsInjected?: boolean;
 }
 
 export interface BuildOutboundPromptOptions extends OutboundPromptState {
@@ -15,8 +14,6 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
     autonomy?: string;
     /** True when the backend can execute shell commands where rtk is useful. */
     rtk?: boolean;
-    /** True when the backend exposes file tools (read_file/write_file/list_dir). */
-    fileTools?: boolean;
     /**
      * When true (role-aware backends, e.g. the HTTP Sufficit AI), the one-shot
      * preambles are returned in `preamble` to be sent as `developer` messages
@@ -36,12 +33,6 @@ export const RTK_PREAMBLE =
     "[RTK command policy] The `rtk` binary is available as a token-optimized wrapper for verbose shell commands. " +
     "For non-interactive development commands that may produce verbose output (git status/diff/log, ls/tree/find, rg/grep, test runners, linters/typecheckers, build commands, docker/kubectl logs), prefer `rtk <command...>` or the native RTK subcommand (e.g. `rtk read`, `rtk grep`, `rtk test npm test`) so output is compact before entering context. " +
     "Do NOT use rtk for interactive commands, commands with heredocs/pipelines where wrapping would change semantics, commands that already produce tiny output, or when the user explicitly asks for raw output. Treat rtk as an output display layer; it does not make mutating commands safer.";
-
-export const FILE_TOOLS_PREAMBLE =
-    "[File editing policy] You have dedicated tools for files: read_file, write_file, list_dir. " +
-    "ALWAYS use these to read and edit files. NEVER use the shell to read or modify files " +
-    "(no python open()/write, sed -i, awk, tee, echo>, cat<<EOF, heredocs, or > redirection to write files). " +
-    "Shell is only for builds, tests, git, and process/system commands. File edits done via write_file are tracked and reviewable; shell edits are not.";
 
 export const AUTONOMY_PREAMBLE =
     "[Autonomy mode] The user is not present to answer questions or make decisions and has given you full autonomy. " +
@@ -63,7 +54,6 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
         seedInjected: options.seedInjected,
         autonomyInjected: options.autonomyInjected,
         rtkInjected: options.rtkInjected ?? false,
-        fileToolsInjected: options.fileToolsInjected ?? false,
     };
 
     if (!state.policyInjected) {
@@ -80,10 +70,6 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
     if (options.rtk && !state.rtkInjected) {
         prefixes.push(RTK_PREAMBLE);
         state.rtkInjected = true;
-    }
-    if (options.fileTools && !state.fileToolsInjected) {
-        prefixes.push(FILE_TOOLS_PREAMBLE);
-        state.fileToolsInjected = true;
     }
     if (!state.todoInjected && options.todoInjection) {
         prefixes.push(options.todoInjection);

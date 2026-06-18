@@ -35,7 +35,6 @@ export class ChatController {
     private autonomyInjected = false;
     private seedInjected = false;
     private rtkInjected = false;
-    private fileToolsInjected = false;
     private queueSeq = 0;
     // Files this session edited and their net +/- — owned here so it survives
     // view switches (the runtime keeps the controller alive) and approval state
@@ -335,12 +334,6 @@ export class ChatController {
         // Role-aware backends (HTTP API) carry one-shot app instructions as
         // `developer` messages; CLIs get them prepended to the user text.
         const roleAware = this.adapter.roleAware?.() === true;
-        // File tools are present when this is an API backend exposing them: no
-        // agent-def gating (aiTools undefined = all), or the allowlist includes
-        // write_file/read_file/list_dir. CLIs always have their own file tools.
-        const allow = this.options.aiTools;
-        const hasFileTools = !roleAware ? true
-            : (allow === undefined || allow.some((t) => t === "write_file" || t === "read_file" || t === "list_dir"));
         const outbound = buildOutboundPrompt({
             text: msg.text,
             fileAttachments: fileAtts,
@@ -350,8 +343,6 @@ export class ChatController {
             autonomyInjected: this.autonomyInjected,
             rtkInjected: this.rtkInjected,
             rtk: true,
-            fileToolsInjected: this.fileToolsInjected,
-            fileTools: hasFileTools,
             todoInjection: this.adapter.hasNativeTodo?.() === false ? this.adapter.todoInjection?.() : undefined,
             seedHistory: this.options.seedHistory,
             autonomy: msg.autonomy,
@@ -362,7 +353,6 @@ export class ChatController {
         this.seedInjected = outbound.state.seedInjected;
         this.autonomyInjected = outbound.state.autonomyInjected;
         this.rtkInjected = !!outbound.state.rtkInjected;
-        this.fileToolsInjected = !!outbound.state.fileToolsInjected;
         if (!this.firstTitle && msg.text.trim()) { this.firstTitle = msg.text.trim().slice(0, 60); }
         this.busy = true;
         this.onStatusChange?.();

@@ -94,7 +94,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "shell",
-            description: "Run a shell command on the host (bash -lc) in the session working directory and return combined stdout+stderr and exit code. Use for builds, tests, git, process/system diagnostics. Do NOT use shell (python/sed/awk/cat>>/heredocs/echo>) to read or edit files — use read_file/write_file/list_dir instead so edits are tracked and reviewable. Non-interactive only.",
+            description: "Run a shell command on the host, in the session's working directory, and return its combined stdout+stderr and exit code. Use for builds, tests, git, file inspection, system diagnostics — anything you would otherwise ask the user to paste into a terminal. Non-interactive only.",
             parameters: {
                 type: "object",
                 properties: {
@@ -111,7 +111,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "read_file",
-            description: "Read a UTF-8 text file from the host and return its contents. ALWAYS prefer this over shell cat/head/tail/python for reading files.",
+            description: "Read a UTF-8 text file from the host and return its contents.",
             parameters: {
                 type: "object",
                 properties: {
@@ -126,7 +126,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "write_file",
-            description: "Create or overwrite a UTF-8 text file on the host (creates parent dirs). This is the canonical way to author/edit files — ALWAYS use this instead of shell (python open('w'), sed -i, echo>, cat<<EOF). Edits via this tool are tracked and reviewable; shell edits are not.",
+            description: "Write (create or overwrite) a UTF-8 text file on the host. Creates parent directories as needed.",
             parameters: {
                 type: "object",
                 properties: {
@@ -141,7 +141,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "list_dir",
-            description: "List entries of a directory on the host (names + whether each is a directory). Prefer this over shell ls/find for directory listings.",
+            description: "List entries of a directory on the host (names + whether each is a directory).",
             parameters: {
                 type: "object",
                 properties: {
