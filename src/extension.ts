@@ -106,9 +106,23 @@ function codexConfig(): CodexAdapterConfig {
     };
 }
 
-function openaiConfig(): OpenAIAdapterConfig {
+function symposiumClientInfo(context: vscode.ExtensionContext): NonNullable<OpenAIAdapterConfig["clientInfo"]> {
+    const pkg = context.extension.packageJSON as { version?: string };
+    const type = os.type();
+    const release = os.release();
+    const arch = os.arch();
+    return {
+        id: "symposium-vscode",
+        version: String(pkg.version || "unknown"),
+        hostname: os.hostname() || "unknown",
+        os: `${process.platform}/${arch} (${type} ${release})`,
+    };
+}
+
+function openaiConfig(context: vscode.ExtensionContext): OpenAIAdapterConfig {
     const config = vscode.workspace.getConfiguration("symposium.openai");
     return {
+        clientInfo: symposiumClientInfo(context),
         api: config.get<"chat" | "responses">("api", "chat"),
         // The built-in "Sufficit AI" backend points at the Sufficit gateway by
         // default and authenticates with the logged-in token — no manual setup.
@@ -122,6 +136,7 @@ function openaiConfig(): OpenAIAdapterConfig {
         // work. When neither is set, the login token is used as the fallback.
         apiKey: config.get<string>("apiKey", "") || vscode.workspace.getConfiguration("symposium.hub").get<string>("token", ""),
         maxToolHops: config.get<number>("maxToolHops", 50),
+        shellExecution: config.get<any>("shellExecution", "silent"),
         log: symposiumLog,
     };
 }
@@ -161,11 +176,12 @@ function normalizeAdapterDefs(): CustomAdapterDef[] {
 }
 
 /** One OpenAIAdapter per custom def, re-reading its entry live by id. */
-function buildCustomAdapters(defs: CustomAdapterDef[]): OpenAIAdapter[] {
+function buildCustomAdapters(context: vscode.ExtensionContext, defs: CustomAdapterDef[]): OpenAIAdapter[] {
     return defs.map((def) =>
         new OpenAIAdapter(def.id, def.name || def.id, () => {
             const e = customAdapterDefs().find((x) => x.id === def.id) ?? def;
             return {
+                clientInfo: symposiumClientInfo(context),
                 api: e.api === "responses" ? "responses" : "chat",
                 baseUrl: e.baseUrl,
                 model: e.model ?? "",
@@ -174,6 +190,7 @@ function buildCustomAdapters(defs: CustomAdapterDef[]): OpenAIAdapter[] {
                 apiKey: e.apiKey ?? "",
                 supportsDeveloperRole: e.supportsDeveloperRole ?? false,
                 maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
+                shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<any>("shellExecution", "silent"),
                 log: symposiumLog,
             };
         }));
@@ -190,13 +207,13 @@ const CLI_BACKENDS = new Set(["claude", "codex", "copilot"]);
 export function activate(context: vscode.ExtensionContext): SymposiumApi {
     output = vscode.window.createOutputChannel("Symposium");
     context.subscriptions.push(output);
-    const sufficitAdapter = new OpenAIAdapter("openai", "Sufficit AI", openaiConfig);
+    const sufficitAdapter = new OpenAIAdapter("openai", "Sufficit AI", () => openaiConfig(context));
     const adapters: AgentAdapter[] = [
         new ClaudeAdapter(claudeConfig),
         new CodexAdapter(codexConfig),
         new CopilotAdapter(copilotConfig),
         sufficitAdapter,
-        ...buildCustomAdapters(normalizeAdapterDefs()),
+        ...buildCustomAdapters(context, normalizeAdapterDefs()),
     ];
     const adapterByBackend = new Map<string, AgentAdapter>(
         adapters.map((adapter) => [adapter.backend, adapter]));

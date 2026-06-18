@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.64",
+  "version": "0.79.66",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -247,6 +247,21 @@
           "type": "number",
           "default": 50,
           "description": "Max tool round-trips an API backend (Sufficit AI / OpenAI-compatible) may run in a single turn before pausing for 'continue'. Ignored in autonomous mode (presence Away = no limit)."
+        },
+        "symposium.openai.shellExecution": {
+          "type": "string",
+          "enum": [
+            "silent",
+            "inline",
+            "terminal"
+          ],
+          "enumDescriptions": [
+            "Wait for the command to finish and show only the tool result.",
+            "Stream stdout/stderr into the chat while the command runs.",
+            "Open a visible VS Code terminal for the command, and still return captured output to the model."
+          ],
+          "default": "silent",
+          "description": "How the native Sufficit AI/OpenAI shell tool (Ran) is surfaced to the user."
         },
         "symposium.hub.contextId": {
           "type": "string",

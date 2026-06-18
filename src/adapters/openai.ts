@@ -12,7 +12,7 @@ import {
 } from "./types";
 import { TODO_INJECTION } from "./todos";
 import { HubClient } from "../sync/hubClient";
-import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, filterTools, runAiTool } from "./aiTools";
+import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, filterTools, runAiTool, ShellExecutionMode } from "./aiTools";
 import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "./lmTools";
 import { buildOpenAIModelList } from "./openaiModels";
 
@@ -59,6 +59,8 @@ function writeStored(s: StoredSession): void {
 }
 
 export interface OpenAIAdapterConfig {
+    /** Detailed caller identity for gateway/activity diagnostics. */
+    clientInfo?: { id: string; version: string; hostname: string; os: string };
     /** Which API to call: chat completions or the Responses API. */
     api: "chat" | "responses";
     /** Base URL of an OpenAI-compatible API, e.g. https://api.sufficit-ai/v1 */
@@ -79,6 +81,8 @@ export interface OpenAIAdapterConfig {
     supportsDeveloperRole?: boolean;
     /** Max tool round-trips per turn before pausing (default 50). */
     maxToolHops?: number;
+    /** How local shell tool execution is surfaced: silent, inline stream, or visible VS Code terminal. */
+    shellExecution?: ShellExecutionMode;
     log?: (message: string) => void;
 }
 
@@ -159,6 +163,13 @@ class OpenAISession extends EventEmitter implements AgentSession {
 
     private headers(loginToken?: string | null): Record<string, string> {
         const h: Record<string, string> = { "content-type": "application/json", ...this.cfg.headers };
+        if (this.cfg.clientInfo) {
+            h["x-client-id"] = this.cfg.clientInfo.id;
+            h["x-client-version"] = this.cfg.clientInfo.version;
+            h["x-client-hostname"] = this.cfg.clientInfo.hostname;
+            h["x-client-os"] = this.cfg.clientInfo.os;
+            h["user-agent"] = `${this.cfg.clientInfo.id}/${this.cfg.clientInfo.version} (${this.cfg.clientInfo.os}; ${this.cfg.clientInfo.hostname})`;
+        }
         const hasAuth = Object.keys(h).some((k) => k.toLowerCase() === "authorization");
         if (!hasAuth && this.cfg.apiKey) {
             h["authorization"] = `Bearer ${this.cfg.apiKey}`;
@@ -186,6 +197,13 @@ class OpenAISession extends EventEmitter implements AgentSession {
         if (this.cfg.models.length || !this.cfg.baseUrl) { return; }
         const url = this.cfg.baseUrl.replace(/\/+$/, "") + "/models";
         const headers: Record<string, string> = { ...this.cfg.headers };
+        if (this.cfg.clientInfo) {
+            headers["x-client-id"] = this.cfg.clientInfo.id;
+            headers["x-client-version"] = this.cfg.clientInfo.version;
+            headers["x-client-hostname"] = this.cfg.clientInfo.hostname;
+            headers["x-client-os"] = this.cfg.clientInfo.os;
+            headers["user-agent"] = `${this.cfg.clientInfo.id}/${this.cfg.clientInfo.version} (${this.cfg.clientInfo.os}; ${this.cfg.clientInfo.hostname})`;
+        }
         const hasAuth = Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
         if (!hasAuth && this.cfg.apiKey) {
             headers["authorization"] = `Bearer ${this.cfg.apiKey}`;
@@ -233,6 +251,12 @@ class OpenAISession extends EventEmitter implements AgentSession {
         if (!this.title) { this.title = text.trim().slice(0, 60); }
         this.persist();
         void this.run();
+    }
+
+
+    private shellExecutionMode(): ShellExecutionMode {
+        const v = String((this.cfg as any).shellExecution ?? "silent");
+        return v === "inline" || v === "terminal" ? v : "silent";
     }
 
     cancel(): void {
@@ -342,9 +366,14 @@ class OpenAISession extends EventEmitter implements AgentSession {
                         toolId: tc.id,
                         input: tc.function.arguments,
                     });
+                    const shellMode = this.shellExecutionMode();
+                    const progress = {
+                        onData: (chunk: string) => this.emit("event", { kind: "tool-output", toolName: tc.function.name, toolId: tc.id, text: chunk }),
+                        onTerminal: (terminalName: string) => this.emit("event", { kind: "tool-start", toolName: tc.function.name, detail: `watching in terminal: ${terminalName}`, toolId: tc.id, terminalName }),
+                    };
                     const result = isLmTool(tc.function.name)
                         ? await invokeLmTool(tc.function.name, args)
-                        : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission, sessionId: this.sessionId });
+                        : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission, sessionId: this.sessionId, shellExecution: shellMode, progress });
                     this.emit("event", { kind: "tool-end", toolName: tc.function.name, toolId: tc.id, result });
                     this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
                 }
@@ -542,6 +571,13 @@ export class OpenAIAdapter implements AgentAdapter {
     private async discoverModels(cfg: OpenAIAdapterConfig): Promise<void> {
         const url = cfg.baseUrl.replace(/\/+$/, "") + "/models";
         const headers: Record<string, string> = { ...cfg.headers };
+        if (cfg.clientInfo) {
+            headers["x-client-id"] = cfg.clientInfo.id;
+            headers["x-client-version"] = cfg.clientInfo.version;
+            headers["x-client-hostname"] = cfg.clientInfo.hostname;
+            headers["x-client-os"] = cfg.clientInfo.os;
+            headers["user-agent"] = `${cfg.clientInfo.id}/${cfg.clientInfo.version} (${cfg.clientInfo.os}; ${cfg.clientInfo.hostname})`;
+        }
         const hasAuth = Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
         if (!hasAuth && cfg.apiKey) {
             headers["authorization"] = `Bearer ${cfg.apiKey}`;

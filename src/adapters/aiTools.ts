@@ -1,7 +1,8 @@
 import { HubClient } from "../sync/hubClient";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
 import * as vscode from "vscode";
 
 /**
@@ -229,6 +230,13 @@ export function filterTools<T extends { function?: { name: string }; name?: stri
     return tools.filter((t) => set.has((t.function?.name ?? t.name) as string));
 }
 
+export type ShellExecutionMode = "silent" | "inline" | "terminal";
+
+export interface ToolProgressSink {
+    onData?(chunk: string): void;
+    onTerminal?(terminalName: string): void;
+}
+
 export interface ToolContext {
     hub: HubClient;
     /** Session working directory — base for shell/fs tools and relative paths. */
@@ -237,6 +245,10 @@ export interface ToolContext {
     permission?: string;
     /** Symposium chat session id — tasks saved to memory are bound to it. */
     sessionId?: string;
+    /** How shell commands should be surfaced to the user. */
+    shellExecution?: ShellExecutionMode;
+    /** Live progress callbacks (stream output, terminal opened). */
+    progress?: ToolProgressSink;
 }
 
 /** Resolves a tool path against the session cwd (absolute paths pass through). */
@@ -245,20 +257,88 @@ function resolvePath(cwd: string, p: string): string {
 }
 
 /** Runs a shell command, capturing combined output. Never throws. */
-function runShell(command: string, cwd: string, timeoutMs: number): Promise<{ stdout: string; code: number }> {
+function runShell(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink): Promise<{ stdout: string; code: number }> {
     return new Promise((resolve) => {
-        const child = execFile("bash", ["-lc", command], {
-            cwd,
-            timeout: timeoutMs,
-            maxBuffer: 10 * 1024 * 1024,
-            env: process.env,
-        }, (err, stdout, stderr) => {
-            const out = (String(stdout || "") + String(stderr || "")).slice(0, 30000);
-            const code = err && typeof (err as any).code === "number" ? (err as any).code : (err ? 1 : 0);
-            resolve({ stdout: out || (err ? String(err.message) : ""), code });
+        const child = spawn("bash", ["-lc", command], { cwd, env: process.env });
+        let out = "";
+        let done = false;
+        const timer = setTimeout(() => {
+            if (!done) {
+                out += `\n[Symposium] command timed out after ${timeoutMs}ms; terminating...\n`;
+                try { child.kill("SIGTERM"); } catch { /* ignore */ }
+            }
+        }, timeoutMs);
+        const push = (chunk: Buffer | string) => {
+            const text = String(chunk);
+            out += text;
+            if (out.length > 120000) { out = out.slice(out.length - 120000); }
+            progress?.onData?.(text);
+        };
+        child.stdout?.on("data", push);
+        child.stderr?.on("data", push);
+        child.on("error", (err) => { push(String(err.message)); });
+        child.on("close", (code) => {
+            done = true; clearTimeout(timer);
+            resolve({ stdout: out.slice(0, 30000), code: typeof code === "number" ? code : 1 });
         });
-        void child;
     });
+}
+
+function terminalNameFor(command: string): string {
+    const first = command.split("\n").map((l) => l.trim()).find(Boolean) || "command";
+    return `Symposium · ${first.slice(0, 42)}`;
+}
+
+function shellQuote(value: string): string {
+    return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
+
+async function runShellInTerminal(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink): Promise<{ stdout: string; code: number }> {
+    const name = terminalNameFor(command);
+    const term = vscode.window.createTerminal({ name, cwd });
+    term.show(true);
+    progress?.onTerminal?.(name);
+
+    // Run the command ONCE in the visible terminal, teeing stdout/stderr into a
+    // temp file so the model still receives the final result. Polling the files
+    // is the only reliable public-API way to observe a VS Code terminal.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-shell-"));
+    const outFile = path.join(dir, "output.log");
+    const codeFile = path.join(dir, "exit.code");
+    fs.writeFileSync(outFile, "", "utf8");
+    const wrapped = [
+        "set +e",
+        `${command} > >(tee -a ${shellQuote(outFile)}) 2> >(tee -a ${shellQuote(outFile)} >&2)`,
+        `printf '%s' $? > ${shellQuote(codeFile)}`,
+    ].join("\n");
+    term.sendText(wrapped);
+
+    const started = Date.now();
+    let lastLen = 0;
+    for (;;) {
+        if (fs.existsSync(outFile)) {
+            const data = fs.readFileSync(outFile, "utf8");
+            if (data.length > lastLen) {
+                // In terminal mode the user is already watching the visible
+                // terminal; still forward chunks as tool output so the expanded
+                // panel can mirror progress if open.
+                progress?.onData?.(data.slice(lastLen));
+                lastLen = data.length;
+            }
+        }
+        if (fs.existsSync(codeFile)) {
+            const data = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : "";
+            const raw = fs.readFileSync(codeFile, "utf8").trim();
+            const code = /^\d+$/.test(raw) ? Number(raw) : 1;
+            return { stdout: data.slice(0, 30000), code };
+        }
+        if (Date.now() - started > timeoutMs) {
+            term.sendText("\u0003");
+            const data = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : "";
+            return { stdout: (data + `\n[Symposium] command timed out after ${timeoutMs}ms`).slice(0, 30000), code: 124 };
+        }
+        await new Promise((r) => setTimeout(r, 250));
+    }
 }
 
 /** Strips HTML to readable text (drops script/style, tags → spaces). */
@@ -303,8 +383,11 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             if (!command) { return JSON.stringify({ error: "empty command" }); }
             const cwd = args.cwd ? resolvePath(ctx.cwd, String(args.cwd)) : ctx.cwd;
             const timeout = Math.min(Math.max(Number(args.timeout_ms) || 120000, 1000), 600000);
-            const { stdout, code } = await runShell(command, cwd, timeout);
-            return JSON.stringify({ exit_code: code, output: stdout });
+            const mode = ctx.shellExecution ?? "silent";
+            const { stdout, code } = mode === "terminal"
+                ? await runShellInTerminal(command, cwd, timeout, ctx.progress)
+                : await runShell(command, cwd, timeout, mode === "inline" ? ctx.progress : undefined);
+            return JSON.stringify({ exit_code: code, output: stdout, display: mode });
         }
         if (name === "read_file") {
             const p = resolvePath(ctx.cwd, String(args.path ?? ""));

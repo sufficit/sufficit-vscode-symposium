@@ -1760,10 +1760,13 @@ export function renderHtml(): string {
         if (opts.diff && opts.diff.length) { body.appendChild(diffSection(opts.diff)); }
         else if (opts.input) { body.appendChild(toolSection("Input", opts.input)); }
         let resultSec = null;
+        let resultText = "";
         const showResult = (text) => {
             if (!text) return;
-            if (!resultSec) { resultSec = toolSection("Result", text); body.appendChild(resultSec); }
-            else { resultSec.querySelector("pre").textContent = text; }
+            resultText += String(text);
+            const shown = resultText.length > 30000 ? resultText.slice(resultText.length - 30000) : resultText;
+            if (!resultSec) { resultSec = toolSection("Result", shown); body.appendChild(resultSec); }
+            else { resultSec.querySelector("pre").textContent = shown; }
         };
         if (opts.result) { showResult(opts.result); }
         const expandable = !!(opts.input || opts.result || opts.toolId);
@@ -2802,6 +2805,7 @@ export function renderHtml(): string {
                 const ev = data.event;
                 if (ev.kind === "text") streamDelta(ev.text);
                 else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }
+                else if (ev.kind === "tool-output") fillToolResult(ev.toolId, ev.text);
                 else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);
                 else if (ev.kind === "usage") { lastUsage = ev; renderStatusbar(); }
                 else if (ev.kind === "error") {

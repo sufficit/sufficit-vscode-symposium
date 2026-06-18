@@ -214,6 +214,7 @@ export class ConfigPanel {
                 openIn: chat.get<string>("openIn", "editor"),
                 lmTools: root.get<string>("lmTools", "terminal"),
                 maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
+                shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
                 autoApprove: vscode.workspace.getConfiguration().get<boolean>("chat.tools.global.autoApprove", false),
             },
         };
