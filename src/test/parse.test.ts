@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
     summarizeToolInput, contextWindowFor, toolFilePath, lineCount,
-    diffCounts, editDiff, prettyJson, toolResultText, parseCodexUsage,
+    diffCounts, editDiff, prettyJson, toolResultText, parseCodexUsage, mimeTypeFor,
 } from "../adapters/parse";
 
 test("summarizeToolInput: file path → last two segments", () => {
@@ -121,4 +121,17 @@ test("toolResultText: string, blocks, object", () => {
     assert.equal(toolResultText("hi"), "hi");
     assert.equal(toolResultText([{ text: "a" }, { text: "b" }]), "ab");
     assert.equal(toolResultText({ k: 1 }), '{"k":1}');
+});
+
+test("mimeTypeFor: images and text", () => {
+    assert.equal(mimeTypeFor("a/b/photo.png"), "image/png");
+    assert.equal(mimeTypeFor("shot.JPG"), "image/jpeg");
+    assert.equal(mimeTypeFor("notes.md"), "text/markdown");
+    assert.equal(mimeTypeFor("data.json"), "application/json");
+    assert.equal(mimeTypeFor("script.ts"), "text/typescript");
+});
+
+test("mimeTypeFor: unknown/no extension → undefined", () => {
+    assert.equal(mimeTypeFor("Makefile"), undefined);
+    assert.equal(mimeTypeFor("weird.xyzq"), undefined);
 });

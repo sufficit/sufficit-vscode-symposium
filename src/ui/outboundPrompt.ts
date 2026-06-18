@@ -1,3 +1,5 @@
+import { mimeTypeFor } from "../adapters/parse";
+
 export interface OutboundPromptState {
     policyInjected: boolean;
     todoInjected: boolean;
@@ -56,7 +58,10 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
     let fullText = options.text;
     if (options.fileAttachments.length) {
         fullText += "\n\nAttached files (read them from disk):\n" +
-            options.fileAttachments.map((p) => `- ${p}`).join("\n");
+            options.fileAttachments.map((p) => {
+                const mime = mimeTypeFor(p);
+                return mime ? `- ${p} (${mime})` : `- ${p}`;
+            }).join("\n");
     }
 
     const prefixes: string[] = [];

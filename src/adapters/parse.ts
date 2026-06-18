@@ -160,3 +160,45 @@ export function toolResultText(content: unknown): string {
     }
     return s.length > 6000 ? s.slice(0, 6000) + "\n…(truncated)" : s;
 }
+
+/**
+ * Best-effort MIME type from a file path extension. Returns undefined when the
+ * extension is unknown so callers can omit the hint rather than guess wrong.
+ */
+export function mimeTypeFor(path: string): string | undefined {
+    const m = /\.([a-z0-9]+)$/i.exec(path.trim());
+    if (!m) { return undefined; }
+    const ext = m[1].toLowerCase();
+    const map: Record<string, string> = {
+        // text / code
+        txt: "text/plain", md: "text/markdown", markdown: "text/markdown",
+        json: "application/json", jsonc: "application/json",
+        yaml: "application/yaml", yml: "application/yaml", toml: "application/toml",
+        xml: "application/xml", html: "text/html", htm: "text/html",
+        css: "text/css", csv: "text/csv", tsv: "text/tab-separated-values",
+        js: "text/javascript", mjs: "text/javascript", cjs: "text/javascript",
+        ts: "text/typescript", tsx: "text/typescript", jsx: "text/javascript",
+        py: "text/x-python", rb: "text/x-ruby", go: "text/x-go", rs: "text/x-rust",
+        java: "text/x-java", c: "text/x-c", h: "text/x-c", cpp: "text/x-c++", cc: "text/x-c++",
+        cs: "text/x-csharp", php: "text/x-php", sh: "application/x-sh", bash: "application/x-sh",
+        sql: "application/sql", ini: "text/plain", cfg: "text/plain", conf: "text/plain",
+        log: "text/plain", env: "text/plain", svg: "image/svg+xml",
+        // images
+        png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+        webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon",
+        tif: "image/tiff", tiff: "image/tiff", avif: "image/avif", heic: "image/heic",
+        // docs / archives / media
+        pdf: "application/pdf", zip: "application/zip", gz: "application/gzip",
+        tar: "application/x-tar", "7z": "application/x-7z-compressed", rar: "application/vnd.rar",
+        doc: "application/msword",
+        docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        xls: "application/vnd.ms-excel",
+        xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ppt: "application/vnd.ms-powerpoint",
+        pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac",
+        mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska",
+        wasm: "application/wasm",
+    };
+    return map[ext];
+}
