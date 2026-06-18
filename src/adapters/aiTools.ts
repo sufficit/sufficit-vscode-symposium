@@ -256,6 +256,37 @@ function resolvePath(cwd: string, p: string): string {
     return path.isAbsolute(p) ? p : path.resolve(cwd, p);
 }
 
+
+function firstShellWord(command: string): string {
+    const trimmed = command.trim();
+    if (!trimmed) { return ""; }
+    const m = trimmed.match(/^([A-Za-z0-9_.\/-]+)/);
+    return m ? path.basename(m[1]) : "";
+}
+
+async function commandExists(cmd: string, cwd: string): Promise<boolean> {
+    return new Promise((resolve) => {
+        execFile("bash", ["-lc", `command -v ${cmd} >/dev/null 2>&1`], { cwd, env: process.env }, (err) => resolve(!err));
+    });
+}
+
+async function canUseRtk(command: string, cwd: string): Promise<boolean> {
+    const c = command.trim();
+    if (!c || c.startsWith("rtk ")) { return false; }
+    // Avoid changing semantics for compound/interactive shell snippets. The
+    // policy prompt tells the model to use rtk explicitly for these when safe.
+    if (/\n|\||&&|\|\||;|<<|>|<|\$\(|`/.test(c)) { return false; }
+    const word = firstShellWord(c);
+    const supported = new Set([
+        "git", "gh", "ls", "find", "rg", "grep", "cat", "head", "tail",
+        "npm", "pnpm", "yarn", "bun", "vitest", "jest", "pytest", "go",
+        "cargo", "tsc", "eslint", "biome", "prettier", "ruff", "golangci-lint",
+        "docker", "kubectl", "curl", "wget",
+    ]);
+    if (!supported.has(word)) { return false; }
+    return commandExists("rtk", cwd);
+}
+
 /** Runs a shell command, capturing combined output. Never throws. */
 function runShell(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink): Promise<{ stdout: string; code: number }> {
     return new Promise((resolve) => {
@@ -384,9 +415,11 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             const cwd = args.cwd ? resolvePath(ctx.cwd, String(args.cwd)) : ctx.cwd;
             const timeout = Math.min(Math.max(Number(args.timeout_ms) || 120000, 1000), 600000);
             const mode = ctx.shellExecution ?? "silent";
+            const shouldUseRtk = mode === "silent" && await canUseRtk(command, cwd);
+            const runCommand = shouldUseRtk ? `rtk ${command}` : command;
             const { stdout, code } = mode === "terminal"
-                ? await runShellInTerminal(command, cwd, timeout, ctx.progress)
-                : await runShell(command, cwd, timeout, mode === "inline" ? ctx.progress : undefined);
+                ? await runShellInTerminal(runCommand, cwd, timeout, ctx.progress)
+                : await runShell(runCommand, cwd, timeout, mode === "inline" ? ctx.progress : undefined);
             return JSON.stringify({ exit_code: code, output: stdout, display: mode });
         }
         if (name === "read_file") {

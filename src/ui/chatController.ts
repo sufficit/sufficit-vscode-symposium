@@ -34,6 +34,7 @@ export class ChatController {
     private todoInjected = false;
     private autonomyInjected = false;
     private seedInjected = false;
+    private rtkInjected = false;
     private queueSeq = 0;
     // Files this session edited and their net +/- — owned here so it survives
     // view switches (the runtime keeps the controller alive) and approval state
@@ -340,6 +341,8 @@ export class ChatController {
             todoInjected: this.todoInjected,
             seedInjected: this.seedInjected,
             autonomyInjected: this.autonomyInjected,
+            rtkInjected: this.rtkInjected,
+            rtk: true,
             todoInjection: this.adapter.hasNativeTodo?.() === false ? this.adapter.todoInjection?.() : undefined,
             seedHistory: this.options.seedHistory,
             autonomy: msg.autonomy,
@@ -349,6 +352,7 @@ export class ChatController {
         this.todoInjected = outbound.state.todoInjected;
         this.seedInjected = outbound.state.seedInjected;
         this.autonomyInjected = outbound.state.autonomyInjected;
+        this.rtkInjected = !!outbound.state.rtkInjected;
         if (!this.firstTitle && msg.text.trim()) { this.firstTitle = msg.text.trim().slice(0, 60); }
         this.busy = true;
         this.onStatusChange?.();
