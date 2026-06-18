@@ -9,6 +9,8 @@ export type AgentBackend = string;
 export interface TodoItem {
     content: string;
     status: "pending" | "in_progress" | "completed";
+    /** Optional explicit execution order (1-based); absent = array order. */
+    order?: number;
 }
 
 /** A normalized event emitted by any adapter while a turn is running. */

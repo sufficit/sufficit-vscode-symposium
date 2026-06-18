@@ -34,3 +34,13 @@ test("parseTodoFence: checkbox block", () => {
 test("parseTodoFence: no block → undefined", () => {
     assert.equal(parseTodoFence("just text"), undefined);
 });
+
+
+test("parseTodoFence: ordered checkbox block keeps order numbers", () => {
+    const md = "```todo\n1. [ ] first\n2. [-] second\n3. [x] third\n```";
+    assert.deepEqual(parseTodoFence(md), [
+        { content: "first", status: "pending", order: 1 },
+        { content: "second", status: "in_progress", order: 2 },
+        { content: "third", status: "completed", order: 3 },
+    ]);
+});

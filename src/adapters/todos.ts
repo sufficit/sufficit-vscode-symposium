@@ -14,7 +14,9 @@ function toItem(raw: any): TodoItem | undefined {
     if (typeof raw === "string") { return { content: raw, status: "pending" }; }
     const content = raw.content ?? raw.step ?? raw.text ?? raw.title ?? raw.task ?? raw.name;
     if (typeof content !== "string" || !content.trim()) { return undefined; }
-    return { content: content.trim(), status: normStatus(raw.status ?? raw.state) };
+    const orderRaw = raw.order ?? raw.index ?? raw.number ?? raw.stepNumber ?? raw.step_number;
+    const order = Number(orderRaw);
+    return { content: content.trim(), status: normStatus(raw.status ?? raw.state), ...(Number.isFinite(order) && order > 0 ? { order } : {}) };
 }
 
 function toItems(arr: unknown): TodoItem[] | undefined {
@@ -52,12 +54,17 @@ export function parseTodoFence(text: string): TodoItem[] | undefined {
     if (!m) { return undefined; }
     const items: TodoItem[] = [];
     for (const line of m[1].split("\n")) {
-        const li = line.match(/^\s*[-*]\s*\[([ xX\-~/>])\]\s*(.+?)\s*$/);
+        // Supports both unordered and ordered task lines:
+        //   - [ ] step
+        //   1. [ ] step
+        //   2) [-] step
+        const li = line.match(/^\s*(?:(\d+)[.)]\s*)?(?:[-*]\s*)?\[([ xX\-~/>])\]\s*(.+?)\s*$/);
         if (!li) { continue; }
-        const mark = li[1].toLowerCase();
+        const order = li[1] ? Number(li[1]) : undefined;
+        const mark = li[2].toLowerCase();
         const status: TodoItem["status"] =
             mark === "x" ? "completed" : mark === " " ? "pending" : "in_progress";
-        items.push({ content: li[2], status });
+        items.push({ content: li[3], status, ...(order ? { order } : {}) });
     }
     return items.length ? items : undefined;
 }
@@ -67,7 +74,7 @@ export function parseTodoFence(text: string): TodoItem[] | undefined {
  * agent still surfaces a plan Symposium can render and check off.
  */
 export const TODO_INJECTION =
-    "When a task needs multiple steps, maintain a plan as a fenced ```todo code block " +
-    "and re-print the whole block whenever a step's state changes. Use one line per step:\n" +
-    "```todo\n- [ ] not started\n- [-] in progress\n- [x] done\n```\n" +
-    "Keep exactly one step `[-]` (in progress) at a time.";
+    "When a task needs multiple steps, maintain an ordered plan as a fenced ```todo code block " +
+    "and re-print the whole block whenever a step's state changes. Use one numbered line per step:\n" +
+    "```todo\n1. [ ] first step\n2. [-] current step\n3. [x] completed step\n```\n" +
+    "Keep the execution order stable and keep exactly one step `[-]` (in progress) at a time.";

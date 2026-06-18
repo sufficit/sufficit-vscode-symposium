@@ -525,6 +525,14 @@ export function renderHtml(): string {
         flex-shrink: 0; opacity: 0.75; font-weight: 400; font-size: 0.92em;
         font-variant-numeric: tabular-nums;
     }
+    #plan .plhead .plbtn {
+        flex-shrink: 0; background: none; border: none; cursor: pointer; padding: 2px 5px;
+        border-radius: 4px; color: var(--vscode-foreground); opacity: 0.68; display: inline-flex; align-items: center; gap: 3px;
+        font: inherit; font-size: 0.82em;
+    }
+    #plan .plhead .plbtn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.18)); }
+    #plan .plhead .plbtn.danger:hover { color: var(--vscode-errorForeground); }
+    #plan .plhead .plbtn svg { width: 12px; height: 12px; }
     #plan .plhead svg.plchev { width: 12px; height: 12px; flex-shrink: 0; opacity: 0.8; transition: transform 150ms ease; }
     #plan:not(.collapsed) .plhead svg.plchev { transform: rotate(0deg); }
     #plan.collapsed .plhead svg.plchev { transform: rotate(-90deg); }
@@ -535,6 +543,11 @@ export function renderHtml(): string {
     }
     #plan.collapsed .pllist { display: none; }
     .todoitem { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; line-height: 1.5; font-size: 0.9em; }
+    .todoitem .torder {
+        flex-shrink: 0; min-width: 2.1em; text-align: right;
+        font-family: var(--vscode-editor-font-family, monospace); font-size: 0.86em;
+        color: var(--vscode-descriptionForeground); opacity: 0.75; margin-top: 1px;
+    }
     .todoitem .tmark { flex-shrink: 0; width: 16px; height: 16px; margin-top: 1px; display: inline-flex; align-items: center; justify-content: center; }
     .todoitem .tmark svg { width: 14px; height: 14px; }
     .todoitem.done .tcontent { opacity: 0.6; text-decoration: line-through; }
@@ -1796,6 +1809,15 @@ export function renderHtml(): string {
         if (status === "in_progress") return svgIcon("circleHalf");
         return svgIcon("circleEmpty");
     }
+    function clearTodos(which) {
+        const todos = planBySession[wsKey] || [];
+        if (which === "done") {
+            planBySession[wsKey] = todos.filter((t) => t.status !== "completed");
+        } else {
+            planBySession[wsKey] = [];
+        }
+        renderPlan();
+    }
     // A TodoWrite carries the full current list; just store it for this session.
     function renderTodos(todos) {
         planBySession[wsKey] = todos || [];
@@ -1821,16 +1843,23 @@ export function renderHtml(): string {
         const ttl = document.createElement("span"); ttl.className = "pltitle";
         ttl.textContent = summary; ttl.title = summary;
         const cnt = document.createElement("span"); cnt.className = "plcount"; cnt.textContent = done + "/" + todos.length;
-        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(chev);
+        const doneBtn = document.createElement("button"); doneBtn.className = "plbtn"; doneBtn.title = "Limpar tarefas concluídas";
+        doneBtn.appendChild(svgIcon("check")); doneBtn.appendChild(document.createTextNode("Done"));
+        doneBtn.addEventListener("click", (e) => { e.stopPropagation(); clearTodos("done"); });
+        const allBtn = document.createElement("button"); allBtn.className = "plbtn danger"; allBtn.title = "Limpar todas as tarefas";
+        allBtn.appendChild(svgIcon("trash")); allBtn.appendChild(document.createTextNode("All"));
+        allBtn.addEventListener("click", (e) => { e.stopPropagation(); clearTodos("all"); });
+        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(doneBtn); head.appendChild(allBtn); head.appendChild(chev);
         head.addEventListener("click", () => planEl.classList.toggle("collapsed"));
         const list = document.createElement("div"); list.className = "pllist";
         for (const t of todos) {
             const item = document.createElement("div");
             item.className = "todoitem" + (t.status === "completed" ? " done" : t.status === "in_progress" ? " active" : "");
+            const ord = document.createElement("span"); ord.className = "torder"; ord.textContent = String(t.order || (todos.indexOf(t) + 1)) + ".";
             const mk = document.createElement("span"); mk.className = "tmark" + (t.status === "pending" ? " pending" : "");
             mk.appendChild(todoMark(t.status));
             const c = document.createElement("span"); c.className = "tcontent"; c.textContent = t.content;
-            item.appendChild(mk); item.appendChild(c);
+            item.appendChild(ord); item.appendChild(mk); item.appendChild(c);
             list.appendChild(item);
         }
         card.appendChild(head); card.appendChild(list);
