@@ -102,7 +102,8 @@ export const LOCAL_TOOLS: OpenAITool[] = [
                     command: { type: "string", description: "The command line to execute (run via bash -lc)." },
                     description: { type: "string", description: "A short human-readable description (5-10 words) of what this command does, shown to the user so they understand the step." },
                     cwd: { type: "string", description: "Optional working directory (absolute, or relative to the session cwd). Defaults to the session cwd." },
-                    timeout_ms: { type: "integer", description: "Optional timeout in milliseconds (default 120000, max 600000)." },
+                    timeout_ms: { type: "integer", description: "Timeout in milliseconds. Default 30000 (30s). Pass 0 for UNLIMITED — only for long-running services (dev servers, watchers, tail -f) you intend to keep running; otherwise always bounded." },
+                    notify: { type: "boolean", description: "Set true when the command's output is relevant and you want to be notified of the result as soon as it completes (the output is surfaced back to you). Use for builds/tests/diagnostics whose result you must see." },
                 },
                 required: ["command"],
             },
@@ -263,6 +264,8 @@ export type ShellExecutionMode = "silent" | "inline" | "terminal";
 export interface ToolProgressSink {
     onData?(chunk: string): void;
     onTerminal?(terminalName: string): void;
+    /** Model flagged this command's result as relevant — surface it to the user. */
+    onNotify?(message: string): void;
 }
 
 export interface ToolContext {
@@ -343,9 +346,8 @@ function runShell(command: string, cwd: string, timeoutMs: number, progress?: To
     });
 }
 
-function terminalNameFor(command: string): string {
-    const first = command.split("\n").map((l) => l.trim()).find(Boolean) || "command";
-    return `Symposium · ${first.slice(0, 42)}`;
+function terminalNameFor(): string {
+    return "symposium";
 }
 
 function shellQuote(value: string): string {
@@ -353,7 +355,7 @@ function shellQuote(value: string): string {
 }
 
 async function runShellInTerminal(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink): Promise<{ stdout: string; code: number }> {
-    const name = terminalNameFor(command);
+    const name = terminalNameFor();
     const term = vscode.window.createTerminal({ name, cwd });
     term.show(true);
     progress?.onTerminal?.(name);
@@ -454,14 +456,27 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             const command = String(args.command ?? "").trim();
             if (!command) { return JSON.stringify({ error: "empty command" }); }
             const cwd = args.cwd ? resolvePath(ctx.cwd, String(args.cwd)) : ctx.cwd;
-            const timeout = Math.min(Math.max(Number(args.timeout_ms) || 120000, 1000), 600000);
+            // Timeout: default 30s. 0 (or negative) means UNLIMITED — the model
+            // must opt into that explicitly for long-running services. A bounded
+            // value is clamped to [1s, 1h].
+            const rawTimeout = args.timeout_ms === undefined ? 30000 : Number(args.timeout_ms);
+            const unlimited = !(rawTimeout > 0);
+            const timeout = unlimited ? Number.MAX_SAFE_INTEGER : Math.min(Math.max(rawTimeout, 1000), 3600000);
+            const notify = args.notify === true;
             const mode = ctx.shellExecution ?? "silent";
             const shouldUseRtk = mode === "silent" && await canUseRtk(command, cwd);
             const runCommand = shouldUseRtk ? `rtk ${command}` : command;
             const { stdout, code } = mode === "terminal"
                 ? await runShellInTerminal(runCommand, cwd, timeout, ctx.progress)
                 : await runShell(runCommand, cwd, timeout, mode === "inline" ? ctx.progress : undefined);
-            return JSON.stringify({ exit_code: code, output: stdout, display: mode });
+            // When the model flags the result as relevant, push it through the
+            // progress sink as a steer-style notification so the chat surfaces it
+            // even if the model wouldn't otherwise narrate the outcome.
+            if (notify) {
+                const head = stdout.split("\n").slice(0, 6).join("\n");
+                ctx.progress?.onNotify?.(`shell exit ${code}${head ? `\n${head}` : ""}`);
+            }
+            return JSON.stringify({ exit_code: code, output: stdout, display: mode, timed_out: code === 124, unlimited });
         }
         if (name === "read_file") {
             const p = resolvePath(ctx.cwd, String(args.path ?? ""));

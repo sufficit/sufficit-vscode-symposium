@@ -48,7 +48,7 @@ export class TerminalSession {
 
         const env: Record<string, string> = { ...this.options.env };
         this.terminal = vscode.window.createTerminal({
-            name: `Symposium · ${this.adapter.backend}`,
+            name: "symposium",
             cwd: this.options.cwd,
             env: Object.keys(env).length ? env : undefined,
         });

@@ -75,9 +75,8 @@ export function isLmTool(name: string): boolean {
     return nameMap().has(name);
 }
 
-/** Invokes a bridged LM tool and returns a plain-text result for the model. */
-export async function invokeLmTool(name: string, input: Record<string, unknown>): Promise<string> {
-    const real = nameMap().get(name) ?? name;
+/** Invokes one LM tool by (real) name, returning its joined text output. */
+async function invokeOne(real: string, input: Record<string, unknown>): Promise<string> {
     const cts = new vscode.CancellationTokenSource();
     try {
         const res = await vscode.lm.invokeTool(
@@ -90,10 +89,62 @@ export async function invokeLmTool(name: string, input: Record<string, unknown>)
             if (part instanceof vscode.LanguageModelTextPart) { parts.push(part.value); }
             else { try { parts.push(JSON.stringify(part)); } catch { /* skip */ } }
         }
-        return parts.join("\n").slice(0, 30000) || "(no output)";
-    } catch (err) {
-        return JSON.stringify({ error: String(err instanceof Error ? err.message : err) });
+        return parts.join("\n");
     } finally {
         cts.dispose();
     }
+}
+
+/** Finds a registered tool whose real name matches `re`, if any. */
+function findToolByName(re: RegExp): string | undefined {
+    for (const t of (vscode.lm.tools ?? [])) { if (re.test(t.name)) { return t.name; } }
+    return undefined;
+}
+
+/**
+ * Invokes a bridged LM tool and returns a plain-text result for the model.
+ *
+ * For the visible-terminal tool (`runInTerminal` family) we AUTO-FETCH the
+ * terminal output afterwards (via the `getTerminalOutput` tool) and append it,
+ * so the model receives the command result in the SAME round-trip instead of
+ * having to make a second tool call to read it.
+ */
+export async function invokeLmTool(name: string, input: Record<string, unknown>): Promise<string> {
+    const real = nameMap().get(name) ?? name;
+    try {
+        let out = await invokeOne(real, input);
+
+        if (/runInTerminal/i.test(real)) {
+            // The runInTerminal tool typically returns a terminal/command id we
+            // can feed to getTerminalOutput. Try to recover it from the result
+            // or the input, then fetch the captured output once.
+            const fetchTool = findToolByName(/getTerminalOutput/i);
+            if (fetchTool) {
+                const id = extractTerminalId(out) ?? (input.id as string | undefined);
+                if (id) {
+                    try {
+                        const fetched = await invokeOne(fetchTool, { id });
+                        if (fetched && fetched.trim()) { out += `\n\n[terminal output]\n${fetched}`; }
+                    } catch { /* best effort — output stays as returned */ }
+                }
+            }
+        }
+
+        return out.slice(0, 30000) || "(no output)";
+    } catch (err) {
+        return JSON.stringify({ error: String(err instanceof Error ? err.message : err) });
+    }
+}
+
+/** Best-effort extraction of a terminal/command id from runInTerminal output. */
+function extractTerminalId(text: string): string | undefined {
+    if (!text) { return undefined; }
+    // Common shapes: a JSON blob with an id, or "... id: <uuid>".
+    try {
+        const j = JSON.parse(text);
+        const v = j?.id ?? j?.terminalId ?? j?.commandId;
+        if (typeof v === "string" && v) { return v; }
+    } catch { /* not json */ }
+    const m = text.match(/\b([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b/);
+    return m ? m[1] : undefined;
 }

@@ -420,6 +420,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     const progress = {
                         onData: (chunk: string) => this.emit("event", { kind: "tool-output", toolName: tc.function.name, toolId: tc.id, text: chunk }),
                         onTerminal: (terminalName: string) => this.emit("event", { kind: "tool-start", toolName: tc.function.name, detail: `watching in terminal: ${terminalName}`, toolId: tc.id, terminalName }),
+                        onNotify: (message: string) => this.emit("event", { kind: "tool-output", toolName: tc.function.name, toolId: tc.id, text: `\n[notify] ${message}\n` }),
                     };
                     const result = isLmTool(tc.function.name)
                         ? await invokeLmTool(tc.function.name, args)
