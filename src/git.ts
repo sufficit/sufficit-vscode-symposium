@@ -61,6 +61,20 @@ export async function approveChange(cwd: string, abs: string): Promise<boolean> 
  * unstaging it in git brings it back. Paths not inside any git repo are treated
  * as always-pending (their lifecycle is handled by snapshots instead).
  */
+/**
+ * All dirty (untracked/modified) absolute paths in the repo containing `cwd`.
+ * Used to populate the changed-files panel for a resumed session where the
+ * controller has no in-memory record of which files the agent touched.
+ */
+export async function dirtyFiles(cwd: string): Promise<string[]> {
+    const path = require("path") as typeof import("path");
+    const root = await gitRoot(cwd);
+    if (!root) { return []; }
+    const r = await git(root, ["status", "--porcelain", "--no-renames"]);
+    if (r.code !== 0) { return []; }
+    return [...parsePorcelainDirty(r.stdout, root, path)];
+}
+
 export async function pendingChanges(absPaths: string[]): Promise<Set<string>> {
     const pending = new Set<string>();
     const path = require("path") as typeof import("path");

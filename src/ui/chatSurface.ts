@@ -8,7 +8,7 @@ import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
 import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
-import { approveChange, gitRoot, headContent, pendingChanges, rejectChange } from "../git";
+import { approveChange, dirtyFiles, gitRoot, headContent, pendingChanges, rejectChange } from "../git";
 import { snapshots } from "../snapshots";
 import { HubClient } from "../sync/hubClient";
 import { fetchSessionTasks, TaskItem } from "../sync/tasks";
@@ -937,9 +937,16 @@ export class ChatSurface {
      * index so staging/unstaging in git or the SCM view syncs back here.
      */
     private async refreshChanged(rawItems: { path: string; added: number; removed: number }[]): Promise<void> {
-        const paths = rawItems.map((i) => i.path);
-        const pending = await pendingChanges(paths);
-        this.post({ type: "changed-files", items: rawItems.filter((i) => pending.has(i.path)) });
+        if (rawItems.length > 0) {
+            // Precise: only files this live session's tools touched AND still dirty.
+            const pending = await pendingChanges(rawItems.map((i) => i.path));
+            this.post({ type: "changed-files", items: rawItems.filter((i) => pending.has(i.path)) });
+        } else {
+            // No in-session record (e.g. a resumed/reattached session): fall back to
+            // the repo's dirty files in the session cwd so edits are still visible.
+            const dirty = await dirtyFiles(this.cwd()).catch(() => [] as string[]);
+            this.post({ type: "changed-files", items: dirty.map((path) => ({ path, added: 0, removed: 0 })) });
+        }
         this.ensureGitWatcher();
     }
 
