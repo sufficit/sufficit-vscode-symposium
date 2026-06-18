@@ -537,6 +537,22 @@ export function renderHtml(): string {
     #plan .plhead svg.plchev { width: 12px; height: 12px; flex-shrink: 0; opacity: 0.8; transition: transform 150ms ease; }
     #plan:not(.collapsed) .plhead svg.plchev { transform: rotate(0deg); }
     #plan.collapsed .plhead svg.plchev { transform: rotate(-90deg); }
+    #plan .plactions {
+        display: flex; gap: 6px; align-items: center; padding: 6px 10px;
+        border-top: 1px solid var(--vscode-chat-requestBorder, var(--vscode-input-border, rgba(128,128,128,0.18)));
+    }
+    #plan.collapsed .plactions { display: none; }
+    #plan .plaction {
+        display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+        background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.18));
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+        border: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.25));
+        border-radius: 5px; padding: 3px 8px; font: inherit; font-size: 0.82em;
+    }
+    #plan .plaction:hover:not(:disabled) { background: var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.28)); }
+    #plan .plaction.danger { color: var(--vscode-errorForeground); }
+    #plan .plaction:disabled { opacity: 0.4; cursor: default; }
+    #plan .plaction svg { width: 12px; height: 12px; }
     #plan .pllist {
         max-height: 200px; overflow-y: auto;
         padding: 2px 10px 8px 10px;
@@ -644,7 +660,7 @@ export function renderHtml(): string {
     #composer:focus-within { border-color: var(--vscode-focusBorder); }
     /* Scroll-to-bottom button: floats just above the composer, only when scrolled up. */
     #scrollBottom {
-        position: absolute; bottom: 10px; right: 16px; z-index: 5;
+        position: absolute; bottom: 10px; right: 28px; z-index: 5;
         width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
         display: none; align-items: center; justify-content: center;
         background: var(--vscode-button-secondaryBackground, var(--vscode-editorWidget-background, #2a2a2a));
@@ -1844,15 +1860,17 @@ export function renderHtml(): string {
         const ttl = document.createElement("span"); ttl.className = "pltitle";
         ttl.textContent = summary; ttl.title = summary;
         const cnt = document.createElement("span"); cnt.className = "plcount"; cnt.textContent = done + "/" + todos.length;
-        const doneBtn = document.createElement("button"); doneBtn.className = "plbtn"; doneBtn.title = "Limpar tarefas concluídas"; doneBtn.setAttribute("aria-label", "Limpar concluídas");
-        doneBtn.disabled = done === 0;
-        doneBtn.appendChild(svgIcon("check"));
-        doneBtn.addEventListener("click", (e) => { e.stopPropagation(); if (!doneBtn.disabled) { clearTodos("done"); } });
-        const allBtn = document.createElement("button"); allBtn.className = "plbtn danger"; allBtn.title = "Limpar todas as tarefas"; allBtn.setAttribute("aria-label", "Limpar todas");
-        allBtn.appendChild(svgIcon("trash"));
-        allBtn.addEventListener("click", (e) => { e.stopPropagation(); clearTodos("all"); });
-        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(doneBtn); head.appendChild(allBtn); head.appendChild(chev);
+        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(chev);
         head.addEventListener("click", () => planEl.classList.toggle("collapsed"));
+        const actions = document.createElement("div"); actions.className = "plactions";
+        const mkAction = (icon, label, title, cls, disabled, fn) => {
+            const b = document.createElement("button"); b.className = "plaction " + (cls || ""); b.title = title; b.disabled = !!disabled;
+            b.appendChild(svgIcon(icon)); b.appendChild(document.createTextNode(label));
+            b.addEventListener("click", (e) => { e.stopPropagation(); if (!b.disabled) { fn(); } });
+            return b;
+        };
+        actions.appendChild(mkAction("check", "Limpar concluídas", "Limpar tarefas concluídas", "", done === 0, () => clearTodos("done")));
+        actions.appendChild(mkAction("trash", "Limpar todas", "Limpar todas as tarefas", "danger", false, () => clearTodos("all")));
         const list = document.createElement("div"); list.className = "pllist";
         for (const t of todos) {
             const item = document.createElement("div");
@@ -1864,7 +1882,7 @@ export function renderHtml(): string {
             item.appendChild(ord); item.appendChild(mk); item.appendChild(c);
             list.appendChild(item);
         }
-        card.appendChild(head); card.appendChild(list);
+        card.appendChild(head); card.appendChild(actions); card.appendChild(list);
         planEl.appendChild(card);
     }
 
