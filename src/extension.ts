@@ -41,6 +41,20 @@ import { setHubTokenProvider, HubClient } from "./sync/hubClient";
 import { expireSessionTasks } from "./sync/tasks";
 
 /** Normalizes a model label for pin matching: lowercase, drop "(...)", collapse spaces. */
+
+function errorDetails(error: unknown): string {
+    if (error instanceof Error) { return error.stack || error.message; }
+    try { return JSON.stringify(error, null, 2); } catch { return String(error); }
+}
+
+async function showErrorWithCopy(message: string, details: string): Promise<void> {
+    const action = await vscode.window.showErrorMessage(message, "Copy details");
+    if (action === "Copy details") {
+        await vscode.env.clipboard.writeText(details);
+        void vscode.window.showInformationMessage("Detalhes copiados para a área de transferência.");
+    }
+}
+
 function normModel(s: string): string {
     return s.toLowerCase().replace(/\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
 }
@@ -652,7 +666,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             const info = infoOf(item);
             const adapter = adapterByBackend.get(info.backend);
             if (!adapter?.deleteSession) {
-                void vscode.window.showWarningMessage(`Deleting ${info.backend} sessions is not supported.`);
+                const details = JSON.stringify({ action: "deleteSession", backend: info.backend, sessionId: info.sessionId, title: info.title }, null, 2);
+                const pick = await vscode.window.showWarningMessage(`Deleting ${info.backend} sessions is not supported.`, "Copy details");
+                if (pick === "Copy details") { await vscode.env.clipboard.writeText(details); }
                 return;
             }
             const confirm = await vscode.window.showWarningMessage(
@@ -684,7 +700,10 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                     void vscode.window.showInformationMessage(`Session "${info.title}" permanently deleted.`);
                 }
             } catch (error) {
-                void vscode.window.showErrorMessage(`Delete failed: ${error instanceof Error ? error.message : error}`);
+                void showErrorWithCopy(
+                    `Delete failed: ${error instanceof Error ? error.message : error}`,
+                    JSON.stringify({ action: "deleteSession", backend: info.backend, sessionId: info.sessionId, title: info.title, error: errorDetails(error) }, null, 2),
+                );
             }
         }),
     );

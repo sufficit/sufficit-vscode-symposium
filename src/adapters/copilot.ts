@@ -158,6 +158,38 @@ function transcriptHistory(file: string): HistoryMessage[] {
     return out;
 }
 
+function rmrf(p: string): void {
+    try { fs.rmSync(p, { recursive: true, force: true }); } catch { /* ignore */ }
+}
+
+function deleteImportedCopilotSession(info: SessionInfo): string[] {
+    const residual: string[] = [];
+    const files = info.transcriptPath
+        ? [info.transcriptPath]
+        : copilotTranscriptFiles().filter((p) => path.basename(p, ".jsonl") === info.sessionId);
+    for (const transcript of files) {
+        rmrf(transcript);
+        const wsRoot = transcript.split(`${path.sep}GitHub.copilot-chat${path.sep}`)[0];
+        if (!wsRoot || wsRoot === transcript) { continue; }
+        rmrf(path.join(wsRoot, "GitHub.copilot-chat", "debug-logs", info.sessionId));
+        rmrf(path.join(wsRoot, "GitHub.copilot-chat", "chat-session-resources", info.sessionId));
+        rmrf(path.join(wsRoot, "chatSessions", info.sessionId + ".jsonl"));
+    }
+    // If no transcript was found, still try removing chatSessions files by id.
+    if (!files.length) {
+        for (const root of candidateWorkspaceStorageRoots()) {
+            let workspaces: fs.Dirent[];
+            try { workspaces = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
+            for (const ws of workspaces) {
+                if (!ws.isDirectory()) { continue; }
+                rmrf(path.join(root, ws.name, "chatSessions", info.sessionId + ".jsonl"));
+            }
+        }
+        residual.push("Copilot transcript not found; removed matching chatSessions entries only");
+    }
+    return residual;
+}
+
 /**
  * Drives the GitHub Copilot CLI in non-interactive JSONL mode:
  * `copilot -p <text> --output-format json`, one process per turn,
@@ -313,6 +345,10 @@ export class CopilotAdapter implements AgentAdapter {
     async history(info: SessionInfo): Promise<HistoryMessage[]> {
         const file = info.transcriptPath ?? copilotTranscriptFiles().find((p) => path.basename(p, ".jsonl") === info.sessionId);
         return file ? transcriptHistory(file) : [];
+    }
+
+    async deleteSession(info: SessionInfo): Promise<string[] | void> {
+        return deleteImportedCopilotSession(info);
     }
 
     start(options: SessionStartOptions): AgentSession {
