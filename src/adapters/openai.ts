@@ -345,7 +345,24 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     hitCap = false;
                     break;
                 }
-                const { text, toolCalls } = await this.consume(res.body);
+                const { text, toolCalls, aborted } = await this.consume(res.body);
+
+                // Stream paused/interrupted mid-turn: keep the partial assistant
+                // reply (and any partial tool calls) in history so context is not
+                // lost on the next message, then stop this turn.
+                if (aborted) {
+                    if (toolCalls.length > 0) {
+                        this.messages.push({ role: "assistant", content: text || null, tool_calls: toolCalls });
+                        // Satisfy the API contract: every tool_call needs a tool reply.
+                        for (const tc of toolCalls) {
+                            this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: "(interrompido antes da execução)" });
+                        }
+                    } else if (text) {
+                        this.messages.push({ role: "assistant", content: text });
+                    }
+                    hitCap = false;
+                    break;
+                }
 
                 if (toolCalls.length === 0) {
                     if (text) { this.messages.push({ role: "assistant", content: text }); }
@@ -395,7 +412,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
      * Reads an SSE stream, emitting text deltas. Also accumulates streamed
      * tool_calls (chat completions) so the caller can run them and continue.
      */
-    private async consume(stream: ReadableStream<Uint8Array>): Promise<{ text: string; toolCalls: ToolCall[] }> {
+    private async consume(stream: ReadableStream<Uint8Array>): Promise<{ text: string; toolCalls: ToolCall[]; aborted: boolean }> {
         const responses = this.cfg.api === "responses";
         const reader = stream.getReader();
         const decoder = new TextDecoder();
@@ -403,7 +420,8 @@ class OpenAISession extends EventEmitter implements AgentSession {
         let assistant = "";
         const calls: ToolCall[] = []; // indexed by streamed tool_call index
         let lastFnIndex = 0;          // responses API: index of the most recent function_call
-        const done = () => ({ text: assistant, toolCalls: calls.filter((c) => c && c.function.name) });
+        const done = () => ({ text: assistant, toolCalls: calls.filter((c) => c && c.function.name), aborted: false });
+        try {
         for (; ;) {
             const r = await reader.read();
             if (r.done) { break; }
@@ -454,6 +472,13 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     // partial/non-JSON keepalive line; ignore
                 }
             }
+        }
+        } catch (err) {
+            // A paused/interrupted stream (AbortError or transport drop) must NOT
+            // discard what we already received — return the partial accumulation
+            // so the caller can persist the partial assistant turn and keep context.
+            try { reader.cancel(); } catch { /* ignore */ }
+            return { text: assistant, toolCalls: calls.filter((c) => c && c.function.name), aborted: true };
         }
         return done();
     }
