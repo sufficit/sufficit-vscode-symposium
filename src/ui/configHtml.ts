@@ -212,7 +212,10 @@ export function renderConfigHtml(): string {
                     [{ v: "off", l: "Desligado" }, { v: "terminal", l: "Terminal/tarefas/testes" }, { v: "all", l: "Todas" }])) +
             row("Limite de passos por turno", "Máx. de ações de ferramenta antes de pausar (pede 'continue'). No modo autônomo (presença Away) não há limite.",
                 sel("symposium.openai.maxToolHops", String(p.maxToolHops || 50),
-                    [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }]))
+                    [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }])) +
+            row("Auto-aprovar tools do agente", "Não pedir confirmação a cada ação (browser, terminal, edições). Conveniente, mas o agente roda tudo sem perguntar.",
+                sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
+                    [{ v: "true", l: "Sim (sem confirmação)" }, { v: "false", l: "Não (pede confirmação)" }]))
         );
     }
 

@@ -153,10 +153,14 @@ export class ConfigPanel {
                 return;
             case "set-pref":
                 if (typeof message.key === "string") {
-                    // Numeric prefs (e.g. maxToolHops) must be stored as numbers.
-                    const value: unknown = message.key.endsWith("maxToolHops")
-                        ? Math.max(1, Number(message.value) || 50)
-                        : message.value;
+                    // Coerce by key: numbers for hops, booleans for autoApprove.
+                    let value: unknown = message.value;
+                    if (message.key.endsWith("maxToolHops")) { value = Math.max(1, Number(message.value) || 50); }
+                    else if (message.key === "chat.tools.global.autoApprove") {
+                        value = message.value === "true";
+                        // optIn must be on for the global flag to take effect.
+                        await vscode.workspace.getConfiguration().update("chat.tools.global.autoApprove.optIn", true, vscode.ConfigurationTarget.Global);
+                    }
                     await vscode.workspace.getConfiguration().update(message.key, value, vscode.ConfigurationTarget.Global);
                     await this.pushState();
                 }
@@ -210,6 +214,7 @@ export class ConfigPanel {
                 openIn: chat.get<string>("openIn", "editor"),
                 lmTools: root.get<string>("lmTools", "terminal"),
                 maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
+                autoApprove: vscode.workspace.getConfiguration().get<boolean>("chat.tools.global.autoApprove", false),
             },
         };
         await this.panel.webview.postMessage({ type: "state", state });
