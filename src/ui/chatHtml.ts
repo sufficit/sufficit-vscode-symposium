@@ -1748,9 +1748,18 @@ export function renderHtml(): string {
     const toolRows = {};
     const TAB = String.fromCharCode(9);
     function allDigits(s) { return s.length > 0 && [...s].every((ch) => ch >= "0" && ch <= "9"); }
+    // Pretty-print a string that is valid JSON (object/array) with 2-space
+    // indentation; returns the original string unchanged otherwise.
+    function beautifyJson(text) {
+        const t = String(text).trim();
+        if (!t || (t[0] !== "{" && t[0] !== "[")) { return text; }
+        try { return JSON.stringify(JSON.parse(t), null, 2); }
+        catch (_e) { return text; }
+    }
     // Tool output from Read comes as "  <n>\t<code>"; split the line number into
     // a non-selectable gutter so copying the result never includes the numbers.
     function toolSection(label, text) {
+        text = beautifyJson(text);
         const sec = document.createElement("div"); sec.className = "toolsec";
         const lab = document.createElement("div"); lab.className = "tlabel"; lab.textContent = label;
         const lines = String(text).split("\\n");
