@@ -1661,6 +1661,7 @@ export function renderHtml(): string {
         web_search: { icon: "globe", verb: "Searched web" },
         fetch_url: { icon: "globe", verb: "Fetched" },
         open_url: { icon: "globe", verb: "Opened" },
+        read_session: { icon: "search", verb: "Read session" },
         Glob: { icon: "search", verb: "Searched" },
         Grep: { icon: "search", verb: "Searched" },
         LS: { icon: "file", verb: "Listed" },

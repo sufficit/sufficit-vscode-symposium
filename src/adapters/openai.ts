@@ -15,6 +15,7 @@ import { HubClient } from "../sync/hubClient";
 import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, filterTools, runAiTool, ShellExecutionMode } from "./aiTools";
 import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "./lmTools";
 import { buildOpenAIModelList } from "./openaiModels";
+import * as ledger from "../ledger";
 
 /** OpenAI tool call as streamed/accumulated from chat completions deltas. */
 interface ToolCall {
@@ -115,6 +116,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
     private abort: AbortController | undefined;
     private title = "";
     private readonly hub = new HubClient();
+    private turnNo = 0;
 
     constructor(
         readonly backend: string,
@@ -142,6 +144,16 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 });
             }
         }
+        // Initialise the lossless git-backed ledger for this session and seed
+        // it with any resumed messages (best-effort; never blocks the session).
+        void ledger.ensureLedger(this.sessionId, this.ledgerMeta()).then(() => {
+            if (resumed && !ledger.readMessages(this.sessionId).length) {
+                for (const m of this.messages) {
+                    ledger.appendMessage(this.sessionId, { role: m.role, content: m.content, turn: 0 });
+                }
+                void ledger.commitTurn(this.sessionId, "resume — seeded from store");
+            }
+        });
         queueMicrotask(() => this.emit("event", { kind: "session", sessionId: this.sessionId, model: this.model() }));
     }
 
@@ -151,6 +163,22 @@ class OpenAISession extends EventEmitter implements AgentSession {
             cwd: this.options.cwd, model: this.model(), updatedAt: new Date().toISOString(),
             messages: this.messages,
         });
+    }
+
+    private safePersist(): void {
+        try {
+            this.persist();
+        } catch (error) {
+            this.emit("event", { kind: "error", message: `failed to persist session: ${error instanceof Error ? error.message : String(error)}` });
+        }
+    }
+
+    private ledgerMeta(): import("../ledger").LedgerMeta {
+        return {
+            id: this.sessionId, backend: this.backend, title: this.title,
+            cwd: this.options.cwd, model: this.model(),
+            reasoning: this.options.reasoning,
+        };
     }
 
     private model(): string {
@@ -243,13 +271,18 @@ class OpenAISession extends EventEmitter implements AgentSession {
         const last = this.messages[this.messages.length - 1];
         if (last && last.role === "user") {
             this.messages.push({ role: "assistant", content: "(turno anterior interrompido)" });
+            ledger.appendMessage(this.sessionId, { role: "assistant", content: "(turno anterior interrompido)", turn: this.turnNo });
         }
         for (const p of preamble ?? []) {
-            if (p && p.trim()) { this.messages.push({ role, content: p }); }
+            if (p && p.trim()) {
+                this.messages.push({ role, content: p });
+                ledger.appendMessage(this.sessionId, { role, content: p, turn: this.turnNo + 1 });
+            }
         }
         this.messages.push({ role: "user", content: text });
+        ledger.appendMessage(this.sessionId, { role: "user", content: text, turn: this.turnNo + 1 });
         if (!this.title) { this.title = text.trim().slice(0, 60); }
-        this.persist();
+        this.safePersist();
         void this.run();
     }
 
@@ -404,7 +437,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 this.emit("event", { kind: "error", message: error instanceof Error ? error.message : String(error) });
             }
         }
-        this.persist();
+        this.safePersist();
         this.emit("event", { kind: "turn-end" });
     }
 

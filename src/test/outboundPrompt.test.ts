@@ -85,3 +85,43 @@ test("buildOutboundPrompt resets autonomy flag when user returns", () => {
     assert.equal(out.text.includes(AUTONOMY_PREAMBLE), false);
     assert.equal(out.state.autonomyInjected, false);
 });
+
+test("buildOutboundPrompt injects current session id note once", () => {
+    const first = buildOutboundPrompt({
+        text: "Continue from here",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: true,
+        seedInjected: true,
+        autonomyInjected: false,
+        sessionIdInjected: false,
+        sessionId: "7abe6ecfeee349208d0171a11ee8fd80",
+    });
+    assert.match(first.text, /\[session: 7abe6ecfeee349208d0171a11ee8fd80\]/);
+    assert.equal(first.state.sessionIdInjected, true);
+
+    const second = buildOutboundPrompt({
+        text: "More",
+        fileAttachments: [],
+        ...first.state,
+        sessionId: "7abe6ecfeee349208d0171a11ee8fd80",
+    });
+    assert.equal(second.text.includes("[session:"), false);
+});
+
+test("role-aware backends receive session note as developer preamble, not user text", () => {
+    const out = buildOutboundPrompt({
+        text: "Investigate",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: true,
+        seedInjected: true,
+        autonomyInjected: false,
+        sessionIdInjected: false,
+        sessionId: "54c22186a57a42058de358784ffd192b",
+        asRoles: true,
+    });
+    assert.equal(out.text, "Investigate");
+    assert.equal(out.preamble.length, 1);
+    assert.match(out.preamble[0], /\[session: 54c22186a57a42058de358784ffd192b\]/);
+});

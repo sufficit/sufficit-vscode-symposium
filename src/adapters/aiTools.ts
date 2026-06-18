@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as vscode from "vscode";
+import { readSession, dumpToText } from "../sessionReader";
 
 /**
  * Sufficit memory + web tools exposed to OpenAI-compatible models as function
@@ -175,6 +176,22 @@ export const LOCAL_TOOLS: OpenAITool[] = [
                 type: "object",
                 properties: { url: { type: "string", description: "Absolute URL (http/https) to display." } },
                 required: ["url"],
+            },
+        },
+    },
+    {
+        type: "function",
+        function: {
+            name: "read_session",
+            description: "Read the full conversation transcript of a Symposium chat session by its GUID. Omit `id` to read the CURRENT session (always available — see the [session: <guid>] note in your context). Use this to recover earlier context that may have been compacted/summarized out of your working memory. The transcript is read losslessly from the session ledger when available.",
+            parameters: {
+                type: "object",
+                properties: {
+                    id: { type: "string", description: "Session GUID. Omit to read the current session." },
+                    tail: { type: "integer", description: "Return only the last N messages (default: all)." },
+                    max_chars: { type: "integer", description: "Cap on characters returned (default 24000)." },
+                },
+                required: [],
             },
         },
     },
@@ -420,6 +437,16 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             if (!/^https?:\/\//i.test(url)) { return JSON.stringify({ error: "url must start with http(s)://" }); }
             await vscode.commands.executeCommand("simpleBrowser.show", url);
             return JSON.stringify({ opened: url });
+        }
+        // ---- session memory (read-only, allowed in plan mode) ----
+        if (name === "read_session") {
+            const id = String(args.id ?? "").trim() || ctx.sessionId;
+            if (!id) { return JSON.stringify({ error: "no session id (none provided and no current session)" }); }
+            const dump = readSession(id);
+            if (dump.source === "none") { return JSON.stringify({ error: `session ${id} not found on disk` }); }
+            const tail = typeof args.tail === "number" ? args.tail : undefined;
+            const maxChars = typeof args.max_chars === "number" ? args.max_chars : undefined;
+            return dumpToText(dump, { tail, maxChars });
         }
         // ---- local workspace tools (shell / filesystem) ----
         if (name === "shell") {

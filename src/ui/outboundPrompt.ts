@@ -4,6 +4,7 @@ export interface OutboundPromptState {
     seedInjected: boolean;
     autonomyInjected: boolean;
     rtkInjected?: boolean;
+    sessionIdInjected?: boolean;
 }
 
 export interface BuildOutboundPromptOptions extends OutboundPromptState {
@@ -14,6 +15,11 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
     autonomy?: string;
     /** True when the backend can execute shell commands where rtk is useful. */
     rtk?: boolean;
+    /**
+     * Current chat session GUID. Injected once so the agent always knows which
+     * Symposium session it is in and can call `read_session` to recover context.
+     */
+    sessionId?: string;
     /**
      * When true (role-aware backends, e.g. the HTTP Sufficit AI), the one-shot
      * preambles are returned in `preamble` to be sent as `developer` messages
@@ -26,6 +32,12 @@ export const CANCELED_RETRY_PREAMBLE =
     "[Operational rule] If any tool, command or step returns a status/error containing \"canceled\" or \"cancelled\", do not immediately retry. " +
     "First inspect the tool's own message/output and classify whether it was a manual user cancellation, a timeout, a deterministic error, or a transient issue. " +
     "If it looks like a manual cancellation, stop and acknowledge it. Retry only when the tool message gives a concrete reason that rerunning may succeed, and explain that reason before rerunning. Never rerun solely because the status says canceled.";
+
+/** One-shot note telling the agent which Symposium session it is in. */
+export function sessionIdNote(id: string): string {
+    return `[session: ${id}] You are in this Symposium chat session. ` +
+        `Call the read_session tool (with no arguments, or this id) at any time to re-read this conversation's full transcript and recover context. You will never lose track of which session you are in.`;
+}
 
 // Injected once when the user marks themselves "away": full autonomy, no prompts.
 
@@ -54,11 +66,16 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
         seedInjected: options.seedInjected,
         autonomyInjected: options.autonomyInjected,
         rtkInjected: options.rtkInjected ?? false,
+        sessionIdInjected: options.sessionIdInjected ?? false,
     };
 
     if (!state.policyInjected) {
         prefixes.push(CANCELED_RETRY_PREAMBLE);
         state.policyInjected = true;
+    }
+    if (!state.sessionIdInjected && options.sessionId) {
+        prefixes.push(sessionIdNote(options.sessionId));
+        state.sessionIdInjected = true;
     }
     if (options.autonomy === "away" && !state.autonomyInjected) {
         prefixes.push(AUTONOMY_PREAMBLE);

@@ -35,6 +35,7 @@ export class ChatController {
     private autonomyInjected = false;
     private seedInjected = false;
     private rtkInjected = false;
+    private sessionIdInjected = false;
     private queueSeq = 0;
     // Files this session edited and their net +/- — owned here so it survives
     // view switches (the runtime keeps the controller alive) and approval state
@@ -342,6 +343,8 @@ export class ChatController {
             seedInjected: this.seedInjected,
             autonomyInjected: this.autonomyInjected,
             rtkInjected: this.rtkInjected,
+            sessionIdInjected: this.sessionIdInjected,
+            sessionId: this.sessionId,
             rtk: true,
             todoInjection: this.adapter.hasNativeTodo?.() === false ? this.adapter.todoInjection?.() : undefined,
             seedHistory: this.options.seedHistory,
@@ -353,11 +356,26 @@ export class ChatController {
         this.seedInjected = outbound.state.seedInjected;
         this.autonomyInjected = outbound.state.autonomyInjected;
         this.rtkInjected = !!outbound.state.rtkInjected;
+        this.sessionIdInjected = !!outbound.state.sessionIdInjected;
         if (!this.firstTitle && msg.text.trim()) { this.firstTitle = msg.text.trim().slice(0, 60); }
         this.busy = true;
         this.onStatusChange?.();
         this.emit({ type: "user", text: msg.text, attachments: msg.attachments });
-        this.session.send(outbound.text, images, outbound.preamble);
+        try {
+            this.session.send(outbound.text, images, outbound.preamble);
+        } catch (error) {
+            // A synchronous adapter failure (for example transcript persistence or
+            // process spawn setup) must never leave the controller permanently
+            // busy. Surface the error and continue draining queued messages.
+            this.busy = false;
+            this.onStatusChange?.();
+            this.emit({ type: "event", event: { kind: "error", message: error instanceof Error ? error.message : String(error) } });
+            const next = this.queue.shift();
+            if (next) {
+                this.emitQueue();
+                this.dispatch(next);
+            }
+        }
     }
 
     private onEvent(event: AgentEvent): void {
