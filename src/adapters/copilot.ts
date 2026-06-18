@@ -11,6 +11,7 @@ import { TODO_INJECTION } from "./todos";
 import {
     AgentAdapter,
     AgentSession,
+    HistoryMessage,
     SessionInfo,
     SessionStartOptions,
     SlashCommand,
@@ -39,6 +40,122 @@ function buildMcpConfigFile(cfg: { playwright?: boolean; mcpServers?: Record<str
         fs.writeFileSync(file, JSON.stringify({ mcpServers: servers }, null, 2), "utf8");
         return file;
     } catch { return undefined; }
+}
+
+
+function candidateWorkspaceStorageRoots(): string[] {
+    const h = os.homedir();
+    return [
+        path.join(h, ".config", "Code", "User", "workspaceStorage"),
+        path.join(h, ".local", "share", "code-server", "User", "workspaceStorage"),
+    ];
+}
+
+function walkJsonl(dir: string): string[] {
+    const out: string[] = [];
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+    for (const e of entries) {
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) { out.push(...walkJsonl(p)); }
+        else if (e.isFile() && e.name.endsWith(".jsonl")) { out.push(p); }
+    }
+    return out;
+}
+
+function copilotTranscriptFiles(): string[] {
+    const files: string[] = [];
+    for (const root of candidateWorkspaceStorageRoots()) {
+        let workspaces: fs.Dirent[];
+        try { workspaces = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
+        for (const ws of workspaces) {
+            if (!ws.isDirectory()) { continue; }
+            const transcriptDir = path.join(root, ws.name, "GitHub.copilot-chat", "transcripts");
+            files.push(...walkJsonl(transcriptDir));
+        }
+    }
+    return [...new Set(files)];
+}
+
+function parseTimestamp(value: unknown): number | undefined {
+    if (typeof value === "number") { return value; }
+    if (typeof value === "string") {
+        const t = Date.parse(value);
+        return Number.isFinite(t) ? t : undefined;
+    }
+    return undefined;
+}
+
+function transcriptSummary(file: string): SessionInfo | undefined {
+    const sessionId = path.basename(file, ".jsonl");
+    let title = "Copilot Chat";
+    let firstUser = "";
+    let updated = 0;
+    try {
+        const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+        for (const line of lines) {
+            if (!line.trim()) { continue; }
+            let ev: any;
+            try { ev = JSON.parse(line); } catch { continue; }
+            const ts = parseTimestamp(ev.timestamp);
+            if (ts && ts > updated) { updated = ts; }
+            if (!firstUser && ev.type === "user.message") {
+                const c = ev.data?.content;
+                if (typeof c === "string" && c.trim()) {
+                    firstUser = c.trim();
+                    title = firstUser.slice(0, 80);
+                }
+            }
+        }
+    } catch { return undefined; }
+    return {
+        backend: "copilot",
+        sessionId,
+        title,
+        updatedAt: updated ? new Date(updated) : undefined,
+        transcriptPath: file,
+    };
+}
+
+function parseToolArgs(raw: unknown): string | undefined {
+    if (typeof raw !== "string" || !raw.trim()) { return undefined; }
+    try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+}
+
+function toolDetail(name: string, args: string | undefined): string {
+    if (!args) { return name; }
+    try {
+        const o = JSON.parse(args);
+        return String(o.explanation || o.description || o.goal || o.command || o.filePath || o.path || o.query || name).slice(0, 160);
+    } catch { return name; }
+}
+
+function transcriptHistory(file: string): HistoryMessage[] {
+    const out: HistoryMessage[] = [];
+    try {
+        for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+            if (!line.trim()) { continue; }
+            let ev: any;
+            try { ev = JSON.parse(line); } catch { continue; }
+            const ts = parseTimestamp(ev.timestamp);
+            if (ev.type === "user.message") {
+                const content = ev.data?.content;
+                if (typeof content === "string" && content.trim()) { out.push({ role: "user", text: content, ts }); }
+                continue;
+            }
+            if (ev.type === "assistant.message") {
+                const content = ev.data?.content;
+                if (typeof content === "string" && content.trim()) { out.push({ role: "assistant", text: content, ts }); }
+                for (const t of ev.data?.toolRequests ?? []) {
+                    const name = String(t.name || "tool");
+                    const input = parseToolArgs(t.arguments);
+                    out.push({ role: "tool", text: name, toolName: name, detail: toolDetail(name, input), input, ts });
+                }
+                continue;
+            }
+        }
+    } catch { /* ignore */ }
+    return out;
 }
 
 /**
@@ -181,12 +298,21 @@ export class CopilotAdapter implements AgentAdapter {
     }
 
     /**
-     * Copilot stores sessions in a SQLite db (~/.copilot/session-store.db)
-     * and exposes no list command; until the ACP integration lands, only
-     * live sessions (created in this window) can be resumed.
+     * Copilot CLI itself does not expose a list command, but VS Code Copilot
+     * Chat stores transcripts in workspaceStorage/GitHub.copilot-chat. Import
+     * those as read/history sessions so Symposium's list matches the native
+     * Copilot Chat sessions view (including code-server).
      */
     async listSessions(): Promise<SessionInfo[]> {
-        return [];
+        return copilotTranscriptFiles()
+            .map(transcriptSummary)
+            .filter((x): x is SessionInfo => !!x)
+            .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+    }
+
+    async history(info: SessionInfo): Promise<HistoryMessage[]> {
+        const file = info.transcriptPath ?? copilotTranscriptFiles().find((p) => path.basename(p, ".jsonl") === info.sessionId);
+        return file ? transcriptHistory(file) : [];
     }
 
     start(options: SessionStartOptions): AgentSession {
