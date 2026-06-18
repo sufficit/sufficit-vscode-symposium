@@ -827,6 +827,9 @@ export function renderHtml(): string {
                 <button id="addContext" class="iconBtn" title="Attach files">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>
                 </button>
+                <button id="addBrowserPage" class="iconBtn" title="Anexar página do browser ao contexto">
+                    <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM2 8h2.05c.08-1.4.36-2.66.78-3.6A6 6 0 0 0 2 8Zm2.05 1H2a6 6 0 0 0 2.83 3.6c-.42-.94-.7-2.2-.78-3.6Zm1 0c.1 1.6.46 2.9.9 3.66.2.34.38.5.55.6V9H5.05Zm0-1H7.5V4.74c-.17.1-.36.26-.55.6-.44.76-.8 2.06-.9 3.66ZM8.5 4.74V8h2.45c-.1-1.6-.46-2.9-.9-3.66-.2-.34-.38-.5-.55-.6ZM11.95 8H14a6 6 0 0 0-2.83-3.6c.42.94.7 2.2.78 3.6Zm0 1c-.08 1.4-.36 2.66-.78 3.6A6 6 0 0 0 14 9h-2.05ZM8.5 9v4.26c.17-.1.36-.26.55-.6.44-.76.8-2.06.9-3.66H8.5Z"/></svg>
+                </button>
                 <button id="configBtn" class="iconBtn" title="Tools & configuration">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 3a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 3Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Zm6 4.5a2 2 0 0 1 3.9-.5H14v1h-2.1A2 2 0 0 1 8 8Zm-6 .5h4.2a2 2 0 0 0 0-1H2v1Zm2 4.5a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 13Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Z"/></svg>
                 </button>
@@ -2484,6 +2487,8 @@ export function renderHtml(): string {
     // While a turn runs the button stops it; otherwise it sends.
     sendBtn.addEventListener("click", () => { if (busy) { vscode.postMessage({ type: "cancel" }); } else { send(); } });
     addContext.addEventListener("click", () => vscode.postMessage({ type: "pick-attachments" }));
+    const addBrowserPage = document.getElementById("addBrowserPage");
+    if (addBrowserPage) { addBrowserPage.addEventListener("click", () => vscode.postMessage({ type: "attach-browser-page" })); }
     input.addEventListener("keydown", (e) => {
         if (slashActive()) {
             if (e.key === "ArrowDown") { e.preventDefault(); slashSel = (slashSel + 1) % slashMatches.length; renderSlash(); return; }

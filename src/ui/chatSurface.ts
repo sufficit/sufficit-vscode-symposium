@@ -169,6 +169,38 @@ export class ChatSurface {
         this.post({ type: "tasks", items, project: sessionId });
     }
 
+    /**
+     * Attaches the content of a VS Code integrated-browser page as a context
+     * file. Invokes the built-in open_browser_page tool (prompts the user to
+     * share the open page), captures its snapshot, and adds it as a composer chip.
+     */
+    private async attachBrowserPage(): Promise<void> {
+        const lm = (vscode as unknown as { lm?: { invokeTool?: (n: string, o: unknown, t: unknown) => Promise<{ content: unknown[] }> } }).lm;
+        if (!lm?.invokeTool) {
+            void vscode.window.showWarningMessage("VS Code não expõe tools de browser (open_browser_page) nesta versão.");
+            return;
+        }
+        const cts = new vscode.CancellationTokenSource();
+        try {
+            const r = await lm.invokeTool("open_browser_page",
+                { input: {}, toolInvocationToken: undefined } as vscode.LanguageModelToolInvocationOptions<object>, cts.token);
+            const text = (r.content as any[]).map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : "")).join("\n").trim();
+            if (!text || /opted not to share|no .*page/i.test(text)) {
+                void vscode.window.showInformationMessage("Nenhuma página do browser compartilhada.");
+                return;
+            }
+            const dir = path.join(os.homedir(), ".symposium", "context");
+            fs.mkdirSync(dir, { recursive: true });
+            const file = path.join(dir, `browser-page-${Date.now()}.md`);
+            fs.writeFileSync(file, "# Página do browser (VS Code)\n\n" + text, "utf8");
+            this.post({ type: "attachments-picked", files: [{ path: file, name: "browser-page.md" }] });
+        } catch (err) {
+            void vscode.window.showErrorMessage(`Falha ao anexar a página: ${err instanceof Error ? err.message : err}`);
+        } finally {
+            cts.dispose();
+        }
+    }
+
     private async onMessage(message: any): Promise<void> {
         symposiumLog(`[surface] <- webview: ${message?.type}${message?.type === "send" ? ` (${(message.text ?? "").length} chars)` : ""}`);
         try {
@@ -191,6 +223,10 @@ export class ChatSurface {
                 }
                 case "webview-error": {
                     symposiumLog(`[webview] ERROR: ${message.message}`);
+                    return;
+                }
+                case "attach-browser-page": {
+                    await this.attachBrowserPage();
                     return;
                 }
                 case "account-login": {
