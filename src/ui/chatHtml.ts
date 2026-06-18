@@ -368,6 +368,30 @@ export function renderHtml(): string {
         font-size: var(--vscode-editor-font-size, 0.9em); white-space: pre;
         color: var(--vscode-editor-foreground, var(--vscode-foreground));
     }
+    .tagblock {
+        margin: 8px 0; border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 28%, transparent);
+        border-radius: 8px; background: color-mix(in srgb, var(--vscode-editorWidget-background, #2d2d2d) 82%, transparent);
+        overflow: hidden;
+    }
+    .tagblock summary {
+        cursor: pointer; display: flex; align-items: center; gap: 8px;
+        padding: 6px 9px; user-select: none;
+        color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+    }
+    .tagblock summary:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.12)); }
+    .tagblock .tagtitle { text-transform: capitalize; font-weight: 600; color: var(--vscode-foreground); }
+    .tagblock .tagbadge {
+        margin-left: auto; font-size: 0.72em; padding: 1px 6px; border-radius: 999px;
+        color: var(--vscode-badge-foreground); background: var(--vscode-badge-background); opacity: 0.85;
+    }
+    .tagblock pre {
+        margin: 0; padding: 8px 10px; max-height: 220px; overflow: auto;
+        border-top: 1px solid var(--vscode-input-border, rgba(128,128,128,0.25));
+        background: var(--vscode-textCodeBlock-background, rgba(128,128,128,0.08));
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-size: calc(var(--vscode-editor-font-size, 13px) * 0.92);
+        white-space: pre-wrap;
+    }
     .tool { opacity: 0.6; font-size: 0.9em; padding-left: 4px; font-family: var(--vscode-editor-font-family, monospace); }
     /* tool invocation row — native-chat look: icon + verb + muted target */
     .toolrow {
@@ -1422,6 +1446,17 @@ export function renderHtml(): string {
         const flushList = () => { list = null; };
         while (i < lines.length) {
             const line = lines[i];
+            const codexTag = codexTagStart(line);
+            if (codexTag) {
+                flushList();
+                i++;
+                const body = [];
+                const close = "</" + codexTag + ">";
+                while (i < lines.length && lines[i].trim() !== close) { body.push(lines[i]); i++; }
+                if (i < lines.length && lines[i].trim() === close) i++;
+                container.appendChild(tagBlock(codexTag, body.join("\n")));
+                continue;
+            }
             const fence = line.match(/^\`\`\`(\\w*)\\s*$/);
             if (fence) {
                 flushList();
@@ -1522,6 +1557,34 @@ export function renderHtml(): string {
         const pre = document.createElement("pre"); const c = document.createElement("code"); c.textContent = code; pre.appendChild(c);
         block.appendChild(head); block.appendChild(pre);
         return block;
+    }
+
+    function tagBlock(tag, body) {
+        const wrap = document.createElement("details");
+        wrap.className = "tagblock";
+        const sum = document.createElement("summary");
+        const title = document.createElement("span");
+        title.className = "tagtitle";
+        title.textContent = tag.replace(/_/g, " ");
+        const badge = document.createElement("span");
+        badge.className = "tagbadge";
+        badge.textContent = "codex context";
+        sum.appendChild(title); sum.appendChild(badge);
+        const pre = document.createElement("pre");
+        pre.textContent = body.trim();
+        wrap.appendChild(sum); wrap.appendChild(pre);
+        return wrap;
+    }
+
+    function codexTagStart(line) {
+        const t = line.trim();
+        const m = t.match(/^<([A-Za-z][A-Za-z0-9_-]*)(?:\s[^>]*)?>\s*$/);
+        if (!m) return null;
+        const tag = m[1];
+        // Only structural wrapper tags get special rendering. Keep HTML-ish
+        // inline tags in prose untouched (e.g. <b>, <code>, <c>, <bool>).
+        if (tag.indexOf("_") >= 0 || /^(environment|context|instructions|user|developer|system|collaboration|workspace|task|approval|sandbox|model|reasoning)$/i.test(tag)) return tag;
+        return null;
     }
 
     // inline: **bold**, *italic*, \`code\`, [text](url) — builds text nodes safely
