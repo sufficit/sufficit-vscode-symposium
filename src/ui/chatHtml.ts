@@ -1746,6 +1746,9 @@ export function renderHtml(): string {
     };
     // Live tool rows awaiting their result, keyed by tool id.
     const toolRows = {};
+    // Tools that change a file on disk → clicking the target opens a diff.
+    // Read-only tools (Read/read_file/Grep/...) just open the file.
+    const MUTATING_TOOLS = new Set(["Write","Edit","MultiEdit","NotebookEdit","write_file"]);
     const TAB = String.fromCharCode(9);
     function allDigits(s) { return s.length > 0 && [...s].every((ch) => ch >= "0" && ch <= "9"); }
     // Pretty-print a string that is valid JSON (object/array) with 2-space
@@ -1856,8 +1859,9 @@ export function renderHtml(): string {
             // A file-referencing tool: make the target a link (click = diff,
             // right-click = open file / open diff menu).
             if (opts.path) {
-                tg.classList.add("tLink"); tg.title = opts.path + " — click for diff, right-click for more";
-                tg.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "file-diff", path: opts.path }); });
+                const mut = MUTATING_TOOLS.has(name);
+                tg.classList.add("tLink"); tg.title = opts.path + (mut ? " — click for diff, right-click for more" : " — click to open, right-click for more");
+                tg.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: mut ? "file-diff" : "open-file", path: opts.path }); });
                 tg.addEventListener("contextmenu", (e) => showFileMenu(e, opts.path));
             }
             head.appendChild(tg);
