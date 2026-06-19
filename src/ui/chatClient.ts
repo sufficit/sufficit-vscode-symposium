@@ -547,10 +547,10 @@ export const chatClientJs = `
             tools.appendChild(edit);
         }
         if (role === "assistant") {
-            const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy this reply";
+            const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy reply + actions";
             cp.appendChild(svgIcon("copy"));
             cp.addEventListener("click", () => {
-                navigator.clipboard && navigator.clipboard.writeText(wrap._raw != null ? wrap._raw : text);
+                navigator.clipboard && navigator.clipboard.writeText(collectStepText(wrap));
                 cp.classList.add("done"); setTimeout(() => cp.classList.remove("done"), 1000);
             });
             tools.appendChild(cp);
@@ -582,6 +582,45 @@ export const chatClientJs = `
         autoScroll(stick);
     }
     function endStream() { streamMsg = null; streamBody = null; streamText = ""; endThinkingStream(); }
+
+    /**
+     * Build a plain-text representation of an assistant turn: message text +
+     * every tool call in the toolgroup(s) that immediately follow it in the log.
+     */
+    function collectStepText(msgWrap) {
+        const parts = [msgWrap._raw != null ? msgWrap._raw : ""];
+        let sib = msgWrap.nextElementSibling;
+        while (sib && sib.classList.contains("toolgroup")) {
+            const toolWraps = sib.querySelectorAll(".toolwrap");
+            for (const tw of toolWraps) {
+                const verb = tw.querySelector(".tVerb")?.textContent?.trim() ?? "";
+                const targetEl = tw.querySelector(".tTarget");
+                const target = (targetEl?.title || targetEl?.textContent || "").trim();
+                const secs = tw.querySelectorAll(".toolsec");
+                let inputText = "", resultText = "";
+                for (const sec of secs) {
+                    const label = sec.querySelector(".tlabel")?.textContent?.trim() ?? "";
+                    // numbered pre: join lcode spans; plain pre: textContent
+                    const pre = sec.querySelector("pre");
+                    let body = "";
+                    if (pre) {
+                        const lcodes = pre.querySelectorAll(".lcode");
+                        body = lcodes.length
+                            ? [...lcodes].map((n) => n.textContent).join("\n")
+                            : pre.textContent ?? "";
+                    }
+                    if (/input/i.test(label)) { inputText = body.trim(); }
+                    else if (/result/i.test(label)) { resultText = body.trim(); }
+                }
+                let toolLine = `\n\n[${verb}${target ? ": " + target : ""}]`;
+                if (inputText) { toolLine += `\nInput:\n${inputText.slice(0, 1000)}`; }
+                if (resultText) { toolLine += `\nResult:\n${resultText.slice(0, 1000)}`; }
+                parts.push(toolLine);
+            }
+            sib = sib.nextElementSibling;
+        }
+        return parts.join("");
+    }
 
     // Streaming thinking blocks (extended reasoning).
     let streamThink = null, streamThinkBody = null, streamThinkLen = null, streamThinkText = "";
