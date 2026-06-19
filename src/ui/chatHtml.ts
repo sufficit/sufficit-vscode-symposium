@@ -292,6 +292,14 @@ export function renderHtml(): string {
     .msgCopy.done { opacity: 1 !important; color: var(--vscode-charts-green, #89d185); }
     .msgCopy svg { width: 13px; height: 13px; }
 
+    .loadOlder {
+        display: block; margin: 8px auto; padding: 4px 12px;
+        font-size: 11px; cursor: pointer;
+        color: var(--vscode-textLink-foreground);
+        background: transparent; border: 1px solid var(--vscode-widget-border, rgba(128,128,128,0.3));
+        border-radius: 12px;
+    }
+    .loadOlder:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
     .branchBanner {
         display: flex; align-items: flex-start; gap: 10px;
         margin: 10px 0 14px 0; padding: 10px 12px;
@@ -1291,6 +1299,83 @@ export function renderHtml(): string {
     log.addEventListener("scroll", updateScrollBtn);
     scrollBtn = document.getElementById("scrollBottom");
     if (scrollBtn) { scrollBtn.addEventListener("click", scrollToBottom); }
+
+    // --- Lazy history rendering ---------------------------------------------
+    // Render the most recent messages first (so the session opens at the latest
+    // turn), keeping older messages pending. When the user scrolls to the top a
+    // "load older" sentinel renders the previous chunk and prepends it, keeping
+    // scroll position stable. This avoids building huge transcripts oldest-first.
+    const HISTORY_BATCH = 30;
+    let pendingHistory = [];      // older messages not yet rendered (chronological)
+    let historyCarried = false;
+    let loadOlderBtn = null;
+
+    function renderOneHistory(m) {
+        if (m.role === "user") { message("user", m.text, m.ts); }
+        else if (m.role === "tool") { renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path, diff: m.diff }); }
+        else if (m.role === "error") { append("error", "\u2716 " + m.text); }
+        else { message("assistant", m.text, m.ts); }
+    }
+
+    // Move the last count freshly-appended nodes to the top of the log, before
+    // the load-older button. Used to prepend an older chunk in correct order.
+    function prependLastNodes(count) {
+        const kids = Array.prototype.slice.call(log.children);
+        const moved = [];
+        for (let i = kids.length - 1, n = 0; i >= 0 && n < count; i--) {
+            const el = kids[i];
+            if (el === loadOlderBtn) { continue; }
+            moved.unshift(el); n++;
+        }
+        const ref = loadOlderBtn ? loadOlderBtn.nextSibling : log.firstChild;
+        for (const el of moved) { log.insertBefore(el, ref); }
+    }
+
+    function ensureLoadOlderBtn() {
+        if (loadOlderBtn) { return; }
+        loadOlderBtn = document.createElement("button");
+        loadOlderBtn.className = "loadOlder";
+        loadOlderBtn.textContent = "Load older messages";
+        loadOlderBtn.addEventListener("click", loadOlderChunk);
+        log.insertBefore(loadOlderBtn, log.firstChild);
+    }
+    function removeLoadOlderBtn() {
+        if (loadOlderBtn && loadOlderBtn.parentNode) { loadOlderBtn.parentNode.removeChild(loadOlderBtn); }
+        loadOlderBtn = null;
+    }
+
+    function loadOlderChunk() {
+        if (!pendingHistory.length) { removeLoadOlderBtn(); return; }
+        const prevH = log.scrollHeight, prevTop = log.scrollTop;
+        const chunk = pendingHistory.splice(Math.max(0, pendingHistory.length - HISTORY_BATCH));
+        const before = log.children.length;
+        for (const m of chunk) { renderOneHistory(m); }
+        const added = log.children.length - before;
+        prependLastNodes(added);
+        if (pendingHistory.length) { ensureLoadOlderBtn(); } else { removeLoadOlderBtn(); }
+        // keep the viewport anchored on what the user was reading
+        log.scrollTop = prevTop + (log.scrollHeight - prevH);
+        updateScrollBtn();
+    }
+
+    function renderHistoryBatch(messages, carried) {
+        pendingHistory = [];
+        historyCarried = carried;
+        removeLoadOlderBtn();
+        const recent = messages.length > HISTORY_BATCH ? messages.slice(messages.length - HISTORY_BATCH) : messages;
+        pendingHistory = messages.length > HISTORY_BATCH ? messages.slice(0, messages.length - HISTORY_BATCH) : [];
+        for (const m of recent) { renderOneHistory(m); }
+        if (!carried) {
+            append("meta", messages.length ? "\u2014 end of stored transcript \u2014" : "(empty transcript)");
+        }
+        if (pendingHistory.length) { ensureLoadOlderBtn(); }
+        scrollToBottom();   // land at the latest message when a session opens
+    }
+
+    // Auto-load older when the user scrolls near the top.
+    log.addEventListener("scroll", () => {
+        if (loadOlderBtn && log.scrollTop < 40) { loadOlderChunk(); }
+    });
     // Show the empty-state placeholder when the log has no messages yet.
     function refreshEmpty() { root.classList.toggle("empty", log.childElementCount === 0); }
 
@@ -2890,18 +2975,11 @@ export function renderHtml(): string {
                 if (data.carried && data.branchLabel) {
                     branchBanner(data.branchLabel.title, data.branchLabel.detail);
                 }
-                for (const m of data.messages) {
-                    if (m.role === "user") message("user", m.text, m.ts);
-                    else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path, diff: m.diff });
-                    else if (m.role === "error") append("error", "✖ " + m.text);
-                    else message("assistant", m.text, m.ts);
-                }
-                // carried history is a handoff replay shown inline as a
-                // continuous conversation — no "stored transcript" framing.
-                if (!data.carried) {
-                    append("meta", data.messages.length ? "— end of stored transcript —" : "(empty transcript)");
-                }
-                scrollToBottom();   // land at the latest message when a session opens
+                // Lazy history: render only the most recent batch immediately and
+                // keep older messages pending, prepended on scroll-to-top. This
+                // lands the view on the latest message right away instead of
+                // building the whole transcript oldest-first.
+                renderHistoryBatch(data.messages || [], !!data.carried);
                 break;
             }
             case "backends": {
