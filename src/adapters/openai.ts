@@ -415,7 +415,11 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 }
 
                 if (toolCalls.length === 0) {
-                    if (text) { this.messages.push({ role: "assistant", content: text, model: this.model() }); }
+                    // Always record an assistant turn, even when the model returned
+                    // empty text (reasoning-only / empty content). Skipping it leaves
+                    // a dangling user/developer turn; Anthropic-backed gateways then
+                    // 400 on the next message because roles no longer alternate.
+                    this.messages.push({ role: "assistant", content: text || "", model: this.model() });
                     hitCap = false;
                     break;
                 }
