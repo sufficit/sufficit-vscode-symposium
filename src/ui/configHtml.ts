@@ -17,6 +17,7 @@ export function renderConfigHtml(): string {
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
 <style>
+    *:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
     body {
         font-family: var(--vscode-font-family);
         font-size: var(--vscode-font-size, 13px);
@@ -38,11 +39,14 @@ export function renderConfigHtml(): string {
         font: inherit; color: var(--vscode-button-foreground);
         background: var(--vscode-button-background); border: none;
         padding: 4px 10px; border-radius: 3px; cursor: pointer;
+        transition: background 150ms ease, opacity 150ms ease;
     }
+    button:hover { background: var(--vscode-button-hoverBackground); }
     button.secondary {
         color: var(--vscode-button-secondaryForeground);
         background: var(--vscode-button-secondaryBackground);
     }
+    button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); opacity: 0.85; }
     nav { display: flex; gap: 2px; padding: 8px 14px 0; border-bottom: 1px solid var(--vscode-panel-border); }
     nav .tab {
         padding: 6px 12px; cursor: pointer; border: 1px solid transparent;
@@ -53,7 +57,7 @@ export function renderConfigHtml(): string {
     main { flex: 1; overflow: auto; padding: 12px 14px; }
     .row {
         display: flex; align-items: baseline; gap: 10px; padding: 7px 8px;
-        border-radius: 4px; cursor: pointer;
+        border-radius: 4px; cursor: pointer; transition: background 150ms ease;
     }
     .row:hover { background: var(--vscode-list-hoverBackground); }
     .row .name { font-weight: 600; }
@@ -77,6 +81,7 @@ export function renderConfigHtml(): string {
         border: 1px solid var(--vscode-input-border, transparent);
         padding: 3px 6px; border-radius: 3px;
     }
+    input:focus-visible, select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 0; }
     input.exec { min-width: 200px; }
     .profile { display: inline-flex; align-items: center; gap: 6px; }
     .profile img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
