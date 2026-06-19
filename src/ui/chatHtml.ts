@@ -73,14 +73,28 @@ export function renderHtml(): string {
     #root.loading #loadingState { display: flex; animation: ldFadeIn 0.22s ease; }
     #root.loading #log { display: none; }
     #loadingState .ldLogo {
-        width: 54px; height: 54px; border-radius: 14px; display: inline-flex;
-        align-items: center; justify-content: center;
-        background: var(--vscode-chat-avatarBackground, var(--vscode-badge-background, rgba(128,128,128,0.18)));
-        color: var(--vscode-icon-foreground, var(--vscode-foreground));
-        animation: ldPulse 2.2s ease-in-out infinite;
+        width: 56px; height: 56px; border-radius: 16px; display: inline-flex;
+        align-items: center; justify-content: center; position: relative;
+        background: linear-gradient(135deg, #7C3AED 0%, #4F46E5 50%, #2563EB 100%);
+        color: white;
+        box-shadow: 0 0 12px rgba(124, 58, 237, 0.4);
+        animation: bootLogoPulse 2.5s ease-in-out infinite;
     }
-    #loadingState .ldLogo svg { width: 28px; height: 28px; }
-    #loadingState .ldName { font-size: 0.95em; font-weight: 600; opacity: 0.85; }
+    #loadingState .ldLogo svg { width: 34px; height: 34px; }
+    #loadingState .ldLogo::after {
+        content: ""; position: absolute; inset: -5px; border-radius: 21px; padding: 2px; pointer-events: none;
+        background: conic-gradient(from var(--bootAng),
+            transparent 0deg, transparent 170deg,
+            rgba(167, 139, 250, 0.75) 230deg,
+            rgba(147, 197, 253, 0.95) 290deg,
+            #ffffff 320deg, transparent 360deg);
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        mask-composite: exclude;
+        animation: bootRingSpin 2s linear infinite;
+    }
+    #loadingState .ldName { font-size: 0.95em; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(90deg, #A78BFA, #60A5FA); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     #loadingState .ldSub { display: flex; align-items: center; gap: 7px; font-size: 0.82em; opacity: 0.5; }
     /* boot/startup screen: visible immediately on parse, hidden once a session resolves */
     #bootState {
@@ -163,8 +177,8 @@ export function renderHtml(): string {
         #composer.working::after { animation: none; opacity: 0.5; }
         #loadingState { animation: none; }
         #bootState .ldLogo, #loadingState .ldLogo { animation: none; opacity: 0.85; }
-        #bootState .bootLogo { animation: none; box-shadow: 0 0 0 2px rgba(124,58,237,0.5) inset; }
-        #bootState .bootLogo::after { animation: none; opacity: 0; }
+        #bootState .bootLogo, #loadingState .ldLogo { animation: none; box-shadow: 0 0 0 2px rgba(124,58,237,0.5) inset; }
+        #bootState .bootLogo::after, #loadingState .ldLogo::after { animation: none; opacity: 0; }
         #ctxMenu { animation: none; }
         .sessionItem .statusDot .work { animation: none; }
     }
@@ -290,6 +304,12 @@ export function renderHtml(): string {
     #ctxMenu .mi.active .milbl-text { color: var(--vscode-focusBorder); font-weight: 600; }
     #ctxMenu .mi .milbl-desc { font-size: 0.77em; opacity: 0.52; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
     #ctxMenu .mi .midetail { opacity: 0.5; font-size: 0.85em; flex-shrink: 0; }
+    #ctxMenu .mi .miacts { display: none; flex-shrink: 0; gap: 1px; }
+    #ctxMenu .mi:hover .miacts { display: inline-flex; }
+    #ctxMenu .mi .miact { background: none; border: none; cursor: pointer; padding: 2px 3px; border-radius: 3px; opacity: 0.55; display: inline-flex; color: inherit; }
+    #ctxMenu .mi .miact:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
+    #ctxMenu .mi .miact.on { opacity: 0.9; color: var(--vscode-focusBorder, #7C3AED); }
+    #ctxMenu .mi .miact svg { width: 13px; height: 13px; }
 
     /* ---- chat column ---- */
     #chatCol { order: 3; flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -330,6 +350,10 @@ export function renderHtml(): string {
     #composer.editing { box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); border-radius: 6px; }
     #composer.editing #input::placeholder { color: var(--vscode-focusBorder); }
     .msg:hover .role .msgTime { opacity: 0.75; }
+    /* Role label hidden when same backend+model as prev assistant message; revealed on hover */
+    .role.rolePassive { max-height: 0; margin-bottom: 0; overflow: hidden; opacity: 0; pointer-events: none; transition: max-height 180ms ease, margin-bottom 180ms ease, opacity 180ms ease; }
+    .msg:hover .role.rolePassive { max-height: 28px; margin-bottom: 7px; opacity: 1; pointer-events: auto; }
+    @media (prefers-reduced-motion: reduce) { .role.rolePassive, .msg:hover .role.rolePassive { transition: none; } }
     .role .avatar {
         width: 19px; height: 19px; border-radius: 5px; flex-shrink: 0;
         display: inline-flex; align-items: center; justify-content: center;
@@ -744,6 +768,34 @@ export function renderHtml(): string {
     .retryBtn svg { width: 13px; height: 13px; }
     .meta { opacity: 0.55; font-size: 0.82em; text-align: center; margin: 10px 0; }
 
+    /* ---- thinking / extended reasoning block ---- */
+    .thinkWrap { margin: 4px -10px 8px -10px; padding: 0 10px; }
+    .thinkBlock {
+        border-left: 2px solid color-mix(in srgb, var(--vscode-focusBorder, #7C3AED) 60%, transparent);
+        border-radius: 0 4px 4px 0;
+        background: color-mix(in srgb, var(--vscode-focusBorder, #7C3AED) 5%, transparent);
+        overflow: hidden;
+    }
+    .thinkBlock summary { list-style: none; }
+    .thinkBlock summary::-webkit-details-marker { display: none; }
+    .thinkSum {
+        display: flex; align-items: center; gap: 6px; padding: 5px 10px; cursor: pointer;
+        font-size: 0.82em; font-weight: 600; opacity: 0.7; user-select: none;
+        color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+        transition: opacity 120ms ease;
+    }
+    .thinkSum:hover { opacity: 1; }
+    .thinkSum svg { width: 13px; height: 13px; flex-shrink: 0; color: var(--vscode-focusBorder, #7C3AED); }
+    .thinkChev { width: 10px; height: 10px; flex-shrink: 0; transition: transform 150ms ease; opacity: 0.6; }
+    details.thinkBlock[open] .thinkChev { transform: rotate(90deg); }
+    .thinkLen { margin-left: auto; font-weight: 400; opacity: 0.55; font-size: 0.88em; font-variant-numeric: tabular-nums; }
+    .thinkBody {
+        padding: 4px 12px 10px 12px; font-size: 0.88em; line-height: 1.6;
+        white-space: pre-wrap; word-break: break-word; opacity: 0.72;
+        color: var(--vscode-foreground); border-top: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #7C3AED) 20%, transparent);
+        max-height: 400px; overflow-y: auto;
+    }
+
     /* ---- slash command autocomplete ---- */
     #slash {
         position: absolute; z-index: 40; display: none;
@@ -967,7 +1019,7 @@ export function renderHtml(): string {
                 <button class="esCta" id="emptyNewSession"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>Nova conversa</button>
             </div>
             <div id="loadingState">
-                <div class="ldLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
+                <div class="ldLogo"><svg viewBox="0 0 24 24" fill="none"><rect x="1" y="1" width="15" height="10" rx="3" fill="white" fill-opacity="0.3"/><path d="M4 11 L2 15 L8 11 Z" fill="white" fill-opacity="0.3"/><rect x="8" y="11" width="15" height="10" rx="3" fill="white" fill-opacity="0.92"/><path d="M20 21 L22 24 L17 21 Z" fill="white" fill-opacity="0.92"/><circle cx="12" cy="16" r="1.3" fill="#7C3AED"/><circle cx="15.5" cy="16" r="1.3" fill="#4F46E5"/><circle cx="19" cy="16" r="1.3" fill="#3B82F6"/></svg></div>
                 <div class="ldName">Symposium</div>
                 <div class="ldSub"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
             </div>
@@ -1145,6 +1197,17 @@ export function renderHtml(): string {
                 mi.appendChild(tick); mi.appendChild(lbl);
                 if (o.detail) { const d = document.createElement("span"); d.className = "midetail"; d.textContent = o.detail; mi.appendChild(d); }
                 if (o.title) mi.title = o.title;
+                if (o.actions && o.actions.length) {
+                    const acts = document.createElement("span"); acts.className = "miacts";
+                    for (const act of o.actions) {
+                        const btn = document.createElement("button");
+                        btn.className = "miact" + (act.on ? " on" : "");
+                        btn.title = act.title; btn.innerHTML = act.icon;
+                        btn.addEventListener("click", (e) => { e.stopPropagation(); act.onClick(); });
+                        acts.appendChild(btn);
+                    }
+                    mi.appendChild(acts);
+                }
                 mi.addEventListener("click", () => onPick(o.value));
                 list.appendChild(mi);
                 shown++;
@@ -1198,7 +1261,9 @@ export function renderHtml(): string {
         ctxMenu.style.top = Math.max(4, r.top - h - 4) + "px";
     }
     let modelValue = "", modelList = [], reasoningValue = "default", reasoningList = [];
-    let reasoningDefault = "", modelDefault = "", modelLabels = {};
+    let reasoningDefault = "", modelDefault = "", modelLabels = {}, pinnedModels = [];
+    const SVG_PIN = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M11 1a1 1 0 0 0-1 1v1H6V2a1 1 0 0 0-2 0v1H3a1 1 0 0 0-1 1v2c0 2.21 1.79 4 4 4v3H5a1 1 0 0 0 0 2h6a1 1 0 0 0 0-2h-1V9.95c2.15-.32 4-2.12 4-3.95V4a1 1 0 0 0-1-1h-1V2a1 1 0 0 0-1-1Z"/></svg>';
+    const SVG_STAR = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.9 3.9 4.1.6-3 2.9.7 4.1-3.7-2-3.7 2 .7-4.1-3-2.9 4.1-.6Z"/></svg>';
     function modelLabel(id) { return (id && modelLabels[id]) || id; }
     const modelLbl = modelPicker.querySelector(".lbl");
     const reasoningLbl = reasoningPicker.querySelector(".lbl");
@@ -1207,14 +1272,33 @@ export function renderHtml(): string {
     function defLabel(configured) { return configured && configured !== "default" ? "default (" + configured + ")" : "default"; }
     function setModelLabel() { modelLbl.textContent = modelValue && modelValue !== "default" ? modelLabel(modelValue) : defLabel(modelDefault); }
     function setReasoningLabel() { reasoningLbl.textContent = reasoningValue && reasoningValue !== "default" ? "effort: " + reasoningValue : defLabel(reasoningDefault); }
+    function buildModelMenuOpts() {
+        const pinned = pinnedModels || [];
+        const rest = modelList.filter((m) => !pinned.includes(m));
+        const makeActions = (m) => m === "default" ? [] : [
+            { icon: SVG_PIN, title: pinned.includes(m) ? "Desafixar modelo" : "Fixar no topo", on: pinned.includes(m),
+              onClick: () => { vscode.postMessage({ type: "pin-model", model: m }); hideCtx(); } },
+            { icon: SVG_STAR, title: modelDefault === m ? "Remover como padrão" : "Definir como padrão para novas sessões", on: modelDefault === m,
+              onClick: () => { vscode.postMessage({ type: "set-model-default", model: modelDefault === m ? "" : m }); hideCtx(); } },
+        ];
+        const opts = [];
+        if (pinned.length) {
+            for (const m of pinned) {
+                opts.push({ value: m, label: modelLabel(m), group: "Fixados", actions: makeActions(m) });
+            }
+        }
+        for (const m of rest) {
+            opts.push({ value: m, label: m === "default" ? defLabel(modelDefault) : modelLabel(m), group: pinned.length ? "Todos" : undefined, actions: makeActions(m) });
+        }
+        return opts;
+    }
     modelPicker.addEventListener("click", (ev) => {
         ev.stopPropagation();
         if (modelPicker.disabled) return;
-        const opts = modelList.map((m) => ({ value: m, label: m === "default" ? defLabel(modelDefault) : modelLabel(m) }));
         // Always offer a manual entry so the user is never stuck when remote
         // discovery (GET /models) returned nothing — e.g. not logged in yet, or
         // the gateway answered 401. Picking it prompts for a free-form id.
-        openChoiceMenu(modelPicker, opts, modelValue, (v) => { modelValue = v; setModelLabel(); }, {
+        openChoiceMenu(modelPicker, buildModelMenuOpts(), modelValue, (v) => { modelValue = v; setModelLabel(); }, {
             refreshAction: { label: "Atualizar modelos", detail: "Refaz GET /models", onClick: () => vscode.postMessage({ type: "refresh-models" }) },
             manualEntry: { label: "Digitar modelo…", placeholder: "ex.: gpt-4o, claude-3-5-sonnet", onSubmit: (v) => { if (v && v.trim()) { modelValue = v.trim(); setModelLabel(); } } },
         });
@@ -1465,7 +1549,9 @@ export function renderHtml(): string {
     // is rendered as markdown.
     const BACKEND_NAMES = { claude: "Claude", codex: "Codex", copilot: "Copilot", openai: "Sufficit AI" };
     let conversationRows = [];
-    function message(role, text, ts) {
+    // Track last rendered assistant context to show role label only on change
+    let lastMsgBackend = "", lastMsgModel = "";
+    function message(role, text, ts, model) {
         const stick = nearBottom();
         endToolGroup();
         const wrap = document.createElement("div");
@@ -1476,6 +1562,11 @@ export function renderHtml(): string {
         const label = document.createElement("div");
         label.className = "role " + role;
         if (role === "assistant") {
+            const effectiveModel = model || activeModel || "";
+            const sameContext = currentBackend === lastMsgBackend && effectiveModel === lastMsgModel && lastMsgBackend !== "";
+            if (sameContext) { label.classList.add("rolePassive"); }
+            lastMsgBackend = currentBackend;
+            lastMsgModel = effectiveModel;
             const av = document.createElement("span"); av.className = "avatar"; av.appendChild(svgIcon("robot"));
             const name = document.createElement("span"); name.textContent = currentBackendName || BACKEND_NAMES[currentBackend] || "Agent";
             label.appendChild(av); label.appendChild(name);
@@ -1534,6 +1625,7 @@ export function renderHtml(): string {
     let streamMsg = null, streamBody = null, streamText = "";
     function streamDelta(text) {
         const stick = nearBottom();
+        endThinkingStream(); // close any open thinking block before first text token
         if (!streamMsg) {
             streamMsg = message("assistant", "", Date.now());
             streamBody = streamMsg.querySelector(".md");
@@ -1546,7 +1638,38 @@ export function renderHtml(): string {
         if (streamBody) { streamBody.textContent = ""; renderMarkdown(streamBody, streamText); }
         autoScroll(stick);
     }
-    function endStream() { streamMsg = null; streamBody = null; streamText = ""; }
+    function endStream() { streamMsg = null; streamBody = null; streamText = ""; endThinkingStream(); }
+
+    // Streaming thinking blocks (extended reasoning).
+    let streamThink = null, streamThinkBody = null, streamThinkLen = null, streamThinkText = "";
+    const THINK_ICON = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5A5.5 5.5 0 1 0 13.5 7c0-.67-.12-1.32-.35-1.92A2 2 0 0 1 11 6.5a2 2 0 0 1-2-2c0-.31.07-.6.19-.86A5.5 5.5 0 0 0 8 1.5ZM1 7a7 7 0 1 1 7.96 6.94 1.5 1.5 0 1 1-1.33-2.67A7 7 0 0 1 1 7Z"/></svg>';
+    function renderThinkBlock(text) {
+        const stick = nearBottom();
+        const wrap = document.createElement("div"); wrap.className = "msg thinkWrap";
+        const det = document.createElement("details"); det.className = "thinkBlock";
+        const sum = document.createElement("summary"); sum.className = "thinkSum";
+        const ic = document.createElement("span"); ic.innerHTML = THINK_ICON;
+        const lbl = document.createElement("span"); lbl.textContent = "Pensando…";
+        const chev = document.createElement("span"); chev.className = "thinkChev"; chev.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M6 3l5 5-5 5"/></svg>';
+        const len = document.createElement("span"); len.className = "thinkLen"; len.textContent = text.length + " chars";
+        sum.append(ic, lbl, chev, len);
+        const body = document.createElement("div"); body.className = "thinkBody"; body.textContent = text;
+        det.append(sum, body); wrap.append(det);
+        log.appendChild(wrap); refreshEmpty(); autoScroll(stick);
+        return { wrap, body, len };
+    }
+    function streamThinkingDelta(text) {
+        const stick = nearBottom();
+        if (!streamThink) {
+            const { wrap, body, len } = renderThinkBlock("");
+            streamThink = wrap; streamThinkBody = body; streamThinkLen = len; streamThinkText = "";
+        }
+        streamThinkText += text;
+        streamThinkBody.textContent = streamThinkText;
+        streamThinkLen.textContent = streamThinkText.length + " chars";
+        autoScroll(stick);
+    }
+    function endThinkingStream() { streamThink = null; streamThinkBody = null; streamThinkLen = null; streamThinkText = ""; }
 
     // ---- minimal, safe markdown → DOM (no innerHTML of untrusted text) ----
     function renderMarkdown(container, src) {
@@ -2804,6 +2927,7 @@ export function renderHtml(): string {
                 modelLabels = data.modelLabels || {};
                 reasoningDefault = data.reasoningDefault || "";
                 modelList = data.models || [];
+                pinnedModels = data.pinnedModels || [];
                 // Keep the user's chosen model across re-meta (e.g. edit-resend,
                 // handoff) when it's still offered; only fall back to the default.
                 if (!modelValue || (modelValue !== "default" && !modelList.includes(modelValue))) {
@@ -2894,8 +3018,9 @@ export function renderHtml(): string {
             case "append": {
                 const m = data.message;
                 if (m.role === "user") message("user", m.text, m.ts);
+                else if (m.role === "thinking") renderThinkBlock(m.text);
                 else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path, diff: m.diff });
-                else message("assistant", m.text, m.ts);
+                else message("assistant", m.text, m.ts, m.model);
                 break;
             }
             case "sessions": {
@@ -2932,15 +3057,22 @@ export function renderHtml(): string {
                 }
                 break;
             }
+            case "model-prefs": {
+                if (Array.isArray(data.pinnedModels)) { pinnedModels = data.pinnedModels; }
+                if (data.modelDefault !== undefined) { modelDefault = data.modelDefault; setModelLabel(); }
+                break;
+            }
             case "history": {
+                lastMsgBackend = ""; lastMsgModel = ""; // reset so first message in loaded session always shows label
                 if (data.carried && data.branchLabel) {
                     branchBanner(data.branchLabel.title, data.branchLabel.detail);
                 }
                 for (const m of data.messages) {
                     if (m.role === "user") message("user", m.text, m.ts);
+                    else if (m.role === "thinking") renderThinkBlock(m.text);
                     else if (m.role === "tool") renderTool(m.toolName || m.text, m.detail || "", { input: m.input, result: m.result, added: m.added, removed: m.removed, todos: m.todos, path: m.path, diff: m.diff });
                     else if (m.role === "error") append("error", "✖ " + m.text);
-                    else message("assistant", m.text, m.ts);
+                    else message("assistant", m.text, m.ts, m.model);
                 }
                 // carried history is a handoff replay shown inline as a
                 // continuous conversation — no "stored transcript" framing.
@@ -3040,7 +3172,8 @@ export function renderHtml(): string {
             }
             case "event": {
                 const ev = data.event;
-                if (ev.kind === "text") streamDelta(ev.text);
+                if (ev.kind === "thinking") streamThinkingDelta(ev.text);
+                else if (ev.kind === "text") streamDelta(ev.text);
                 else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }
                 else if (ev.kind === "tool-output") fillToolResult(ev.toolId, ev.text);
                 else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);

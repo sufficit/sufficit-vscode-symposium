@@ -17,6 +17,7 @@ export interface TodoItem {
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
     | { kind: "text"; text: string; model?: string; modelLabel?: string }
+    | { kind: "thinking"; text: string }
     | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string; diff?: { old: string; new: string }[]; terminalName?: string }
     | { kind: "tool-output"; toolName?: string; toolId?: string; text: string }
     | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string }
@@ -47,7 +48,7 @@ export interface SessionInfo {
 
 /** One past message reconstructed from a stored transcript. */
 export interface HistoryMessage {
-    role: "user" | "assistant" | "tool" | "error";
+    role: "user" | "assistant" | "tool" | "error" | "thinking";
     text: string;
     /** Model id and friendly label that produced this assistant message
      *  (preserved across backend/model handoff so each bubble keeps its origin). */

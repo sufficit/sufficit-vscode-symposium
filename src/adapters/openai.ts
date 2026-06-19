@@ -16,6 +16,7 @@ import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, filte
 import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "./lmTools";
 import { buildOpenAIModelList } from "./openaiModels";
 import * as ledger from "../ledger";
+import { getCached, setCached, isFresh, ModelCacheEntry } from "./modelCache";
 
 /** OpenAI tool call as streamed/accumulated from chat completions deltas. */
 interface ToolCall {
@@ -732,7 +733,12 @@ export class OpenAIAdapter implements AgentAdapter {
             const name = typeof m === "object" ? (m?.name ?? m?.title) : undefined;
             if (typeof name === "string" && name && name !== id) { labels[id] = name; }
         }
-        if (list.length) { discoveredModels.set(cfg.baseUrl, list); discoveredLabels.set(cfg.baseUrl, labels); }
+        if (list.length) {
+            discoveredModels.set(cfg.baseUrl, list);
+            discoveredLabels.set(cfg.baseUrl, labels);
+            const cacheKey = `openai:${cfg.baseUrl}`;
+            setCached(cacheKey, { models: list, labels, lastUpdate: new Date().toISOString() });
+        }
         cfg.log?.(`[${this.backend}] discovered ${list.length} models from ${url}`);
     }
 
@@ -743,6 +749,15 @@ export class OpenAIAdapter implements AgentAdapter {
 
     models(): string[] {
         const cfg = this.getConfig();
+        // Seed in-memory cache from file cache when the process-level map is empty.
+        if (!discoveredModels.has(cfg.baseUrl)) {
+            const cacheKey = `openai:${cfg.baseUrl}`;
+            const stored = getCached(cacheKey);
+            if (stored?.models.length) {
+                discoveredModels.set(cfg.baseUrl, stored.models);
+                discoveredLabels.set(cfg.baseUrl, stored.labels ?? {});
+            }
+        }
         const configured = cfg.models.length ? cfg.models : (discoveredModels.get(cfg.baseUrl) ?? []);
         return buildOpenAIModelList(configured, cfg.model);
     }
@@ -755,10 +770,18 @@ export class OpenAIAdapter implements AgentAdapter {
      * models are pinned in settings, discovery is skipped — the configured
      * list wins.
      */
-    async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
+    async refreshModels(force = false): Promise<{ models: string[]; labels?: Record<string, string> }> {
         const cfg = this.getConfig();
         if (!cfg.models.length && cfg.baseUrl) {
-            await this.discoverModels(cfg).catch(() => undefined);
+            // Skip network if file cache is fresh and not forced
+            const cacheKey = `openai:${cfg.baseUrl}`;
+            const stored = getCached(cacheKey);
+            if (!force && stored && isFresh(stored)) {
+                discoveredModels.set(cfg.baseUrl, stored.models);
+                discoveredLabels.set(cfg.baseUrl, stored.labels ?? {});
+            } else {
+                await this.discoverModels(cfg).catch(() => undefined);
+            }
         }
         return { models: this.models(), labels: this.modelLabels() };
     }

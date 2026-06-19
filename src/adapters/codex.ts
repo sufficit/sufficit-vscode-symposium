@@ -18,6 +18,7 @@ import {
     SessionStartOptions,
     SlashCommand,
 } from "./types";
+import { getCached, setCached, ModelCacheEntry } from "./modelCache";
 
 export interface CodexAdapterConfig {
     executable: string;
@@ -327,9 +328,54 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     models(): string[] {
-        const configured = this.getConfig().model;
-        const known = ["gpt-5.2-codex", "gpt-5.2", "o4-mini"];
-        return [...new Set([configured || "default", ...known])];
+        const cfg = this.getConfig();
+        const cached = getCached("codex");
+        const base = cached?.models ?? [];
+        const configured = cfg.model;
+        return [...new Set([...(configured ? [configured] : []), ...base])];
+    }
+
+    /**
+     * Fetch current OpenAI models from the API (requires OPENAI_API_KEY in
+     * process env). Filters to codex-relevant models (codex/gpt-5/o4).
+     * Updates file cache on success.
+     */
+    async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
+        const cfg = this.getConfig();
+        const apiKey = process.env.OPENAI_API_KEY;
+        const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com").replace(/\/+$/, "");
+
+        const cached = getCached("codex");
+        if (!apiKey) {
+            return { models: this.models(), labels: cached?.labels };
+        }
+
+        try {
+            const res = await fetch(`${baseUrl}/v1/models`, {
+                headers: { authorization: `Bearer ${apiKey}` },
+            });
+            if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+            const json: any = await res.json();
+            const raw: any[] = json?.data ?? json?.models ?? [];
+            const models: string[] = [];
+            const labels: Record<string, string> = {};
+            for (const m of raw) {
+                const id: string = typeof m === "string" ? m : (m?.id ?? "");
+                if (!id) { continue; }
+                // Only include models relevant to Codex (codex/gpt/o-series)
+                if (!/codex|gpt|o\d/i.test(id)) { continue; }
+                models.push(id);
+            }
+            if (models.length) {
+                const entry: ModelCacheEntry = { models, labels, lastUpdate: new Date().toISOString() };
+                setCached("codex", entry);
+                const configured = cfg.model;
+                return { models: [...new Set([...(configured ? [configured] : []), ...models])], labels };
+            }
+        } catch {
+            // fall through to cache/fallback
+        }
+        return { models: this.models(), labels: cached?.labels };
     }
 
     hasNativeTodo(): boolean { return true; }   // update_plan / todo_list

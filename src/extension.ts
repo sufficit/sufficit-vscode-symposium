@@ -350,6 +350,15 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             get: () => auth.getProfile(),
             onDidChange: auth.onDidChange,
         },
+        modelPrefs: {
+            getPinned: (backend: string) =>
+                context.workspaceState.get<string[]>(`symposium.pinnedModels.${backend}`, []),
+            setPinned: (backend: string, models: string[]) =>
+                void context.workspaceState.update(`symposium.pinnedModels.${backend}`, models),
+            setDefault: (backend: string, model: string | undefined) =>
+                vscode.workspace.getConfiguration(`symposium.${backend}`).update(
+                    "model", model || undefined, vscode.ConfigurationTarget.Workspace),
+        },
     };
 
     const chatView = new ChatViewProvider(deps);

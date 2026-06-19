@@ -106,6 +106,12 @@ export interface ChatSurfaceDeps {
         get(): Promise<{ name?: string; email?: string; picture?: string } | undefined>;
         onDidChange: vscode.Event<void>;
     };
+    /** Per-adapter model preferences: pinned list + default override. */
+    modelPrefs: {
+        getPinned(backend: string): string[];
+        setPinned(backend: string, models: string[]): void;
+        setDefault(backend: string, model: string | undefined): Thenable<void>;
+    };
 }
 
 /**
@@ -321,6 +327,26 @@ export class ChatSurface {
                     const adapter = current ? this.deps.adapterByBackend.get(current) : undefined;
                     if (adapter) {
                         this.refreshModels(adapter);
+                    }
+                    return;
+                }
+                case "pin-model": {
+                    const pinBackend = this.controller?.backend ?? this.terminalSession?.backend;
+                    if (pinBackend && typeof message.model === "string") {
+                        const pinned = this.deps.modelPrefs.getPinned(pinBackend);
+                        const idx = pinned.indexOf(message.model);
+                        if (idx >= 0) { pinned.splice(idx, 1); } else { pinned.push(message.model); }
+                        this.deps.modelPrefs.setPinned(pinBackend, pinned);
+                        this.post({ type: "model-prefs", pinnedModels: pinned });
+                    }
+                    return;
+                }
+                case "set-model-default": {
+                    const defBackend = this.controller?.backend ?? this.terminalSession?.backend;
+                    if (defBackend && typeof message.model === "string") {
+                        const defModel = message.model || undefined;
+                        await this.deps.modelPrefs.setDefault(defBackend, defModel);
+                        this.post({ type: "model-prefs", modelDefault: message.model });
                     }
                     return;
                 }
@@ -879,6 +905,7 @@ export class ChatSurface {
             reasoningLevels: adapter.reasoningLevels?.() ?? [],
             reasoningDefault: vscode.workspace.getConfiguration("symposium." + adapter.backend).get<string>("reasoning", "default"),
             modelDefault: vscode.workspace.getConfiguration("symposium." + adapter.backend).get<string>("model", ""),
+            pinnedModels: this.deps.modelPrefs.getPinned(adapter.backend),
             permissionModes: adapter.permissionModes?.() ?? [],
             permission: adapter.defaultPermission?.() ?? "default",
             sessionId: options.resumeSessionId ?? "",
@@ -921,15 +948,21 @@ export class ChatSurface {
         this.onTitleChange?.(`${title} · ${adapter.backend}`);
     }
 
+    /** Symposium-level slash commands injected into every backend's autocomplete. */
+    private readonly symposiumCommands: import("../adapters/types").SlashCommand[] = [
+        { name: "refresh-models", description: "Refresh the model list from the provider API", kind: "builtin" },
+    ];
+
     /** Fetches the backend's slash commands/skills and sends them for autocomplete. */
     private postCommands(adapter: AgentAdapter): void {
+        const append = this.symposiumCommands;
         if (!adapter.commands) {
-            this.post({ type: "commands", items: [] });
+            this.post({ type: "commands", items: append });
             return;
         }
         void adapter.commands()
-            .then((items) => this.post({ type: "commands", items }))
-            .catch(() => this.post({ type: "commands", items: [] }));
+            .then((items) => this.post({ type: "commands", items: [...items, ...append] }))
+            .catch(() => this.post({ type: "commands", items: append }));
     }
 
     /**

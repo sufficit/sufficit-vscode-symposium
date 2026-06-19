@@ -22,6 +22,7 @@ import {
     SessionStartOptions,
     SlashCommand,
 } from "./types";
+import { getCached, setCached, isFresh, ModelCacheEntry } from "./modelCache";
 
 export interface ClaudeAdapterConfig {
     executable: string;
@@ -48,8 +49,9 @@ class ClaudeSession extends EventEmitter implements AgentSession {
     sessionId: string | undefined;
     private child: ChildProcessWithoutNullStreams | undefined;
     private disposed = false;
-    private turnActive = false;     // a turn is running (clear on result/exit)
-    private streamedText = false;   // got token deltas this turn (skip the full block)
+    private turnActive = false;       // a turn is running (clear on result/exit)
+    private streamedText = false;     // got text_delta this turn (skip full block)
+    private streamedThinking = false; // got thinking_delta this turn (skip full block)
 
     constructor(
         private readonly config: ClaudeAdapterConfig,
@@ -168,9 +170,14 @@ class ClaudeSession extends EventEmitter implements AgentSession {
             case "stream_event": {
                 // Token-level deltas (--include-partial-messages).
                 const ev = event.event;
-                if (ev?.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) {
-                    this.streamedText = true;
-                    this.emit("event", { kind: "text", text: ev.delta.text });
+                if (ev?.type === "content_block_delta") {
+                    if (ev.delta?.type === "text_delta" && ev.delta.text) {
+                        this.streamedText = true;
+                        this.emit("event", { kind: "text", text: ev.delta.text });
+                    } else if (ev.delta?.type === "thinking_delta" && ev.delta.thinking) {
+                        this.streamedThinking = true;
+                        this.emit("event", { kind: "thinking", text: ev.delta.thinking });
+                    }
                 }
                 break;
             }
@@ -182,7 +189,9 @@ class ClaudeSession extends EventEmitter implements AgentSession {
                 break;
             case "assistant": {
                 for (const block of event.message?.content ?? []) {
-                    if (block.type === "text" && block.text) {
+                    if (block.type === "thinking" && block.thinking) {
+                        if (!this.streamedThinking) { this.emit("event", { kind: "thinking", text: block.thinking }); }
+                    } else if (block.type === "text" && block.text) {
                         // Already streamed via stream_event deltas — don't repeat.
                         if (!this.streamedText) { this.emit("event", { kind: "text", text: block.text }); }
                     } else if (block.type === "tool_use") {
@@ -222,7 +231,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
             }
             case "result": {
                 this.sessionId = event.session_id ?? this.sessionId;
-                this.streamedText = false;   // next turn streams afresh
+                this.streamedText = false; this.streamedThinking = false;   // next turn streams afresh
                 if (event.is_error) {
                     this.emit("event", { kind: "error", message: event.result ?? event.subtype ?? "unknown error" });
                 }
@@ -355,9 +364,60 @@ export class ClaudeAdapter implements AgentAdapter {
     }
 
     models(): string[] {
-        const configured = this.getConfig().model;
-        const known = ["sonnet", "opus", "haiku"];
-        return [...new Set([configured || "default", ...known])];
+        const cfg = this.getConfig();
+        const cached = getCached("claude");
+        const base = cached?.models ?? [];
+        const configured = cfg.model;
+        return [...new Set([...(configured ? [configured] : []), ...base])];
+    }
+
+    /**
+     * Fetch current Claude models from Anthropic API (requires ANTHROPIC_API_KEY
+     * in adapter env or process env). Falls back to file cache, then hardcoded list.
+     * Updates file cache on success.
+     */
+    async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
+        const cfg = this.getConfig();
+        const apiKey = cfg.env?.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
+        const baseUrl = (cfg.env?.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
+
+        const cached = getCached("claude");
+        if (!apiKey) {
+            cfg.log?.("[claude] no ANTHROPIC_API_KEY — using file cache for models");
+            return { models: this.models(), labels: cached?.labels };
+        }
+
+        // Skip if cache is fresh and caller didn't force a refresh
+        try {
+            const res = await fetch(`${baseUrl}/v1/models`, {
+                headers: {
+                    "x-api-key": apiKey,
+                    "anthropic-version": "2023-06-01",
+                },
+            });
+            if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+            const json: any = await res.json();
+            const raw: any[] = json?.data ?? [];
+            const models: string[] = [];
+            const labels: Record<string, string> = {};
+            for (const m of raw) {
+                const id: string = typeof m === "string" ? m : (m?.id ?? "");
+                if (!id) { continue; }
+                models.push(id);
+                const name = typeof m?.display_name === "string" ? m.display_name : undefined;
+                if (name && name !== id) { labels[id] = name; }
+            }
+            if (models.length) {
+                const entry: ModelCacheEntry = { models, labels, lastUpdate: new Date().toISOString() };
+                setCached("claude", entry);
+                cfg.log?.(`[claude] refreshed ${models.length} models from Anthropic API`);
+                const configured = cfg.model;
+                return { models: [...new Set([...(configured ? [configured] : []), ...models])], labels };
+            }
+        } catch (err: any) {
+            cfg.log?.(`[claude] model refresh failed: ${err?.message ?? err}`);
+        }
+        return { models: this.models(), labels: cached?.labels };
     }
 
     hasNativeTodo(): boolean { return true; }   // TodoWrite
@@ -601,7 +661,9 @@ function parseTranscriptLine(line: string): HistoryMessage[] {
         }
     } else if (entry.type === "assistant") {
         for (const block of entry.message?.content ?? []) {
-            if (block.type === "text" && block.text?.trim()) {
+            if (block.type === "thinking" && block.thinking?.trim()) {
+                messages.push({ role: "thinking", text: block.thinking });
+            } else if (block.type === "text" && block.text?.trim()) {
                 messages.push({ role: "assistant", text: block.text });
             } else if (block.type === "tool_use") {
                 const counts = diffCounts(block.name, block.input);
