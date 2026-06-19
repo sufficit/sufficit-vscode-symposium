@@ -16,13 +16,13 @@ export interface TodoItem {
 /** A normalized event emitted by any adapter while a turn is running. */
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
-    | { kind: "text"; text: string }
+    | { kind: "text"; text: string; model?: string; modelLabel?: string }
     | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string; diff?: { old: string; new: string }[]; terminalName?: string }
     | { kind: "tool-output"; toolName?: string; toolId?: string; text: string }
     | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string }
     | { kind: "turn-end"; costUsd?: number; durationMs?: number }
     | { kind: "usage"; inputTokens?: number; outputTokens?: number; cacheRead?: number; contextWindow?: number }
-    | { kind: "error"; message: string };
+    | { kind: "error"; message: string; retryable?: boolean };
 
 /** A session known to a backend, listed in the sessions tree. */
 export interface SessionInfo {
@@ -47,6 +47,10 @@ export interface SessionInfo {
 export interface HistoryMessage {
     role: "user" | "assistant" | "tool" | "error";
     text: string;
+    /** Model id and friendly label that produced this assistant message
+     *  (preserved across backend/model handoff so each bubble keeps its origin). */
+    model?: string;
+    modelLabel?: string;
     // For tool rows: the backend tool name and a short human target, so stored
     // transcripts render the same icon+verb+target as live events. input/result
     // hold the full (pretty) payloads for the expandable panel.

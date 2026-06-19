@@ -1271,21 +1271,44 @@ export function renderHtml(): string {
     function refreshEmpty() { root.classList.toggle("empty", log.childElementCount === 0); }
 
     // Error block with a Retry action (re-sends the last user message).
-    function renderError(message) {
+    function renderError(message, retryable) {
         const stick = nearBottom();
         endToolGroup(); endStream();
         const el = document.createElement("div"); el.className = "msg plain error";
         const txt = document.createElement("div"); txt.textContent = "✖ " + message; el.appendChild(txt);
-        // Retry is just "edit & resend the last user message": it loads that
-        // message back into the composer (so you can change the model, text, or
-        // mode) and resending rewinds the history to that point.
-        const lastUser = lastUserRow();
-        if (lastUser) {
+        if (retryable && lastSendPayload) {
+            // Transient/transport failure (e.g. "fetch failed"): the request was
+            // valid, just didn't reach the backend. Offer only a Retry that
+            // resends the exact same last submission unchanged — no editing.
+            // TODO(auto-retry): VS Code chat retries transient request failures
+            // automatically with exponential backoff before surfacing an error
+            // to the user (see vscode-copilot-chat: the request layer wraps the
+            // fetch in a retry loop keyed on transient HTTP/network errors —
+            // 429/5xx/ECONNRESET/fetch-failed — with a small bounded number of
+            // attempts and increasing delay, and only renders this error block
+            // once retries are exhausted). To replicate here: have the OpenAI
+            // adapter (src/adapters/openai.ts run()) catch retryable errors and
+            // re-issue the same request N times with backoff before emitting the
+            // error event, OR drive it from the controller using lastSendPayload.
+            // For now retry is manual (this button); auto-retry is intentionally
+            // deferred per user request.
             const bar = document.createElement("div"); bar.className = "errActions";
             const b = document.createElement("button"); b.className = "retryBtn";
-            b.appendChild(svgIcon("history")); b.appendChild(document.createTextNode(" Edit & retry"));
-            b.addEventListener("click", () => beginEdit(lastUser.idx, lastUser.text));
+            b.appendChild(svgIcon("history")); b.appendChild(document.createTextNode(" Retry"));
+            b.addEventListener("click", () => { b.disabled = true; retryLast(); });
             bar.appendChild(b); el.appendChild(bar);
+        } else {
+            // Non-transient error: "edit & resend the last user message" — loads
+            // that message back into the composer (so you can change the model,
+            // text, or mode); resending rewinds the history to that point.
+            const lastUser = lastUserRow();
+            if (lastUser) {
+                const bar = document.createElement("div"); bar.className = "errActions";
+                const b = document.createElement("button"); b.className = "retryBtn";
+                b.appendChild(svgIcon("history")); b.appendChild(document.createTextNode(" Edit & retry"));
+                b.addEventListener("click", () => beginEdit(lastUser.idx, lastUser.text));
+                bar.appendChild(b); el.appendChild(bar);
+            }
         }
         log.appendChild(el); refreshEmpty(); autoScroll(stick);
     }
@@ -2949,7 +2972,7 @@ export function renderHtml(): string {
                 else if (ev.kind === "error") {
                     // Defensive: an error must never leave the composer stuck busy.
                     busy = false; sendBtn.disabled = false; setStatus();
-                    renderError(ev.message);
+                    renderError(ev.message, ev.retryable);
                 }
                 else if (ev.kind === "session") {
                     if (ev.model) {

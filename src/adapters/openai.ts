@@ -30,6 +30,8 @@ type ChatMsg = {
     tool_calls?: ToolCall[];
     tool_call_id?: string;
     name?: string;
+    /** Model id that produced this assistant message (kept across handoff). */
+    model?: string;
 };
 
 interface StoredSession {
@@ -187,6 +189,12 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // is applied per-message before send).
         return this.options.model || this.cfg.model || this.cfg.models[0]
             || discoveredModels.get(this.cfg.baseUrl)?.[0] || "";
+    }
+
+    /** Friendly name for a model id, from discovery (falls back to the id). */
+    private label(id: string): string {
+        if (!id) { return ""; }
+        return discoveredLabels.get(this.cfg.baseUrl)?.[id] ?? id;
     }
 
     private headers(loginToken?: string | null): Record<string, string> {
@@ -382,11 +390,12 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 });
                 if (!res.ok || !res.body) {
                     const detail = await res.text().catch(() => "");
-                    this.emit("event", { kind: "error", message: `HTTP ${res.status} ${res.statusText} ${detail}`.trim() });
+                    const retryable = res.status >= 500 || res.status === 429 || res.status === 408;
+                    this.emit("event", { kind: "error", message: `HTTP ${res.status} ${res.statusText} ${detail}`.trim(), retryable });
                     hitCap = false;
                     break;
                 }
-                const { text, toolCalls, aborted } = await this.consume(res.body);
+                const { text, toolCalls, aborted } = await this.consume(res.body, this.model());
 
                 // Stream paused/interrupted mid-turn: keep the partial assistant
                 // reply (and any partial tool calls) in history so context is not
@@ -399,14 +408,14 @@ class OpenAISession extends EventEmitter implements AgentSession {
                             this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: "(interrompido antes da execução)" });
                         }
                     } else if (text) {
-                        this.messages.push({ role: "assistant", content: text });
+                        this.messages.push({ role: "assistant", content: text, model: this.model() });
                     }
                     hitCap = false;
                     break;
                 }
 
                 if (toolCalls.length === 0) {
-                    if (text) { this.messages.push({ role: "assistant", content: text }); }
+                    if (text) { this.messages.push({ role: "assistant", content: text, model: this.model() }); }
                     hitCap = false;
                     break;
                 }
@@ -452,7 +461,12 @@ class OpenAISession extends EventEmitter implements AgentSession {
             }
         } catch (error) {
             if ((error as any)?.name !== "AbortError") {
-                this.emit("event", { kind: "error", message: error instanceof Error ? error.message : String(error) });
+                const msg = error instanceof Error ? error.message : String(error);
+                // Network/transport failures (DNS, connection reset, timeout,
+                // "fetch failed", "terminated") are transient and safe to retry
+                // with the exact same request — unlike a 4xx or a logic error.
+                const retryable = /fetch failed|network|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|terminated|aborted|timeout/i.test(msg);
+                this.emit("event", { kind: "error", message: msg, retryable });
             }
         }
         this.safePersist();
@@ -463,7 +477,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
      * Reads an SSE stream, emitting text deltas. Also accumulates streamed
      * tool_calls (chat completions) so the caller can run them and continue.
      */
-    private async consume(stream: ReadableStream<Uint8Array>): Promise<{ text: string; toolCalls: ToolCall[]; aborted: boolean }> {
+    private async consume(stream: ReadableStream<Uint8Array>, m: string): Promise<{ text: string; toolCalls: ToolCall[]; aborted: boolean }> {
         const responses = this.cfg.api === "responses";
         const reader = stream.getReader();
         const decoder = new TextDecoder();
@@ -489,7 +503,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     if (responses) {
                         const ty = json?.type;
                         if (ty === "response.output_text.delta" && typeof json.delta === "string") {
-                            assistant += json.delta; this.emit("event", { kind: "text", text: json.delta });
+                            assistant += json.delta; this.emit("event", { kind: "text", text: json.delta, model: m, modelLabel: this.label(m) });
                         } else if (ty === "response.output_item.added" && json?.item?.type === "function_call") {
                             // New function call: index by output_index; carry call_id + name.
                             const i = json.output_index ?? calls.length;
@@ -509,7 +523,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     }
                     const delta = json?.choices?.[0]?.delta;
                     if (typeof delta?.content === "string" && delta.content) {
-                        assistant += delta.content; this.emit("event", { kind: "text", text: delta.content });
+                        assistant += delta.content; this.emit("event", { kind: "text", text: delta.content, model: m, modelLabel: this.label(m) });
                     }
                     // Accumulate tool_calls: name+id arrive first, arguments stream in chunks.
                     for (const tc of delta?.tool_calls ?? []) {
@@ -629,7 +643,12 @@ export class OpenAIAdapter implements AgentAdapter {
         if (!s) { return []; }
         return s.messages
             .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.length > 0)
-            .map((m) => ({ role: m.role as "user" | "assistant", text: m.content as string }));
+            .map((m) => ({
+                role: m.role as "user" | "assistant",
+                text: m.content as string,
+                model: m.role === "assistant" ? m.model : undefined,
+                modelLabel: m.role === "assistant" && m.model ? (discoveredLabels.get(this.getConfig().baseUrl)?.[m.model] ?? m.model) : undefined,
+            }));
     }
 
     async deleteSession(info: SessionInfo): Promise<void> {

@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as vscode from "vscode";
+import { randomUUID } from "node:crypto";
 import { readSession, dumpToText } from "../sessionReader";
 
 /**
@@ -103,6 +104,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
                     description: { type: "string", description: "A short human-readable description (5-10 words) of what this command does, shown to the user so they understand the step." },
                     cwd: { type: "string", description: "Optional working directory (absolute, or relative to the session cwd). Defaults to the session cwd." },
                     timeout_ms: { type: "integer", description: "Timeout in milliseconds. Default 30000 (30s). Pass 0 for UNLIMITED — only for long-running services (dev servers, watchers, tail -f) you intend to keep running; otherwise always bounded." },
+                    terminal_id: { type: "string", description: "Optional id of a previously returned visible terminal to reuse/continue. Only applies when shell execution display mode is terminal; ignored in silent/inline modes." },
                     notify: { type: "boolean", description: "Set true when the command's output is relevant and you want to be notified of the result as soon as it completes (the output is surfaced back to you). Use for builds/tests/diagnostics whose result you must see." },
                 },
                 required: ["command"],
@@ -346,17 +348,50 @@ function runShell(command: string, cwd: string, timeoutMs: number, progress?: To
     });
 }
 
-function terminalNameFor(): string {
-    return "symposium";
+interface TerminalHandle {
+    id: string;
+    name: string;
+    terminal: vscode.Terminal;
+    cwd: string;
+}
+
+const TERMINALS = new Map<string, TerminalHandle>();
+let terminalSeq = 0;
+
+function terminalNameFor(id: string): string {
+    return `symposium:${id}`;
+}
+
+function normalizeTerminalId(raw: unknown): string | undefined {
+    const id = String(raw ?? "").trim();
+    if (!id) { return undefined; }
+    return id.replace(/[^a-zA-Z0-9_.:-]/g, "_").slice(0, 80) || undefined;
+}
+
+function terminalHandleFor(requestedId: string | undefined, cwd: string): TerminalHandle {
+    if (requestedId) {
+        const existing = TERMINALS.get(requestedId);
+        if (existing) {
+            return existing;
+        }
+    }
+    const id = requestedId || `t${++terminalSeq}-${randomUUID().slice(0, 8)}`;
+    const name = terminalNameFor(id);
+    const terminal = vscode.window.createTerminal({ name, cwd });
+    const handle = { id, name, terminal, cwd };
+    TERMINALS.set(id, handle);
+    return handle;
 }
 
 function shellQuote(value: string): string {
     return `'${String(value).replace(/'/g, `'"'"'`)}'`;
 }
 
-async function runShellInTerminal(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink): Promise<{ stdout: string; code: number }> {
-    const name = terminalNameFor();
-    const term = vscode.window.createTerminal({ name, cwd });
+async function runShellInTerminal(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink, terminalId?: string): Promise<{ stdout: string; code: number; terminal_id: string; reused: boolean }> {
+    const existed = !!(terminalId && TERMINALS.has(terminalId));
+    const handle = terminalHandleFor(terminalId, cwd);
+    const name = handle.name;
+    const term = handle.terminal;
     term.show(true);
     progress?.onTerminal?.(name);
 
@@ -394,12 +429,12 @@ async function runShellInTerminal(command: string, cwd: string, timeoutMs: numbe
             const data = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : "";
             const raw = fs.readFileSync(codeFile, "utf8").trim();
             const code = /^\d+$/.test(raw) ? Number(raw) : 1;
-            return { stdout: data.slice(0, 30000), code };
+            return { stdout: data.slice(0, 30000), code, terminal_id: handle.id, reused: existed };
         }
         if (Date.now() - started > timeoutMs) {
             term.sendText("\u0003");
             const data = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : "";
-            return { stdout: (data + `\n[Symposium] command timed out after ${timeoutMs}ms`).slice(0, 30000), code: 124 };
+            return { stdout: (data + `\n[Symposium] command timed out after ${timeoutMs}ms`).slice(0, 30000), code: 124, terminal_id: handle.id, reused: existed };
         }
         await new Promise((r) => setTimeout(r, 250));
     }
@@ -464,11 +499,13 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             const timeout = unlimited ? Number.MAX_SAFE_INTEGER : Math.min(Math.max(rawTimeout, 1000), 3600000);
             const notify = args.notify === true;
             const mode = ctx.shellExecution ?? "silent";
+            const terminalId = mode === "terminal" ? normalizeTerminalId(args.terminal_id) : undefined;
             const shouldUseRtk = mode === "silent" && await canUseRtk(command, cwd);
             const runCommand = shouldUseRtk ? `rtk ${command}` : command;
-            const { stdout, code } = mode === "terminal"
-                ? await runShellInTerminal(runCommand, cwd, timeout, ctx.progress)
-                : await runShell(runCommand, cwd, timeout, mode === "inline" ? ctx.progress : undefined);
+            const terminalRun = mode === "terminal"
+                ? await runShellInTerminal(runCommand, cwd, timeout, ctx.progress, terminalId)
+                : undefined;
+            const { stdout, code } = terminalRun ?? await runShell(runCommand, cwd, timeout, mode === "inline" ? ctx.progress : undefined);
             // When the model flags the result as relevant, push it through the
             // progress sink as a steer-style notification so the chat surfaces it
             // even if the model wouldn't otherwise narrate the outcome.
@@ -476,7 +513,15 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                 const head = stdout.split("\n").slice(0, 6).join("\n");
                 ctx.progress?.onNotify?.(`shell exit ${code}${head ? `\n${head}` : ""}`);
             }
-            return JSON.stringify({ exit_code: code, output: stdout, display: mode, timed_out: code === 124, unlimited });
+            return JSON.stringify({
+                exit_code: code,
+                output: stdout,
+                display: mode,
+                timed_out: code === 124,
+                unlimited,
+                terminal_id: terminalRun?.terminal_id,
+                reused_terminal: terminalRun?.reused ?? false
+            });
         }
         if (name === "read_file") {
             const p = resolvePath(ctx.cwd, String(args.path ?? ""));
