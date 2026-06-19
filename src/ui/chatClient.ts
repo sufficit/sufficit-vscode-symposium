@@ -612,9 +612,9 @@ export const chatClientJs = `
                     if (/input/i.test(label)) { inputText = body.trim(); }
                     else if (/result/i.test(label)) { resultText = body.trim(); }
                 }
-                let toolLine = `\n\n[${verb}${target ? ": " + target : ""}]`;
-                if (inputText) { toolLine += `\nInput:\n${inputText.slice(0, 1000)}`; }
-                if (resultText) { toolLine += `\nResult:\n${resultText.slice(0, 1000)}`; }
+                let toolLine = "\n\n[" + verb + (target ? ": " + target : "") + "]";
+                if (inputText) { toolLine += "\nInput:\n" + inputText.slice(0, 1000) + (inputText.length > 1000 ? "\n… [truncated — " + inputText.length + " chars total]" : ""); }
+                if (resultText) { toolLine += "\nResult:\n" + resultText.slice(0, 1000) + (resultText.length > 1000 ? "\n… [truncated — " + resultText.length + " chars total]" : ""); }
                 parts.push(toolLine);
             }
             sib = sib.nextElementSibling;
