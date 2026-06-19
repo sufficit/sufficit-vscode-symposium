@@ -209,6 +209,7 @@ export class ChatSurface {
             switch (message?.type) {
                 case "ready": {
                     this.ready = true;
+                    void this.webview.postMessage({ type: "boot", id: "host", label: "Host da extensão conectado", status: "ok" });
                     for (const queued of this.queue) {
                         void this.webview.postMessage(queued);
                     }
@@ -456,6 +457,8 @@ export class ChatSurface {
     private startDefaultDialogue(): void {
         const backend = this.deps.adapterByBackend.keys().next().value;
         if (!backend) {
+            void this.webview.postMessage({ type: "boot", id: "session", label: "Nenhum backend disponível", status: "fail", detail: "configure um adaptador" });
+            void this.webview.postMessage({ type: "boot", complete: true });
             return;
         }
         const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();

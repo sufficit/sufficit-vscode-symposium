@@ -68,6 +68,37 @@ export function renderHtml(): string {
     }
     #root.loading #loadingState { display: flex; }
     #root.loading #log { display: none; }
+    /* boot/startup screen: visible immediately on parse, hidden once a session resolves */
+    #bootState {
+        position: absolute; inset: 0; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 14px; padding: 24px;
+        background: var(--vscode-editor-background); z-index: 50;
+    }
+    #root.booted #bootState { display: none; }
+    #bootState .bootLogo {
+        width: 52px; height: 52px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center;
+        background: var(--vscode-chat-avatarBackground, var(--vscode-badge-background, rgba(128,128,128,0.18)));
+        color: var(--vscode-icon-foreground, var(--vscode-foreground));
+    }
+    #bootState .bootLogo svg { width: 28px; height: 28px; }
+    #bootState .bootTitle { font-size: 1.1em; font-weight: 600; opacity: 0.9; letter-spacing: 0.3px; }
+    #bootSteps { display: flex; flex-direction: column; gap: 6px; min-width: 220px; max-width: 80%; font-size: 0.85em; }
+    .bootStep { display: flex; align-items: center; gap: 8px; opacity: 0.85; }
+    .bootStep .bsIcon { width: 14px; height: 14px; flex: 0 0 14px; display: inline-flex; align-items: center; justify-content: center; }
+    .bootStep .bsIcon svg { width: 13px; height: 13px; }
+    .bootStep .bsLabel { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bootStep .bsDetail { opacity: 0.6; font-size: 0.92em; }
+    .bootStep.pending { opacity: 0.55; }
+    .bootStep.ok { opacity: 0.85; }
+    .bootStep.ok .bsIcon { color: var(--vscode-charts-green, #3fb950); }
+    .bootStep.fail .bsIcon { color: var(--vscode-charts-red, #f85149); }
+    .bootStep.fail { opacity: 1; }
+    .bootStep .bsSpin {
+        width: 12px; height: 12px; border: 2px solid color-mix(in srgb, var(--vscode-foreground) 25%, transparent);
+        border-top-color: var(--vscode-progressBar-background, var(--vscode-focusBorder));
+        border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    #bootHint { font-size: 0.78em; opacity: 0.5; }
     /* empty state: friendly placeholder before/without any conversation */
     #emptyState {
         display: none; flex-direction: column; align-items: center; justify-content: center;
@@ -860,6 +891,12 @@ export function renderHtml(): string {
 </head>
 <body>
 <div id="root">
+    <div id="bootState">
+        <div class="bootLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
+        <div class="bootTitle">Symposium</div>
+        <div id="bootSteps"></div>
+        <div id="bootHint">Iniciando…</div>
+    </div>
     <div id="progress"></div>
     <aside id="sessionsPane">
         <div id="sessionsHeader">
@@ -2822,6 +2859,11 @@ export function renderHtml(): string {
 
     window.addEventListener("message", ({ data }) => {
         switch (data.type) {
+            case "boot": {
+                if (data.complete) { clearTimeout(bootTimer); bootComplete(); break; }
+                bootStep(data.id, data.label, data.status, data.detail);
+                break;
+            }
             case "meta": {
                 sideMode = data.sessionsSide || "auto";
                 // Seed the default send mode once (don't override a saved choice).
@@ -2830,6 +2872,7 @@ export function renderHtml(): string {
                 layout();   // apply the sessions-side now (meta sets sideMode)
                 layout();
                 activeSessionId = data.sessionId || "";
+                clearTimeout(bootTimer); bootStep("host", null, "ok"); bootStep("session", "Sessão pronta", "ok"); bootComplete();
                 startWorkingSet(activeSessionId);   // bind edited-files set to this session
                 currentBackend = data.backend || "";
                 currentBackendName = data.backendName || "";
@@ -2972,6 +3015,7 @@ export function renderHtml(): string {
                 break;
             }
             case "history": {
+                clearTimeout(bootTimer); bootStep("host", null, "ok"); bootStep("session", "Sessão pronta", "ok"); bootComplete();
                 if (data.carried && data.branchLabel) {
                     branchBanner(data.branchLabel.title, data.branchLabel.detail);
                 }
@@ -3107,6 +3151,57 @@ export function renderHtml(): string {
             }
         }
     });
+
+    // ---- Boot/startup screen -------------------------------------------------
+    // Shown immediately on parse so the panel never looks frozen. Lists the boot
+    // steps with live status (pending/ok/fail) to aid diagnostics. The extension
+    // may push {type:"boot", id, label, status, detail} to add/update steps;
+    // the first session meta/history marks boot complete and hides the overlay.
+    const BOOT_ICONS = {
+        ok: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 11.6 3.4 8.5l-1 1 4.1 4.1L14 6.1l-1-1Z"/></svg>',
+        fail: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm3 9.3-.7.7L8 8.7 5.7 11l-.7-.7L7.3 8 5 5.7l.7-.7L8 7.3 10.3 5l.7.7L8.7 8Z"/></svg>'
+    };
+    const bootStepsEl = document.getElementById("bootSteps");
+    const bootHintEl = document.getElementById("bootHint");
+    const bootSteps = new Map();
+    let bootDone = false;
+    function renderBootStep(id, label, status, detail) {
+        let row = bootSteps.get(id);
+        if (!row) {
+            row = document.createElement("div");
+            row.className = "bootStep";
+            const ic = document.createElement("span"); ic.className = "bsIcon";
+            const lb = document.createElement("span"); lb.className = "bsLabel";
+            const dt = document.createElement("span"); dt.className = "bsDetail";
+            row.appendChild(ic); row.appendChild(lb); row.appendChild(dt);
+            bootStepsEl.appendChild(row);
+            bootSteps.set(id, row);
+        }
+        if (label != null) { row.querySelector(".bsLabel").textContent = label; }
+        if (detail != null) { row.querySelector(".bsDetail").textContent = detail; }
+        const st = status || "pending";
+        row.className = "bootStep " + st;
+        const ic = row.querySelector(".bsIcon");
+        ic.innerHTML = st === "pending" ? '<span class="bsSpin"></span>' : (BOOT_ICONS[st] || "");
+    }
+    function bootStep(id, label, status, detail) {
+        if (bootDone && status === "ok") { return; }
+        renderBootStep(id, label, status, detail);
+    }
+    function bootComplete() {
+        if (bootDone) { return; }
+        bootDone = true;
+        root.classList.add("booted");
+    }
+    // Seed the steps we know about up front (extension confirms/overrides them).
+    bootStep("host", "Conectando ao host da extensão", "pending");
+    bootStep("ui", "Carregando interface", "ok");
+    bootStep("session", "Preparando sessão", "pending");
+    // Safety: if nothing resolves in 12s, surface a warning but reveal the UI.
+    const bootTimer = setTimeout(() => {
+        if (bootDone) { return; }
+        bootHintEl.textContent = "Demorando mais que o esperado — veja Output › Symposium para diagnóstico.";
+    }, 12000);
 
     setStatus();
     refreshEmpty();   // show the placeholder until a conversation loads
