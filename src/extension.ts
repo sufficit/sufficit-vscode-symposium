@@ -385,9 +385,16 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 context.workspaceState.get<string[]>(`symposium.pinnedModels.${backend}`, []),
             setPinned: (backend: string, models: string[]) =>
                 void context.workspaceState.update(`symposium.pinnedModels.${backend}`, models),
-            setDefault: (backend: string, model: string | undefined) =>
-                vscode.workspace.getConfiguration(`symposium.${backend}`).update(
-                    "model", model || undefined, vscode.ConfigurationTarget.Workspace),
+            setDefault: (backend: string, model: string | undefined) => {
+                // Prefer workspace-scoped settings so different projects can use different
+                // default models. Fall back to global when no workspace folder is open
+                // (otherwise VS Code throws "Unable to write into workspace settings").
+                const target = vscode.workspace.workspaceFolders?.length
+                    ? vscode.ConfigurationTarget.Workspace
+                    : vscode.ConfigurationTarget.Global;
+                return vscode.workspace.getConfiguration(`symposium.${backend}`).update(
+                    "model", model || undefined, target);
+            },
         },
     };
 

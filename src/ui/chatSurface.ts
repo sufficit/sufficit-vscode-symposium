@@ -55,7 +55,10 @@ async function writePastedImage(mime: string, base64: string): Promise<{ path: s
         return undefined;
     }
     const ext = IMAGE_EXT[mime] ?? "png";
-    const dir = path.join(os.tmpdir(), "symposium-pastes");
+    // Prefer workspace root so the agent can read the file without extra permission prompts.
+    // Fall back to system tmpdir when no folder is open.
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const dir = wsRoot ? path.join(wsRoot, "tmp") : path.join(os.tmpdir(), "symposium-pastes");
     await fs.promises.mkdir(dir, { recursive: true });
     const name = `paste-${Date.now()}.${ext}`;
     const full = path.join(dir, name);
