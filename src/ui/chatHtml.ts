@@ -3247,17 +3247,25 @@ export function renderHtml(): string {
     function bootComplete() {
         if (bootDone) { return; }
         bootDone = true;
+        try { clearTimeout(bootForce); } catch (e) {}
         root.classList.add("booted");
     }
     // Seed the steps we know about up front (extension confirms/overrides them).
     bootStep("host", "Conectando ao host da extensão", "pending");
     bootStep("ui", "Carregando interface", "ok");
     bootStep("session", "Preparando sessão", "pending");
-    // Safety: if nothing resolves in 12s, surface a warning but reveal the UI.
+    // Safety: never trap the user behind the boot screen. After a short grace
+    // period surface a warning; shortly after, force-reveal the UI even if the
+    // extension never resolved the session (e.g. a backend's discovery hung).
     const bootTimer = setTimeout(() => {
         if (bootDone) { return; }
         bootHintEl.textContent = "Demorando mais que o esperado — veja Output › Symposium para diagnóstico.";
-    }, 12000);
+    }, 8000);
+    const bootForce = setTimeout(() => {
+        if (bootDone) { return; }
+        bootStep("session", "Preparando sessão", "warn", "tempo esgotado");
+        bootComplete();   // reveal the composer/list anyway so the user can act
+    }, 15000);
 
     setStatus();
     refreshEmpty();   // show the placeholder until a conversation loads

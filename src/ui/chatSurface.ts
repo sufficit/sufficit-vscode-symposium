@@ -498,7 +498,13 @@ export class ChatSurface {
     private async restoreOrStart(): Promise<void> {
         const last = this.deps.lastActive.get();
         if (last) {
-            const sessions = await this.deps.listSessions();
+            // Time-bound: a backend's listSessions() (e.g. HTTP model discovery)
+            // can hang on code-server with no network/auth; never let it block
+            // startup and trap the UI on the boot screen.
+            const sessions = await Promise.race([
+                this.deps.listSessions().catch(() => [] as SessionInfo[]),
+                new Promise<SessionInfo[]>((resolve) => setTimeout(() => resolve([]), 6000)),
+            ]);
             const info = sessions.find((s) => s.sessionId === last.sessionId && s.backend === last.backend);
             if (info) {
                 this.openSession(info);
