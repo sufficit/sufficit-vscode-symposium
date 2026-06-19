@@ -27,7 +27,13 @@ const TERMINAL_MATCH = /terminal|task|test|exec|browser|playwright|navigate/i;
 // unrelated to the Sufficit memory (memory_search/memory_save). Bridging them
 // would let the agent silently write to the wrong memory, so they are blocked
 // by default. Matched by substring so renames across versions still hit.
-const DEFAULT_TOOL_BLOCKLIST = /copilot_memory|^memory$|_memory|memory_/i;
+// Block duplicated data-access tools from Copilot/VS Code. Symposium already
+// exposes first-class filesystem and Sufficit-memory tools (read_file,
+// write_file, list_dir, memory_search, memory_save). Letting Copilot LM tools
+// with the same purpose through confuses the model and routes reads/writes to
+// the wrong provider/store. Keep the bridge focused on UI-integrated actions
+// (terminal/tasks/tests/browser) and never on files or memory.
+const DEFAULT_TOOL_BLOCKLIST = /copilot_memory|^memory$|_memory|memory_|read[_-]?file|write[_-]?file|list[_-]?dir|find[_-]?file|search[_-]?file|grep|glob|workspace[_-]?symbol|text[_-]?search/i;
 
 function isBlocked(name: string): boolean {
     if (DEFAULT_TOOL_BLOCKLIST.test(name)) { return true; }

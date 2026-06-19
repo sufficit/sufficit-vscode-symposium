@@ -1,8 +1,8 @@
 {
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
-  "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.93",
+  "description": "Symposium (\u03c3\u03c5\u03bc\u03c0\u03cc\u03c3\u03b9\u03bf\u03bd) \u2014 host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
+  "version": "0.79.94",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -301,7 +301,7 @@
           ],
           "enumDescriptions": [
             "Don't expose VS Code Language Model Tools to the native AI backend.",
-            "Expose the terminal/task/test tools (runInTerminal, runTask, runTests, …). Notebook execution is only in 'all'.",
+            "Expose the terminal/task/test tools (runInTerminal, runTask, runTests, \u2026). Notebook execution is only in 'all'.",
             "Expose every registered VS Code Language Model Tool (may flood the model with many tools)."
           ],
           "default": "terminal",
@@ -313,7 +313,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Extra VS Code Language Model Tools to never bridge to the native 'Sufficit AI' backend (substring match on the tool name). Copilot's own memory tools (copilot_memory and *memory* tools, which write to Copilot's store — NOT the Sufficit memory) are always blocked regardless of this list."
+          "description": "Extra VS Code Language Model Tools to never bridge to the native 'Sufficit AI' backend (substring match on the tool name). Copilot's own memory tools (copilot_memory and *memory* tools, which write to Copilot's store \u2014 NOT the Sufficit memory) are always blocked regardless of this list."
         },
         "symposium.bridge.enabled": {
           "type": "boolean",
@@ -454,7 +454,7 @@
         "symposium.adapters": {
           "type": "array",
           "default": [],
-          "markdownDescription": "Extra OpenAI-compatible adapters. Each entry: `{ name, baseUrl, headers, apiKey, model, models, supportsDeveloperRole }`. `id` is auto-generated (GUID) on save if omitted — keeps sessions stable when you rename. Leave `models` empty to auto-discover from `GET <baseUrl>/models`. Set `supportsDeveloperRole: true` only for gateways that truly accept the OpenAI `developer` role; otherwise developer prompts are downgraded to `system`. Edit via 'Symposium: Edit Adapters (JSON)'.",
+          "markdownDescription": "Extra OpenAI-compatible adapters. Each entry: `{ name, baseUrl, headers, apiKey, model, models, supportsDeveloperRole }`. `id` is auto-generated (GUID) on save if omitted \u2014 keeps sessions stable when you rename. Leave `models` empty to auto-discover from `GET <baseUrl>/models`. Set `supportsDeveloperRole: true` only for gateways that truly accept the OpenAI `developer` role; otherwise developer prompts are downgraded to `system`. Edit via 'Symposium: Edit Adapters (JSON)'.",
           "items": {
             "type": "object",
             "required": [
