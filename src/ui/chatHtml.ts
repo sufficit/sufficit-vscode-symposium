@@ -7,7 +7,9 @@
  * pane side (left/right) comes from the `meta` message.
  */
 export function renderHtml(): string {
-    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';`;
+    // Nonce required by VSCode 1.90+ webview CSP enforcement (unsafe-inline alone is blocked).
+    const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';`;
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -88,12 +90,33 @@ export function renderHtml(): string {
     }
     #root.booted #bootState { display: none; }
     #bootState .bootLogo {
-        width: 52px; height: 52px; border-radius: 14px; display: inline-flex; align-items: center; justify-content: center;
-        background: var(--vscode-chat-avatarBackground, var(--vscode-badge-background, rgba(128,128,128,0.18)));
-        color: var(--vscode-icon-foreground, var(--vscode-foreground));
+        width: 56px; height: 56px; border-radius: 16px; display: inline-flex; align-items: center; justify-content: center;
+        background: linear-gradient(135deg, #7C3AED 0%, #4F46E5 50%, #2563EB 100%);
+        color: white; position: relative;
+        box-shadow: 0 0 12px rgba(124, 58, 237, 0.4);
+        animation: bootLogoPulse 2.5s ease-in-out infinite;
     }
-    #bootState .bootLogo svg { width: 28px; height: 28px; }
-    #bootState .bootTitle { font-size: 1.1em; font-weight: 600; opacity: 0.9; letter-spacing: 0.3px; }
+    #bootState .bootLogo svg { width: 34px; height: 34px; }
+    @property --bootAng { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+    #bootState .bootLogo::after {
+        content: ""; position: absolute; inset: -5px; border-radius: 21px; padding: 2px; pointer-events: none;
+        background: conic-gradient(from var(--bootAng),
+            transparent 0deg, transparent 170deg,
+            rgba(167, 139, 250, 0.75) 230deg,
+            rgba(147, 197, 253, 0.95) 290deg,
+            #ffffff 320deg, transparent 360deg);
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        mask-composite: exclude;
+        animation: bootRingSpin 2s linear infinite;
+    }
+    @keyframes bootRingSpin { to { --bootAng: 360deg; } }
+    @keyframes bootLogoPulse {
+        0%, 100% { box-shadow: 0 0 12px rgba(124, 58, 237, 0.4); }
+        50% { box-shadow: 0 0 28px rgba(124, 58, 237, 0.65), 0 0 50px rgba(37, 99, 235, 0.25); }
+    }
+    #bootState .bootTitle { font-size: 1.1em; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(90deg, #A78BFA, #60A5FA); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     #bootSteps { display: flex; flex-direction: column; gap: 6px; min-width: 220px; max-width: 80%; font-size: 0.85em; }
     .bootStep { display: flex; align-items: center; gap: 8px; opacity: 0.85; }
     .bootStep .bsIcon { width: 14px; height: 14px; flex: 0 0 14px; display: inline-flex; align-items: center; justify-content: center; }
@@ -126,10 +149,24 @@ export function renderHtml(): string {
     #emptyState .esLogo svg { width: 24px; height: 24px; }
     #emptyState .esTitle { font-size: 1.05em; font-weight: 600; opacity: 0.9; }
     #emptyState .esHint { font-size: 0.86em; opacity: 0.7; }
+    #emptyState .esCta {
+        margin-top: 8px; display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 14px; border-radius: 5px; cursor: pointer; font: inherit; font-size: 0.9em;
+        background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+        border: none; transition: background-color 150ms ease;
+    }
+    #emptyState .esCta:hover { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
+    #emptyState .esCta svg { width: 13px; height: 13px; }
     @media (prefers-reduced-motion: reduce) {
         #progress::before, .spinner { animation: none; }
         #progress.on { opacity: 1; }
         #composer.working::after { animation: none; opacity: 0.5; }
+        #loadingState { animation: none; }
+        #bootState .ldLogo, #loadingState .ldLogo { animation: none; opacity: 0.85; }
+        #bootState .bootLogo { animation: none; box-shadow: 0 0 0 2px rgba(124,58,237,0.5) inset; }
+        #bootState .bootLogo::after { animation: none; opacity: 0; }
+        #ctxMenu { animation: none; }
+        .sessionItem .statusDot .work { animation: none; }
     }
 
     /* ---- sessions pane ---- */
@@ -176,7 +213,7 @@ export function renderHtml(): string {
     #accountFooter:hover .acc-out { opacity: 0.7; }
     .groupHeader {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 10px 12px 4px 12px; font-size: 0.72em; text-transform: uppercase;
+        padding: 10px 12px 4px 12px; font-size: 0.8em; text-transform: uppercase;
         letter-spacing: 0.04em; opacity: 0.6; font-weight: 600;
     }
     .groupHeader .gcount { opacity: 0.6; font-weight: 400; font-variant-numeric: tabular-nums; }
@@ -207,10 +244,11 @@ export function renderHtml(): string {
     }
     .sessionItem .body { flex: 1; min-width: 0; }
     .sessionItem .ttl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sessionItem .sub { opacity: 0.6; font-size: 0.82em; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sessionItem .sub { opacity: 0.6; font-size: 0.85em; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .sessionItem.archived .ttl { opacity: 0.6; font-style: italic; }
     .sessionItem .acts { display: none; flex-shrink: 0; gap: 1px; }
     .sessionItem:hover .acts { display: flex; }
+    .sessionItem:focus-within .acts { display: flex; }
     .sessionItem .acts button {
         background: none; border: none; cursor: pointer; padding: 2px 3px;
         color: var(--vscode-icon-foreground, var(--vscode-foreground));
@@ -286,12 +324,12 @@ export function renderHtml(): string {
     }
     #log > .msg.user:first-child, #log > .msg.assistant:first-child { margin-top: 0; border-top: none; }
     .role { font-size: 0.82em; opacity: 1; margin-bottom: 7px; display: flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: 0.02em; color: var(--vscode-foreground); }
-    .role .msgTime { font-weight: 400; opacity: 0; font-size: 0.92em; color: var(--vscode-descriptionForeground); transition: opacity 150ms ease; }
+    .role .msgTime { font-weight: 400; opacity: 0.4; font-size: 0.92em; color: var(--vscode-descriptionForeground); transition: opacity 150ms ease; }
     /* messages that an in-progress edit will replace on resend */
     .msg.willReplace { opacity: 0.4; }
     #composer.editing { box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); border-radius: 6px; }
     #composer.editing #input::placeholder { color: var(--vscode-focusBorder); }
-    .msg:hover .role .msgTime { opacity: 0.7; }
+    .msg:hover .role .msgTime { opacity: 0.75; }
     .role .avatar {
         width: 19px; height: 19px; border-radius: 5px; flex-shrink: 0;
         display: inline-flex; align-items: center; justify-content: center;
@@ -400,7 +438,7 @@ export function renderHtml(): string {
     .codeblock { margin: 8px 0; border: 1px solid var(--vscode-input-border, rgba(128,128,128,0.3)); border-radius: 6px; overflow: hidden; }
     .codeblock .cbhead {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 3px 8px; font-size: 0.78em; opacity: 0.8;
+        padding: 3px 8px; font-size: 0.82em; opacity: 0.8;
         background: var(--vscode-editorWidget-background, rgba(128,128,128,0.12));
         border-bottom: 1px solid var(--vscode-input-border, rgba(128,128,128,0.3));
     }
@@ -467,7 +505,7 @@ export function renderHtml(): string {
     .toolgroup { margin: 10px 0; }
     .toolgroup .tghead {
         display: flex; align-items: center; gap: 6px; cursor: pointer;
-        font-size: 0.76em; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
+        font-size: 0.82em; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase;
         opacity: 0.6; padding: 1px 2px 5px;
     }
     .toolgroup .tghead:hover { opacity: 0.85; }
@@ -835,7 +873,7 @@ export function renderHtml(): string {
     #sendGroup button {
         border: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
         background: var(--vscode-button-background); color: var(--vscode-button-foreground);
-        transition: background-color 150ms ease, opacity 150ms ease;
+        transition: background-color 200ms ease, opacity 150ms ease;
     }
     #sendGroup button:hover:not(:disabled) { background: var(--vscode-button-hoverBackground, var(--vscode-button-background)); }
     #send { padding: 0 9px; }
@@ -894,7 +932,7 @@ export function renderHtml(): string {
 <body>
 <div id="root">
     <div id="bootState">
-        <div class="bootLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
+        <div class="bootLogo"><svg viewBox="0 0 24 24" fill="none"><rect x="1" y="1" width="15" height="10" rx="3" fill="white" fill-opacity="0.3"/><path d="M4 11 L2 15 L8 11 Z" fill="white" fill-opacity="0.3"/><rect x="8" y="11" width="15" height="10" rx="3" fill="white" fill-opacity="0.92"/><path d="M20 21 L22 24 L17 21 Z" fill="white" fill-opacity="0.92"/><circle cx="12" cy="16" r="1.3" fill="#7C3AED"/><circle cx="15.5" cy="16" r="1.3" fill="#4F46E5"/><circle cx="19" cy="16" r="1.3" fill="#3B82F6"/></svg></div>
         <div class="bootTitle">Symposium</div>
         <div id="bootSteps"></div>
         <div id="bootHint">Iniciando…</div>
@@ -926,6 +964,7 @@ export function renderHtml(): string {
                 <div class="esLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
                 <div class="esTitle">Symposium</div>
                 <div class="esHint">Type below to start a conversation.</div>
+                <button class="esCta" id="emptyNewSession"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>Nova conversa</button>
             </div>
             <div id="loadingState">
                 <div class="ldLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
@@ -971,11 +1010,13 @@ export function renderHtml(): string {
     </main>
 </div>
 <div id="ctxMenu"></div>
-<script>
-    const vscode = acquireVsCodeApi();
+<script nonce="${nonce}">
     window.addEventListener("error", (e) => {
-        vscode.postMessage({ type: "webview-error", message: (e.message || "error") + " @" + (e.lineno || "?") });
+        const bh = document.getElementById("bootHint");
+        if (bh) { bh.textContent = "❌ " + (e.message || "erro JS") + " @" + (e.lineno || "?"); bh.style.color = "var(--vscode-errorForeground, #f14c4c)"; bh.style.opacity = "1"; }
+        try { if (typeof vscode !== "undefined") { vscode.postMessage({ type: "webview-error", message: (e.message || "error") + " @" + (e.lineno || "?") }); } } catch(_) {}
     });
+    const vscode = acquireVsCodeApi();
     const root = document.getElementById("root");
     const log = document.getElementById("log");
     const input = document.getElementById("input");
@@ -1007,6 +1048,7 @@ export function renderHtml(): string {
     let showArchived = false;
 
     document.getElementById("newSessionBtn").addEventListener("click", () => { setLoading(true, "Starting…"); vscode.postMessage({ type: "new-session" }); });
+    document.getElementById("emptyNewSession").addEventListener("click", () => { setLoading(true, "Starting…"); vscode.postMessage({ type: "new-session" }); });
     document.getElementById("archToggle").addEventListener("click", () => { showArchived = !showArchived; renderSessions(); });
 
     // Persisted UI state (send mode + sessions pane width).
@@ -1656,7 +1698,7 @@ export function renderHtml(): string {
 
     // inline: **bold**, *italic*, \`code\`, [text](url) — builds text nodes safely
     function inline(parent, text) {
-        const re = /(\`[^\`]+\`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+        const re = /(\`[^\`]+\`|\\*\\*[^*]+\\*\\*|\\*[^*]+\\*|\\[[^\\]]+\\]\\([^)]+\\))/g;
         let last = 0; let m;
         while ((m = re.exec(text)) !== null) {
             if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
@@ -1664,7 +1706,7 @@ export function renderHtml(): string {
             if (tok.startsWith("\`")) { const e = document.createElement("code"); e.className = "inline"; e.textContent = tok.slice(1, -1); parent.appendChild(e); }
             else if (tok.startsWith("**")) { const e = document.createElement("strong"); e.textContent = tok.slice(2, -2); parent.appendChild(e); }
             else if (tok.startsWith("*")) { const e = document.createElement("em"); e.textContent = tok.slice(1, -1); parent.appendChild(e); }
-            else { const mm = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/); const a = document.createElement("a"); a.textContent = mm[1]; a.href = mm[2]; a.title = mm[2]; parent.appendChild(a); }
+            else { const mm = tok.match(/^\\[([^\\]]+)\\]\\(([^)]+)\\)$/); const a = document.createElement("a"); a.textContent = mm[1]; a.href = mm[2]; a.title = mm[2]; parent.appendChild(a); }
             last = re.lastIndex;
         }
         if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
@@ -2358,6 +2400,14 @@ export function renderHtml(): string {
     function renderSessionItem(s) {
             const el = document.createElement("div");
             el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "") + (s.pinned ? " pinned" : "");
+            el.tabIndex = 0;
+            el.setAttribute("role", "option");
+            el.setAttribute("aria-selected", s.sessionId === activeSessionId ? "true" : "false");
+            el.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); body.click(); }
+                else if (e.key === "ArrowDown") { e.preventDefault(); const next = el.nextElementSibling; if (next && next.classList.contains("sessionItem")) { next.focus(); } else { const after = el.parentElement.querySelectorAll(".sessionItem"); const idx = Array.from(after).indexOf(el); if (idx + 1 < after.length) { after[idx + 1].focus(); } } }
+                else if (e.key === "ArrowUp") { e.preventDefault(); const prev = el.previousElementSibling; if (prev && prev.classList.contains("sessionItem")) { prev.focus(); } else { const all = el.parentElement.querySelectorAll(".sessionItem"); const idx = Array.from(all).indexOf(el); if (idx > 0) { all[idx - 1].focus(); } } }
+            });
             // Pinned items reorder by drag-and-drop (the up/down menu still works).
             if (s.pinned) {
                 el.draggable = true;
