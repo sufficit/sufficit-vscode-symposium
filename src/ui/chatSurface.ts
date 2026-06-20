@@ -811,6 +811,7 @@ export class ChatSurface {
             sessionsSide,
             chatOnly: this.chatOnly,
             whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
+            execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
         });
         if (adapter.history) {
             try {
@@ -860,6 +861,7 @@ export class ChatSurface {
             activeFileEndColumn: activeEditorContext().endColumn,
             activeFilePreview: activeEditorContext().preview,
             whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
+            execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
         });
         this.terminalSession = new TerminalSession(
             adapter,
@@ -931,6 +933,7 @@ export class ChatSurface {
             activeFileEndColumn: activeEditorContext().endColumn,
             activeFilePreview: activeEditorContext().preview,
             whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
+            execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
         });
         controller.attach((message) => {
             // The controller emits the RAW edited-files set; the surface filters

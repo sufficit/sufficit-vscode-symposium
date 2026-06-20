@@ -87,6 +87,7 @@ ${chatStyles}
                 <button id="modelPicker" class="ctl menubtn" style="display:none" title="Model — change anytime; applies to the next message" aria-label="Model — change anytime; applies to the next message"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <button id="reasoningPicker" class="ctl menubtn" style="display:none" title="Reasoning effort — change anytime; applies to the next message" aria-label="Reasoning effort"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <button id="presencePicker" class="ctl menubtn" title="Presence — can be changed any time" aria-label="Presence — can be changed any time"><span class="picon"></span><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="execPicker" class="ctl menubtn" style="display:none" title="Shell execution display" aria-label="Shell execution display"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <span id="status"></span>
                 <span class="grow"></span>
                 <select id="sendMode" style="display:none">

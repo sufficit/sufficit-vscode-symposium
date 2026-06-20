@@ -875,6 +875,7 @@ export const chatStyles = `    body {
     .chip .x:hover { opacity: 1; }
     #addContext svg { width: 15px; height: 15px; }
     #input {
+        box-sizing: border-box; width: 100%; display: block; overflow-y: auto;
         border: none; outline: none; resize: none;
         background: transparent; color: var(--vscode-input-foreground);
         font-family: inherit; font-size: inherit; line-height: 1.5;
