@@ -331,7 +331,9 @@ class OpenAISession extends EventEmitter implements AgentSession {
 
 
     private shellExecutionMode(): ShellExecutionMode {
-        const v = String((this.cfg as any).shellExecution ?? "silent");
+        // Per-conversation choice from the composer wins over static config,
+        // so the user can flip silent/inline/terminal without changing settings.
+        const v = String(this.options.execDisplay ?? (this.cfg as any).shellExecution ?? "silent");
         return v === "inline" || v === "terminal" ? v : "silent";
     }
 

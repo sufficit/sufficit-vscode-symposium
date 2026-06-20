@@ -76,16 +76,22 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     };
     const STOP_ICON = '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>';
     function updateSendTitle() {
-        // While a turn runs the main button STOPS it; idle it's a plain Send.
-        // The mode caret (queue/steer for a typed follow-up) shows only when busy.
+        // Idle: plain Send (paper plane). While a turn runs, the button reflects
+        // what the NEXT message will do — queue (clock) or steer (lightning) —
+        // per the selected mode, so the icon previews the action. Clicking sends
+        // in that mode; Stop the running turn with Esc (or the caret menu).
         if (busy) {
-            sendGroup.classList.add("stopping");
-            sendIcon.innerHTML = STOP_ICON;
-            sendBtn.title = "Stop the current turn (Esc)";
+            const mode = (sendMode.value === "steer") ? "steer" : "queue";
+            sendGroup.classList.add("busy");
+            sendGroup.classList.toggle("steer", mode === "steer");
+            sendIcon.innerHTML = MODE_ICONS[mode];
+            sendBtn.title = (mode === "steer")
+                ? "Steer: interrupt the running turn and send now (Ctrl/Cmd+Enter) · Esc to stop"
+                : "Queue: send after the current turn finishes (Alt+Enter) · Esc to stop";
             sendCaret.style.display = "";
             return;
         }
-        sendGroup.classList.remove("stopping");
+        sendGroup.classList.remove("busy", "steer", "stopping");
         sendIcon.innerHTML = MODE_ICONS.send;
         sendBtn.title = "Send (Enter)";
         sendCaret.style.display = "none";
@@ -1718,7 +1724,8 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     }
     function send(modeOverride) {
         const text = input.value.trim();
-        if (!text) return;
+        // While busy with an empty composer, the button acts as Stop (nothing to send).
+        if (!text) { if (busy) { vscode.postMessage({ type: "cancel" }); } return; }
         // While a turn runs, only queue/steer may submit; plain send waits too
         // (the extension queues it), so allow submitting in every mode.
         input.value = "";
@@ -1790,7 +1797,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     }
 
     // While a turn runs the button stops it; otherwise it sends.
-    sendBtn.addEventListener("click", () => { if (busy) { vscode.postMessage({ type: "cancel" }); } else { send(); } });
+    sendBtn.addEventListener("click", () => { send(); });
     addContext.addEventListener("click", () => vscode.postMessage({ type: "pick-attachments" }));
     const addBrowserPage = document.getElementById("addBrowserPage");
     if (addBrowserPage) { addBrowserPage.addEventListener("click", () => vscode.postMessage({ type: "attach-browser-page" })); }

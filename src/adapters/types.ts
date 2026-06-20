@@ -125,6 +125,8 @@ export interface SessionStartOptions {
     developerPrompt?: string;
     /** Current presence: "away" = autonomous (API backends run tools unbounded). */
     autonomy?: string;
+    /** How local shell/function executions should be shown to the user. */
+    execDisplay?: "silent" | "inline" | "terminal";
 }
 
 /**

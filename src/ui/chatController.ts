@@ -13,6 +13,7 @@ interface PendingMessage {
     reasoning?: string;
     permission?: string;
     autonomy?: string;
+    execDisplay?: "silent" | "inline" | "terminal";
 }
 
 /**
@@ -319,6 +320,9 @@ export class ChatController {
         }
         if (msg.permission) {
             this.options.permission = msg.permission;
+        }
+        if (msg.execDisplay) {
+            this.options.execDisplay = msg.execDisplay;
         }
         // Presence drives unbounded tool loops for API backends (autonomous mode).
         this.options.autonomy = msg.autonomy;

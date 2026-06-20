@@ -212,6 +212,7 @@ export class ConfigPanel {
             prefs: {
                 sessionsSide: chat.get<string>("sessionsSide", "auto"),
                 openIn: chat.get<string>("openIn", "editor"),
+                preferredLanguage: chat.get<string>("preferredLanguage", ""),
                 lmTools: root.get<string>("lmTools", "terminal"),
                 maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
                 shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),

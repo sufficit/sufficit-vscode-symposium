@@ -212,6 +212,11 @@ export function renderConfigHtml(): string {
             row("Abrir sessão em", "Onde uma sessão abre ao iniciar.",
                 sel("symposium.chat.openIn", p.openIn || "editor",
                     [{ v: "editor", l: "Editor (aba central)" }, { v: "sidebar", l: "Barra lateral" }])) +
+            row("Idioma das respostas", "Idioma preferido para as respostas da IA. Vazio usa o idioma de exibição do VS Code.",
+                sel("symposium.chat.preferredLanguage", p.preferredLanguage || "",
+                    [{ v: "", l: "Automático (VS Code)" }, { v: "pt-br", l: "Português (BR)" }, { v: "en", l: "English" },
+                     { v: "es", l: "Español" }, { v: "fr", l: "Français" }, { v: "de", l: "Deutsch" },
+                     { v: "it", l: "Italiano" }, { v: "ja", l: "日本語" }, { v: "zh-cn", l: "中文 (简体)" }])) +
             row("Ferramentas do VS Code", "Quais Language Model Tools o backend Sufficit AI pode usar.",
                 sel("symposium.lmTools", p.lmTools || "terminal",
                     [{ v: "off", l: "Desligado" }, { v: "terminal", l: "Terminal/tarefas/testes" }, { v: "all", l: "Todas" }])) +

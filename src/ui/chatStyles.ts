@@ -926,6 +926,10 @@ export const chatStyles = `    body {
     #sendGroup button:disabled { opacity: 0.4; cursor: default; }
     #sendGroup.stopping button { background: var(--vscode-statusBarItem-errorBackground, var(--vscode-errorForeground, #c4314b)); }
     #sendGroup.stopping #sendCaret { border-left-color: color-mix(in srgb, var(--vscode-button-foreground) 25%, transparent); }
+    /* While a turn runs: the send button previews the next message's fate.
+       Queue = neutral accent (wait), Steer = warning accent (interrupt). */
+    #sendGroup.busy button { background: color-mix(in srgb, var(--vscode-button-background) 55%, var(--vscode-badge-background, #4d4d4d)); }
+    #sendGroup.busy.steer button { background: var(--vscode-statusBarItem-warningBackground, var(--vscode-editorWarning-foreground, #cca700)); color: var(--vscode-statusBarItem-warningForeground, #000); }
 
     /* ---- footer status bar ---- */
     #statusbar {
