@@ -1,17 +1,14 @@
+import { chatStyles } from "./chatStyles";
+import { chatClientJs } from "./chatClient";
+
 /**
  * Shared chat webview markup for the sidebar view and the editor panel.
  *
  * Master-detail layout mirroring the built-in Chat sessions viewer: a
  * sessions list pane beside the conversation, shown automatically when the
  * surface is wide enough and collapsible behind a toggle when narrow. The
- * pane side (left/right) comes from the meta message.
- *
- * Styles live in ./chatStyles, client script in ./chatClient; this file owns
- * the document shell + body markup and composes the three.
+ * pane side (left/right) comes from the `meta` message.
  */
-import { chatStyles } from "./chatStyles";
-import { chatClientJs } from "./chatClient";
-
 export function renderHtml(): string {
     // Nonce required by VSCode 1.90+ webview CSP enforcement (unsafe-inline alone is blocked).
     const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -21,7 +18,9 @@ export function renderHtml(): string {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
-<style>${chatStyles}</style>
+<style>
+${chatStyles}
+</style>
 </head>
 <body>
 <div id="root">
@@ -36,8 +35,8 @@ export function renderHtml(): string {
         <div id="sessionsHeader">
             <span>Sessions</span>
             <span>
-                <button id="newSessionBtn" class="iconBtn" title="New session">＋</button>
-                <button id="archToggle" class="iconBtn" title="Show/hide archived">🗄</button>
+                <button id="newSessionBtn" class="iconBtn" title="New session" aria-label="New session"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg></button>
+                <button id="archToggle" class="iconBtn" title="Show/hide archived" aria-label="Show/hide archived"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M14 2H2a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1ZM2 6v7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6H2Zm4 2h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1Z"/></svg></button>
             </span>
         </div>
         <div id="sessionsList"></div>
@@ -46,9 +45,9 @@ export function renderHtml(): string {
     <div id="resizer" title="Drag to resize"></div>
     <main id="chatCol">
         <div id="chatHeader">
-            <button id="listToggle" class="iconBtn" title="Sessions">☰</button>
+            <button id="listToggle" class="iconBtn" title="Sessions" aria-label="Sessions"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1H2V4Zm0 4h12v1H2V8Zm0 4h12v1H2v-1Z"/></svg></button>
             <span id="chatTitle"></span>
-            <button id="switchAgentBtn" class="iconBtn" title="Switch to another model" style="display:none">
+            <button id="switchAgentBtn" class="iconBtn" title="Switch to another model" aria-label="Switch to another model" style="display:none">
                 <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.5 1 6l3.5 3.5V7H10V5H4.5V2.5Zm7 4L15 10l-3.5 3.5V11H6V9h5.5V6.5Z"/></svg>
             </button>
         </div>
@@ -65,7 +64,7 @@ export function renderHtml(): string {
                 <div class="ldName">Symposium</div>
                 <div class="ldSub"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
             </div>
-            <button id="scrollBottom" title="Ir para o fim"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z"/></svg></button>
+            <button id="scrollBottom" title="Ir para o fim" aria-label="Ir para o fim"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z"/></svg></button>
         </div>
         <div id="queued"></div>
         <div id="tasks"></div>
@@ -76,18 +75,18 @@ export function renderHtml(): string {
             <div id="chips"></div>
             <textarea id="input" placeholder="Ask the agent…  (Enter sends · Shift+Enter newline)"></textarea>
             <div id="toolbar">
-                <button id="addContext" class="iconBtn" title="Attach files">
+                <button id="addContext" class="iconBtn" title="Attach files" aria-label="Attach files">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>
                 </button>
-                <button id="addBrowserPage" class="iconBtn" title="Anexar página do browser ao contexto">
+                <button id="addBrowserPage" class="iconBtn" title="Anexar página do browser ao contexto" aria-label="Anexar página do browser ao contexto">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM2 8h2.05c.08-1.4.36-2.66.78-3.6A6 6 0 0 0 2 8Zm2.05 1H2a6 6 0 0 0 2.83 3.6c-.42-.94-.7-2.2-.78-3.6Zm1 0c.1 1.6.46 2.9.9 3.66.2.34.38.5.55.6V9H5.05Zm0-1H7.5V4.74c-.17.1-.36.26-.55.6-.44.76-.8 2.06-.9 3.66ZM8.5 4.74V8h2.45c-.1-1.6-.46-2.9-.9-3.66-.2-.34-.38-.5-.55-.6ZM11.95 8H14a6 6 0 0 0-2.83-3.6c.42.94.7 2.2.78 3.6Zm0 1c-.08 1.4-.36 2.66-.78 3.6A6 6 0 0 0 14 9h-2.05ZM8.5 9v4.26c.17-.1.36-.26.55-.6.44-.76.8-2.06.9-3.66H8.5Z"/></svg>
                 </button>
-                <button id="configBtn" class="iconBtn" title="Tools & configuration">
+                <button id="configBtn" class="iconBtn" title="Tools & configuration" aria-label="Tools & configuration">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 3a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 3Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Zm6 4.5a2 2 0 0 1 3.9-.5H14v1h-2.1A2 2 0 0 1 8 8Zm-6 .5h4.2a2 2 0 0 0 0-1H2v1Zm2 4.5a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 13Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Z"/></svg>
                 </button>
-                <button id="modelPicker" class="ctl menubtn" style="display:none" title="Model — change anytime; applies to the next message"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
-                <button id="reasoningPicker" class="ctl menubtn" style="display:none" title="Reasoning effort — change anytime; applies to the next message"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
-                <button id="presencePicker" class="ctl menubtn" title="Presence — can be changed any time"><span class="picon"></span><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="modelPicker" class="ctl menubtn" style="display:none" title="Model — change anytime; applies to the next message" aria-label="Model — change anytime; applies to the next message"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="reasoningPicker" class="ctl menubtn" style="display:none" title="Reasoning effort — change anytime; applies to the next message" aria-label="Reasoning effort"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                <button id="presencePicker" class="ctl menubtn" title="Presence — can be changed any time" aria-label="Presence — can be changed any time"><span class="picon"></span><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 <span id="status"></span>
                 <span class="grow"></span>
                 <select id="sendMode" style="display:none">
@@ -95,8 +94,8 @@ export function renderHtml(): string {
                     <option value="steer">Steer</option>
                 </select>
                 <div id="sendGroup">
-                    <button id="send" title="Send (Enter)"><span id="sendIcon"></span></button>
-                    <button id="sendCaret" title="Send mode"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                    <button id="send" title="Send (Enter)" aria-label="Send (Enter)"><span id="sendIcon"></span></button>
+                    <button id="sendCaret" title="Send mode" aria-label="Send mode"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 </div>
             </div>
         </div>
@@ -104,7 +103,9 @@ export function renderHtml(): string {
     </main>
 </div>
 <div id="ctxMenu"></div>
-<script nonce="${nonce}">${chatClientJs}</script>
+<script nonce="${nonce}">
+${chatClientJs}
+</script>
 </body>
 </html>`;
 }

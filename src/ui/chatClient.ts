@@ -1,10 +1,9 @@
 /**
  * Chat webview client script — extracted from chatHtml.ts.
  * Runs inside the webview (no extension/Node APIs). Injected into a
- * nonce-guarded <script>. Backticks/escapes preserved verbatim.
+ * nonce-guarded <script>. Escapes preserved verbatim from the original literal.
  */
-export const chatClientJs = `
-    window.addEventListener("error", (e) => {
+export const chatClientJs = `    window.addEventListener("error", (e) => {
         const bh = document.getElementById("bootHint");
         if (bh) { bh.textContent = "❌ " + (e.message || "erro JS") + " @" + (e.lineno || "?"); bh.style.color = "var(--vscode-errorForeground, #f14c4c)"; bh.style.opacity = "1"; }
         try { if (typeof vscode !== "undefined") { vscode.postMessage({ type: "webview-error", message: (e.message || "error") + " @" + (e.lineno || "?") }); } } catch(_) {}
@@ -547,10 +546,10 @@ export const chatClientJs = `
             tools.appendChild(edit);
         }
         if (role === "assistant") {
-            const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy reply + actions";
+            const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy this reply";
             cp.appendChild(svgIcon("copy"));
             cp.addEventListener("click", () => {
-                navigator.clipboard && navigator.clipboard.writeText(collectStepText(wrap));
+                navigator.clipboard && navigator.clipboard.writeText(wrap._raw != null ? wrap._raw : text);
                 cp.classList.add("done"); setTimeout(() => cp.classList.remove("done"), 1000);
             });
             tools.appendChild(cp);
@@ -582,45 +581,6 @@ export const chatClientJs = `
         autoScroll(stick);
     }
     function endStream() { streamMsg = null; streamBody = null; streamText = ""; endThinkingStream(); }
-
-    /**
-     * Build a plain-text representation of an assistant turn: message text +
-     * every tool call in the toolgroup(s) that immediately follow it in the log.
-     */
-    function collectStepText(msgWrap) {
-        const parts = [msgWrap._raw != null ? msgWrap._raw : ""];
-        let sib = msgWrap.nextElementSibling;
-        while (sib && sib.classList.contains("toolgroup")) {
-            const toolWraps = sib.querySelectorAll(".toolwrap");
-            for (const tw of toolWraps) {
-                const verb = tw.querySelector(".tVerb")?.textContent?.trim() ?? "";
-                const targetEl = tw.querySelector(".tTarget");
-                const target = (targetEl?.title || targetEl?.textContent || "").trim();
-                const secs = tw.querySelectorAll(".toolsec");
-                let inputText = "", resultText = "";
-                for (const sec of secs) {
-                    const label = sec.querySelector(".tlabel")?.textContent?.trim() ?? "";
-                    // numbered pre: join lcode spans; plain pre: textContent
-                    const pre = sec.querySelector("pre");
-                    let body = "";
-                    if (pre) {
-                        const lcodes = pre.querySelectorAll(".lcode");
-                        body = lcodes.length
-                            ? [...lcodes].map((n) => n.textContent).join("\n")
-                            : pre.textContent ?? "";
-                    }
-                    if (/input/i.test(label)) { inputText = body.trim(); }
-                    else if (/result/i.test(label)) { resultText = body.trim(); }
-                }
-                let toolLine = "\n\n[" + verb + (target ? ": " + target : "") + "]";
-                if (inputText) { toolLine += "\nInput:\n" + inputText.slice(0, 1000) + (inputText.length > 1000 ? "\n… [truncated — " + inputText.length + " chars total]" : ""); }
-                if (resultText) { toolLine += "\nResult:\n" + resultText.slice(0, 1000) + (resultText.length > 1000 ? "\n… [truncated — " + resultText.length + " chars total]" : ""); }
-                parts.push(toolLine);
-            }
-            sib = sib.nextElementSibling;
-        }
-        return parts.join("");
-    }
 
     // Streaming thinking blocks (extended reasoning).
     let streamThink = null, streamThinkBody = null, streamThinkLen = null, streamThinkText = "";
@@ -1389,11 +1349,6 @@ export const chatClientJs = `
             return;
         }
         hideCtx();
-        if (action === "delete") {
-            // Immediate visual feedback before the backend confirms
-            const el = document.querySelector(".sessionItem[data-session-id='" + s.sessionId + "']");
-            if (el) { el.classList.add("deleting"); }
-        }
         vscode.postMessage({ type: "session-action", action, sessionId: s.sessionId, backend: s.backend });
     }
 
@@ -1509,8 +1464,7 @@ export const chatClientJs = `
     }
     function renderSessionItem(s) {
             const el = document.createElement("div");
-            el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "") + (s.pinned ? " pinned" : "") + (s.deleting ? " deleting" : "");
-            el.dataset.sessionId = s.sessionId;
+            el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "") + (s.pinned ? " pinned" : "");
             el.tabIndex = 0;
             el.setAttribute("role", "option");
             el.setAttribute("aria-selected", s.sessionId === activeSessionId ? "true" : "false");
@@ -2260,5 +2214,4 @@ export const chatClientJs = `
     refreshEmpty();   // show the placeholder until a conversation loads
     // Handshake: the extension queues everything until this script is live,
     // so meta/history posted right after construction are never lost.
-    vscode.postMessage({ type: "ready" });
-`;
+    vscode.postMessage({ type: "ready" });`;

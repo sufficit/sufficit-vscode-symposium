@@ -1,9 +1,8 @@
 /**
  * Chat webview styles — extracted from chatHtml.ts (single-source split).
- * Pure CSS string injected into <style>; no template interpolation.
+ * Pure CSS injected into <style>; no template interpolation.
  */
-export const chatStyles = `
-    body {
+export const chatStyles = `    body {
         font-family: var(--vscode-font-family);
         font-size: var(--vscode-font-size, 13px);
         color: var(--vscode-foreground);
@@ -224,9 +223,6 @@ export const chatStyles = `
     }
     .sessionItem.pinned { cursor: grab; }
     .sessionItem.dragging { opacity: 0.5; }
-    .sessionItem.deleting { opacity: 0.45; pointer-events: none; }
-    .sessionItem.deleting .ttl { text-decoration: line-through; }
-    .sessionItem.deleting .sub::before { content: "⏳ "; }
     .sessionItem.dropTarget { box-shadow: inset 0 2px 0 var(--vscode-focusBorder); }
     .sessionItem .statusDot .stored { width: 13px; height: 13px; opacity: 0.4; }
     .sessionItem.active .statusDot .stored { opacity: 0.7; }
@@ -968,5 +964,4 @@ export const chatStyles = `
     #resizer::after { content: ""; position: absolute; inset: 0 2px; background: var(--vscode-panel-border, #333); opacity: 0.4; }
     #resizer:hover::after, #resizer.dragging::after { background: var(--vscode-focusBorder); opacity: 1; }
     #root.side-right #resizer { order: 2; }
-    #root.narrow #resizer, #root.chat-only #resizer { display: none; }
-`;
+    #root.narrow #resizer, #root.chat-only #resizer { display: none; }`;
