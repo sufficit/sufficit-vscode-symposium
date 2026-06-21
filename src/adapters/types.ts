@@ -23,7 +23,7 @@ export type AgentEvent =
     | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string }
     | { kind: "turn-end"; costUsd?: number; durationMs?: number }
     | { kind: "usage"; inputTokens?: number; outputTokens?: number; cacheRead?: number; contextWindow?: number }
-    | { kind: "error"; message: string; retryable?: boolean };
+    | { kind: "error"; message: string; retryable?: boolean; fatal?: boolean };
 
 /** A session known to a backend, listed in the sessions tree. */
 export interface SessionInfo {

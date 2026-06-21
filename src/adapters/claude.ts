@@ -38,6 +38,29 @@ export interface ClaudeAdapterConfig {
 }
 
 /**
+ * Known Claude model ids used as a fallback when remote discovery is
+ * unavailable (e.g. the CLI authenticates without ANTHROPIC_API_KEY, so the
+ * /v1/models endpoint can't be queried). Keeps the model picker populated.
+ */
+const CLAUDE_FALLBACK_MODELS: string[] = [
+    "claude-opus-4-1",
+    "claude-opus-4-0",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-0",
+    "claude-3-7-sonnet-latest",
+    "claude-3-5-haiku-latest",
+];
+
+const CLAUDE_FALLBACK_LABELS: Record<string, string> = {
+    "claude-opus-4-1": "Claude Opus 4.1",
+    "claude-opus-4-0": "Claude Opus 4",
+    "claude-sonnet-4-5": "Claude Sonnet 4.5",
+    "claude-sonnet-4-0": "Claude Sonnet 4",
+    "claude-3-7-sonnet-latest": "Claude Sonnet 3.7",
+    "claude-3-5-haiku-latest": "Claude Haiku 3.5",
+};
+
+/**
  * Drives the Claude Code CLI through its bidirectional JSONL protocol:
  * `claude -p --input-format stream-json --output-format stream-json`.
  *
@@ -366,14 +389,16 @@ export class ClaudeAdapter implements AgentAdapter {
     models(): string[] {
         const cfg = this.getConfig();
         const cached = getCached("claude");
-        const base = cached?.models ?? [];
+        // Prefer discovered models; fall back to the known-model list when the
+        // discovery cache is still empty (e.g. CLI auth without API key).
+        const base = cached?.models?.length ? cached.models : CLAUDE_FALLBACK_MODELS;
         const configured = cfg.model;
         return [...new Set([...(configured ? [configured] : []), ...base])];
     }
 
     /**
      * Fetch current Claude models from Anthropic API (requires ANTHROPIC_API_KEY
-     * in adapter env or process env). Falls back to file cache, then hardcoded list.
+     * in adapter env or process env). Falls back to file cache, then the CLAUDE_FALLBACK_MODELS list.
      * Updates file cache on success.
      */
     async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
@@ -383,8 +408,8 @@ export class ClaudeAdapter implements AgentAdapter {
 
         const cached = getCached("claude");
         if (!apiKey) {
-            cfg.log?.("[claude] no ANTHROPIC_API_KEY — using file cache for models");
-            return { models: this.models(), labels: cached?.labels };
+            cfg.log?.("[claude] no ANTHROPIC_API_KEY — using fallback/file cache for models");
+            return { models: this.models(), labels: { ...CLAUDE_FALLBACK_LABELS, ...(cached?.labels ?? {}) } };
         }
 
         // Skip if cache is fresh and caller didn't force a refresh
@@ -417,7 +442,7 @@ export class ClaudeAdapter implements AgentAdapter {
         } catch (err: any) {
             cfg.log?.(`[claude] model refresh failed: ${err?.message ?? err}`);
         }
-        return { models: this.models(), labels: cached?.labels };
+        return { models: this.models(), labels: { ...CLAUDE_FALLBACK_LABELS, ...(cached?.labels ?? {}) } };
     }
 
     hasNativeTodo(): boolean { return true; }   // TodoWrite

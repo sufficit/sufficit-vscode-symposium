@@ -547,9 +547,14 @@ export class ChatSurface {
             }
         } catch (error) {
             symposiumLog(`[surface] ERROR: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+            // Only a "send" drives the agent's turn. Any other message is a UI
+            // command (open-file, file-diff, etc.); a failure there is local and
+            // must NOT be treated as a turn-ending (fatal) error, otherwise it
+            // would flip the composer's send/stop button as if the agent stopped.
+            const fatal = message?.type === "send";
             void this.webview.postMessage({
                 type: "event",
-                event: { kind: "error", message: error instanceof Error ? error.message : String(error) },
+                event: { kind: "error", message: error instanceof Error ? error.message : String(error), fatal },
             });
         }
     }
@@ -1224,7 +1229,10 @@ export class ChatSurface {
             label = "HEAD ↔ working";
         }
         if (base === undefined || base === null) {
-            await vscode.window.showTextDocument(fileUri, { preview: true });
+            // No baseline to diff against (e.g. a brand-new file or a pasted
+            // image). Use vscode.open so binary files like images open in their
+            // proper preview instead of failing in the text editor.
+            await vscode.commands.executeCommand("vscode.open", fileUri, { preview: true });
             return;
         }
         const tmp = path.join(os.tmpdir(), "symposium-diff");

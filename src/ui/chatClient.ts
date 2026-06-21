@@ -2250,8 +2250,16 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                 else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);
                 else if (ev.kind === "usage") { lastUsage = ev; renderStatusbar(); }
                 else if (ev.kind === "error") {
-                    // Defensive: an error must never leave the composer stuck busy.
-                    busy = false; sendBtn.disabled = false; setStatus();
+                    // The composer's send/stop button reflects ONLY the agent's
+                    // turn lifecycle. A non-fatal error (ev.fatal === false) is a
+                    // local UI failure (e.g. failing to open a file/image) and
+                    // must NOT touch busy, or it would flip the button as if the
+                    // agent had stopped while it is still working.
+                    // Legacy events without fatal are treated as fatal (default),
+                    // preserving the old defensive behaviour for real turn errors.
+                    if (ev.fatal !== false) {
+                        busy = false; sendBtn.disabled = false; setStatus();
+                    }
                     renderError(ev.message);
                 }
                 else if (ev.kind === "session") {
