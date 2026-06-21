@@ -774,27 +774,26 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 if (pick === "Copy details") { await vscode.env.clipboard.writeText(details); }
                 return;
             }
+            // Flag it as deleting BEFORE the confirm modal so the list shows the
+            // marker immediately — the modal itself can lag, and the user needs
+            // instant feedback that the click registered. Reverted if cancelled.
+            deleting.add(info.sessionId);
+            refreshAll();
             const confirm = await vscode.window.showWarningMessage(
                 `Permanently delete "${info.title}"?\n\nThis scrubs the transcript and all history/index entries for this session (${info.sessionId}) from the ${info.backend} CLI on disk. It cannot be undone.`,
                 { modal: true },
                 "Delete permanently",
             );
             if (confirm !== "Delete permanently") {
+                deleting.delete(info.sessionId);
+                refreshAll();
                 return;
             }
-            // Flag it as deleting straight away: the list shows a marker + the
-            // session is excluded from re-injection while the scrub runs.
-            deleting.add(info.sessionId);
             runtime.disposeBySessionId(info.sessionId); // stop it if running
             // Close the conversation pane now if it's showing this session.
             chatView.sessionDeleted(info.sessionId);
             ChatPanel.sessionDeleted(info.sessionId);
             refreshAll();
-            // Let the webview paint the "deleting" marker before the scrub runs.
-            // Some adapters (e.g. Copilot) delete synchronously, so without a
-            // macrotask yield the final refresh would land before the first
-            // render and the indicator would never be seen.
-            await new Promise((r) => setTimeout(r, 350));
             try {
                 snapshots.clearSession(info.sessionId);      // drop in-memory baselines
                 const residual = await adapter.deleteSession(info);
