@@ -468,6 +468,20 @@ export const chatStyles = `    body {
         font-size: var(--vscode-editor-font-size, 0.9em); white-space: pre;
         color: var(--vscode-editor-foreground, var(--vscode-foreground));
     }
+    /* Syntax tokens — Dark+ palette by default, overridden for light themes via
+       the body class VS Code sets (vscode-light / vscode-high-contrast-light). */
+    .codeblock .tok-cm { color: #6A9955; font-style: italic; }
+    .codeblock .tok-str { color: #CE9178; }
+    .codeblock .tok-num { color: #B5CEA8; }
+    .codeblock .tok-kw { color: #569CD6; }
+    .codeblock .tok-type { color: #4EC9B0; }
+    .codeblock .tok-fn { color: #DCDCAA; }
+    body.vscode-light .codeblock .tok-cm, body.vscode-high-contrast-light .codeblock .tok-cm { color: #008000; }
+    body.vscode-light .codeblock .tok-str, body.vscode-high-contrast-light .codeblock .tok-str { color: #A31515; }
+    body.vscode-light .codeblock .tok-num, body.vscode-high-contrast-light .codeblock .tok-num { color: #098658; }
+    body.vscode-light .codeblock .tok-kw, body.vscode-high-contrast-light .codeblock .tok-kw { color: #0000FF; }
+    body.vscode-light .codeblock .tok-type, body.vscode-high-contrast-light .codeblock .tok-type { color: #267F99; }
+    body.vscode-light .codeblock .tok-fn, body.vscode-high-contrast-light .codeblock .tok-fn { color: #795E26; }
     .tagblock {
         margin: 8px 0; border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 28%, transparent);
         border-radius: 8px; background: color-mix(in srgb, var(--vscode-editorWidget-background, #2d2d2d) 82%, transparent);

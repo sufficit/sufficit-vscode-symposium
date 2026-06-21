@@ -781,9 +781,48 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
             copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1200);
         });
         head.appendChild(tag); head.appendChild(copy);
-        const pre = document.createElement("pre"); const c = document.createElement("code"); c.textContent = code; pre.appendChild(c);
+        const pre = document.createElement("pre"); const c = document.createElement("code");
+        c.appendChild(highlightCode(code));
+        pre.appendChild(c);
         block.appendChild(head); block.appendChild(pre);
         return block;
+    }
+
+    // Dependency-free syntax highlighter. Tokenizes c-like / script languages
+    // (keywords, types, functions, strings, numbers, comments) into colored
+    // spans. Escape-safe: only token text goes through textContent, never HTML.
+    // Colors come from CSS keyed on VS Code's body theme class (light/dark).
+    const CODE_KEYWORDS = new Set([
+        "abstract","as","async","await","base","bool","break","byte","case","catch","char","class","const","continue",
+        "decimal","default","delegate","do","double","else","enum","event","explicit","export","extends","false","final",
+        "finally","float","for","foreach","from","function","get","goto","if","implements","implicit","import","in","int",
+        "interface","internal","is","let","lock","long","namespace","new","null","object","operator","out","override","params",
+        "private","protected","public","readonly","record","ref","return","sbyte","sealed","set","short","static","string",
+        "struct","switch","this","throw","true","try","typeof","uint","ulong","ushort","using","var","virtual","void","while",
+        "with","yield","def","elif","lambda","None","True","False","self","func","package","type","map","range","nil","fn","mut",
+    ]);
+    function highlightCode(code) {
+        const frag = document.createDocumentFragment();
+        const re = /(\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/|#[^\\n]*)|("(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|\`(?:\\\\.|[^\`\\\\])*\`)|(\\b\\d[\\d_]*(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b)|([A-Za-z_$][A-Za-z0-9_$]*)/g;
+        let last = 0, m;
+        const span = (cls, text) => { const s = document.createElement("span"); s.className = cls; s.textContent = text; frag.appendChild(s); };
+        while ((m = re.exec(code)) !== null) {
+            if (m.index > last) { frag.appendChild(document.createTextNode(code.slice(last, m.index))); }
+            if (m[1]) { span("tok-cm", m[1]); }
+            else if (m[2]) { span("tok-str", m[2]); }
+            else if (m[3]) { span("tok-num", m[3]); }
+            else {
+                const word = m[4];
+                const after = code.slice(re.lastIndex).match(/^\\s*\\(/);
+                if (CODE_KEYWORDS.has(word)) { span("tok-kw", word); }
+                else if (/^[A-Z]/.test(word)) { span("tok-type", word); }   // PascalCase → class/type
+                else if (after) { span("tok-fn", word); }                   // identifier( → call
+                else { frag.appendChild(document.createTextNode(word)); }
+            }
+            last = re.lastIndex;
+        }
+        if (last < code.length) { frag.appendChild(document.createTextNode(code.slice(last))); }
+        return frag;
     }
 
     function tagBlock(tag, body) {
