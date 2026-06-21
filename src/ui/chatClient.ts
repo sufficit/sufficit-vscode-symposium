@@ -2062,7 +2062,6 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     // OS files arrive as dataTransfer.files; VS Code Explorer drags as a
     // text/uri-list of file:// URIs. The extension writes/resolves them and
     // posts attachments-picked back, which adds the chips.
-    const composerEl = document.getElementById("composer");
     const dragRelevant = (dt) => !!dt && Array.from(dt.types || []).some((t) => t === "Files" || t === "text/uri-list");
     ["dragenter", "dragover"].forEach((evName) => composerEl.addEventListener(evName, (e) => {
         if (!dragRelevant(e.dataTransfer)) { return; }
