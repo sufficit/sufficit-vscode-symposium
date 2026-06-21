@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.126",
+  "version": "0.79.127",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -568,6 +568,12 @@
           "type": "string",
           "default": "",
           "description": "Preferred language for AI responses (e.g. 'pt-br', 'es', 'zh-cn'). Leave empty to use VS Code's display language. Set to 'en' to disable the preference hint entirely."
+        },
+        "symposium.chat.systemInstruction": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "description": "Optional manual system instruction prepended to every new conversation's system prompt. Use it to give all agents persistent guidance."
         },
         "symposium.chat.whenBusy": {
           "type": "string",

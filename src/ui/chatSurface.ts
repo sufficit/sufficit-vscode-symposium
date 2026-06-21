@@ -141,6 +141,7 @@ export class ChatSurface {
     private terminalSession: TerminalSession | undefined;
     private followHandle: { dispose(): void } | undefined;
     private ready = false;
+    private loggedIn = false;   // cached Sufficit login state (for system hints)
     private queue: unknown[] = [];
     private gitWatcher: vscode.FileSystemWatcher | undefined;
     private refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1040,6 +1041,7 @@ export class ChatSurface {
             return;
         }
         const profile = await this.deps.account.get().catch(() => undefined);
+        this.loggedIn = !!profile;
         this.post({ type: "account", profile: profile ?? null });
     }
 
@@ -1061,12 +1063,30 @@ export class ChatSurface {
      */
     private buildLangHint(): string {
         const cfg = vscode.workspace.getConfiguration("symposium.chat");
+        const hints: string[] = [];
+
+        // 1) Language preference.
         const setting = cfg.get<string>("preferredLanguage", "").trim();
         const lang = setting || vscode.env.language || "";
-        if (!lang || /^en(-|$)/i.test(lang)) {
-            return "";
+        if (lang && !/^en(-|$)/i.test(lang)) {
+            hints.push(`The user prefers responses in "${lang}". This is a preference, not a strict requirement — use your best judgment.`);
         }
-        return `The user prefers responses in "${lang}". This is a preference, not a strict requirement — use your best judgment.`;
+
+        // 2) User's manual system instruction (free text), when provided.
+        const custom = cfg.get<string>("systemInstruction", "").trim();
+        if (custom) {
+            hints.push(custom);
+        }
+
+        // 3) Logged-in users: never claim ignorance before consulting memory.
+        if (this.loggedIn) {
+            hints.push(
+                "Before telling the user you don't know or lack enough information, you MUST first search the Sufficit shared memory " +
+                "(use the memory_search tool, then memory_get_observations for promising hits). Only after that search comes up empty " +
+                "may you say you don't know — and mention that you checked the Sufficit memory.");
+        }
+
+        return hints.join("\n\n");
     }
 
     private detachActive(): void {

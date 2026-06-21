@@ -82,6 +82,16 @@ export function renderConfigHtml(): string {
         padding: 3px 6px; border-radius: 3px;
     }
     input:focus-visible, select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 0; }
+    .prefBlock { padding: 9px 8px; display: flex; flex-direction: column; gap: 6px; }
+    .prefBlock .name { font-weight: 600; }
+    .prefBlock .desc { opacity: 0.75; font-size: 0.9em; }
+    textarea.pref-text {
+        font: inherit; color: var(--vscode-input-foreground);
+        background: var(--vscode-input-background);
+        border: 1px solid var(--vscode-input-border, transparent);
+        border-radius: 3px; padding: 6px 8px; resize: vertical; min-height: 64px; width: 100%; box-sizing: border-box;
+    }
+    textarea.pref-text:focus-visible { outline: 1px solid var(--vscode-focusBorder); }
     input.exec { min-width: 200px; }
     .profile { display: inline-flex; align-items: center; gap: 6px; }
     .profile img { width: 22px; height: 22px; border-radius: 50%; object-fit: cover; }
@@ -228,7 +238,12 @@ export function renderConfigHtml(): string {
                     [{ v: "silent", l: "Esperar resultado" }, { v: "inline", l: "Stream no chat" }, { v: "terminal", l: "Terminal do VS Code" }])) +
             row("Auto-aprovar tools do agente", "Não pedir confirmação a cada ação (browser, terminal, edições). Conveniente, mas o agente roda tudo sem perguntar.",
                 sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
-                    [{ v: "true", l: "Sim (sem confirmação)" }, { v: "false", l: "Não (pede confirmação)" }]))
+                    [{ v: "true", l: "Sim (sem confirmação)" }, { v: "false", l: "Não (pede confirmação)" }])) +
+            '<div class="prefBlock">' +
+                '<div class="name">Instrução de sistema (manual)</div>' +
+                '<div class="desc">Texto livre adicionado ao prompt de sistema de toda nova conversa. Use para dar uma orientação persistente a todos os agentes.</div>' +
+                '<textarea class="pref-text" data-key="symposium.chat.systemInstruction" rows="4" placeholder="Ex.: Responda sempre de forma objetiva e cite as fontes.">' + esc(p.systemInstruction || "") + '</textarea>' +
+            '</div>'
         );
     }
 
@@ -240,6 +255,12 @@ export function renderConfigHtml(): string {
             main.innerHTML = prefsView();
             main.querySelectorAll("select.pref").forEach(el => {
                 el.onchange = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
+            });
+            // Free-text prefs (e.g. system instruction): save on blur / Ctrl+Enter.
+            main.querySelectorAll("textarea.pref-text").forEach(el => {
+                const save = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
+                el.onblur = save;
+                el.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); save(); } };
             });
             return;
         }
