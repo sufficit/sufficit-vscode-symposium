@@ -456,6 +456,13 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // in a row without progress, break out instead of spinning forever.
         const recentCalls: string[] = [];
         const REPEAT_LIMIT = 6;
+        // No-progress guard: a model that "gets lost" calls tools round after
+        // round without ever replying. Count consecutive tool-only rounds (no
+        // assistant text); nudge it to converge, then stop. Applies even in
+        // autonomous (Away) mode so it can't flail up to the hard cap.
+        let noTextHops = 0;
+        const CONVERGE_NUDGE_AT = 8;
+        const NO_TEXT_LIMIT = 16;
         try {
             // Tool-call loop: keep round-tripping while the model requests tools.
             for (let hop = 0; hop < maxHops; hop++) {
@@ -513,6 +520,19 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     // a dangling user/developer turn; Anthropic-backed gateways then
                     // 400 on the next message because roles no longer alternate.
                     this.messages.push({ role: "assistant", content: text || "", model: this.model() });
+                    hitCap = false;
+                    break;
+                }
+
+                // No-progress tracking: reset when the model actually said
+                // something this round, otherwise count it as a silent tool round.
+                if (text.trim()) { noTextHops = 0; } else { noTextHops++; }
+                if (noTextHops === CONVERGE_NUDGE_AT) {
+                    const nudgeRole = this.cfg.supportsDeveloperRole !== false ? "developer" : "system";
+                    this.messages.push({ role: nudgeRole, content: "[Convergence] You have run several tools in a row without replying. If you already have enough information, STOP calling tools and answer now. Otherwise take only the single next necessary step — do not repeat or fan out tool calls." });
+                }
+                if (noTextHops >= NO_TEXT_LIMIT) {
+                    this.emit("event", { kind: "text", text: `\n\n_(stopped after ${noTextHops} tool steps with no reply — the agent wasn't converging; send "continue" to resume)_` });
                     hitCap = false;
                     break;
                 }
