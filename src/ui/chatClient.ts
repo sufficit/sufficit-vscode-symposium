@@ -1900,9 +1900,18 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                 modelList = data.models || [];
                 pinnedModels = data.pinnedModels || [];
                 // Keep the user's chosen model across re-meta (e.g. edit-resend,
-                // handoff) when it's still offered; only fall back to the default.
+                // handoff) when it's still offered. Otherwise pick the right
+                // starting model: a resumed session restores its last-used model
+                // (data.sessionModel), a new session honors the configured default
+                // (data.modelDefault), and only then falls back to the first model.
                 if (!modelValue || (modelValue !== "default" && !modelList.includes(modelValue))) {
-                    modelValue = modelList[0] || "";
+                    if (data.resumed && data.sessionModel) {
+                        modelValue = data.sessionModel;
+                    } else if (modelDefault && (modelDefault === "default" || modelList.includes(modelDefault))) {
+                        modelValue = modelDefault;
+                    } else {
+                        modelValue = modelList[0] || "";
+                    }
                 }
                 // Keep the picker visible even with an empty list: the menu
                 // offers a manual-entry fallback so the user can always pick a

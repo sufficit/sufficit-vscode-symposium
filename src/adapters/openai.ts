@@ -674,7 +674,7 @@ export class OpenAIAdapter implements AgentAdapter {
         for (const f of files) {
             const s = readStored(this.backend, f.slice(0, -5));
             if (s) {
-                out.push({ backend: this.backend, sessionId: s.id, title: s.title || "Session", cwd: s.cwd, updatedAt: new Date(s.updatedAt) });
+                out.push({ backend: this.backend, sessionId: s.id, title: s.title || "Session", cwd: s.cwd, updatedAt: new Date(s.updatedAt), model: s.model });
             }
         }
         return out;

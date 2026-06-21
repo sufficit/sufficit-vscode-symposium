@@ -919,6 +919,9 @@ export class ChatSurface {
             reasoningDefault: vscode.workspace.getConfiguration("symposium." + adapter.backend).get<string>("reasoning", "default"),
             modelDefault: vscode.workspace.getConfiguration("symposium." + adapter.backend).get<string>("model", ""),
             pinnedModels: this.deps.modelPrefs.getPinned(adapter.backend),
+            // Last model used in this session (resume), so the picker restores it
+            // instead of defaulting to the first discovered model.
+            sessionModel: info?.model ?? "",
             permissionModes: adapter.permissionModes?.() ?? [],
             permission: adapter.defaultPermission?.() ?? "default",
             sessionId: options.resumeSessionId ?? "",
