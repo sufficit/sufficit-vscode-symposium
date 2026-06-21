@@ -2091,12 +2091,12 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         }
         const uriList = e.dataTransfer.getData("text/uri-list");
         if (uriList) {
-            const uris = uriList.split(/\r?\n/).map((u) => u.trim()).filter((u) => u && !u.startsWith("#"));
+            const uris = uriList.split(/\\r?\\n/).map((u) => u.trim()).filter((u) => u && u.charAt(0) !== "#");
             if (uris.length) { vscode.postMessage({ type: "drop-uris", uris }); return; }
         }
-        const plain = e.dataTransfer.getData("text/plain");
-        if (plain && /^(file:|\/|[a-zA-Z]:[\\/])/.test(plain.trim())) {
-            const uris = plain.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+        const plain = (e.dataTransfer.getData("text/plain") || "").trim();
+        if (plain && (plain.startsWith("file:") || plain.startsWith("/"))) {
+            const uris = plain.split(/\\r?\\n/).map((s) => s.trim()).filter(Boolean)
                 .map((s) => (s.startsWith("file:") ? s : "file://" + s));
             vscode.postMessage({ type: "drop-uris", uris });
         }
