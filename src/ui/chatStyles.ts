@@ -873,7 +873,7 @@ export const chatStyles = `    body {
     .chip.suggestChip:hover { opacity: 0.9; }
     .chip .x { cursor: pointer; opacity: 0.7; flex-shrink: 0; }
     .chip .x:hover { opacity: 1; }
-    #addContext svg { width: 15px; height: 15px; }
+    #toolbar .iconBtn svg { width: 15px; height: 15px; flex-shrink: 0; }
     #input {
         box-sizing: border-box; width: 100%; display: block; overflow-y: auto;
         border: none; outline: none; resize: none;
