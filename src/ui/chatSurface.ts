@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import * as crypto from "crypto";
 import * as vscode from "vscode";
 import { AgentAdapter, HistoryMessage, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "./chatController";
@@ -73,10 +74,19 @@ async function writePastedImage(mime: string, base64: string): Promise<{ path: s
     const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const dir = wsRoot ? path.join(wsRoot, "tmp") : path.join(os.tmpdir(), "symposium-pastes");
     await fs.promises.mkdir(dir, { recursive: true });
-    const name = `paste-${Date.now()}.${ext}`;
+    const buf = Buffer.from(base64, "base64");
+    // Name by content hash so pasting the SAME image twice reuses one file
+    // instead of piling up identical paste-<timestamp> copies.
+    const hash = crypto.createHash("sha1").update(buf).digest("hex").slice(0, 16);
+    const name = `paste-${hash}.${ext}`;
     const full = path.join(dir, name);
-    await fs.promises.writeFile(full, Buffer.from(base64, "base64"));
-    symposiumLog(`[surface] pasted image saved: ${full}`);
+    try {
+        await fs.promises.access(full);
+        symposiumLog(`[surface] pasted image reused: ${full}`);
+    } catch {
+        await fs.promises.writeFile(full, buf);
+        symposiumLog(`[surface] pasted image saved: ${full}`);
+    }
     return { path: full, name };
 }
 
