@@ -106,6 +106,12 @@ test("diffCounts: Edit / Write / MultiEdit", () => {
     assert.equal(diffCounts("Read", {}), undefined);
 });
 
+test("diffCounts/editDiff: native edit_file / write_file tools tracked like Edit/Write", () => {
+    assert.deepEqual(diffCounts("edit_file", { old_string: "a\nb", new_string: "a\nb\nc" }), { added: 3, removed: 2 });
+    assert.deepEqual(diffCounts("write_file", { content: "x\ny" }), { added: 2, removed: 0 });
+    assert.deepEqual(editDiff("edit_file", { old_string: "a", new_string: "b" }), [{ old: "a", new: "b" }]);
+});
+
 test("editDiff: hunks per tool", () => {
     assert.deepEqual(editDiff("Edit", { old_string: "x", new_string: "y" }), [{ old: "x", new: "y" }]);
     assert.deepEqual(editDiff("Write", { content: "z" }), [{ old: "", new: "z" }]);

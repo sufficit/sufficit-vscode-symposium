@@ -96,7 +96,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "shell",
-            description: "Run a shell command on the host, in the session's working directory, and return its combined stdout+stderr and exit code. Use for builds, tests, git, file inspection, system diagnostics — anything you would otherwise ask the user to paste into a terminal. Non-interactive only.",
+            description: "Run a shell command on the host, in the session's working directory, and return its combined stdout+stderr and exit code. Use for builds, tests, git, file inspection, system diagnostics — anything you would otherwise ask the user to paste into a terminal. Non-interactive only. Do NOT use the shell to create or modify files (sed/awk/perl/tee/echo >, heredocs): those edits are opaque and not revertable. Use edit_file (surgical) or write_file (whole file) instead — they are tracked and show in the changed-files panel.",
             parameters: {
                 type: "object",
                 properties: {
@@ -130,7 +130,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "write_file",
-            description: "Write (create or overwrite) a UTF-8 text file on the host. Creates parent directories as needed.",
+            description: "Create a NEW file, or fully overwrite a file, with the given UTF-8 content. Creates parent directories as needed. PREFER this (and edit_file) over shell redirection/sed/awk/tee to write files: these tools are tracked — the edit shows in the changed-files panel and can be reverted. Use edit_file for a surgical change to an existing file; use write_file when you are authoring the whole file.",
             parameters: {
                 type: "object",
                 properties: {
@@ -138,6 +138,23 @@ export const LOCAL_TOOLS: OpenAITool[] = [
                     content: { type: "string", description: "Full file content to write." },
                 },
                 required: ["path", "content"],
+            },
+        },
+    },
+    {
+        type: "function",
+        function: {
+            name: "edit_file",
+            description: "Apply a surgical edit to an existing text file by replacing an exact string. PREFER this over shell sed/awk/perl for editing files: it is tracked (shows a diff in the changed-files panel and can be reverted), whereas shell edits are opaque and not revertable. `old_string` must match the file content exactly (including whitespace/indentation) and be unique — include enough surrounding context to disambiguate, or set replace_all to change every occurrence.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "File path (absolute, or relative to the session cwd)." },
+                    old_string: { type: "string", description: "The exact text to find (must be unique unless replace_all is true)." },
+                    new_string: { type: "string", description: "The replacement text." },
+                    replace_all: { type: "boolean", description: "Replace every occurrence instead of requiring a unique match. Default false." },
+                },
+                required: ["path", "old_string", "new_string"],
             },
         },
     },
@@ -246,11 +263,11 @@ export function aiToolsForAgent(declared: string[]): string[] {
     // (read_file/write_file/list_dir) WITHOUT exposing the shell — so an agent
     // can author files/plans for you without arbitrary command execution.
     if (has(/^fs\b|^filesystem\b/i)) {
-        names.add("read_file"); names.add("write_file"); names.add("list_dir");
+        names.add("read_file"); names.add("write_file"); names.add("edit_file"); names.add("list_dir");
     }
     if (has(/^read\b|^read_file\b/i)) { names.add("read_file"); names.add("list_dir"); }
     if (has(/^write\b|^write_file\b|^edit\b|^edit_file\b/i)) {
-        names.add("write_file"); names.add("read_file"); names.add("list_dir");
+        names.add("write_file"); names.add("edit_file"); names.add("read_file"); names.add("list_dir");
     }
     if (has(/^list\b|^list_dir\b|^ls\b/i)) { names.add("list_dir"); }
     return [...names];
@@ -539,6 +556,25 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             fs.mkdirSync(path.dirname(p), { recursive: true });
             fs.writeFileSync(p, String(args.content ?? ""), "utf8");
             return JSON.stringify({ path: p, bytes: Buffer.byteLength(String(args.content ?? "")) });
+        }
+        if (name === "edit_file") {
+            if (planMode) { return JSON.stringify({ error: "plan mode: editing files is disabled" }); }
+            const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+            const oldStr = String(args.old_string ?? "");
+            const newStr = String(args.new_string ?? "");
+            const replaceAll = args.replace_all === true;
+            if (!oldStr) { return JSON.stringify({ error: "old_string is required and must be non-empty" }); }
+            let content: string;
+            try { content = fs.readFileSync(p, "utf8"); }
+            catch { return JSON.stringify({ error: `file not found: ${p}` }); }
+            const occurrences = content.split(oldStr).length - 1;
+            if (occurrences === 0) { return JSON.stringify({ error: "old_string not found in the file (it must match exactly, including whitespace)" }); }
+            if (occurrences > 1 && !replaceAll) {
+                return JSON.stringify({ error: `old_string is not unique (${occurrences} matches); add surrounding context or set replace_all: true` });
+            }
+            const updated = replaceAll ? content.split(oldStr).join(newStr) : content.replace(oldStr, newStr);
+            fs.writeFileSync(p, updated, "utf8");
+            return JSON.stringify({ path: p, replaced: replaceAll ? occurrences : 1 });
         }
         if (name === "list_dir") {
             const p = args.path ? resolvePath(ctx.cwd, String(args.path)) : ctx.cwd;

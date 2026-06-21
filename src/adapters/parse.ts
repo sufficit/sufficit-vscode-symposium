@@ -102,10 +102,10 @@ export function lineCount(s: unknown): number {
  */
 export function diffCounts(name: string, input: unknown): { added: number; removed: number } | undefined {
     const o = (input ?? {}) as Record<string, unknown>;
-    if (name === "Write") {
+    if (name === "Write" || name === "write_file") {
         return { added: lineCount(o.content), removed: 0 };
     }
-    if (name === "Edit") {
+    if (name === "Edit" || name === "edit_file") {
         return { added: lineCount(o.new_string), removed: lineCount(o.old_string) };
     }
     if (name === "MultiEdit" && Array.isArray(o.edits)) {
@@ -119,7 +119,7 @@ export function diffCounts(name: string, input: unknown): { added: number; remov
 /** Old/new hunks for an edit tool, for a red/green diff view. */
 export function editDiff(name: string, input: unknown): { old: string; new: string }[] | undefined {
     const o = (input ?? {}) as Record<string, unknown>;
-    if (name === "Edit" && typeof o.old_string === "string") {
+    if ((name === "Edit" || name === "edit_file") && typeof o.old_string === "string") {
         return [{ old: o.old_string, new: typeof o.new_string === "string" ? o.new_string : "" }];
     }
     if (name === "MultiEdit" && Array.isArray(o.edits)) {

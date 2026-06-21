@@ -11,6 +11,8 @@ import {
     SessionStartOptions,
 } from "./types";
 import { TODO_INJECTION } from "./todos";
+import { diffCounts, editDiff } from "./parse";
+import { snapshots } from "../snapshots";
 import { HubClient } from "../sync/hubClient";
 import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, ALL_AI_TOOL_NAMES, filterTools, runAiTool, ShellExecutionMode } from "./aiTools";
 import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "./lmTools";
@@ -337,6 +339,12 @@ class OpenAISession extends EventEmitter implements AgentSession {
         return v === "inline" || v === "terminal" ? v : "silent";
     }
 
+    /** Resolves a tool's path argument to an absolute path against the session cwd. */
+    private resolveToolPath(p: unknown): string | undefined {
+        if (typeof p !== "string" || !p) { return undefined; }
+        return path.isAbsolute(p) ? p : path.resolve(this.options.cwd, p);
+    }
+
     cancel(): void {
         this.abort?.abort();
     }
@@ -490,11 +498,23 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 for (const tc of toolCalls) {
                     let args: Record<string, unknown> = {};
                     try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* leave empty */ }
+                    // File-edit tools (write_file/edit_file): track like the Claude
+                    // CLI's Write/Edit — snapshot the pre-edit content (revert) and
+                    // emit added/removed + a diff so the change shows in the
+                    // changed-files panel. This is why these are preferred over sed.
+                    const counts = diffCounts(tc.function.name, args);
+                    const editPath = counts ? this.resolveToolPath(args.path) : undefined;
+                    if (counts && editPath && this.sessionId) {
+                        snapshots.capture(this.sessionId, editPath);
+                    }
                     this.emit("event", {
                         kind: "tool-start",
                         toolName: tc.function.name,
                         detail: friendlyToolDetail(tc.function.name, args),
-                        path: toolPath(tc.function.name, args),
+                        path: editPath ?? toolPath(tc.function.name, args),
+                        added: counts?.added,
+                        removed: counts?.removed,
+                        diff: editDiff(tc.function.name, args),
                         toolId: tc.id,
                         input: tc.function.arguments,
                     });
@@ -617,7 +637,7 @@ function friendlyToolDetail(name: string, args: Record<string, unknown>): string
     switch (name) {
         case "shell": d = s(args.command).split("\n")[0]; break;
         case "fetch_url": case "open_url": d = s(args.url); break;
-        case "read_file": case "write_file": case "list_dir": d = s(args.path); break;
+        case "read_file": case "write_file": case "edit_file": case "list_dir": d = s(args.path); break;
         case "memory_search": case "web_search": d = s(args.query); break;
         case "memory_save": d = s(args.title); break;
         default: {
@@ -630,7 +650,7 @@ function friendlyToolDetail(name: string, args: Record<string, unknown>): string
 
 /** File path a tool acts on (gives the row a file icon); else undefined. */
 function toolPath(name: string, args: Record<string, unknown>): string | undefined {
-    if ((name === "read_file" || name === "write_file" || name === "list_dir") && typeof args.path === "string") {
+    if ((name === "read_file" || name === "write_file" || name === "edit_file" || name === "list_dir") && typeof args.path === "string") {
         return args.path;
     }
     return undefined;
