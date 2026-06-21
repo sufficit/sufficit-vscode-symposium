@@ -47,9 +47,10 @@ export function sessionIdNote(id: string): string {
 // Injected once when the user marks themselves "away": full autonomy, no prompts.
 
 export const RTK_PREAMBLE =
-    "[RTK command policy] The `rtk` binary is available as a token-optimized wrapper for verbose shell commands. " +
-    "For non-interactive development commands that may produce verbose output (git status/diff/log, ls/tree/find, rg/grep, test runners, linters/typecheckers, build commands, docker/kubectl logs), prefer `rtk <command...>` or the native RTK subcommand (e.g. `rtk read`, `rtk grep`, `rtk test npm test`) so output is compact before entering context. " +
-    "Do NOT use rtk for interactive commands, commands with heredocs/pipelines where wrapping would change semantics, commands that already produce tiny output, or when the user explicitly asks for raw output. Treat rtk as an output display layer; it does not make mutating commands safer.";
+    "[RTK command policy] If the `rtk` binary is available, use it as a token-optimized wrapper for verbose shell commands " +
+    "(git status/diff/log, ls/tree/find, grep, test runners, linters/typecheckers, build commands, docker/kubectl logs): `rtk <command...>` or a native RTK subcommand (e.g. `rtk read`, `rtk grep`). " +
+    "IMPORTANT: rtk and rg may NOT be installed in this shell. If a command returns 'command not found', 'No such file or directory', or an unrecognized-option error for `rtk` or `rg`, immediately fall back to the plain tool (`grep`, `find`, `cat`) and DO NOT retry rtk/rg or other variants of the unavailable command. " +
+    "Do NOT use rtk for interactive commands, heredocs/pipelines where wrapping changes semantics, tiny output, or when the user asks for raw output. rtk is an output display layer; it does not make mutating commands safer.";
 
 export const AUTONOMY_PREAMBLE =
     "[Autonomy mode] The user is not present to answer questions or make decisions and has given you full autonomy. " +

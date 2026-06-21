@@ -234,12 +234,14 @@ class OpenAISession extends EventEmitter implements AgentSession {
         const max = this.cfg.maxHistoryMessages ?? 40;
         if (max === 0) { return this.messages; }
 
-        // Split into protected prefix (system/developer up to first user msg)
-        // and the conversation body (first user turn onwards).
-        let firstUserIdx = this.messages.findIndex((m) => m.role === "user");
+        // Protect ONLY the system/developer preamble (policy, agent def, etc.) —
+        // everything before the first user message. Do NOT pin the first user
+        // message: in a long, multi-task session that permanently re-injects the
+        // ORIGINAL task into every request, so the model keeps drifting back to
+        // it ("changed course mid-task"). The recent window carries the task in
+        // progress; for short sessions the first message is still in-window.
+        const firstUserIdx = this.messages.findIndex((m) => m.role === "user");
         if (firstUserIdx === -1) { return this.messages; }
-        // Include the first user message itself in the protected prefix.
-        firstUserIdx += 1;
 
         const prefix = this.messages.slice(0, firstUserIdx);
         const conv = this.messages.slice(firstUserIdx);
