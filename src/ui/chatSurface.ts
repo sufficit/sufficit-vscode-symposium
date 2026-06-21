@@ -910,6 +910,7 @@ export class ChatSurface {
             { cwd: options.cwd, resumeSessionId: options.resumeSessionId, model: options.model, reasoning: options.reasoning, env: options.env, tmuxName: options.tmuxName },
             (message) => this.post(message),
             symposiumLog,
+            (sessionId, status) => this.deps.runtime.setFollowStatus(sessionId, status),
         );
         if (options.tmuxName) {
             this.post({ type: "event", event: { kind: "tool-start", toolName: "tmux", detail: options.tmuxName + " — survives VS Code closing" } });
@@ -1125,9 +1126,16 @@ export class ChatSurface {
     private detachActive(): void {
         this.controller?.detach();
         this.controller = undefined;
+        this.detachTerminal();
+        this.detachFollow();
+    }
+
+    /** Disposes the terminal session and drops its inferred follow status. */
+    private detachTerminal(): void {
+        const tid = this.terminalSession?.currentSessionId;
         this.terminalSession?.dispose();
         this.terminalSession = undefined;
-        this.detachFollow();
+        if (tid) { this.deps.runtime.clearFollowStatus(tid); }
     }
 
     /**
@@ -1139,8 +1147,7 @@ export class ChatSurface {
         if (this.sid() !== sessionId) { return; }
         // The runtime already disposed the controller on delete; just drop refs.
         this.controller = undefined;
-        this.terminalSession?.dispose();
-        this.terminalSession = undefined;
+        this.detachTerminal();
         this.detachFollow();
         // Clear the pane to the empty state — do NOT auto-start a new dialogue
         // (that spawned a stray live "New session" on every delete). The next

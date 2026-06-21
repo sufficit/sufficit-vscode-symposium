@@ -40,6 +40,8 @@ export class TerminalSession {
         private readonly options: TerminalSessionOptions,
         private readonly post: (message: unknown) => void,
         private readonly log: (message: string) => void,
+        /** Optional: receives working/idle inferred from the followed transcript. */
+        private readonly onStatus?: (sessionId: string, status: "working" | "idle") => void,
     ) { }
 
     /** Launches the terminal, discovers the session id, then starts mirroring. */
@@ -192,6 +194,11 @@ export class TerminalSession {
         }
         this.follow = this.adapter.follow(info, (message) => {
             this.post({ type: "append", message });
+        });
+        // Mirror the inferred turn state to the sessions list (same indicator as
+        // live sessions); the surface forwards it to the runtime.
+        this.follow.onStatus?.((status) => {
+            if (this.sessionId) { this.onStatus?.(this.sessionId, status); }
         });
     }
 

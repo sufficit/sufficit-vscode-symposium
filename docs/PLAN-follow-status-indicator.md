@@ -1,7 +1,24 @@
 # PLAN — Indicador working/idle para sessões em modo `follow` (plugin Claude)
 
-> Status: **planejado** (fazer depois). Mudança aditiva, sem regressão.
+> Status: **DONE (2026-06-21)** — implemented as described, additive, no regression.
 > Repo: `sufficit-vscode-symposium`
+>
+> Implementation (compile + lint + 45 tests green):
+> - `FollowHandle.onStatus?(cb)` added (`adapters/types.ts`).
+> - `claude.ts follow()` infers working/idle from the raw line `type`
+>   (`user`/`assistant` → working, `result` → idle) with a ~9s inactivity
+>   fallback to idle; exposes `onStatus`; clears the timer on dispose. Added a
+>   defensive `rawLineType()` helper.
+> - `LiveSessions` gained a follow-status registry
+>   (`setFollowStatus`/`clearFollowStatus`); `statusFor()` returns it as a
+>   fallback when there is no local controller — so the SAME sessions-list dot
+>   (chatClient) lights up, via the existing `onChange`→refresh pipeline.
+>   (This subsumes the planned `symposiumApi` step: the API delegates to
+>   `LiveSessions.statusFor`.)
+> - Consumers subscribe `onStatus`: `chatSurface.followSession` (→ runtime) and
+>   `TerminalSession` (new optional `onStatus` sink → runtime). Status is cleared
+>   on detach/dispose/delete. The bridge "follow" is a live-controller subscribe
+>   (already has status), so it needed no change.
 
 ## Problema
 
