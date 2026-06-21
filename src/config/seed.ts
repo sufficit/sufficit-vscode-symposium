@@ -18,42 +18,42 @@ const SEED: SeedFile[] = [
         rel: "agents/code-reviewer.md",
         body: `---
 name: code-reviewer
-description: Revisa diffs buscando bugs de correção e simplificações.
+description: Reviews diffs for correctness bugs and simplifications.
 model: default
 tools: [filesystem-read]
 skills: [diff-summary]
-instructions: [pt-br-style]
+instructions: [concise-style]
 version: 1
 ---
 
 # code-reviewer
 
-Revise o diff atual. Aponte bugs de correção primeiro, depois simplificações.
-Uma linha por achado, com severidade e correção sugerida.
+Review the current diff. Report correctness bugs first, then simplifications.
+One line per finding, with severity and a suggested fix.
 `,
     },
     {
         rel: "agents/test-writer.md",
         body: `---
 name: test-writer
-description: Escreve testes para o código alterado.
+description: Writes tests for the changed code.
 model: default
 tools: [filesystem-read]
 skills: []
-instructions: [pt-br-style]
+instructions: [concise-style]
 version: 1
 ---
 
 # test-writer
 
-Gere testes cobrindo o caminho feliz e casos de borda do código recém-alterado.
+Generate tests covering the happy path and edge cases of the recently changed code.
 `,
     },
     {
         rel: "tools/filesystem-read.md",
         body: `---
 name: filesystem-read
-description: Acesso somente-leitura ao sistema de arquivos via MCP.
+description: Read-only filesystem access via MCP.
 transport: stdio
 command: 'mcp-server-filesystem --readonly'
 capabilities: [read, list, search]
@@ -63,14 +63,14 @@ version: 1
 
 # filesystem-read
 
-Tool MCP de leitura de arquivos. Sem segredo.
+Read-only file access MCP tool. No secret.
 `,
     },
     {
         rel: "tools/sufficit-memory.md",
         body: `---
 name: sufficit-memory
-description: Acesso ao hub de memórias Sufficit (REST).
+description: Access to the Sufficit memory hub (REST).
 transport: http
 url: 'https://ai.sufficit.com.br/api/memory'
 capabilities: [search, save, timeline]
@@ -80,40 +80,40 @@ version: 1
 
 # sufficit-memory
 
-Tool de memória. Segredo resolvido pelo vault via credentialRef (nunca no arquivo).
+Memory tool. Secret resolved by the vault via credentialRef (never in the file).
 `,
     },
     {
         rel: "skills/diff-summary/SKILL.md",
         body: `---
 name: diff-summary
-description: Resume um diff de git em pontos objetivos.
+description: Summarizes a git diff into concise points.
 version: 1
 ---
 
 # diff-summary
 
-Resuma o diff em bullets: arquivos tocados, intenção, riscos.
+Summarize the diff as bullets: files touched, intent, risks.
 `,
     },
     {
         rel: "skills/diff-summary/scripts/run.sh",
         body: `#!/usr/bin/env bash
-# Exemplo de script de skill (bundle).
+# Example skill script (bundle).
 git diff --stat
 `,
     },
     {
-        rel: "instructions/pt-br-style.md",
+        rel: "instructions/concise-style.md",
         body: `---
-name: pt-br-style
-description: Responder em português do Brasil, objetivo e técnico.
+name: concise-style
+description: Answer concisely and technically, avoiding redundancy.
 version: 1
 ---
 
-# pt-br-style
+# concise-style
 
-Responda em pt-BR. Seja objetivo e técnico. Evite redundância.
+Be concise and technical. Avoid redundancy.
 `,
     },
 ];

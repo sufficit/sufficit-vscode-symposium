@@ -16,7 +16,7 @@ import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, ALL_A
 import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "./lmTools";
 import { buildOpenAIModelList } from "./openaiModels";
 import * as ledger from "../ledger";
-import { getCached, setCached, isFresh, ModelCacheEntry } from "./modelCache";
+import { getCached, setCached, isFresh } from "./modelCache";
 
 /** OpenAI tool call as streamed/accumulated from chat completions deltas. */
 interface ToolCall {
@@ -375,7 +375,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
         const noExplicitAuth = !this.cfg.apiKey
             && !Object.keys(this.cfg.headers).some((k) => k.toLowerCase() === "authorization");
         if (noExplicitAuth && !loginToken) {
-            this.emit("event", { kind: "error", message: "Não autenticado: faça login no Sufficit (menu Contas / avatar) para usar o backend Sufficit AI. Se você já logou e o erro persiste, o token não está sendo guardado neste ambiente (code-server sem keyring): configure symposium.openai.apiKey ou um cabeçalho Authorization." });
+            this.emit("event", { kind: "error", message: "Not authenticated: sign in to Sufficit (Accounts menu / avatar) to use the Sufficit AI backend. If you already signed in and the error persists, the token is not being stored in this environment (code-server without a keyring): set symposium.openai.apiKey or an Authorization header." });
             this.emit("event", { kind: "turn-end" });
             return;
         }
@@ -386,7 +386,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
             await this.discoverModels(loginToken).catch(() => undefined);
         }
         if (!this.model()) {
-            this.emit("event", { kind: "error", message: "Nenhum modelo selecionado para o Sufficit AI. Escolha um modelo no seletor da sessão ou defina symposium.openai.model / symposium.openai.models." });
+            this.emit("event", { kind: "error", message: "No model selected for Sufficit AI. Pick a model in the session selector or set symposium.openai.model / symposium.openai.models." });
             this.emit("event", { kind: "turn-end" });
             return;
         }
@@ -457,7 +457,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                         this.messages.push({ role: "assistant", content: text || null, tool_calls: toolCalls });
                         // Satisfy the API contract: every tool_call needs a tool reply.
                         for (const tc of toolCalls) {
-                            this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: "(interrompido antes da execução)" });
+                            this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: "(interrupted before execution)" });
                         }
                     } else if (text) {
                         this.messages.push({ role: "assistant", content: text, model: this.model() });
@@ -513,7 +513,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 // loop again so the model can use the tool results
             }
             if (hitCap) {
-                this.emit("event", { kind: "text", text: `\n\n_(pausei após ${maxHops} passos de ferramenta — envie "continue" para seguir)_` });
+                this.emit("event", { kind: "text", text: `\n\n_(paused after ${maxHops} tool steps — send "continue" to proceed)_` });
             }
         } catch (error) {
             if ((error as any)?.name !== "AbortError") {

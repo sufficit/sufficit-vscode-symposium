@@ -59,7 +59,7 @@ export class SufficitAuthProvider implements vscode.AuthenticationProvider {
         const profile = await this.auth.login();
         const s = await this.toSession(scopes);
         if (!s) {
-            throw new Error(profile === undefined ? "Login Sufficit cancelado." : "Login Sufficit falhou.");
+            throw new Error(profile === undefined ? "Sufficit login cancelled." : "Sufficit login failed.");
         }
         this.changeEmitter.fire({ added: [s], removed: [], changed: [] });
         return s;

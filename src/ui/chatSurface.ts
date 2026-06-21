@@ -5,6 +5,7 @@ import * as crypto from "crypto";
 import * as vscode from "vscode";
 import { AgentAdapter, HistoryMessage, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "./chatController";
+import { WebviewToHost } from "./protocol";
 import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
 import { LiveSessions } from "../sessions/runtime";
@@ -17,12 +18,6 @@ import { fetchSessionTasks, TaskItem } from "../sync/tasks";
 /** Directory to run git in for a file — git discovers the enclosing repo upward. */
 function repoCwd(file: string): string {
     return path.dirname(file);
-}
-
-/** Path of the file in the active editor, if any (skips non-file/webview tabs). */
-function activeEditorFile(): string | undefined {
-    const doc = vscode.window.activeTextEditor?.document;
-    return doc && doc.uri.scheme === "file" ? doc.uri.fsPath : undefined;
 }
 
 /** True when a VS Code Simple Browser tab is open in any tab group. */
@@ -243,7 +238,7 @@ export class ChatSurface {
     private async attachBrowserPage(): Promise<void> {
         const lm = (vscode as unknown as { lm?: { invokeTool?: (n: string, o: unknown, t: unknown) => Promise<{ content: unknown[] }> } }).lm;
         if (!lm?.invokeTool) {
-            void vscode.window.showWarningMessage("VS Code não expõe tools de browser (open_browser_page) nesta versão.");
+            void vscode.window.showWarningMessage("VS Code does not expose browser tools (open_browser_page) in this version.");
             return;
         }
         const cts = new vscode.CancellationTokenSource();
@@ -252,28 +247,28 @@ export class ChatSurface {
                 { input: {}, toolInvocationToken: undefined } as vscode.LanguageModelToolInvocationOptions<object>, cts.token);
             const text = (r.content as any[]).map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : "")).join("\n").trim();
             if (!text || /opted not to share|no .*page/i.test(text)) {
-                void vscode.window.showInformationMessage("Nenhuma página do browser compartilhada.");
+                void vscode.window.showInformationMessage("No browser page shared.");
                 return;
             }
             const dir = path.join(os.homedir(), ".symposium", "context");
             fs.mkdirSync(dir, { recursive: true });
             const file = path.join(dir, `browser-page-${Date.now()}.md`);
-            fs.writeFileSync(file, "# Página do browser (VS Code)\n\n" + text, "utf8");
+            fs.writeFileSync(file, "# Browser page (VS Code)\n\n" + text, "utf8");
             this.post({ type: "attachments-picked", files: [{ path: file, name: "browser-page.md" }] });
         } catch (err) {
-            void vscode.window.showErrorMessage(`Falha ao anexar a página: ${err instanceof Error ? err.message : err}`);
+            void vscode.window.showErrorMessage(`Failed to attach the page: ${err instanceof Error ? err.message : err}`);
         } finally {
             cts.dispose();
         }
     }
 
-    private async onMessage(message: any): Promise<void> {
+    private async onMessage(message: WebviewToHost): Promise<void> {
         symposiumLog(`[surface] <- webview: ${message?.type}${message?.type === "send" ? ` (${(message.text ?? "").length} chars)` : ""}`);
         try {
             switch (message?.type) {
                 case "ready": {
                     this.ready = true;
-                    void this.webview.postMessage({ type: "boot", id: "host", label: "Host da extensão conectado", status: "ok" });
+                    void this.webview.postMessage({ type: "boot", id: "host", label: "Extension host connected", status: "ok" });
                     for (const queued of this.queue) {
                         void this.webview.postMessage(queued);
                     }
@@ -326,7 +321,7 @@ export class ChatSurface {
                     return;
                 }
                 case "drop-file": {
-                    const file = await writeDroppedFile(message.name, message.mime, message.data);
+                    const file = await writeDroppedFile(message.name, message.mime, message.data ?? "");
                     if (file) {
                         this.post({ type: "attachments-picked", files: [file] });
                     }
@@ -399,7 +394,7 @@ export class ChatSurface {
                     const current = this.controller?.backend ?? this.terminalSession?.backend;
                     const items = [...this.deps.adapterByBackend.values()].map((adapter) => ({
                         backend: adapter.backend,
-                        name: (adapter as any).displayName ?? adapter.backend,
+                        name: adapter.displayName ?? adapter.backend,
                         current: adapter.backend === current,
                     }));
                     this.post({ type: "backends", items });
@@ -504,7 +499,7 @@ export class ChatSurface {
                     // menu: offer every configured backend except the session's own.
                     const items = [...this.deps.adapterByBackend.values()].map((adapter) => ({
                         backend: adapter.backend,
-                        name: (adapter as any).displayName ?? adapter.backend,
+                        name: adapter.displayName ?? adapter.backend,
                         current: adapter.backend === message.backend,
                     }));
                     this.post({ type: "session-backends", items });
@@ -586,7 +581,7 @@ export class ChatSurface {
     private startDefaultDialogue(): void {
         const backend = this.deps.adapterByBackend.keys().next().value;
         if (!backend) {
-            void this.webview.postMessage({ type: "boot", id: "session", label: "Nenhum backend disponível", status: "fail", detail: "configure um adaptador" });
+            void this.webview.postMessage({ type: "boot", id: "session", label: "No backend available", status: "fail", detail: "configure an adapter" });
             void this.webview.postMessage({ type: "boot", complete: true });
             return;
         }
@@ -840,8 +835,8 @@ export class ChatSurface {
         this.post({
             type: "meta",
             backend: adapter.backend,
-            backendName: (adapter as any).displayName,
-            modelLabels: (adapter as any).modelLabels?.() ?? {},
+            backendName: adapter.displayName,
+            modelLabels: adapter.modelLabels?.() ?? {},
             resumed: true,
             readOnly: true,
             models: [],
@@ -883,8 +878,8 @@ export class ChatSurface {
         this.post({
             type: "meta",
             backend: adapter.backend,
-            backendName: (adapter as any).displayName,
-            modelLabels: (adapter as any).modelLabels?.() ?? {},
+            backendName: adapter.displayName,
+            modelLabels: adapter.modelLabels?.() ?? {},
             resumed: !!options.resumeSessionId,
             terminal: true,
             models: [],
@@ -950,8 +945,13 @@ export class ChatSurface {
         this.post({
             type: "meta",
             backend: adapter.backend,
-            backendName: (adapter as any).displayName,
-            modelLabels: (adapter as any).modelLabels?.() ?? {},
+            backendName: adapter.displayName,
+            modelLabels: adapter.modelLabels?.() ?? {},
+            // Inline badge for an agent-def-bound dialogue (shown once, on the
+            // first turn). Null for plain sessions. See SessionStartOptions.
+            agentLabels: options.agentName
+                ? { agent: options.agentName, toolsDeclared: options.toolsDeclared ?? [], toolsAllowed: options.toolsAllowed ?? [] }
+                : null,
             resumed: !!options.resumeSessionId,
             models: adapter.models?.() ?? [],
             reasoningLevels: adapter.reasoningLevels?.() ?? [],

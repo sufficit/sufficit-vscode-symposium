@@ -66,14 +66,26 @@ snapshots.ts         per-session pre-edit baselines for revert without git
 | agents/skills/tools/instructions | `~/.symposium/repo` |
 | extra adapters / settings | `settings.json` (`symposium.*`) |
 
-## Known debt (see review 2026-06-15)
+## Known debt (see review 2026-06-15; refresh 2026-06-21)
 
-1. `chatHtml.ts` is a 2k-line template literal — webview JS is untyped and has
-   template-escaping hazards. Highest-priority refactor (bundle + split).
-2. The webview↔extension message protocol is stringly-typed and duplicated;
-   hand-maintained field whitelists have caused drift bugs. → shared protocol.
-3. No tests. Pure logic (summarizeToolInput, diffCounts, editDiff, parseTodos,
-   pendingChanges, store ordering, snapshots) is the place to start.
-4. `AgentAdapter` has ~10 optional capability methods → collapse into one
-   `capabilities()`.
-5. ChatController concentrates many responsibilities.
+The 2026-06-21 architecture pass (see `docs/PLAN-architecture-refactor.md`)
+closed several of these. Remaining items need a running Extension Host to verify.
+
+1. **OPEN.** The webview client (`chatClient.ts`, ~2.3k lines) + styles
+   (`chatStyles.ts`) ship as template-literal strings — untyped, escape-prone.
+   Highest-priority refactor: extract to real modules, esbuild-bundle into
+   `media/`, load via `asWebviewUri`, and import `ui/protocol.ts`.
+2. **PARTLY RESOLVED.** The webview↔extension protocol now has a single source of
+   truth in `ui/protocol.ts` (`WebviewToHost` discriminated union); the host
+   (`chatSurface`/`chatController`) is typed against it. The webview side becomes
+   typed once it is extracted (item 1).
+3. **RESOLVED.** A `node --test` suite exists (parse, todos, snapshots, openai
+   adapter, outbound prompt, git) — 45 tests, run in CI.
+4. **WON'T DO.** `AgentAdapter`'s granular optional capability methods are typed
+   and documented; collapsing into one `capabilities()` is high-churn/low-gain.
+5. **OPEN.** `ChatController` / `ChatSurface` concentrate many responsibilities;
+   split incrementally alongside item 1.
+
+Also added 2026-06-21: ESLint (flat config) + Prettier + CI lint gate, hardened
+`tsconfig`, full English-only i18n pass, and typed agent/model fields on the
+adapter contract (removing `as any` escape hatches).

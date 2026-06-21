@@ -297,7 +297,7 @@ function resolvePath(cwd: string, p: string): string {
 function firstShellWord(command: string): string {
     const trimmed = command.trim();
     if (!trimmed) { return ""; }
-    const m = trimmed.match(/^([A-Za-z0-9_.\/-]+)/);
+    const m = trimmed.match(/^([A-Za-z0-9_./-]+)/);
     return m ? path.basename(m[1]) : "";
 }
 

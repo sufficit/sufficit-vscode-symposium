@@ -28,7 +28,7 @@ ${chatStyles}
         <div class="bootLogo"><svg viewBox="0 0 24 24" fill="none"><rect x="1" y="1" width="15" height="10" rx="3" fill="white" fill-opacity="0.3"/><path d="M4 11 L2 15 L8 11 Z" fill="white" fill-opacity="0.3"/><rect x="8" y="11" width="15" height="10" rx="3" fill="white" fill-opacity="0.92"/><path d="M20 21 L22 24 L17 21 Z" fill="white" fill-opacity="0.92"/><circle cx="12" cy="16" r="1.3" fill="#7C3AED"/><circle cx="15.5" cy="16" r="1.3" fill="#4F46E5"/><circle cx="19" cy="16" r="1.3" fill="#3B82F6"/></svg></div>
         <div class="bootTitle">Symposium</div>
         <div id="bootSteps"></div>
-        <div id="bootHint">Iniciando…</div>
+        <div id="bootHint">Starting…</div>
     </div>
     <div id="progress"></div>
     <aside id="sessionsPane">
@@ -40,7 +40,7 @@ ${chatStyles}
             </span>
         </div>
         <div id="sessionsList"></div>
-        <div id="accountFooter" title="Conta Sufficit"></div>
+        <div id="accountFooter" title="Sufficit account"></div>
     </aside>
     <div id="resizer" title="Drag to resize"></div>
     <main id="chatCol">
@@ -57,14 +57,14 @@ ${chatStyles}
                 <div class="esLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
                 <div class="esTitle">Symposium</div>
                 <div class="esHint">Type below to start a conversation.</div>
-                <button class="esCta" id="emptyNewSession"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>Nova conversa</button>
+                <button class="esCta" id="emptyNewSession"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>New conversation</button>
             </div>
             <div id="loadingState">
                 <div class="ldLogo"><svg viewBox="0 0 24 24" fill="none"><rect x="1" y="1" width="15" height="10" rx="3" fill="white" fill-opacity="0.3"/><path d="M4 11 L2 15 L8 11 Z" fill="white" fill-opacity="0.3"/><rect x="8" y="11" width="15" height="10" rx="3" fill="white" fill-opacity="0.92"/><path d="M20 21 L22 24 L17 21 Z" fill="white" fill-opacity="0.92"/><circle cx="12" cy="16" r="1.3" fill="#7C3AED"/><circle cx="15.5" cy="16" r="1.3" fill="#4F46E5"/><circle cx="19" cy="16" r="1.3" fill="#3B82F6"/></svg></div>
                 <div class="ldName">Symposium</div>
                 <div class="ldSub"><span class="spinner"></span><span id="loadingText">Loading session…</span></div>
             </div>
-            <button id="scrollBottom" title="Ir para o fim" aria-label="Ir para o fim"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z"/></svg></button>
+            <button id="scrollBottom" title="Go to the bottom" aria-label="Go to the bottom"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z"/></svg></button>
         </div>
         <div id="queued"></div>
         <div id="tasks"></div>
@@ -78,7 +78,7 @@ ${chatStyles}
                 <button id="addContext" class="iconBtn" title="Attach files" aria-label="Attach files">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>
                 </button>
-                <button id="addBrowserPage" class="iconBtn" title="Anexar página do browser ao contexto" aria-label="Anexar página do browser ao contexto">
+                <button id="addBrowserPage" class="iconBtn" title="Attach the browser page to the context" aria-label="Attach the browser page to the context">
                     <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1ZM2 8h2.05c.08-1.4.36-2.66.78-3.6A6 6 0 0 0 2 8Zm2.05 1H2a6 6 0 0 0 2.83 3.6c-.42-.94-.7-2.2-.78-3.6Zm1 0c.1 1.6.46 2.9.9 3.66.2.34.38.5.55.6V9H5.05Zm0-1H7.5V4.74c-.17.1-.36.26-.55.6-.44.76-.8 2.06-.9 3.66ZM8.5 4.74V8h2.45c-.1-1.6-.46-2.9-.9-3.66-.2-.34-.38-.5-.55-.6ZM11.95 8H14a6 6 0 0 0-2.83-3.6c.42.94.7 2.2.78 3.6Zm0 1c-.08 1.4-.36 2.66-.78 3.6A6 6 0 0 0 14 9h-2.05ZM8.5 9v4.26c.17-.1.36-.26.55-.6.44-.76.8-2.06.9-3.66H8.5Z"/></svg>
                 </button>
                 <button id="configBtn" class="iconBtn" title="Tools & configuration" aria-label="Tools & configuration">

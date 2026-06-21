@@ -90,7 +90,7 @@ function parseTimestamp(value: unknown): number | undefined {
 function chatSessionTitle(file: string): string | undefined {
     try {
         let inputText = "";
-        let lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
+        const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
         for (const line of lines) {
             if (!line.trim()) { continue; }
             let j: any;
@@ -121,7 +121,6 @@ function allCopilotSessions(): Map<string, { label: string; updatedTs: number; i
         const id = path.basename(file, ".jsonl");
         const info = transcriptSummary(file);
         if (info) {
-            const existing = map.get(id);
             map.set(id, { label: info.title, updatedTs: info.updatedAt ? info.updatedAt.getTime() : 0, isTranscript: true });
         }
     }

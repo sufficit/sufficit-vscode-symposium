@@ -2,7 +2,13 @@ src/**
 out/test/**
 node_modules/**
 .gitignore
+.gitattributes
 tsconfig.json
 ARCHITECTURE.md
+docs/**
 **/*.map
 .vscode/**
+.github/**
+eslint.config.mjs
+.prettierrc.json
+.prettierignore

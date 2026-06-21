@@ -100,29 +100,29 @@ export function renderConfigHtml(): string {
 </head>
 <body>
 <header>
-    <strong>Symposium · Configuração</strong>
+    <strong>Symposium · Configuration</strong>
     <span id="health" class="health unknown">hub: —</span>
     <span class="root" id="root"></span>
     <span style="flex:1"></span>
     <span id="profile" class="profile"></span>
-    <button class="secondary" id="seed">Seed exemplos</button>
-    <button class="secondary" id="open-root">Abrir pasta</button>
-    <button id="refresh">Atualizar</button>
+    <button class="secondary" id="seed">Seed examples</button>
+    <button class="secondary" id="open-root">Open folder</button>
+    <button id="refresh">Refresh</button>
 </header>
 <nav id="tabs"></nav>
-<main id="content"><div class="empty">Carregando…</div></main>
+<main id="content"><div class="empty">Loading…</div></main>
 <script>
     const vscode = acquireVsCodeApi();
     let state = null;
     let active = "agent";
 
     const TABS = [
-        { id: "agent", label: "Agentes", key: "agent" },
+        { id: "agent", label: "Agents", key: "agent" },
         { id: "skill", label: "Skills", key: "skill" },
         { id: "tool", label: "Tools", key: "tool" },
-        { id: "instruction", label: "Instruções", key: "instruction" },
+        { id: "instruction", label: "Instructions", key: "instruction" },
         { id: "backends", label: "Backends" },
-        { id: "prefs", label: "Preferências" },
+        { id: "prefs", label: "Preferences" },
         { id: "sync", label: "Sync" },
     ];
 
@@ -145,26 +145,26 @@ export function renderConfigHtml(): string {
         }
     }
 
-    const LABEL = { agent: "agente", skill: "skill", tool: "tool", instruction: "instrução" };
+    const LABEL = { agent: "agent", skill: "skill", tool: "tool", instruction: "instruction" };
 
     function resourceList(kind) {
         const items = (state?.resources[kind]) || [];
-        const toolbar = '<div class="toolbar"><button id="new-res">+ Novo ' + esc(LABEL[kind]) + "</button></div>";
+        const toolbar = '<div class="toolbar"><button id="new-res">+ New ' + esc(LABEL[kind]) + "</button></div>";
         if (!items.length) {
-            return toolbar + '<div class="empty">Nenhum recurso. Importe de um CLI ou crie um novo.</div>';
+            return toolbar + '<div class="empty">No resources. Import from a CLI or create a new one.</div>';
         }
         return toolbar + items.map(r =>
             '<div class="row" data-path="' + esc(r.path) + '" data-name="' + esc(r.name) + '">' +
                 '<span class="name">' + esc(r.name) + "</span>" +
                 (r.bundle ? '<span class="badge">bundle</span>' : "") +
                 '<span class="desc">' + esc(r.description) + "</span>" +
-                '<span class="del" title="Excluir">✕</span>' +
+                '<span class="del" title="Delete">✕</span>' +
             "</div>").join("");
     }
 
     function backendsView() {
         const list = (state?.backends) || [];
-        if (!list.length) { return '<div class="empty">Nenhum backend configurado.</div>'; }
+        if (!list.length) { return '<div class="empty">No backend configured.</div>'; }
         return list.map(b => {
             const opts = (b.models || []);
             const hasCurrent = b.model && opts.indexOf(b.model) < 0;
@@ -176,7 +176,7 @@ export function renderConfigHtml(): string {
                 ? '<select class="model" data-backend="' + esc(b.backend) + '">' + modelOptions + "</select>"
                 : '<span class="desc">model: ' + esc(b.model || "(default)") + "</span>";
             const execCtl = b.executableEditable
-                ? '<input class="exec" data-backend="' + esc(b.backend) + '" value="' + esc(b.executable || "") + '" placeholder="executável" />'
+                ? '<input class="exec" data-backend="' + esc(b.backend) + '" value="' + esc(b.executable || "") + '" placeholder="executable" />'
                 : "";
             return '<div class="bk">' +
                 '<div class="bk-head">' +
@@ -184,8 +184,8 @@ export function renderConfigHtml(): string {
                     '<span class="name">' + esc(b.backend) + "</span>" +
                     '<span class="desc">' + esc(b.detail || "") + "</span>" +
                     '<span class="bk-test" data-backend="' + esc(b.backend) + '"></span>' +
-                    '<button class="secondary test" data-backend="' + esc(b.backend) + '">Testar</button>' +
-                    '<button class="secondary edit" data-backend="' + esc(b.backend) + '">Editar</button>' +
+                    '<button class="secondary test" data-backend="' + esc(b.backend) + '">Test</button>' +
+                    '<button class="secondary edit" data-backend="' + esc(b.backend) + '">Edit</button>' +
                 "</div>" +
                 '<div class="bk-cfg">' + execCtl + modelCtl + "</div>" +
             "</div>";
@@ -198,13 +198,13 @@ export function renderConfigHtml(): string {
         const toolbar = configured
             ? '<div class="toolbar"><button id="sync-pull">Pull (hub→local)</button>' +
               '<button id="sync-push">Push (local→hub)</button></div>'
-            : '<div class="toolbar"><button id="sync-config">Configurar hub…</button></div>';
+            : '<div class="toolbar"><button id="sync-config">Configure hub…</button></div>';
         const note = configured ? "" :
-            '<div class="empty">Hub não configurado (symposium.hub.url). Agentes funcionam offline pelos arquivos locais.</div>';
+            '<div class="empty">Hub not configured (symposium.hub.url). Agents work offline from local files.</div>';
         return toolbar + note +
             '<div class="row"><span class="name">Hub</span><span class="desc">' + esc(s.health || "unknown") + "</span></div>" +
-            '<div class="row"><span class="name">Último sync</span><span class="desc">' + esc(s.lastSyncUtc || "nunca") + "</span></div>" +
-            '<div class="row"><span class="name">Push pendente</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || "nenhum") + "</span></div>";
+            '<div class="row"><span class="name">Last sync</span><span class="desc">' + esc(s.lastSyncUtc || "never") + "</span></div>" +
+            '<div class="row"><span class="name">Pending push</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || "none") + "</span></div>";
     }
 
     function prefsView() {
@@ -216,29 +216,29 @@ export function renderConfigHtml(): string {
         const row = (name, desc, ctl) =>
             '<div class="row"><span class="name">' + esc(name) + '</span><span class="desc">' + esc(desc) + "</span>" + ctl + "</div>";
         return (
-            row("Lista de sessões", "De que lado a lista de sessões aparece.",
+            row("Sessions list", "Which side the sessions list appears on.",
                 sel("symposium.chat.sessionsSide", p.sessionsSide || "auto",
-                    [{ v: "auto", l: "Automático" }, { v: "left", l: "Esquerda" }, { v: "right", l: "Direita" }])) +
-            row("Abrir sessão em", "Onde uma sessão abre ao iniciar.",
+                    [{ v: "auto", l: "Automatic" }, { v: "left", l: "Left" }, { v: "right", l: "Right" }])) +
+            row("Open session in", "Where a session opens when it starts.",
                 sel("symposium.chat.openIn", p.openIn || "editor",
-                    [{ v: "editor", l: "Editor (aba central)" }, { v: "sidebar", l: "Barra lateral" }])) +
+                    [{ v: "editor", l: "Editor (center tab)" }, { v: "sidebar", l: "Sidebar" }])) +
             row("Response language", "Preferred language for AI responses. Empty uses VS Code's display language.",
                 sel("symposium.chat.preferredLanguage", p.preferredLanguage || "",
                     [{ v: "", l: "Automatic (VS Code)" }, { v: "pt-br", l: "Português (BR)" }, { v: "en", l: "English" },
                      { v: "es", l: "Español" }, { v: "fr", l: "Français" }, { v: "de", l: "Deutsch" },
                      { v: "it", l: "Italiano" }, { v: "ja", l: "日本語" }, { v: "zh-cn", l: "中文 (简体)" }])) +
-            row("Ferramentas do VS Code", "Quais Language Model Tools o backend Sufficit AI pode usar.",
+            row("VS Code tools", "Which Language Model Tools the Sufficit AI backend may use.",
                 sel("symposium.lmTools", p.lmTools || "terminal",
-                    [{ v: "off", l: "Desligado" }, { v: "terminal", l: "Terminal/tarefas/testes" }, { v: "all", l: "Todas" }])) +
-            row("Limite de passos por turno", "Máx. de ações de ferramenta antes de pausar (pede 'continue'). No modo autônomo (presença Away) não há limite.",
+                    [{ v: "off", l: "Off" }, { v: "terminal", l: "Terminal/tasks/tests" }, { v: "all", l: "All" }])) +
+            row("Step limit per turn", "Max tool actions before pausing (asks for 'continue'). In autonomous mode (presence Away) there is no limit.",
                 sel("symposium.openai.maxToolHops", String(p.maxToolHops || 50),
                     [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }])) +
-            row("Execução de comandos", "Como exibir a ferramenta Ran/shell: esperar resultado, transmitir no chat, ou abrir terminal do VS Code.",
+            row("Command execution", "How to surface the Ran/shell tool: wait for the result, stream into the chat, or open a VS Code terminal.",
                 sel("symposium.openai.shellExecution", p.shellExecution || "silent",
-                    [{ v: "silent", l: "Esperar resultado" }, { v: "inline", l: "Stream no chat" }, { v: "terminal", l: "Terminal do VS Code" }])) +
-            row("Auto-aprovar tools do agente", "Não pedir confirmação a cada ação (browser, terminal, edições). Conveniente, mas o agente roda tudo sem perguntar.",
+                    [{ v: "silent", l: "Wait for result" }, { v: "inline", l: "Stream in chat" }, { v: "terminal", l: "VS Code terminal" }])) +
+            row("Auto-approve agent tools", "Do not ask for confirmation on each action (browser, terminal, edits). Convenient, but the agent runs everything without asking.",
                 sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
-                    [{ v: "true", l: "Sim (sem confirmação)" }, { v: "false", l: "Não (pede confirmação)" }])) +
+                    [{ v: "true", l: "Yes (no confirmation)" }, { v: "false", l: "No (asks for confirmation)" }])) +
             '<div class="prefBlock">' +
                 '<div class="name">System instruction (manual)</div>' +
                 '<div class="desc">Free text added to the system prompt of every new conversation. Use it to give all agents persistent guidance.</div>' +
@@ -250,7 +250,7 @@ export function renderConfigHtml(): string {
     function render() {
         renderTabs();
         const main = document.getElementById("content");
-        if (!state) { main.innerHTML = '<div class="empty">Carregando…</div>'; return; }
+        if (!state) { main.innerHTML = '<div class="empty">Loading…</div>'; return; }
         if (active === "prefs") {
             main.innerHTML = prefsView();
             main.querySelectorAll("select.pref").forEach(el => {
@@ -270,7 +270,7 @@ export function renderConfigHtml(): string {
                 el.onclick = () => {
                     const b = el.getAttribute("data-backend");
                     const fb = main.querySelector('.bk-test[data-backend="' + b + '"]');
-                    if (fb) { fb.textContent = "testando…"; }
+                    if (fb) { fb.textContent = "testing…"; }
                     vscode.postMessage({ type: "test-backend", backend: b });
                 };
             });
@@ -290,8 +290,8 @@ export function renderConfigHtml(): string {
             const pull = document.getElementById("sync-pull");
             const push = document.getElementById("sync-push");
             const conf = document.getElementById("sync-config");
-            if (pull) { pull.onclick = () => { pull.textContent = "puxando…"; vscode.postMessage({ type: "sync-pull" }); }; }
-            if (push) { push.onclick = () => { push.textContent = "enviando…"; vscode.postMessage({ type: "sync-push" }); }; }
+            if (pull) { pull.onclick = () => { pull.textContent = "pulling…"; vscode.postMessage({ type: "sync-pull" }); }; }
+            if (push) { push.onclick = () => { push.textContent = "pushing…"; vscode.postMessage({ type: "sync-push" }); }; }
             if (conf) { conf.onclick = () => vscode.postMessage({ type: "config-hub" }); }
             return;
         }
@@ -315,10 +315,10 @@ export function renderConfigHtml(): string {
         if (p && (p.name || p.email)) {
             const av = p.picture ? '<img src="' + esc(p.picture) + '" alt="" />' : "";
             el.innerHTML = av + '<span class="uname">' + esc(p.name || p.email) + "</span>" +
-                ' <button class="secondary" id="btn-logout">Sair</button>';
+                ' <button class="secondary" id="btn-logout">Sign out</button>';
             document.getElementById("btn-logout").onclick = () => vscode.postMessage({ type: "logout" });
         } else {
-            el.innerHTML = '<button id="btn-login">Login Sufficit</button>';
+            el.innerHTML = '<button id="btn-login">Sign in to Sufficit</button>';
             document.getElementById("btn-login").onclick = () => vscode.postMessage({ type: "login" });
         }
     }

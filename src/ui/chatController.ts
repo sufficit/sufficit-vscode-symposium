@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { AgentAdapter, AgentEvent, AgentSession, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { parseTodoFence } from "../adapters/todos";
 import { buildOutboundPrompt } from "./outboundPrompt";
+import { WebviewToHost } from "./protocol";
 
 type SendMode = "send" | "queue" | "steer";
 
@@ -263,8 +264,8 @@ export class ChatController {
         }
     }
 
-    async handleMessage(message: any): Promise<boolean> {
-        switch (message?.type) {
+    async handleMessage(message: WebviewToHost): Promise<boolean> {
+        switch (message.type) {
             case "send":
                 this.onSend(
                     { text: message.text, attachments: message.attachments ?? [], model: message.model, reasoning: message.reasoning, permission: message.permission, autonomy: message.autonomy },

@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import * as fs from "fs";
+import * as path from "path";
 
 /** Runs git in a directory; resolves with code+stdout+stderr (never rejects). */
 function git(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -26,7 +27,7 @@ export async function isTracked(cwd: string, abs: string): Promise<boolean> {
 export async function headContent(cwd: string, abs: string): Promise<string | undefined> {
     const root = await gitRoot(cwd);
     if (!root) { return undefined; }
-    const rel = require("path").relative(root, abs).split(require("path").sep).join("/");
+    const rel = path.relative(root, abs).split(path.sep).join("/");
     const r = await git(root, ["show", `HEAD:${rel}`]);
     return r.code === 0 ? r.stdout : undefined;
 }
@@ -67,7 +68,6 @@ export async function approveChange(cwd: string, abs: string): Promise<boolean> 
  * controller has no in-memory record of which files the agent touched.
  */
 export async function dirtyFiles(cwd: string): Promise<string[]> {
-    const path = require("path") as typeof import("path");
     const root = await gitRoot(cwd);
     if (!root) { return []; }
     const r = await git(root, ["status", "--porcelain", "--no-renames"]);
@@ -77,7 +77,6 @@ export async function dirtyFiles(cwd: string): Promise<string[]> {
 
 export async function pendingChanges(absPaths: string[]): Promise<Set<string>> {
     const pending = new Set<string>();
-    const path = require("path") as typeof import("path");
     // Group paths by their repo root (or "" when not in a repo).
     const byRepo = new Map<string, string[]>();
     for (const abs of absPaths) {
@@ -106,7 +105,7 @@ export async function pendingChanges(absPaths: string[]): Promise<Set<string>> {
  * worktree column (2nd char) isn't a space. `pathMod` is node:path (injectable).
  */
 export function parsePorcelainDirty(
-    stdout: string, root: string, pathMod: typeof import("path") = require("path"),
+    stdout: string, root: string, pathMod: typeof import("path") = path,
 ): Set<string> {
     const dirty = new Set<string>();
     for (const line of stdout.split("\n")) {

@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import {
-    ensureScaffold, readState, repoDir, ResourceKind, resourceContentPath,
+    ensureScaffold, readState, ResourceKind, resourceContentPath,
     rootDir, sanitize, scanAll, writeState,
 } from "../config/root";
 import { HubClient, Observation } from "./hubClient";
@@ -74,11 +74,11 @@ export class SyncEngine {
         ensureScaffold();
         const result: SyncResult = { pushed: 0, pulled: 0, skipped: 0, errors: [] };
         if (!this.hub.configured()) {
-            result.errors.push("hub não configurado (symposium.hub.url).");
+            result.errors.push("hub not configured (symposium.hub.url).");
             return result;
         }
         if (!(await this.hub.health())) {
-            result.errors.push("hub indisponível — push bloqueado (health-gate).");
+            result.errors.push("hub unavailable — push blocked (health-gate).");
             return this.persist(result, false);
         }
 
@@ -125,11 +125,11 @@ export class SyncEngine {
         ensureScaffold();
         const result: SyncResult = { pushed: 0, pulled: 0, skipped: 0, errors: [] };
         if (!this.hub.configured()) {
-            result.errors.push("hub não configurado (symposium.hub.url).");
+            result.errors.push("hub not configured (symposium.hub.url).");
             return result;
         }
         if (!(await this.hub.health())) {
-            result.errors.push("hub indisponível — usando cache local.");
+            result.errors.push("hub unavailable — using local cache.");
             return this.persist(result, false);
         }
 

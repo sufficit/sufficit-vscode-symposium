@@ -86,7 +86,7 @@ export class SufficitAuth {
         }
         const disco = await this.discovery();
         if (!disco.device_authorization_endpoint) {
-            throw new Error("Identity não anuncia device_authorization_endpoint.");
+            throw new Error("Identity does not advertise device_authorization_endpoint.");
         }
 
         // 1. Request a device + user code.
@@ -102,7 +102,7 @@ export class SufficitAuth {
 
         const verifyUrl: string = dev.verification_uri_complete ?? dev.verification_uri;
         const pick = await vscode.window.showInformationMessage(
-            `Sufficit: abra o navegador e confirme o código ${dev.user_code}`, "Abrir navegador");
+            `Sufficit: open the browser and confirm the code ${dev.user_code}`, "Open browser");
         if (pick) {
             await vscode.env.openExternal(vscode.Uri.parse(verifyUrl));
         }
@@ -123,7 +123,7 @@ export class SufficitAuth {
         const deadline = Date.now() + expiresInSec * 1000;
         let interval = intervalSec;
         return vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: "Sufficit: aguardando aprovação no navegador…", cancellable: true },
+            { location: vscode.ProgressLocation.Notification, title: "Sufficit: waiting for approval in the browser…", cancellable: true },
             async (_p, token) => {
                 while (Date.now() < deadline && !token.isCancellationRequested) {
                     await new Promise((r) => setTimeout(r, interval * 1000));

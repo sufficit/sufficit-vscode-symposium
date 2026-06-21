@@ -1,0 +1,9 @@
+out/
+node_modules/
+media/
+*.vsix
+package-lock.json
+src/ui/chatClient.ts
+src/ui/chatStyles.ts
+src/ui/chatHtml.ts
+src/ui/configHtml.ts

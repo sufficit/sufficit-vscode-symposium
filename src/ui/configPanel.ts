@@ -41,7 +41,7 @@ export class ConfigPanel {
         ensureScaffold();
         this.panel = vscode.window.createWebviewPanel(
             "symposium.config",
-            "Symposium · Configuração",
+            "Symposium · Configuration",
             vscode.ViewColumn.Active,
             { enableScripts: true, retainContextWhenHidden: true },
         );
@@ -81,7 +81,7 @@ export class ConfigPanel {
             case "seed": {
                 const created = api.resources.seed();
                 void vscode.window.showInformationMessage(
-                    created > 0 ? `${created} exemplo(s) criado(s).` : "Exemplos já existiam.");
+                    created > 0 ? `Created ${created} example(s).` : "Examples already existed.");
                 await this.pushState();
                 return;
             }
@@ -90,13 +90,13 @@ export class ConfigPanel {
                     return;
                 }
                 const name = await vscode.window.showInputBox({
-                    prompt: `Nome do novo ${message.kind}`,
-                    validateInput: (v) => v.trim() ? undefined : "Informe um nome.",
+                    prompt: `Name of the new ${message.kind}`,
+                    validateInput: (v) => v.trim() ? undefined : "Enter a name.",
                 });
                 if (!name) {
                     return;
                 }
-                const description = await vscode.window.showInputBox({ prompt: "Descrição (opcional)" }) ?? "";
+                const description = await vscode.window.showInputBox({ prompt: "Description (optional)" }) ?? "";
                 const file = api.resources.create(message.kind, name.trim(), description);
                 await this.pushState();
                 const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
@@ -108,8 +108,8 @@ export class ConfigPanel {
                     return;
                 }
                 const ok = await vscode.window.showWarningMessage(
-                    `Excluir ${message.kind} "${message.name}"?`, { modal: true }, "Excluir");
-                if (ok === "Excluir") {
+                    `Delete ${message.kind} "${message.name}"?`, { modal: true }, "Delete");
+                if (ok === "Delete") {
                     api.resources.remove(message.kind, message.name);
                     await this.pushState();
                 }
@@ -119,8 +119,8 @@ export class ConfigPanel {
                 if (message.backend) {
                     const s = await api.backends.test(message.backend);
                     void vscode.window.showInformationMessage(
-                        s ? `${message.backend}: ${s.available ? "OK — " + s.detail : "indisponível — " + s.detail}`
-                            : `${message.backend}: desconhecido`);
+                        s ? `${message.backend}: ${s.available ? "OK — " + s.detail : "unavailable — " + s.detail}`
+                            : `${message.backend}: unknown`);
                     await this.pushState();
                 }
                 return;

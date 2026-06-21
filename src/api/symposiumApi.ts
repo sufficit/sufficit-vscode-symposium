@@ -151,7 +151,7 @@ async function probeBackend(a: AgentAdapter): Promise<BackendStatus> {
     try {
         const probe = await a.available();
         available = probe.ok;
-        detail = probe.ok ? (probe.version ?? "") : (probe.error ?? "indisponível");
+        detail = probe.ok ? (probe.version ?? "") : (probe.error ?? "unavailable");
     } catch (err) {
         detail = String(err);
     }

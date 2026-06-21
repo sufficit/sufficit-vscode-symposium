@@ -204,13 +204,13 @@ function template(kind: ResourceKind, name: string, description: string): string
     const fm = [`name: ${name}`, `description: ${description}`, "version: 1"];
     if (kind === "agent") {
         fm.push("model: default", "bootstrap: true", "tools: []", "skills: []", "instructions: []");
-        return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nInstruções do agente aqui.\n`;
+        return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nAgent instructions here.\n`;
     }
     if (kind === "tool") {
         fm.push("transport: stdio", "command: ''", "capabilities: []", "credentialRef: ''");
-        return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nDescrição da tool.\n`;
+        return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nTool description.\n`;
     }
-    return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nConteúdo aqui.\n`;
+    return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nContent here.\n`;
 }
 
 /**

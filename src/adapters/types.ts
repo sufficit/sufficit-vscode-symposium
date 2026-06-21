@@ -129,6 +129,16 @@ export interface SessionStartOptions {
     autonomy?: string;
     /** How local shell/function executions should be shown to the user. */
     execDisplay?: "silent" | "inline" | "terminal";
+    /**
+     * Name of the local agent-def bound to this session (from
+     * `symposium.newAgentSession`). Surfaced as an inline meta badge so the
+     * dialogue always shows which agent is driving it.
+     */
+    agentName?: string;
+    /** Tools the bound agent-def declares (shown in the agent meta badge). */
+    toolsDeclared?: string[];
+    /** Subset of AI tools actually exposed after gating (memory/web). */
+    toolsAllowed?: string[];
 }
 
 /**
@@ -164,6 +174,12 @@ export interface AgentSession extends EventEmitter {
 /** Factory + discovery surface for one backend CLI. */
 export interface AgentAdapter {
     readonly backend: AgentBackend;
+    /**
+     * Friendly name shown in pickers and the chat header. Optional: CLI
+     * adapters fall back to `backend`; the HTTP adapters set a display name
+     * (e.g. "Sufficit AI") that differs from their id.
+     */
+    readonly displayName?: string;
     /** Quick availability probe (CLI on PATH, version readable). */
     available(): Promise<{ ok: boolean; version?: string; error?: string }>;
     /** Enumerate stored sessions for the tree view. */
@@ -186,6 +202,12 @@ export interface AgentAdapter {
     follow?(info: SessionInfo, onMessage: (message: HistoryMessage) => void): FollowHandle;
     /** Models offered in the chat panel picker; first entry is the default. */
     models?(): string[];
+    /**
+     * Map of model id → friendly label, when the backend discovers human names
+     * for its model ids (e.g. an OpenAI-compatible `/models` catalog). Used to
+     * resolve agent-def model pins and to label the picker. CLIs omit it.
+     */
+    modelLabels?(): Record<string, string>;
     /**
      * Refresh the model list from a remote source (e.g. GET /models), then
      * resolve with the up-to-date list. Synchronous `models()` may return a

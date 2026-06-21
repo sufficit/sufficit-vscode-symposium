@@ -51,7 +51,7 @@ async function showErrorWithCopy(message: string, details: string): Promise<void
     const action = await vscode.window.showErrorMessage(message, "Copy details");
     if (action === "Copy details") {
         await vscode.env.clipboard.writeText(details);
-        void vscode.window.showInformationMessage("Detalhes copiados para a área de transferência.");
+        void vscode.window.showInformationMessage("Details copied to clipboard.");
     }
 }
 
@@ -67,17 +67,12 @@ function normModel(s: string): string {
  */
 async function resolveModelPin(adapter: AgentAdapter, pin: string): Promise<string | undefined> {
     if (!pin) { return undefined; }
-    const oa = adapter as unknown as {
-        refreshModels?: () => Promise<{ models: string[]; labels?: Record<string, string> }>;
-        modelLabels?: () => Record<string, string>;
-        models?: () => string[];
-    };
-    if (!oa.modelLabels) { return undefined; }
+    if (!adapter.modelLabels) { return undefined; }
     // If the pin is already a known model id, use it directly.
-    if (oa.models && oa.models().includes(pin)) { return pin; }
-    let labels = oa.modelLabels();
-    if ((!labels || Object.keys(labels).length === 0) && oa.refreshModels) {
-        labels = (await oa.refreshModels().catch(() => undefined))?.labels ?? labels;
+    if (adapter.models && adapter.models().includes(pin)) { return pin; }
+    let labels = adapter.modelLabels();
+    if ((!labels || Object.keys(labels).length === 0) && adapter.refreshModels) {
+        labels = (await adapter.refreshModels().catch(() => undefined))?.labels ?? labels;
     }
     const want = normModel(pin);
     for (const [id, name] of Object.entries(labels ?? {})) {
@@ -294,7 +289,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 const r = await sufficitAdapter.available();
                 symposiumLog(`[sufficit-ai] health: ${r.ok ? "ok" : "FAIL " + (r.error ?? "")}`);
                 if (!r.ok && (await auth.isLoggedIn())) {
-                    void vscode.window.showWarningMessage(`Sufficit AI indisponível: ${r.error ?? "verifique a conexão"}`);
+                    void vscode.window.showWarningMessage(`Sufficit AI unavailable: ${r.error ?? "check the connection"}`);
                 }
             } catch (e) {
                 symposiumLog(`[sufficit-ai] health check error: ${e}`);
@@ -533,14 +528,14 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             try {
                 const session = await vscode.authentication.getSession(
                     SufficitAuthProvider.id, ["openid", "profile", "email", "offline_access"], { createIfNone: true });
-                if (session) { void vscode.window.showInformationMessage(`Sufficit: logado como ${session.account.label}.`); }
+                if (session) { void vscode.window.showInformationMessage(`Sufficit: signed in as ${session.account.label}.`); }
             } catch (err) {
-                void vscode.window.showErrorMessage(`Login Sufficit falhou: ${err instanceof Error ? err.message : err}`);
+                void vscode.window.showErrorMessage(`Sufficit login failed: ${err instanceof Error ? err.message : err}`);
             }
         }),
         vscode.commands.registerCommand("symposium.logout", async () => {
             await auth.logout();
-            void vscode.window.showInformationMessage("Sufficit: sessão encerrada.");
+            void vscode.window.showInformationMessage("Sufficit: signed out.");
         }),
 
         vscode.commands.registerCommand("symposium.newSession", async () => {
@@ -549,7 +544,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 const isEnoent = !probe.ok && /ENOENT|not found/i.test(probe.error ?? "");
                 const hasInstall = isEnoent && !!CLI_INSTALL[adapter.backend];
                 return {
-                    label: (adapter as { displayName?: string }).displayName ?? adapter.backend,
+                    label: adapter.displayName ?? adapter.backend,
                     description: probe.ok ? probe.version : `unavailable: ${probe.error}`,
                     detail: hasInstall ? `$(cloud-download) Click to install via: ${CLI_INSTALL[adapter.backend].cmd}` : undefined,
                     adapter,
@@ -579,20 +574,20 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         vscode.commands.registerCommand("symposium.newAgentSession", async () => {
             const agents = scanKind("agent").filter((a) => readAgentBootstrap(a.name) !== false);
             if (agents.length === 0) {
-                void vscode.window.showWarningMessage("Nenhum agente elegível em ~/.symposium/repo/agents. Use Seed/Import ou crie um na Configuração.");
+                void vscode.window.showWarningMessage("No eligible agent in ~/.symposium/repo/agents. Use Seed/Import or create one in Configuration.");
                 return;
             }
             const agent = await vscode.window.showQuickPick(
                 agents.map((a) => ({ label: a.name, description: a.description, name: a.name })),
-                { placeHolder: "Qual agente?" });
+                { placeHolder: "Which agent?" });
             if (!agent) {
                 return;
             }
             const picks = await Promise.all(adapters.map(async (adapter) => {
                 const probe = await adapter.available();
-                return { label: (adapter as { displayName?: string }).displayName ?? adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, adapter, ok: probe.ok };
+                return { label: adapter.displayName ?? adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, adapter, ok: probe.ok };
             }));
-            const choice = await vscode.window.showQuickPick(picks, { placeHolder: `Backend para "${agent.name}"` });
+            const choice = await vscode.window.showQuickPick(picks, { placeHolder: `Backend for "${agent.name}"` });
             if (!choice) {
                 return;
             }
@@ -609,12 +604,12 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 aiTools: allowedTools,
                 ...(model ? { model } : {}),
             };
-            const title = `Agente: ${agent.name}`;
+            const title = `Agent: ${agent.name}`;
             // Surface will render these as inline meta so we always know which
             // agent is bound to this dialogue, without piggybacking on developerPrompt.
-            (options as any).__agentName = agent.name;
-            (options as any).__toolsDeclared = tools;
-            (options as any).__toolsAllowed = allowedTools;
+            options.agentName = agent.name;
+            options.toolsDeclared = tools;
+            options.toolsAllowed = allowedTools;
             if (inEditor()) {
                 ChatPanel.show(context, deps).openDialogue(choice.adapter.backend, options, title);
             } else {
@@ -649,7 +644,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             const cliAdapters = adapters.filter((a) => CLI_BACKENDS.has(a.backend));
             const picks = await Promise.all(cliAdapters.map(async (adapter) => {
                 const probe = await adapter.available();
-                return { label: (adapter as { displayName?: string }).displayName ?? adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, backend: adapter.backend, ok: probe.ok };
+                return { label: adapter.displayName ?? adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, backend: adapter.backend, ok: probe.ok };
             }));
             const choice = await vscode.window.showQuickPick(picks.filter((p) => p.ok), {
                 placeHolder: "Launch which agent in a terminal session?",
@@ -836,8 +831,8 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             const created = seedExamples();
             void vscode.window.showInformationMessage(
                 created > 0
-                    ? `Symposium: ${created} exemplo(s) criado(s) em ~/.symposium/repo.`
-                    : "Symposium: exemplos já existiam (nada criado).");
+                    ? `Symposium: created ${created} example(s) in ~/.symposium/repo.`
+                    : "Symposium: examples already existed (nothing created).");
             ConfigPanel.show(context, { api, auth });
         }),
 

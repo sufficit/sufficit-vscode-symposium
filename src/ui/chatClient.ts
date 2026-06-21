@@ -5,7 +5,7 @@
  */
 export const chatClientJs = `    window.addEventListener("error", (e) => {
         const bh = document.getElementById("bootHint");
-        if (bh) { bh.textContent = "❌ " + (e.message || "erro JS") + " @" + (e.lineno || "?"); bh.style.color = "var(--vscode-errorForeground, #f14c4c)"; bh.style.opacity = "1"; }
+        if (bh) { bh.textContent = "❌ " + (e.message || "JS error") + " @" + (e.lineno || "?"); bh.style.color = "var(--vscode-errorForeground, #f14c4c)"; bh.style.opacity = "1"; }
         try { if (typeof vscode !== "undefined") { vscode.postMessage({ type: "webview-error", message: (e.message || "error") + " @" + (e.lineno || "?") }); } } catch(_) {}
     });
     const vscode = acquireVsCodeApi();
@@ -231,19 +231,19 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         const pinned = pinnedModels || [];
         const rest = modelList.filter((m) => !pinned.includes(m));
         const makeActions = (m) => m === "default" ? [] : [
-            { icon: SVG_PIN, title: pinned.includes(m) ? "Desafixar modelo" : "Fixar no topo", on: pinned.includes(m),
+            { icon: SVG_PIN, title: pinned.includes(m) ? "Unpin model" : "Pin to top", on: pinned.includes(m),
               onClick: () => { vscode.postMessage({ type: "pin-model", model: m }); hideCtx(); } },
-            { icon: SVG_STAR, title: modelDefault === m ? "Remover como padrão" : "Definir como padrão para novas sessões", on: modelDefault === m,
+            { icon: SVG_STAR, title: modelDefault === m ? "Remove as default" : "Set as default for new sessions", on: modelDefault === m,
               onClick: () => { vscode.postMessage({ type: "set-model-default", model: modelDefault === m ? "" : m }); hideCtx(); } },
         ];
         const opts = [];
         if (pinned.length) {
             for (const m of pinned) {
-                opts.push({ value: m, label: modelLabel(m), group: "Fixados", actions: makeActions(m) });
+                opts.push({ value: m, label: modelLabel(m), group: "Pinned", actions: makeActions(m) });
             }
         }
         for (const m of rest) {
-            opts.push({ value: m, label: m === "default" ? defLabel(modelDefault) : modelLabel(m), group: pinned.length ? "Todos" : undefined, actions: makeActions(m) });
+            opts.push({ value: m, label: m === "default" ? defLabel(modelDefault) : modelLabel(m), group: pinned.length ? "All" : undefined, actions: makeActions(m) });
         }
         return opts;
     }
@@ -254,8 +254,8 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         // discovery (GET /models) returned nothing — e.g. not logged in yet, or
         // the gateway answered 401. Picking it prompts for a free-form id.
         openChoiceMenu(modelPicker, buildModelMenuOpts(), modelValue, (v) => { modelValue = v; setModelLabel(); }, {
-            refreshAction: { label: "Atualizar modelos", detail: "Refaz GET /models", onClick: () => vscode.postMessage({ type: "refresh-models" }) },
-            manualEntry: { label: "Digitar modelo…", placeholder: "ex.: gpt-4o, claude-3-5-sonnet", onSubmit: (v) => { if (v && v.trim()) { modelValue = v.trim(); setModelLabel(); } } },
+            refreshAction: { label: "Refresh models", detail: "Re-run GET /models", onClick: () => vscode.postMessage({ type: "refresh-models" }) },
+            manualEntry: { label: "Type a model…", placeholder: "e.g. gpt-4o, claude-3-5-sonnet", onSubmit: (v) => { if (v && v.trim()) { modelValue = v.trim(); setModelLabel(); } } },
         });
     });
     reasoningPicker.addEventListener("click", (ev) => {
@@ -1199,8 +1199,8 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
             b.addEventListener("click", (e) => { e.stopPropagation(); if (!b.disabled) { fn(); } });
             return b;
         };
-        actions.appendChild(mkAction("check", "Limpar concluídas", "Limpar tarefas concluídas", "", done === 0, () => clearTodos("done")));
-        actions.appendChild(mkAction("trash", "Limpar todas", "Limpar todas as tarefas", "danger", false, () => clearTodos("all")));
+        actions.appendChild(mkAction("check", "Clear completed", "Clear completed tasks", "", done === 0, () => clearTodos("done")));
+        actions.appendChild(mkAction("trash", "Clear all", "Clear all tasks", "danger", false, () => clearTodos("all")));
         const list = document.createElement("div"); list.className = "pllist";
         for (const t of todos) {
             const item = document.createElement("div");
@@ -1221,7 +1221,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     function relWhen(iso) {
         const t = Date.parse(iso); if (!t) { return ""; }
         const s = Math.max(0, (Date.now() - t) / 1000);
-        if (s < 90) { return "agora"; }
+        if (s < 90) { return "now"; }
         if (s < 3600) { return Math.round(s / 60) + "m"; }
         if (s < 86400) { return Math.round(s / 3600) + "h"; }
         if (s < 2592000) { return Math.round(s / 86400) + "d"; }
@@ -1237,9 +1237,9 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         head.appendChild(svgIcon("list"));
         const ttl = document.createElement("span"); ttl.className = "tktitle";
         ttl.textContent = "Tasks";
-        ttl.title = "Tarefas da memória Sufficit desta sessão (espelho em .vscode/symposium.tasks.json)" + (project ? " — sessão " + project : "");
+        ttl.title = "Sufficit memory tasks for this session (mirrored in .vscode/symposium.tasks.json)" + (project ? " — session " + project : "");
         const cnt = document.createElement("span"); cnt.className = "tkcount"; cnt.textContent = String(items.length);
-        const refresh = document.createElement("button"); refresh.className = "tkbtn"; refresh.title = "Atualizar da memória";
+        const refresh = document.createElement("button"); refresh.className = "tkbtn"; refresh.title = "Refresh from memory";
         refresh.appendChild(svgIcon("refresh"));
         refresh.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "refresh-tasks" }); });
         const chev = svgIcon("chevron"); chev.classList.add("tkchev");
@@ -1257,7 +1257,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
             badge.className = "tkbadge" + (isAnchor ? " anchor" : "");
             badge.textContent = isAnchor ? "anchor" : "check";
             const txt = document.createElement("span"); txt.className = "tktext";
-            txt.textContent = it.title || it.summary || "(sem título)";
+            txt.textContent = it.title || it.summary || "(untitled)";
             txt.title = (it.title ? it.title + "\\n\\n" : "") + (it.summary || "");
             const when = document.createElement("span"); when.className = "tkwhen"; when.textContent = relWhen(it.ts);
             row.appendChild(badge); row.appendChild(txt); row.appendChild(when);
@@ -1444,27 +1444,27 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         vscode.postMessage({ type: "session-action", action, sessionId: s.sessionId, backend: s.backend });
     }
 
-    // Relative time like the native viewer ("agora", "5 min atrás", "1 dia atrás").
+    // Relative time like the native viewer ("now", "5 min ago", "1 day ago").
     function relTime(iso) {
         if (!iso) return "";
         const d = (Date.now() - new Date(iso).getTime()) / 1000;
-        if (d < 60) return "agora";
-        if (d < 3600) return Math.floor(d / 60) + " min atrás";
-        if (d < 86400) return Math.floor(d / 3600) + "h atrás";
-        if (d < 172800) return "ontem";
-        if (d < 604800) return Math.floor(d / 86400) + " dias atrás";
-        if (d < 2592000) return Math.floor(d / 604800) + " sem atrás";
-        return Math.floor(d / 2592000) + " meses atrás";
+        if (d < 60) return "now";
+        if (d < 3600) return Math.floor(d / 60) + " min ago";
+        if (d < 86400) return Math.floor(d / 3600) + "h ago";
+        if (d < 172800) return "yesterday";
+        if (d < 604800) return Math.floor(d / 86400) + " days ago";
+        if (d < 2592000) return Math.floor(d / 604800) + " wk ago";
+        return Math.floor(d / 2592000) + " months ago";
     }
     // Recency bucket header label.
     function bucket(iso) {
-        if (!iso) return "Sem data";
+        if (!iso) return "No date";
         const d = (Date.now() - new Date(iso).getTime()) / 1000;
-        if (d < 86400) return "Hoje";
-        if (d < 172800) return "Ontem";
-        if (d < 604800) return "Esta semana";
-        if (d < 2592000) return "Este mês";
-        return "Mais antigo";
+        if (d < 86400) return "Today";
+        if (d < 172800) return "Yesterday";
+        if (d < 604800) return "This week";
+        if (d < 2592000) return "This month";
+        return "Older";
     }
 
     function groupHeader(label, count) {
@@ -1972,7 +1972,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                 layout();   // apply the sessions-side now (meta sets sideMode)
                 layout();
                 activeSessionId = data.sessionId || "";
-                clearTimeout(bootTimer); bootStep("host", null, "ok"); bootStep("session", "Sessão pronta", "ok"); bootComplete();
+                clearTimeout(bootTimer); bootStep("host", null, "ok"); bootStep("session", "Session ready", "ok"); bootComplete();
                 startWorkingSet(activeSessionId);   // bind edited-files set to this session
                 currentBackend = data.backend || "";
                 currentBackendName = data.backendName || "";
@@ -2331,19 +2331,19 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         root.classList.add("booted");
     }
     // Seed the steps we know about up front (extension confirms/overrides them).
-    try { bootStep("host", "Conectando ao host da extensão", "pending"); } catch (e) {}
-    try { bootStep("ui", "Carregando interface", "ok"); } catch (e) {}
-    try { bootStep("session", "Preparando sessão", "pending"); } catch (e) {}
+    try { bootStep("host", "Connecting to the extension host", "pending"); } catch (e) {}
+    try { bootStep("ui", "Loading interface", "ok"); } catch (e) {}
+    try { bootStep("session", "Preparing session", "pending"); } catch (e) {}
     // Safety: never trap the user behind the boot screen. After a short grace
     // period surface a warning; shortly after, force-reveal the UI even if the
     // extension never resolved the session (e.g. a backend's discovery hung).
     const bootTimer = setTimeout(() => {
         if (bootDone) { return; }
-        if (bootHintEl) { bootHintEl.textContent = "Demorando mais que o esperado — veja Output › Symposium para diagnóstico."; }
+        if (bootHintEl) { bootHintEl.textContent = "Taking longer than expected — see Output › Symposium for diagnostics."; }
     }, 8000);
     const bootForce = setTimeout(() => {
         if (bootDone) { return; }
-        bootStep("session", "Preparando sessão", "warn", "tempo esgotado");
+        bootStep("session", "Preparing session", "warn", "timed out");
         bootComplete();   // reveal the composer/list anyway so the user can act
     }, 15000);
 

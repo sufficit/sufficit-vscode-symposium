@@ -22,7 +22,7 @@ import {
     SessionStartOptions,
     SlashCommand,
 } from "./types";
-import { getCached, setCached, isFresh, ModelCacheEntry } from "./modelCache";
+import { getCached, setCached, ModelCacheEntry } from "./modelCache";
 
 export interface ClaudeAdapterConfig {
     executable: string;
@@ -81,7 +81,7 @@ class ClaudeSession extends EventEmitter implements AgentSession {
         private readonly options: SessionStartOptions,
     ) {
         super();
-        this.options.resumeSessionId && (this.sessionId = this.options.resumeSessionId);
+        if (this.options.resumeSessionId) { this.sessionId = this.options.resumeSessionId; }
     }
 
     /**
@@ -674,12 +674,12 @@ function parseTranscriptLine(line: string): HistoryMessage[] {
         const content = entry.message?.content;
         if (typeof content === "string") {
             const t = cleanUserText(content);
-            t && messages.push({ role: "user", text: t });
+            if (t) { messages.push({ role: "user", text: t }); }
         } else if (Array.isArray(content)) {
             for (const block of content) {
                 if (block.type === "text" && block.text?.trim()) {
                     const t = cleanUserText(block.text);
-                    t && messages.push({ role: "user", text: t });
+                    if (t) { messages.push({ role: "user", text: t }); }
                 }
                 // tool_result blocks are skipped: the tool line was already added
             }
