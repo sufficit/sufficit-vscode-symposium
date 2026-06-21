@@ -6,6 +6,7 @@ import * as os from "node:os";
 import * as vscode from "vscode";
 import { randomUUID } from "node:crypto";
 import { readSession, dumpToText } from "../sessionReader";
+import { mimeTypeFor } from "./parse";
 
 /**
  * Sufficit memory + web tools exposed to OpenAI-compatible models as function
@@ -115,7 +116,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "read_file",
-            description: "Read a UTF-8 text file from the host and return its contents.",
+            description: "Read a file from the host. Text files return their UTF-8 contents. Binary files are detected and NOT dumped as garbage: an image returns a base64 data URI (for a vision-capable model/preset) plus a note; other binaries return a size note. Raise max_bytes to inline a larger image.",
             parameters: {
                 type: "object",
                 properties: {
@@ -546,8 +547,29 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
         }
         if (name === "read_file") {
             const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+            const buf = fs.readFileSync(p);
+            const mime = mimeTypeFor(p);
+            const isImage = !!mime && mime.startsWith("image/");
+            // Binary detection: a NUL byte in the first chunk means it isn't text.
+            const isBinary = isImage || buf.subarray(0, 4096).includes(0);
+            if (isBinary) {
+                // Images: return a base64 data URI (capped) instead of UTF-8
+                // garbage, so a vision-capable model/preset can interpret it.
+                const cap = Number(args.max_bytes) || 1_500_000;
+                if (isImage && buf.length <= cap) {
+                    return JSON.stringify({
+                        path: p, mime, bytes: buf.length, image: true,
+                        data_uri: `data:${mime};base64,${buf.toString("base64")}`,
+                        note: "Binary image returned as a base64 data URI — it cannot be read as text. A vision-capable model/preset is needed to interpret it; otherwise ask the user to describe it.",
+                    });
+                }
+                return JSON.stringify({
+                    path: p, mime: mime ?? "application/octet-stream", bytes: buf.length, binary: true,
+                    note: "Binary file — not shown as text" + (isImage ? " (image exceeds the inline cap; raise max_bytes to return base64)" : "") + ".",
+                });
+            }
             const max = Number(args.max_bytes) || 100000;
-            const data = fs.readFileSync(p, "utf8");
+            const data = buf.toString("utf8");
             return JSON.stringify({ path: p, content: data.slice(0, max), truncated: data.length > max });
         }
         if (name === "write_file") {

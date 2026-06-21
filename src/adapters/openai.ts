@@ -315,8 +315,8 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // Close the gap with a short assistant turn so the new user is valid.
         const last = this.messages[this.messages.length - 1];
         if (last && last.role === "user") {
-            this.messages.push({ role: "assistant", content: "(turno anterior interrompido)" });
-            ledger.appendMessage(this.sessionId, { role: "assistant", content: "(turno anterior interrompido)", turn: this.turnNo });
+            this.messages.push({ role: "assistant", content: "(previous turn interrupted)" });
+            ledger.appendMessage(this.sessionId, { role: "assistant", content: "(previous turn interrupted)", turn: this.turnNo });
         }
         for (const p of preamble ?? []) {
             if (p && p.trim()) {
