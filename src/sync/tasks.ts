@@ -12,6 +12,8 @@ import { HubClient } from "./hubClient";
 
 export const SESSION_TAG_PREFIX = "symposium-session:";
 export const sessionTag = (sessionId: string): string => SESSION_TAG_PREFIX + sessionId;
+/** Tag marking a task observation as completed (pending = absent). */
+export const DONE_TAG = "status:done";
 
 export interface TaskItem {
     id: string;
@@ -20,6 +22,8 @@ export interface TaskItem {
     summary: string;
     ts?: string;
     tags?: string;
+    /** True when the task carries the DONE_TAG (completed). */
+    done?: boolean;
 }
 
 const isTask = (type: unknown): boolean => String(type ?? "").startsWith("task");
@@ -36,13 +40,26 @@ export async function fetchSessionTasks(hub: HubClient, sessionId: string): Prom
         .filter((r) => isTask(r.type) && hasTag(r.tags, tag))
         .sort((a, b) => Date.parse(b.createdAtUtc || 0) - Date.parse(a.createdAtUtc || 0))
         .slice(0, 30)
-        .map((r) => ({ id: r.id, type: r.type, title: r.title, summary: r.summary, ts: r.createdAtUtc, tags: r.tags }));
+        .map((r) => ({ id: r.id, type: r.type, title: r.title, summary: r.summary, ts: r.createdAtUtc, tags: r.tags, done: hasTag(r.tags, DONE_TAG) }));
 }
 
-/** The latest task-checkpoint bound to a session (falls back to the latest task). */
+/** Marks a task observation completed by adding the DONE_TAG (idempotent). */
+export async function markTaskDone(hub: HubClient, id: string): Promise<boolean> {
+    if (!hub.configured() || !id) { return false; }
+    const [obs] = await hub.getByIds([id]);
+    if (!obs) { return false; }
+    if (hasTag(obs.tags, DONE_TAG)) { return true; }
+    const tags = obs.tags ? `${obs.tags},${DONE_TAG}` : DONE_TAG;
+    await hub.save({ ...obs, tags });
+    return true;
+}
+
+/** Latest PENDING task-checkpoint for a session (falls back to latest pending task, then any). */
 export async function fetchLatestCheckpoint(hub: HubClient, sessionId: string): Promise<TaskItem | undefined> {
     const tasks = await fetchSessionTasks(hub, sessionId);
-    return tasks.find((t) => t.type === "task-checkpoint") ?? tasks[0];
+    return tasks.find((t) => t.type === "task-checkpoint" && !t.done)
+        ?? tasks.find((t) => !t.done)
+        ?? tasks[0];
 }
 
 /** Expires (soft-deletes) every task observation bound to a session. Returns count. */

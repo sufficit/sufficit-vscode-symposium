@@ -69,7 +69,8 @@ export const CHECKPOINT_PREAMBLE =
     "[Context window & checkpoints — IMPORTANT] Only the most RECENT messages of this conversation stay in your context; older turns scroll out and you will NOT see them again (the full history remains visible to the user in the chat, but not to you). " +
     "So you MUST externalize anything you will need later: call memory_save (type \"task-checkpoint\") for every result, decision, root cause, file path, id, and \"what's done / what's next\" — written densely enough to resume from that note alone, with no other context. Checkpoint at the start of a non-trivial task and at each milestone. " +
     "And RECALL often: call memory_search whenever you resume, change sub-task, or feel unsure of the current goal, so you never drift back to an earlier task or lose the thread. Treat your checkpoints as your real memory; the chat scrollback is not. " +
-    "Your task-checkpoints are automatically bound to THIS chat session (shown in the session's Tasks panel); always reference the current session id in the checkpoint so it stays traceable.";
+    "Your task-checkpoints are automatically bound to THIS chat session (shown in the session's Tasks panel); always reference the current session id in the checkpoint so it stays traceable. " +
+    "Use list_tasks to see your PENDING tasks for this session (pass all=true to include completed ones), and call task_complete(id) the moment you finish what a checkpoint described, so it leaves the pending list.";
 
 export const AUTONOMY_PREAMBLE =
     "[Autonomy mode] The user is not present to answer questions or make decisions and has given you full autonomy. " +

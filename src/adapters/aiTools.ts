@@ -7,6 +7,7 @@ import * as vscode from "vscode";
 import { randomUUID } from "node:crypto";
 import { readSession, dumpToText } from "../sessionReader";
 import { mimeTypeFor } from "./parse";
+import { fetchSessionTasks, markTaskDone } from "../sync/tasks";
 
 /**
  * Sufficit memory + web tools exposed to OpenAI-compatible models as function
@@ -66,6 +67,34 @@ export const AI_TOOLS: OpenAITool[] = [
                     tags: { type: "string", description: "Optional comma-separated tags." },
                 },
                 required: ["type", "title", "summary"],
+            },
+        },
+    },
+    {
+        type: "function",
+        function: {
+            name: "list_tasks",
+            description: "List this chat session's tasks (task-anchor / task-checkpoint memory items bound to the session). Returns PENDING tasks by default; pass all=true to include completed ones too.",
+            parameters: {
+                type: "object",
+                properties: {
+                    all: { type: "boolean", description: "Include completed tasks as well. Default false (pending only)." },
+                },
+                required: [],
+            },
+        },
+    },
+    {
+        type: "function",
+        function: {
+            name: "task_complete",
+            description: "Mark a session task (by its memory id) as completed. It then drops out of the pending Tasks list. Use when you finish the work a task-checkpoint described.",
+            parameters: {
+                type: "object",
+                properties: {
+                    id: { type: "string", description: "The task observation id (from list_tasks / memory)." },
+                },
+                required: ["id"],
             },
         },
     },
@@ -250,6 +279,8 @@ export function aiToolsForAgent(declared: string[]): string[] {
     // recall primitive (no side effects). Every agent gets it so it can recover
     // earlier/compacted context when the user says "reread the history".
     names.add("read_session");
+    // Session task tools are always safe (scoped to this session, no secrets).
+    names.add("list_tasks"); names.add("task_complete");
     if (has(/^sufficit-ai\b|^sufficit-ai\/|^memory\b/i)) {
         names.add("memory_search"); names.add("memory_get_observations"); names.add("memory_save");
     }
@@ -635,6 +666,20 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                     tags: tags || undefined,
                 });
                 return JSON.stringify({ id });
+            }
+            case "list_tasks": {
+                if (!ctx.sessionId) { return JSON.stringify({ tasks: [] }); }
+                const all = await fetchSessionTasks(hub, ctx.sessionId);
+                const includeDone = args.all === true;
+                const tasks = (includeDone ? all : all.filter((t) => !t.done))
+                    .map((t) => ({ id: t.id, type: t.type, title: t.title, summary: t.summary, done: !!t.done }));
+                return JSON.stringify({ tasks, pendingOnly: !includeDone });
+            }
+            case "task_complete": {
+                const id = String(args.id ?? "");
+                if (!id) { return JSON.stringify({ error: "id is required" }); }
+                const ok = await markTaskDone(hub, id);
+                return JSON.stringify({ ok });
             }
             case "web_search": {
                 const r = await hub.webSearch(String(args.query ?? ""), typeof args.limit === "number" ? args.limit : 8);

@@ -684,6 +684,20 @@ export const chatStyles = `    body {
     .tkitem .tkbadge.anchor { background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 35%, transparent); }
     .tkitem .tktext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tkitem .tkwhen { flex-shrink: 0; opacity: 0.55; font-size: 0.82em; font-variant-numeric: tabular-nums; }
+    /* Header filter toggle (Pending / All). */
+    #tasks .tkhead .tkfilter { font-size: 0.74em; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 7px; border-radius: 4px; opacity: 0.85; border: 1px solid var(--vscode-panel-border, transparent); }
+    /* Completed tasks: muted + struck through; the done badge is green. */
+    .tkitem.done .tktext { opacity: 0.5; text-decoration: line-through; }
+    .tkitem .tkbadge.doneBadge { background: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950)); color: #fff; }
+    /* Completion animation (~5s): brief green flash + check sweep, then settle. */
+    .tkitem.completing { animation: tkComplete 5s ease forwards; }
+    @keyframes tkComplete {
+        0% { background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 30%, transparent); }
+        14% { background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 22%, transparent); }
+        85% { background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3fb950) 10%, transparent); }
+        100% { background: transparent; }
+    }
+    @media (prefers-reduced-motion: reduce) { .tkitem.completing { animation: none; } }
     #tasks .tkempty { padding: 8px 10px; opacity: 0.6; font-size: 0.88em; }
     #plan { display: none; margin: 0 12px 8px 12px; }
     #plan.has { display: block; }
