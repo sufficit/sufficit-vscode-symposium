@@ -399,12 +399,17 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     // Auto-scroll only when the user is already near the bottom, so reading
     // scrollback isn't yanked away mid-stream.
     function nearBottom() { return log.scrollHeight - log.scrollTop - log.clientHeight < 80; }
-    function autoScroll(stick) { if (stick) log.scrollTop = log.scrollHeight; }
+    // Marks the last PROGRAMMATIC scroll so the context-menu auto-close can tell
+    // it apart from a user scroll (new messages auto-scroll the log, which must
+    // not close an open menu like the send-mode picker).
+    let lastAutoScroll = 0;
+    function autoScroll(stick) { if (stick) { lastAutoScroll = Date.now(); log.scrollTop = log.scrollHeight; } }
     // Force-scroll to the very bottom, after layout settles (history/images can
     // change height a frame later, so do it now + on the next frame).
     function scrollToBottom() {
+        lastAutoScroll = Date.now();
         log.scrollTop = log.scrollHeight;
-        requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; updateScrollBtn(); });
+        requestAnimationFrame(() => { lastAutoScroll = Date.now(); log.scrollTop = log.scrollHeight; updateScrollBtn(); });
     }
     // Floating "scroll to bottom" button: visible only when scrolled up.
     let scrollBtn = null;
@@ -1581,9 +1586,12 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         ctxMenu.style.top = Math.min(ev.clientY, window.innerHeight - h - 4) + "px";
     }
     document.addEventListener("click", hideCtx);
-    // Close on page scroll, but NOT when scrolling inside the menu's own list.
+    // Close on page scroll, but NOT when scrolling inside the menu's own list,
+    // and NOT for programmatic auto-scroll of the log (new messages must not
+    // close an open menu like the send-mode picker).
     document.addEventListener("scroll", (e) => {
         if (ctxMenu.contains(e.target)) { return; }
+        if (Date.now() - lastAutoScroll < 200) { return; }
         hideCtx();
     }, true);
 
