@@ -75,11 +75,14 @@ export class HubClient {
             "Content-Type": "application/json",
             "Accept": "application/json",
         };
-        // Prefer the logged-in identity token; fall back to the static setting.
+        // Prefer the static hub token (the AIUser-policy service token the
+        // memory/vault API accepts); fall back to the logged-in identity token
+        // only when no static token is configured. The identity token often
+        // lacks the AI claims the hub requires, so preferring it made every save
+        // 401 for logged-in users. Mirrors the OpenAI adapter's auth order.
         let token = this.token();
-        if (loginTokenProvider) {
-            const live = await loginTokenProvider().catch(() => null);
-            if (live) { token = live; }
+        if (!token && loginTokenProvider) {
+            token = (await loginTokenProvider().catch(() => null)) ?? "";
         }
         if (token) {
             h["Authorization"] = `Bearer ${token}`;
