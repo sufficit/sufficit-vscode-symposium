@@ -858,7 +858,18 @@ export const chatStyles = `    body {
     .slashItem .ds { opacity: 0.65; font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     /* ---- composer ---- */
-    #composer { position: relative; }
+    #composer { position: relative; border-radius: 7px; transition: box-shadow 130ms ease, background-color 130ms ease; }
+    #composer.dragover {
+        box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #0a84ff);
+        background: var(--vscode-editor-inactiveSelectionBackground, rgba(10,132,255,0.08));
+    }
+    #composer.dragover::after {
+        content: "Drop files to attach"; position: absolute; inset: 0; z-index: 5;
+        display: flex; align-items: center; justify-content: center; pointer-events: none;
+        font-size: 0.85em; font-weight: 500; border-radius: 7px;
+        color: var(--vscode-foreground); background: var(--vscode-editor-background, rgba(0,0,0,0.4)); opacity: 0.92;
+    }
+    @media (prefers-reduced-motion: reduce) { #composer { transition: none; } }
     #composer {
         margin: 6px 12px 10px 12px;
         border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, #454545));

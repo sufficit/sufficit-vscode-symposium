@@ -2058,6 +2058,51 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     // adding it to both the input and the document fired it twice.
     document.addEventListener("paste", handlePaste);
 
+    // Drag & drop files onto the composer → attachments (parity with paste).
+    // OS files arrive as dataTransfer.files; VS Code Explorer drags as a
+    // text/uri-list of file:// URIs. The extension writes/resolves them and
+    // posts attachments-picked back, which adds the chips.
+    const composerEl = document.getElementById("composer");
+    const dragRelevant = (dt) => !!dt && Array.from(dt.types || []).some((t) => t === "Files" || t === "text/uri-list");
+    ["dragenter", "dragover"].forEach((evName) => composerEl.addEventListener(evName, (e) => {
+        if (!dragRelevant(e.dataTransfer)) { return; }
+        e.preventDefault(); e.stopPropagation();
+        try { e.dataTransfer.dropEffect = "copy"; } catch (_) {}
+        composerEl.classList.add("dragover");
+    }));
+    composerEl.addEventListener("dragleave", (e) => {
+        if (!composerEl.contains(e.relatedTarget)) { composerEl.classList.remove("dragover"); }
+    });
+    composerEl.addEventListener("drop", (e) => {
+        if (!e.dataTransfer) { return; }
+        e.preventDefault(); e.stopPropagation();
+        composerEl.classList.remove("dragover");
+        const files = Array.from(e.dataTransfer.files || []);
+        if (files.length) {
+            const payloads = [];
+            let pending = files.length;
+            const flush = () => { if (--pending === 0 && payloads.length) { vscode.postMessage({ type: "drop-files", files: payloads }); } };
+            files.forEach((file) => {
+                const reader = new FileReader();
+                reader.onload = () => { payloads.push({ name: file.name, mime: file.type, data: String(reader.result).split(",")[1] || "" }); flush(); };
+                reader.onerror = () => flush();
+                reader.readAsDataURL(file);
+            });
+            return;
+        }
+        const uriList = e.dataTransfer.getData("text/uri-list");
+        if (uriList) {
+            const uris = uriList.split(/\r?\n/).map((u) => u.trim()).filter((u) => u && !u.startsWith("#"));
+            if (uris.length) { vscode.postMessage({ type: "drop-uris", uris }); return; }
+        }
+        const plain = e.dataTransfer.getData("text/plain");
+        if (plain && /^(file:|\/|[a-zA-Z]:[\\/])/.test(plain.trim())) {
+            const uris = plain.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+                .map((s) => (s.startsWith("file:") ? s : "file://" + s));
+            vscode.postMessage({ type: "drop-uris", uris });
+        }
+    });
+
     window.addEventListener("message", ({ data }) => {
         switch (data.type) {
             case "boot": {
