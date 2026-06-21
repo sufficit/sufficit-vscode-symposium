@@ -94,6 +94,7 @@ ${chatStyles}
                     <option value="queue">Queue</option>
                     <option value="steer">Steer</option>
                 </select>
+                <button id="stopBtn" title="Stop the running turn (Esc)" aria-label="Stop the running turn" style="display:none"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg></button>
                 <div id="sendGroup">
                     <button id="send" title="Send (Enter)" aria-label="Send (Enter)"><span id="sendIcon"></span></button>
                     <button id="sendCaret" title="Send mode" aria-label="Send mode"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>

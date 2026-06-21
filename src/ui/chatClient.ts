@@ -56,6 +56,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     const sendCaret = document.getElementById("sendCaret");
     const sendIcon = document.getElementById("sendIcon");
     const sendGroup = document.getElementById("sendGroup");
+    const stopBtn = document.getElementById("stopBtn");
     const isMac = navigator.platform.indexOf("Mac") === 0;
     const MOD = isMac ? "⌘" : "Ctrl";
     const ALT = isMac ? "⌥" : "Alt";
@@ -89,13 +90,21 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                 ? "Steer: interrupt the running turn and send now (Ctrl/Cmd+Enter) · Esc to stop"
                 : "Queue: send after the current turn finishes (Alt+Enter) · Esc to stop";
             sendCaret.style.display = "";
+            stopBtn.style.display = "";
             return;
         }
         sendGroup.classList.remove("busy", "steer", "stopping");
         sendIcon.innerHTML = MODE_ICONS.send;
         sendBtn.title = "Send (Enter)";
         sendCaret.style.display = "none";
+        stopBtn.style.display = "none";
     }
+    stopBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (!busy) { return; }
+        sendGroup.classList.add("stopping");
+        vscode.postMessage({ type: "cancel" });
+    });
     sendCaret.addEventListener("click", (ev) => {
         ev.stopPropagation();
         ctxMenu.textContent = "";
