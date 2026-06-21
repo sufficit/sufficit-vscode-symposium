@@ -278,15 +278,71 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     });
 
     // Transient toast (bottom-center, auto-dismiss). Reused for copy feedback.
+    const TOAST_CHECK = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.5 3.5 6 11 2.5 7.5l1-1L6 9l6.5-6.5 1 1Z"/></svg>';
     let toastTimer = null;
     function showToast(message) {
         const el = document.getElementById("toast");
         if (!el) { return; }
-        el.textContent = message;
+        el.innerHTML = TOAST_CHECK + "<span></span>";
+        el.querySelector("span").textContent = message;
         el.classList.add("show");
         if (toastTimer) { clearTimeout(toastTimer); }
-        toastTimer = setTimeout(() => el.classList.remove("show"), 2000);
+        toastTimer = setTimeout(() => el.classList.remove("show"), 2200);
     }
+
+    // Themed tooltip engine: replaces the unstyled native title= bubble with a
+    // theme-aware, animated one. Reads the element's title attribute (so no
+    // markup changes), suppresses the native tooltip while shown, and restores
+    // it after. Works on hover AND keyboard focus (a11y).
+    const tipEl = document.getElementById("tip");
+    let tipTarget = null;
+    function placeTip(target) {
+        const r = target.getBoundingClientRect();
+        const tr = tipEl.getBoundingClientRect();
+        let left = r.left + r.width / 2 - tr.width / 2;
+        left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+        let top = r.top - tr.height - 8;
+        if (top < 8) { top = r.bottom + 8; tipEl.classList.add("below"); }
+        else { tipEl.classList.remove("below"); }
+        tipEl.style.left = left + "px";
+        tipEl.style.top = top + "px";
+    }
+    function showTip(target) {
+        const text = target.getAttribute("title");
+        if (!text || !text.trim()) { return; }
+        if (tipTarget) { hideTip(); }
+        tipTarget = target;
+        target.setAttribute("data-otitle", text);
+        target.removeAttribute("title");        // suppress the native bubble
+        tipEl.textContent = text;
+        tipEl.classList.add("show");
+        placeTip(target);                       // measure after content set
+        placeTip(target);                       // 2nd pass: size known now
+    }
+    function hideTip() {
+        tipEl.classList.remove("show");
+        if (tipTarget && tipTarget.getAttribute("data-otitle") != null) {
+            tipTarget.setAttribute("title", tipTarget.getAttribute("data-otitle"));
+            tipTarget.removeAttribute("data-otitle");
+        }
+        tipTarget = null;
+    }
+    document.addEventListener("mouseover", (e) => {
+        const t = e.target.closest && e.target.closest("[title]");
+        if (t && t !== tipTarget) { showTip(t); }
+    });
+    document.addEventListener("mouseout", (e) => {
+        if (tipTarget && !tipTarget.contains(e.relatedTarget)) { hideTip(); }
+    });
+    document.addEventListener("focusin", (e) => {
+        const t = e.target.closest && e.target.closest("[title]");
+        if (t) { showTip(t); }
+    });
+    document.addEventListener("focusout", () => hideTip());
+    // Never leave a stuck tip: hide on scroll/click/escape.
+    window.addEventListener("scroll", () => { if (tipTarget) { hideTip(); } }, true);
+    document.addEventListener("click", () => { if (tipTarget) { hideTip(); } }, true);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && tipTarget) { hideTip(); } });
 
     // Copy the active session's "id title" to the clipboard, with a toast.
     // Wired to BOTH the header copy icon AND clicking the title text itself.

@@ -109,6 +109,7 @@ ${chatStyles}
     </main>
 </div>
 <div id="ctxMenu"></div>
+<div id="tip" role="tooltip"></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script nonce="${nonce}">
 ${chatClientJs}

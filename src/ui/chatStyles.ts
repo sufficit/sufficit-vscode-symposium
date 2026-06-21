@@ -273,17 +273,41 @@ export const chatStyles = `    body {
     .ttlIcon { width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; opacity: 0.7; }
     #ctxMenu .miIcon { width: 14px; height: 14px; vertical-align: -2px; margin-right: 8px; opacity: 0.85; }
     #ctxMenu .mi { display: flex; align-items: center; }
-    #toast {
-        position: fixed; z-index: 60; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(8px);
-        max-width: 80%; padding: 7px 14px; border-radius: 6px; font-size: 0.85em;
-        background: var(--vscode-notifications-background, var(--vscode-editor-background));
-        color: var(--vscode-notifications-foreground, var(--vscode-foreground));
-        border: 1px solid var(--vscode-notifications-border, var(--vscode-panel-border, transparent));
-        box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-        opacity: 0; pointer-events: none; transition: opacity 150ms ease, transform 150ms ease;
+    /* ---- themed tooltip (replaces native title=) ---- */
+    #tip {
+        position: fixed; z-index: 70; max-width: 320px; padding: 4px 9px;
+        border-radius: 5px; font-size: 0.8em; line-height: 1.35; white-space: normal;
+        background: var(--vscode-editorHoverWidget-background, var(--vscode-menu-background, #252526));
+        color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground, #ccc));
+        border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, rgba(128,128,128,0.35)));
+        box-shadow: 0 2px 10px rgba(0,0,0,0.4);
+        opacity: 0; pointer-events: none; transform: translateY(3px) scale(0.97);
+        transform-origin: bottom center;
+        transition: opacity 130ms ease, transform 130ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
     }
-    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+    #tip.below { transform-origin: top center; transform: translateY(-3px) scale(0.97); }
+    #tip.show { opacity: 1; transform: translateY(0) scale(1); }
+
+    /* ---- toast (action confirmations) ---- */
+    #toast {
+        position: fixed; z-index: 80; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(14px) scale(0.96);
+        display: inline-flex; align-items: center; gap: 7px; max-width: 80%; padding: 8px 15px;
+        border-radius: 8px; font-size: 0.85em; font-weight: 500;
+        background: var(--vscode-notifications-background, var(--vscode-editorWidget-background, #252526));
+        color: var(--vscode-notifications-foreground, var(--vscode-foreground));
+        border: 1px solid var(--vscode-notifications-border, var(--vscode-widget-border, transparent));
+        border-left: 3px solid var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950));
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        opacity: 0; pointer-events: none;
+        transition: opacity 180ms ease, transform 220ms cubic-bezier(0.2, 0.9, 0.3, 1.3);
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    #toast svg { width: 14px; height: 14px; flex: none; color: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950)); }
+    @media (prefers-reduced-motion: reduce) {
+        #tip, #toast { transition: opacity 100ms ease; transform: none; }
+        #tip.below, #tip.show, #toast.show { transform: translateX(0); }
+        #toast.show { transform: translateX(-50%); }
+    }
     #ctxMenu {
         position: fixed; z-index: 50; display: none; min-width: 220px; max-width: 340px;
         background: var(--vscode-menu-background, var(--vscode-editor-background));
