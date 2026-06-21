@@ -11,7 +11,7 @@ import {
     SessionStartOptions,
 } from "./types";
 import { TODO_INJECTION } from "./todos";
-import { diffCounts, editDiff } from "./parse";
+import { diffCounts, editDiff, mimeTypeFor } from "./parse";
 import { snapshots } from "../snapshots";
 import { HubClient } from "../sync/hubClient";
 import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, ALL_AI_TOOL_NAMES, filterTools, runAiTool, ShellExecutionMode } from "./aiTools";
@@ -27,15 +27,29 @@ interface ToolCall {
     function: { name: string; arguments: string };
 }
 
+/** OpenAI vision content part — a user message can mix text + images. */
+type ContentPart =
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string } };
+
 type ChatMsg = {
     role: "system" | "developer" | "user" | "assistant" | "tool";
-    content: string | null;
+    content: string | null | ContentPart[];
     tool_calls?: ToolCall[];
     tool_call_id?: string;
     name?: string;
     /** Model id that produced this assistant message (kept across handoff). */
     model?: string;
 };
+
+/** Plain-text view of a message's content (drops image parts). */
+function contentText(content: string | null | ContentPart[]): string {
+    if (typeof content === "string") { return content; }
+    if (Array.isArray(content)) {
+        return content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n");
+    }
+    return "";
+}
 
 interface StoredSession {
     id: string;
@@ -303,7 +317,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
         }
     }
 
-    send(text: string, _images?: string[], preamble?: string[]): void {
+    send(text: string, images?: string[], preamble?: string[]): void {
         // One-shot app instructions (todo capability, autonomy, policy) go in as
         // `developer` messages — above the user turn, below the preset's system —
         // instead of being glued onto the user text. Downgraded to `system` for
@@ -324,8 +338,27 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 ledger.appendMessage(this.sessionId, { role, content: p, turn: this.turnNo + 1 });
             }
         }
-        this.messages.push({ role: "user", content: text });
-        ledger.appendMessage(this.sessionId, { role: "user", content: text, turn: this.turnNo + 1 });
+        // Vision: inline attached images as image_url content parts so a
+        // vision-capable model sees them directly (instead of getting a file
+        // path it would read as binary). Unreadable files are skipped.
+        const imageParts: ContentPart[] = [];
+        for (const p of images ?? []) {
+            try {
+                const mime = mimeTypeFor(p) || "image/png";
+                const b64 = fs.readFileSync(p).toString("base64");
+                imageParts.push({ type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } });
+            } catch { /* skip files we can't read */ }
+        }
+        const userContent: string | ContentPart[] = imageParts.length
+            ? [{ type: "text", text }, ...imageParts]
+            : text;
+        this.messages.push({ role: "user", content: userContent });
+        // Ledger/persistence stays text-based (no base64 bloat in the recall log).
+        ledger.appendMessage(this.sessionId, {
+            role: "user",
+            content: imageParts.length ? `${text}\n[${imageParts.length} image(s) attached]` : text,
+            turn: this.turnNo + 1,
+        });
         if (!this.title) { this.title = text.trim().slice(0, 60); }
         this.safePersist();
         void this.run();
@@ -665,17 +698,26 @@ function toResponsesInput(messages: ChatMessage[]): unknown[] {
     const out: unknown[] = [];
     for (const m of messages) {
         if (m.role === "tool") {
-            out.push({ type: "function_call_output", call_id: m.tool_call_id, output: m.content ?? "" });
+            out.push({ type: "function_call_output", call_id: m.tool_call_id, output: contentText(m.content) });
             continue;
         }
         if (m.role === "assistant" && m.tool_calls?.length) {
-            if (m.content) { out.push({ role: "assistant", content: m.content }); }
+            const t = contentText(m.content);
+            if (t) { out.push({ role: "assistant", content: t }); }
             for (const tc of m.tool_calls) {
                 out.push({ type: "function_call", call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments });
             }
             continue;
         }
-        out.push({ role: m.role, content: m.content ?? "" });
+        if (Array.isArray(m.content)) {
+            // Map vision parts to the Responses API shape (input_text/input_image).
+            const parts = m.content.map((p) => p.type === "image_url"
+                ? { type: "input_image", image_url: p.image_url.url }
+                : { type: "input_text", text: p.text });
+            out.push({ role: m.role, content: parts });
+        } else {
+            out.push({ role: m.role, content: m.content ?? "" });
+        }
     }
     return out;
 }
@@ -718,10 +760,10 @@ export class OpenAIAdapter implements AgentAdapter {
         const s = readStored(this.backend, info.sessionId);
         if (!s) { return []; }
         return s.messages
-            .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.length > 0)
+            .filter((m) => (m.role === "user" || m.role === "assistant") && contentText(m.content).length > 0)
             .map((m) => ({
                 role: m.role as "user" | "assistant",
-                text: m.content as string,
+                text: contentText(m.content),
                 model: m.role === "assistant" ? m.model : undefined,
                 modelLabel: m.role === "assistant" && m.model ? (discoveredLabels.get(this.getConfig().baseUrl)?.[m.model] ?? m.model) : undefined,
             }));
@@ -737,6 +779,14 @@ export class OpenAIAdapter implements AgentAdapter {
 
     /** API backend: takes one-shot app instructions as developer messages. */
     roleAware(): boolean { return true; }
+
+    /**
+     * Accept inlined images (vision): attached/pasted images are sent as
+     * image_url content parts so a vision-capable model sees them directly,
+     * instead of being handed a file path it reads as binary. The gateway must
+     * route to a vision-capable model for the image to be interpreted.
+     */
+    supportsImages(): boolean { return true; }
 
     /** GET <baseUrl>/models → cache the offered model ids (OpenAI shape). */
     private async discoverModels(cfg: OpenAIAdapterConfig): Promise<void> {
