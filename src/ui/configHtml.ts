@@ -233,6 +233,9 @@ export function renderConfigHtml(): string {
             row("Step limit per turn", "Max tool actions before pausing (asks for 'continue'). In autonomous mode (presence Away) there is no limit.",
                 sel("symposium.openai.maxToolHops", String(p.maxToolHops || 50),
                     [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }])) +
+            row("Stop if no reply", "Stop the turn after N tool steps in a row without the agent replying (anti-loop). Unlimited = never auto-stop on silence.",
+                sel("symposium.openai.noProgressStop", String(p.noProgressStop || 0),
+                    [{ v: "0", l: "Unlimited" }, { v: "8", l: "8 steps" }, { v: "12", l: "12 steps" }, { v: "16", l: "16 steps" }, { v: "24", l: "24 steps" }])) +
             row("Command execution", "How to surface the Ran/shell tool: wait for the result, stream into the chat, or open a VS Code terminal.",
                 sel("symposium.openai.shellExecution", p.shellExecution || "silent",
                     [{ v: "silent", l: "Wait for result" }, { v: "inline", l: "Stream in chat" }, { v: "terminal", l: "VS Code terminal" }])) +

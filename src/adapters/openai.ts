@@ -101,6 +101,8 @@ export interface OpenAIAdapterConfig {
     supportsDeveloperRole?: boolean;
     /** Max tool round-trips per turn before pausing (default 50). */
     maxToolHops?: number;
+    /** Stop the turn after N tool steps with no assistant reply; 0/undefined = off. */
+    noProgressStop?: number;
     /**
      * Sliding window: max conversation messages sent per request.
      * System/developer prefix and the first user turn are always preserved.
@@ -458,6 +460,10 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // in a row without progress, break out instead of spinning forever.
         const recentCalls: string[] = [];
         const REPEAT_LIMIT = 6;
+        // Optional anti-loop: stop the turn after N consecutive tool-only rounds
+        // (no assistant reply). Off by default (0); user-set in Preferences.
+        const noProgressStop = Math.max(0, this.cfg.noProgressStop ?? 0);
+        let noTextHops = 0;
         try {
             // Tool-call loop: keep round-tripping while the model requests tools.
             for (let hop = 0; hop < maxHops; hop++) {
@@ -517,6 +523,21 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     this.messages.push({ role: "assistant", content: text || "", model: this.model() });
                     hitCap = false;
                     break;
+                }
+
+                // Optional no-progress stop (Preferences). Count consecutive
+                // tool-only rounds; nudge near the limit, stop at it.
+                if (noProgressStop > 0) {
+                    if (text.trim()) { noTextHops = 0; } else { noTextHops++; }
+                    if (noTextHops === Math.ceil(noProgressStop / 2)) {
+                        const nudgeRole = this.cfg.supportsDeveloperRole !== false ? "developer" : "system";
+                        this.messages.push({ role: nudgeRole, content: "[Convergence] You have run several tools in a row without replying. If you already have enough information, STOP calling tools and answer now; otherwise take only the single next necessary step." });
+                    }
+                    if (noTextHops >= noProgressStop) {
+                        this.emit("event", { kind: "text", text: `\n\n_(stopped after ${noTextHops} tool steps with no reply — send "continue" to resume)_` });
+                        hitCap = false;
+                        break;
+                    }
                 }
 
                 // Record the assistant turn that requested tools, then run each.

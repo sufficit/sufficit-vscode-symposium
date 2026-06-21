@@ -175,6 +175,7 @@ function openaiConfig(context: vscode.ExtensionContext): OpenAIAdapterConfig {
         // work. When neither is set, the login token is used as the fallback.
         apiKey: config.get<string>("apiKey", "") || vscode.workspace.getConfiguration("symposium.hub").get<string>("token", ""),
         maxToolHops: config.get<number>("maxToolHops", 50),
+        noProgressStop: config.get<number>("noProgressStop", 0),
         shellExecution: config.get<any>("shellExecution", "silent"),
         log: symposiumLog,
     };
@@ -229,6 +230,7 @@ function buildCustomAdapters(context: vscode.ExtensionContext, defs: CustomAdapt
                 apiKey: e.apiKey ?? "",
                 supportsDeveloperRole: e.supportsDeveloperRole ?? false,
                 maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
+                noProgressStop: vscode.workspace.getConfiguration("symposium.openai").get<number>("noProgressStop", 0),
                 shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<any>("shellExecution", "silent"),
                 log: symposiumLog,
             };
