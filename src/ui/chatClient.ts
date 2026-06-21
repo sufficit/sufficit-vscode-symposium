@@ -256,7 +256,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         // discovery (GET /models) returned nothing — e.g. not logged in yet, or
         // the gateway answered 401. Picking it prompts for a free-form id.
         openChoiceMenu(modelPicker, buildModelMenuOpts(), modelValue, (v) => { modelValue = v; setModelLabel(); }, {
-            refreshAction: { label: "Refresh models", detail: "Re-run GET /models", onClick: () => vscode.postMessage({ type: "refresh-models" }) },
+            refreshAction: { label: "Refresh models", detail: "Re-run GET /models", onClick: () => { showToast("Refreshing models…"); vscode.postMessage({ type: "refresh-models" }); } },
             manualEntry: { label: "Type a model…", placeholder: "e.g. gpt-4o, claude-3-5-sonnet", onSubmit: (v) => { if (v && v.trim()) { modelValue = v.trim(); setModelLabel(); } } },
         });
     });
@@ -2282,6 +2282,14 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                     modelPicker.style.display = "";
                     setModelLabel();
                     setStatus();   // refresh "model: <name>" with the friendly label
+                }
+                // Explicit "Refresh models": give feedback and reopen the picker
+                // with the fresh list (the refresh button had closed the menu).
+                if (data.refreshed) {
+                    showToast("Models updated (" + (modelList.length || 0) + ")");
+                    if (!modelPicker.disabled && modelPicker.style.display !== "none") {
+                        setTimeout(() => modelPicker.click(), 0);
+                    }
                 }
                 break;
             }

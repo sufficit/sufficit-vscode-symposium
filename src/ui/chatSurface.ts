@@ -360,7 +360,7 @@ export class ChatSurface {
                     const current = this.controller?.backend ?? this.terminalSession?.backend;
                     const adapter = current ? this.deps.adapterByBackend.get(current) : undefined;
                     if (adapter) {
-                        this.refreshModels(adapter);
+                        this.refreshModels(adapter, true);   // explicit: force a fresh GET /models
                     }
                     return;
                 }
@@ -1053,12 +1053,14 @@ export class ChatSurface {
      * opened after a reload. This kicks off an async refresh and posts an
      * updated `models` message so the picker repopulates once discovery lands.
      */
-    private refreshModels(adapter: AgentAdapter): void {
+    private refreshModels(adapter: AgentAdapter, force = false): void {
         if (!adapter.refreshModels) {
             return;
         }
         const backend = adapter.backend;
-        void adapter.refreshModels()
+        // Explicit refresh (force) must re-query the gateway, not return the
+        // possibly-stale file cache; the post-meta auto-refresh stays cache-friendly.
+        void adapter.refreshModels(force)
             .then(({ models, labels }) => {
                 // Only the dialogue still bound to this backend should apply it
                 // (the user may have switched agents while discovery ran).
@@ -1066,7 +1068,7 @@ export class ChatSurface {
                 if (current !== backend || !models?.length) {
                     return;
                 }
-                this.post({ type: "models", models, labels: labels ?? {} });
+                this.post({ type: "models", models, labels: labels ?? {}, refreshed: force });
             })
             .catch(() => undefined);
     }
