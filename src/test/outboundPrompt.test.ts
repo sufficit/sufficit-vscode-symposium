@@ -50,6 +50,26 @@ test("buildOutboundPrompt injects workspace bootstrap once, before the first mes
     assert.equal(second.text.includes("[Workspace bootstrap]"), false);
 });
 
+test("buildOutboundPrompt injects checkpoint discipline once when enabled", () => {
+    const first = buildOutboundPrompt({
+        text: "Start", fileAttachments: [],
+        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+        checkpoints: true,
+    });
+    assert.ok(first.text.includes("[Context window & checkpoints"));
+    assert.equal(first.state.checkpointInjected, true);
+    const second = buildOutboundPrompt({
+        text: "Next", fileAttachments: [], checkpoints: true, ...first.state,
+    });
+    assert.equal(second.text.includes("[Context window & checkpoints"), false);
+    // Disabled → never injected.
+    const off = buildOutboundPrompt({
+        text: "x", fileAttachments: [],
+        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+    });
+    assert.equal(off.text.includes("[Context window & checkpoints"), false);
+});
+
 test("buildOutboundPrompt classifies autonomy and attachments", () => {
     const out = buildOutboundPrompt({
         text: "Investigate",

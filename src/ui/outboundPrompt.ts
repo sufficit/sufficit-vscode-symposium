@@ -8,6 +8,7 @@ export interface OutboundPromptState {
     rtkInjected?: boolean;
     sessionIdInjected?: boolean;
     bootstrapInjected?: boolean;
+    checkpointInjected?: boolean;
 }
 
 export interface BuildOutboundPromptOptions extends OutboundPromptState {
@@ -20,6 +21,12 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
     autonomy?: string;
     /** True when the backend can execute shell commands where rtk is useful. */
     rtk?: boolean;
+    /**
+     * True when this backend windows its context (only recent messages are sent)
+     * AND has the Sufficit memory tool — so the agent must checkpoint to survive
+     * older turns scrolling out. Injects CHECKPOINT_PREAMBLE once.
+     */
+    checkpoints?: boolean;
     /**
      * Current chat session GUID. Injected once so the agent always knows which
      * Symposium session it is in and can call `read_session` to recover context.
@@ -52,6 +59,11 @@ export const RTK_PREAMBLE =
     "IMPORTANT: rtk and rg may NOT be installed in this shell. If a command returns 'command not found', 'No such file or directory', or an unrecognized-option error for `rtk` or `rg`, immediately fall back to the plain tool (`grep`, `find`, `cat`) and DO NOT retry rtk/rg or other variants of the unavailable command. " +
     "Do NOT use rtk for interactive commands, heredocs/pipelines where wrapping changes semantics, tiny output, or when the user asks for raw output. rtk is an output display layer; it does not make mutating commands safer.";
 
+export const CHECKPOINT_PREAMBLE =
+    "[Context window & checkpoints — IMPORTANT] Only the most RECENT messages of this conversation stay in your context; older turns scroll out and you will NOT see them again (the full history remains visible to the user in the chat, but not to you). " +
+    "So you MUST externalize anything you will need later: call memory_save (type \"task-checkpoint\") for every result, decision, root cause, file path, id, and \"what's done / what's next\" — written densely enough to resume from that note alone, with no other context. Checkpoint at the start of a non-trivial task and at each milestone. " +
+    "And RECALL often: call memory_search whenever you resume, change sub-task, or feel unsure of the current goal, so you never drift back to an earlier task or lose the thread. Treat your checkpoints as your real memory; the chat scrollback is not.";
+
 export const AUTONOMY_PREAMBLE =
     "[Autonomy mode] The user is not present to answer questions or make decisions and has given you full autonomy. " +
     "Do not wait for input or use interactive prompts (e.g. AskUserQuestion); make reasonable assumptions, decide, " +
@@ -77,11 +89,16 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
         rtkInjected: options.rtkInjected ?? false,
         sessionIdInjected: options.sessionIdInjected ?? false,
         bootstrapInjected: options.bootstrapInjected ?? false,
+        checkpointInjected: options.checkpointInjected ?? false,
     };
 
     if (!state.policyInjected) {
         prefixes.push(CANCELED_RETRY_PREAMBLE);
         state.policyInjected = true;
+    }
+    if (options.checkpoints && !state.checkpointInjected) {
+        prefixes.push(CHECKPOINT_PREAMBLE);
+        state.checkpointInjected = true;
     }
     if (!state.sessionIdInjected && options.sessionId) {
         prefixes.push(sessionIdNote(options.sessionId));

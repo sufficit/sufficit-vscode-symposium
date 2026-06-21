@@ -467,6 +467,17 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
             }
             const sep2 = document.createElement("div"); sep2.className = "sep"; list.appendChild(sep2);
         }
+        // Re-probe rtk availability (gates the token-saving RTK preamble).
+        const recheck = document.createElement("div"); recheck.className = "mi";
+        const rt = document.createElement("span"); rt.className = "tick";
+        const rlbl = document.createElement("span"); rlbl.className = "milbl";
+        const rlt = document.createElement("span"); rlt.className = "milbl-text"; rlt.textContent = "Re-check shell tools (rtk)";
+        const rld = document.createElement("span"); rld.className = "milbl-desc"; rld.textContent = "probe rtk after installing it";
+        rlbl.appendChild(rlt); rlbl.appendChild(rld);
+        recheck.appendChild(rt); recheck.appendChild(rlbl);
+        recheck.addEventListener("click", () => { vscode.postMessage({ type: "recheck-shell-tools" }); ctxMenu.style.display = "none"; });
+        list.appendChild(recheck);
+
         const open = document.createElement("div"); open.className = "mi";
         const t = document.createElement("span"); t.className = "tick";
         const lbl = document.createElement("span"); lbl.className = "milbl";
@@ -2291,6 +2302,10 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                         setTimeout(() => modelPicker.click(), 0);
                     }
                 }
+                break;
+            }
+            case "toast": {
+                if (data.text) { showToast(data.text); }
                 break;
             }
             case "model-prefs": {

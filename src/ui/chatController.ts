@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { AgentAdapter, AgentEvent, AgentSession, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { parseTodoFence } from "../adapters/todos";
 import { buildOutboundPrompt } from "./outboundPrompt";
+import { probeRtk, rtkCached } from "../adapters/rtk";
 import { WebviewToHost } from "./protocol";
 
 type SendMode = "send" | "queue" | "steer";
@@ -39,6 +40,7 @@ export class ChatController {
     private rtkInjected = false;
     private sessionIdInjected = false;
     private bootstrapInjected = false;
+    private checkpointInjected = false;
     private queueSeq = 0;
     // Files this session edited and their net +/- — owned here so it survives
     // view switches (the runtime keeps the controller alive) and approval state
@@ -64,7 +66,11 @@ export class ChatController {
         // Fired when the running/idle state changes, so the sessions list can
         // update its per-session working indicator.
         private readonly onStatusChange?: () => void,
-    ) { }
+    ) {
+        // Probe rtk once so the RTK preamble is only injected (costing tokens)
+        // when rtk is actually callable in the tool shell. Re-probeable from the UI.
+        void probeRtk(options.cwd);
+    }
 
     /** The live session id, once the backend has reported it. */
     get sessionId(): string | undefined {
@@ -394,8 +400,12 @@ export class ChatController {
             rtkInjected: this.rtkInjected,
             sessionIdInjected: this.sessionIdInjected,
             bootstrapInjected: this.bootstrapInjected,
+            checkpointInjected: this.checkpointInjected,
             sessionId: this.sessionId,
-            rtk: true,
+            rtk: rtkCached(),
+            // Checkpoint discipline only where it's needed: a context-windowing
+            // backend (roleAware/native) that has the Sufficit memory tool.
+            checkpoints: roleAware && ((this.aiToolsInfo()?.available) ?? []).includes("memory_save"),
             todoInjection: this.adapter.hasNativeTodo?.() === false ? this.adapter.todoInjection?.() : undefined,
             seedHistory: this.options.seedHistory,
             bootstrap: this.options.bootstrap,
@@ -406,6 +416,7 @@ export class ChatController {
         this.todoInjected = outbound.state.todoInjected;
         this.seedInjected = outbound.state.seedInjected;
         this.bootstrapInjected = !!outbound.state.bootstrapInjected;
+        this.checkpointInjected = !!outbound.state.checkpointInjected;
         this.autonomyInjected = outbound.state.autonomyInjected;
         this.rtkInjected = !!outbound.state.rtkInjected;
         this.sessionIdInjected = !!outbound.state.sessionIdInjected;

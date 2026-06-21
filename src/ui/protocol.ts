@@ -60,6 +60,7 @@ export type WebviewToHost =
     | { type: "drop-uris"; uris: string[] }
     | { type: "refresh-tasks" }
     | { type: "refresh-models" }
+    | { type: "recheck-shell-tools" }
     | { type: "pin-model"; model: string }
     | { type: "set-model-default"; model: string }
     | { type: "new-session" }

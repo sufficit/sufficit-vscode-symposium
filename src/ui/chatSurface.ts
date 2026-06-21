@@ -14,6 +14,7 @@ import { approveChange, dirtyFiles, gitRoot, headContent, pendingChanges, reject
 import { snapshots } from "../snapshots";
 import { HubClient } from "../sync/hubClient";
 import { readWorkspaceBootstrap } from "../config/root";
+import { probeRtk } from "../adapters/rtk";
 import { fetchSessionTasks, TaskItem } from "../sync/tasks";
 
 /** Directory to run git in for a file — git discovers the enclosing repo upward. */
@@ -352,6 +353,15 @@ export class ChatSurface {
                 }
                 case "refresh-tasks": {
                     void this.refreshTasks();
+                    return;
+                }
+                case "recheck-shell-tools": {
+                    // Re-probe rtk (e.g. after the user installed it); the result
+                    // gates the RTK preamble on the next turn.
+                    const cwd = this.controller?.cwd ?? process.cwd();
+                    void probeRtk(cwd, true).then((ok) => {
+                        this.post({ type: "toast", text: ok ? "rtk found — compact output enabled" : "rtk not found — using plain shell tools" });
+                    });
                     return;
                 }
                 case "refresh-models": {
