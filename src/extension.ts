@@ -790,6 +790,11 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             chatView.sessionDeleted(info.sessionId);
             ChatPanel.sessionDeleted(info.sessionId);
             refreshAll();
+            // Let the webview paint the "deleting" marker before the scrub runs.
+            // Some adapters (e.g. Copilot) delete synchronously, so without a
+            // macrotask yield the final refresh would land before the first
+            // render and the indicator would never be seen.
+            await new Promise((r) => setTimeout(r, 350));
             try {
                 snapshots.clearSession(info.sessionId);      // drop in-memory baselines
                 const residual = await adapter.deleteSession(info);
