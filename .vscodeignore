@@ -1,5 +1,6 @@
 src/**
 out/test/**
+out/_webview-check.js
 node_modules/**
 .gitignore
 .gitattributes
