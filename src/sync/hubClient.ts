@@ -54,7 +54,14 @@ export class HubClient {
     }
 
     private token(): string {
-        return vscode.workspace.getConfiguration("symposium.hub").get<string>("token", "");
+        const hubToken = vscode.workspace.getConfiguration("symposium.hub").get<string>("token", "");
+        if (hubToken) { return hubToken; }
+        // Reuse the Sufficit AI / OpenAI key: the same service key that
+        // authenticates the chat backend also satisfies the memory + vault REST
+        // API, so the user configures one key instead of two. (The chat path uses
+        // openai.apiKey; without this, memory fell back to the login identity
+        // token, which the memory API rejects with 401.)
+        return vscode.workspace.getConfiguration("symposium.openai").get<string>("apiKey", "");
     }
 
     private contextId(): string {
