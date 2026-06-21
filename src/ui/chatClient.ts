@@ -309,10 +309,10 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     // backend can expose; enabled = the subset active for this session.
     let aiToolsAvailable = [], aiToolsEnabled = [];
     const TOOL_LABELS = {
-        memory_search: "Buscar memória", memory_get_observations: "Ler memória", memory_save: "Salvar memória",
-        web_search: "Busca web", fetch_url: "Buscar URL", open_url: "Abrir URL (browser)",
-        shell: "Shell / comandos", read_file: "Ler arquivo", write_file: "Escrever arquivo",
-        list_dir: "Listar diretório", read_session: "Reler histórico da sessão",
+        memory_search: "Search memory", memory_get_observations: "Read memory", memory_save: "Save memory",
+        web_search: "Web search", fetch_url: "Fetch URL", open_url: "Open URL (browser)",
+        shell: "Shell / commands", read_file: "Read file", write_file: "Write file",
+        list_dir: "List directory", read_session: "Re-read session history",
     };
     const PERM_DESC = {
         "default": "Ask for permission as needed",
@@ -344,7 +344,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         }
         // Per-session tools: checkbox list (like VS Code chat's tool picker).
         if (aiToolsAvailable.length) {
-            const gh = document.createElement("div"); gh.className = "menuGroup"; gh.textContent = "Ferramentas ativas"; list.appendChild(gh);
+            const gh = document.createElement("div"); gh.className = "menuGroup"; gh.textContent = "Active tools"; list.appendChild(gh);
             for (const name of aiToolsAvailable) {
                 const on = aiToolsEnabled.includes(name);
                 const mi = document.createElement("div"); mi.className = "mi" + (on ? " active" : "");
@@ -1540,7 +1540,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
             const statusDot = document.createElement("div");
             statusDot.className = "statusDot";
             if (s.deleting) {
-                const sp = document.createElement("span"); sp.className = "spinner"; sp.title = "Excluindo…"; statusDot.appendChild(sp);
+                const sp = document.createElement("span"); sp.className = "spinner"; sp.title = "Deleting…"; statusDot.appendChild(sp);
             } else if (s.status === "working") {
                 const w = document.createElement("span"); w.className = "work"; w.title = "Agent working…"; statusDot.appendChild(w);
             } else if (s.status === "idle") {
@@ -1560,7 +1560,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
             const sub = document.createElement("span");
             sub.className = "sub";
             if (s.deleting) {
-                sub.textContent = "excluindo…";
+                sub.textContent = "deleting…";
             } else {
                 const statusText = s.status === "working" ? "working… · " : (s.status === "idle" ? "live · " : "");
                 sub.textContent = statusText + s.backend + (s.updatedAt ? " · " + relTime(s.updatedAt) : "");

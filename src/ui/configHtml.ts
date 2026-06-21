@@ -222,9 +222,9 @@ export function renderConfigHtml(): string {
             row("Abrir sessão em", "Onde uma sessão abre ao iniciar.",
                 sel("symposium.chat.openIn", p.openIn || "editor",
                     [{ v: "editor", l: "Editor (aba central)" }, { v: "sidebar", l: "Barra lateral" }])) +
-            row("Idioma das respostas", "Idioma preferido para as respostas da IA. Vazio usa o idioma de exibição do VS Code.",
+            row("Response language", "Preferred language for AI responses. Empty uses VS Code's display language.",
                 sel("symposium.chat.preferredLanguage", p.preferredLanguage || "",
-                    [{ v: "", l: "Automático (VS Code)" }, { v: "pt-br", l: "Português (BR)" }, { v: "en", l: "English" },
+                    [{ v: "", l: "Automatic (VS Code)" }, { v: "pt-br", l: "Português (BR)" }, { v: "en", l: "English" },
                      { v: "es", l: "Español" }, { v: "fr", l: "Français" }, { v: "de", l: "Deutsch" },
                      { v: "it", l: "Italiano" }, { v: "ja", l: "日本語" }, { v: "zh-cn", l: "中文 (简体)" }])) +
             row("Ferramentas do VS Code", "Quais Language Model Tools o backend Sufficit AI pode usar.",
@@ -240,9 +240,9 @@ export function renderConfigHtml(): string {
                 sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
                     [{ v: "true", l: "Sim (sem confirmação)" }, { v: "false", l: "Não (pede confirmação)" }])) +
             '<div class="prefBlock">' +
-                '<div class="name">Instrução de sistema (manual)</div>' +
-                '<div class="desc">Texto livre adicionado ao prompt de sistema de toda nova conversa. Use para dar uma orientação persistente a todos os agentes.</div>' +
-                '<textarea class="pref-text" data-key="symposium.chat.systemInstruction" rows="4" placeholder="Ex.: Responda sempre de forma objetiva e cite as fontes.">' + esc(p.systemInstruction || "") + '</textarea>' +
+                '<div class="name">System instruction (manual)</div>' +
+                '<div class="desc">Free text added to the system prompt of every new conversation. Use it to give all agents persistent guidance.</div>' +
+                '<textarea class="pref-text" data-key="symposium.chat.systemInstruction" rows="4" placeholder="e.g. Always answer concisely and cite your sources.">' + esc(p.systemInstruction || "") + '</textarea>' +
             '</div>'
         );
     }
