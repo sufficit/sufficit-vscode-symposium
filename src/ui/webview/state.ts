@@ -5,6 +5,7 @@
 // read-only, so reassignments go through setX). Arrays may still be mutated in
 // place (push/splice) without a setter. This lets the feature modules share
 // state without a single giant scope.
+import { saved } from "./vscode";
 
 export let attachments: any[] = [];          // [{path, name}]
 export let activeFile: any = null;            // active editor path (removable context)
@@ -25,6 +26,12 @@ export let showArchived = false;
 export let bootstrapPath = "";
 export let sideMode = "auto";                 // "auto" | "left" | "right", from config
 export let pendingSessionSwitch: any = null;  // anchor for a pending session switch menu
+export let conversationRows: any[] = [];      // [{role, text}] rendered rows (msg index map)
+export let commands: any[] = [];              // [{name, description, kind}] backend slash commands
+export let autonomyValue = (saved && (saved as any).autonomy) || "present"; // presence: "present" | "away"
+export let permissionModes: any[] = [], permissionValue = "default", permissionDefault = "default";
+export let aiToolsAvailable: any[] = [], aiToolsEnabled: any[] = [];
+export let pendingSwitchAnchor: any = null;
 
 export function setAttachments(v: any[]) { attachments = v; }
 export function setActiveFile(v: any) { activeFile = v; }
@@ -45,3 +52,12 @@ export function setShowArchived(v: boolean) { showArchived = v; }
 export function setBootstrapPath(v: string) { bootstrapPath = v; }
 export function setSideMode(v: string) { sideMode = v; }
 export function setPendingSessionSwitch(v: any) { pendingSessionSwitch = v; }
+export function setConversationRows(v: any[]) { conversationRows = v; }
+export function setCommands(v: any[]) { commands = v; }
+export function setAutonomyValue(v: string) { autonomyValue = v; }
+export function setPermissionModes(v:any[]){permissionModes=v;}
+export function setPermissionValue(v:any){permissionValue=v;}
+export function setPermissionDefault(v:any){permissionDefault=v;}
+export function setAiToolsAvailable(v:any[]){aiToolsAvailable=v;}
+export function setAiToolsEnabled(v:any[]){aiToolsEnabled=v;}
+export function setPendingSwitchAnchor(v:any){pendingSwitchAnchor=v;}

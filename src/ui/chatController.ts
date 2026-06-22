@@ -1,4 +1,3 @@
-import * as vscode from "vscode";
 import { AgentAdapter, AgentEvent, AgentSession, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { parseTodoFence } from "../adapters/todos";
 import { buildOutboundPrompt } from "./outboundPrompt";
@@ -7,35 +6,13 @@ import { HubClient } from "../sync/hubClient";
 import { fetchLatestCheckpoint } from "../sync/tasks";
 import { fetchSessionGuardrails } from "../sync/guardrails";
 import { WebviewToHost } from "./protocol";
+import { RenderStream } from "./renderStream";
+import { transcriptText, transcriptMessages, transcriptMessagesUpTo, transcriptUpTo } from "./controllerTranscript";
+import { ChatQueue, PendingMessage, SendMode } from "./controllerQueue";
+import { ChangedFilesState } from "./changedFilesState";
+import { handleControllerMessage } from "./controllerMessageHandler";
 
-type SendMode = "send" | "queue" | "steer";
-
-interface PendingMessage {
-    id?: number;
-    text: string;
-    attachments: string[];
-    model?: string;
-    reasoning?: string;
-    permission?: string;
-    autonomy?: string;
-    execDisplay?: "silent" | "inline" | "terminal";
-    /** How this message was sent; "steer" suppresses the resume-checkpoint inject. */
-    mode?: SendMode;
-    /** One-shot resume context (latest session checkpoint) prepended for continuity. */
-    resumeCheckpoint?: string;
-}
-
-/**
- * Backend-side state of one dialogue. Owns the agent process and KEEPS IT
- * RUNNING even when the user switches to another session: the controller
- * just detaches from the webview (buffering its output) and replays it on
- * re-attach. Only an explicit delete/dispose stops the process.
- *
- * Send modes (mirroring VS Code chat):
- *   - send : start now when idle; if a turn is running, it is queued.
- *   - queue: always wait for the current turn, then send (FIFO).
- *   - steer: interrupt the running turn and send immediately.
- */
+/** Owns one live dialogue process; view switches only detach/replay the stream. */
 export class ChatController {
     private session: AgentSession | undefined;
     private busy = false;
@@ -56,24 +33,16 @@ export class ChatController {
     // lazily and whenever the user edits them in the UI.
     private guardrails: string[] = [];
     private guardrailsLoaded = false;
-    private queueSeq = 0;
-    // Files this session edited and their net +/- — owned here so it survives
-    // view switches (the runtime keeps the controller alive) and approval state
-    // isn't lost to a transcript replay.
-    private readonly changed = new Map<string, { added: number; removed: number }>();
-    private readonly queue: PendingMessage[] = [];
-    private readonly log: unknown[] = [];   // replayable render messages
-    private sink: ((message: unknown) => void) | null = null;
+    private readonly changed = new ChangedFilesState();
+    private readonly queue = new ChatQueue();
+    // Replayable render-message buffer + webview sink + read-only followers.
+    private readonly stream = new RenderStream();
     // Watchdog: force-ends a turn that goes silent (no events) for too long, so a
     // stalled tool call or dropped backend connection can't pin the session as
     // "working" forever (it survives reloads since the controller outlives them).
     // Reset by every event, so long but active tools/streams are unaffected.
     private watchdog: ReturnType<typeof setTimeout> | undefined;
     private static readonly TURN_SILENCE_MS = 5 * 60 * 1000;
-    // Read-only followers (public API / remote bridge) that observe the same
-    // render stream as the active webview without stealing it. The webview uses
-    // attach()/sink; observers use subscribe().
-    private readonly observers = new Set<(message: unknown) => void>();
 
     constructor(
         private readonly adapter: AgentAdapter,
@@ -128,97 +97,37 @@ export class ChatController {
     /** First user message, used as a title for a not-yet-persisted live session. */
     get title(): string { return this.firstTitle || "New session"; }
 
-    /**
-     * Reconstructs the visible conversation (user prompts + assistant replies)
-     * from the render log as plain text, for handing the dialogue off to another
-     * backend. Tool calls and internal scaffolding are intentionally omitted —
-     * only the human-readable exchange is carried over.
-     */
+    /** Plain-text user/assistant exchange, for backend handoff. */
     transcript(): string {
-        const lines: string[] = [];
-        let assistantBuf = "";
-        const flushAssistant = () => {
-            const text = assistantBuf.trim();
-            if (text) { lines.push(`Assistant: ${text}`); }
-            assistantBuf = "";
-        };
-        for (const message of this.log as any[]) {
-            if (message?.type === "user" && typeof message.text === "string") {
-                flushAssistant();
-                const text = message.text.trim();
-                if (text) { lines.push(`User: ${text}`); }
-            } else if (message?.type === "event" && message.event?.kind === "text") {
-                assistantBuf += message.event.text;
-            } else if (message?.type === "event" && message.event?.kind === "turn-end") {
-                flushAssistant();
-            }
-        }
-        flushAssistant();
-        return lines.join("\n\n");
+        return transcriptText(this.stream.messages);
     }
 
-    /**
-     * The visible conversation as renderable history rows (user prompts +
-     * assistant replies), used to repaint the prior exchange in the same
-     * surface after a backend handoff. Tool rows are omitted — only the
-     * human-readable dialogue is carried over.
-     */
+    /** Renderable user/assistant rows, for repainting prior exchange. */
     transcriptMessages(): { role: "user" | "assistant"; text: string }[] {
-        const rows: { role: "user" | "assistant"; text: string }[] = [];
-        let assistantBuf = "";
-        const flushAssistant = () => {
-            const text = assistantBuf.trim();
-            if (text) { rows.push({ role: "assistant", text }); }
-            assistantBuf = "";
-        };
-        for (const message of this.log as any[]) {
-            if (message?.type === "user" && typeof message.text === "string") {
-                flushAssistant();
-                const text = message.text.trim();
-                if (text) { rows.push({ role: "user", text }); }
-            } else if (message?.type === "event" && message.event?.kind === "text") {
-                assistantBuf += message.event.text;
-            } else if (message?.type === "event" && message.event?.kind === "turn-end") {
-                flushAssistant();
-            }
-        }
-        flushAssistant();
-        return rows;
+        return transcriptMessages(this.stream.messages);
     }
 
     /** Visible user/assistant rows up to and including `index` (0-based). */
     transcriptMessagesUpTo(index: number): { role: "user" | "assistant"; text: string }[] {
-        if (index < 0) {
-            return [];
-        }
-        return this.transcriptMessages().slice(0, index + 1);
+        return transcriptMessagesUpTo(this.stream.messages, index);
     }
 
     /** Plain-text transcript up to and including `index` (0-based). */
     transcriptUpTo(index: number): string {
-        return this.transcriptMessagesUpTo(index)
-            .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
-            .join("\n\n");
+        return transcriptUpTo(this.stream.messages, index);
     }
 
     get attached(): boolean {
-        return this.sink !== null;
+        return this.stream.hasSink;
     }
 
-    /**
-     * Binds this controller to a webview sink and replays its render log.
-     * Replaying the buffered user/turn-end/queued messages naturally restores
-     * the busy/queued status in the webview.
-     */
+    /** Binds this controller to a webview sink and replays its render log. */
     attach(sink: (message: unknown) => void): void {
-        this.sink = sink;
         // A controller that was already busy before this attach (e.g. survived a
         // reload) may have no watchdog armed — re-arm so a stalled turn still
         // self-heals instead of showing "working" forever.
         if (this.busy && !this.watchdog) { this.armWatchdog(); }
-        for (const message of this.log) {
-            sink(message);
-        }
+        this.stream.bindSink(sink);   // sets the sink + replays the buffered log
         // The edited-files set is controller state (not in the replay log), so
         // push it after replay — this is what keeps approvals from "coming back"
         // when switching away and back.
@@ -227,7 +136,7 @@ export class ChatController {
 
     /** Stops forwarding to the webview but keeps the process running. */
     detach(): void {
-        this.sink = null;
+        this.stream.clearSink();
     }
 
     /**
@@ -236,22 +145,11 @@ export class ChatController {
      * unsubscribe function. Does not affect the active webview sink.
      */
     subscribe(observer: (message: unknown) => void): () => void {
-        this.observers.add(observer);
-        for (const message of this.log) {
-            observer(message);
-        }
-        return () => { this.observers.delete(observer); };
+        return this.stream.addObserver(observer);
     }
 
     private emit(message: unknown): void {
-        this.log.push(message);
-        if (this.log.length > 5000) {
-            this.log.shift();
-        }
-        this.sink?.(message);
-        for (const observer of this.observers) {
-            observer(message);
-        }
+        this.stream.emit(message);
     }
 
     /** Sends a message to this session programmatically (public API / bridge). */
@@ -289,82 +187,27 @@ export class ChatController {
     }
 
     async handleMessage(message: WebviewToHost): Promise<boolean> {
-        switch (message.type) {
-            case "send":
-                this.onSend(
-                    { text: message.text, attachments: message.attachments ?? [], model: message.model, reasoning: message.reasoning, permission: message.permission, autonomy: message.autonomy },
-                    (message.mode as SendMode) ?? "send",
-                );
-                return true;
-            case "cancel":
-                this.session?.cancel();
-                return true;
-            case "queue-remove": {
-                const i = this.queue.findIndex((m) => m.id === message.id);
-                if (i >= 0) { this.queue.splice(i, 1); this.emitQueue(); }
-                return true;
-            }
-            case "queue-edit": {
-                // Pull a queued message back into the composer for editing and
-                // drop it from the queue (the user re-sends after editing).
-                const i = this.queue.findIndex((m) => m.id === message.id);
-                if (i >= 0) {
-                    const [m] = this.queue.splice(i, 1);
-                    this.emitQueue();
-                    this.sink?.({ type: "load-input", text: m.text, attachments: m.attachments });
-                }
-                return true;
-            }
-            case "queue-promote": {
-                // "Send next": jump this message to the front and deliver it now —
-                // interrupt the running turn (it dispatches on turn-end), or send
-                // immediately if idle. Other queued messages keep their order.
-                const i = this.queue.findIndex((m) => m.id === message.id);
-                if (i < 0) { return true; }
-                const [m] = this.queue.splice(i, 1);
-                if (this.busy) {
-                    this.queue.unshift(m);   // dispatched first on turn-end
-                    this.emitQueue();
-                    this.session?.cancel();
-                } else {
-                    this.emitQueue();
-                    void this.dispatch(m);
-                }
-                return true;
-            }
-            case "pick-attachments": {
-                const picked = await vscode.window.showOpenDialog({
-                    canSelectMany: true,
-                    openLabel: "Attach",
-                    title: "Attach files to the message",
-                });
-                if (picked?.length) {
-                    // Not buffered: a transient UI affordance for the active view.
-                    this.sink?.({
-                        type: "attachments-picked",
-                        files: picked.map((uri) => ({
-                            path: uri.fsPath,
-                            name: uri.path.split("/").pop() ?? uri.fsPath,
-                        })),
-                    });
-                }
-                return true;
-            }
-        }
-        return false;
+        return handleControllerMessage(message, {
+            busy: () => this.busy,
+            cancel: () => this.session?.cancel(),
+            queue: this.queue,
+            stream: this.stream,
+            emitQueue: () => this.emitQueue(),
+            dispatch: (queued) => { void this.dispatch(queued); },
+            onSend: (pending, mode) => this.onSend(pending, mode),
+        });
     }
 
     private onSend(msg: PendingMessage, mode: SendMode): void {
         msg.mode = mode;
         if (mode === "steer" && this.busy) {
-            this.queue.length = 0;
+            this.queue.clear();
             this.queue.push(msg);
             this.session?.cancel();
             return;
         }
         if (this.busy) {
-            msg.id = ++this.queueSeq;
-            this.queue.push(msg);
+            this.queue.enqueue(msg);
             this.emitQueue();
             return;
         }
@@ -373,7 +216,7 @@ export class ChatController {
 
     /** Full queue state (editable until dispatched), reflected in the webview. */
     private emitQueue(): void {
-        this.emit({ type: "queue", items: this.queue.map((m) => ({ id: m.id, text: m.text, attachments: m.attachments })) });
+        this.emit({ type: "queue", items: this.queue.items() });
     }
 
     /** (Re)loads the session's user guardrails into the per-message cache. */
@@ -494,9 +337,7 @@ export class ChatController {
         this.emit({ type: "event", event });
         // Track edited files here (authoritative, survives view switches).
         if (event.kind === "tool-start" && event.path && (event.added != null || event.removed != null)) {
-            const cur = this.changed.get(event.path) ?? { added: 0, removed: 0 };
-            cur.added += event.added ?? 0; cur.removed += event.removed ?? 0;
-            this.changed.set(event.path, cur);
+            this.changed.record(event.path, event.added, event.removed);
             this.emitChanged();
         }
         // For CLIs with no native todo tool, recognize a fenced ```todo block in
@@ -521,28 +362,28 @@ export class ChatController {
 
     /** Signals the surface to re-derive the displayed edited-files set. */
     private emitChanged(): void {
-        this.sink?.({ type: "changed-files", items: this.changedItemsRaw() });
+        this.stream.toSink({ type: "changed-files", items: this.changedItemsRaw() });
     }
 
     /** Paths still pending review (for bulk approve/reject). */
     changedPaths(): string[] {
-        return [...this.changed.keys()];
+        return this.changed.paths();
     }
 
     /** The raw edited-files set (before git-status filtering by the surface). */
     changedItemsRaw(): { path: string; added: number; removed: number }[] {
-        return [...this.changed.entries()].map(([path, c]) => ({ path, added: c.added, removed: c.removed }));
+        return this.changed.items();
     }
 
     /** Drops a file from the set after it's approved or reverted. */
     resolveChanged(path: string): void {
-        if (this.changed.delete(path)) { this.emitChanged(); }
+        if (this.changed.resolve(path)) { this.emitChanged(); }
     }
 
     dispose(): void {
         this.clearWatchdog();
         this.session?.dispose();
         this.session = undefined;
-        this.queue.length = 0;
+        this.queue.clear();
     }
 }

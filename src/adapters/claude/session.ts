@@ -40,6 +40,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     private turnActive = false;       // a turn is running (clear on result/exit)
     private streamedText = false;     // got text_delta this turn (skip full block)
     private streamedThinking = false; // got thinking_delta this turn (skip full block)
+    private warnedRootBypass = false; // emitted the root+bypassPermissions notice once
 
     constructor(
         private readonly config: ClaudeAdapterConfig,
@@ -91,7 +92,19 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         if (this.options.reasoning && this.options.reasoning !== "default") {
             args.push("--effort", this.options.reasoning);
         }
-        const permission = this.options.permission || this.config.permissionMode;
+        let permission = this.options.permission || this.config.permissionMode;
+        // Claude refuses bypassPermissions (= --dangerously-skip-permissions) when
+        // the process runs as root (e.g. code-server@root) and exits with an error.
+        // Downgrade to acceptEdits so the picker never dead-ends; for full root
+        // autonomy (incl. shell) add permissions.allow to ~/.claude/settings.json.
+        if (permission === "bypassPermissions" && typeof process.getuid === "function" && process.getuid() === 0) {
+            permission = "acceptEdits";
+            this.config.log?.("[claude] bypassPermissions is not allowed as root — using acceptEdits instead");
+            if (!this.warnedRootBypass) {
+                this.warnedRootBypass = true;
+                this.emit("event", { kind: "text", text: "_Running as root: Claude blocks bypassPermissions — using acceptEdits. For full autonomy incl. shell, add `permissions.allow` to ~/.claude/settings.json._\n\n" });
+            }
+        }
         if (permission && permission !== "default") {
             args.push("--permission-mode", permission);
         }

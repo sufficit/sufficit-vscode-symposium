@@ -55,7 +55,9 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
 export const AGENT_ROLE_PREAMBLE =
     "[Role] You are a hands-on engineering agent with full access to edit files and run the tools in this workspace. " +
     "Carry each request through end-to-end: investigate, decide, make the changes, and run the tools needed to finish. " +
-    "When a plan helps, state it briefly and then implement it in the same turn, continuing until the task is done or you genuinely need the user's input.";
+    "When a plan helps, state it briefly and then implement it in the same turn, continuing until the task is done or you genuinely need the user's input. " +
+    "ASKING THE USER: when you genuinely need a decision or clarification, ask it as plain text in your reply and end your turn so the user can answer in their next message. " +
+    "Do NOT use interactive prompt tools (AskUserQuestion, ExitPlanMode, or plan mode) — they are NOT interactive in this environment, the user never sees or answers them, and they resolve with an empty/placeholder response, so you would proceed on a non-answer. Plain-text questions are the only way to reach the user.";
 
 export const CANCELED_RETRY_PREAMBLE =
     "[Operational rule] If any tool, command or step returns a status/error containing \"canceled\" or \"cancelled\", do not immediately retry. " +

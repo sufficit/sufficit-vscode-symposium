@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.180",
+  "version": "0.79.185",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -607,7 +607,7 @@
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
     "compile": "npm run clean && tsc -p ./ && npm run build:webview",
-    "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --outfile=out/ui/webview.bundle.js",
+    "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --outfile=out/ui/webview.bundle.js && esbuild src/ui/webview/chat.css --bundle --outfile=out/ui/webview.css",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
     "format": "prettier --write \"src/**/*.ts\"",

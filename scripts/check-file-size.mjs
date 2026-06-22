@@ -7,16 +7,10 @@ import { join, extname } from "node:path";
 const MAX_LINES = 400;
 const ROOT = "src";
 const EXEMPT = new Set([
-  // chatStyles ships as a CSS string blob for now (separate follow-up).
-  "src/ui/chatStyles.ts",
-  // Temporary: the lifted webview client before Stage 2 splits it into modules.
-  // Removed once src/ui/webview/* are all under the cap.
-  "src/ui/webview/index.ts",
   // Phase 3 (needs a running Extension Host / F5 to verify the live turn + view
   // flow). Tracked in docs/activities/20260622002801-namespace-restructure.md.
   "src/adapters/openai/session.ts", // OpenAISession turn loop (run/consume/compact)
   "src/ui/chatSurface.ts",
-  "src/ui/chatController.ts",
 ]);
 
 /** @param {string} dir @returns {string[]} */
