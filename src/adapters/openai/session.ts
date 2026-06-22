@@ -1,189 +1,26 @@
 import { EventEmitter } from "events";
 import { randomUUID } from "crypto";
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
+import { AgentSession, SessionStartOptions } from "../types";
+import { contextWindowFor, diffCounts, editDiff, mimeTypeFor } from "../parse";
+import { snapshots } from "../../snapshots";
+import { HubClient } from "../../sync/hubClient";
 import {
-    AgentAdapter,
-    AgentSession,
-    HistoryMessage,
-    SessionInfo,
-    SessionStartOptions,
-    SlashCommand,
-} from "./types";
-import { TODO_INJECTION } from "./todos";
-import { contextWindowFor, diffCounts, editDiff, mimeTypeFor, prettyJson } from "./parse";
-import { snapshots } from "../snapshots";
-import { HubClient } from "../sync/hubClient";
-import { AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES, ALL_AI_TOOL_NAMES, filterTools, runAiTool, ShellExecutionMode } from "./aiTools";
-import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "./lmTools";
-import { buildOpenAIModelList } from "./openaiModels";
-import * as ledger from "../ledger";
-import { getCached, setCached, isFresh } from "./modelCache";
-
-/** OpenAI tool call as streamed/accumulated from chat completions deltas. */
-interface ToolCall {
-    id: string;
-    type: "function";
-    function: { name: string; arguments: string };
-}
-
-/** OpenAI vision content part — a user message can mix text + images. */
-type ContentPart =
-    | { type: "text"; text: string }
-    | { type: "image_url"; image_url: { url: string } };
-
-type ChatMsg = {
-    role: "system" | "developer" | "user" | "assistant" | "tool";
-    content: string | null | ContentPart[];
-    tool_calls?: ToolCall[];
-    tool_call_id?: string;
-    name?: string;
-    /** Model id that produced this assistant message (kept across handoff). */
-    model?: string;
-};
-
-/** Plain-text view of a message's content (drops image parts). */
-function contentText(content: string | null | ContentPart[]): string {
-    if (typeof content === "string") { return content; }
-    if (Array.isArray(content)) {
-        return content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n");
-    }
-    return "";
-}
-
-/** True if this session's ledger holds a compaction marker (store is summarized). */
-function ledgerWasCompacted(id: string): boolean {
-    return ledger.readMessages(id).some((m) => m.kind === "compaction");
-}
-
-/**
- * Reconstructs the LOSSLESS human transcript from the ledger (used after the
- * store was compacted, so the chat still shows every original turn). Tool entries
- * render as a simple row; the developer/system scaffolding and compaction markers
- * are skipped (the marker drives a UI divider, not a message).
- */
-function historyFromLedger(id: string): HistoryMessage[] {
-    const out: HistoryMessage[] = [];
-    for (const m of ledger.readMessages(id)) {
-        if (m.kind === "compaction") { continue; }
-        const role = String(m.role ?? "");
-        const text = contentText(m.content as string | null | ContentPart[]);
-        if (!text) { continue; }
-        if (role === "user") { out.push({ role: "user", text }); }
-        else if (role === "assistant") { out.push({ role: "assistant", text }); }
-        else if (role === "tool") {
-            const name = String(m.name ?? "tool");
-            out.push({ role: "tool", text: name, toolName: name, detail: String(m.detail ?? ""), result: text });
-        }
-        // developer/system scaffolding intentionally skipped
-    }
-    return out;
-}
-
-interface StoredSession {
-    id: string;
-    backend: string;
-    title: string;
-    cwd: string;
-    model: string;
-    updatedAt: string;
-    messages: ChatMsg[];
-}
-
-/** Per-backend store dir for API-adapter transcripts (no CLI to persist them). */
-function storeDir(backend: string): string {
-    return path.join(os.homedir(), ".symposium", "sessions", backend);
-}
-function storePath(backend: string, id: string): string {
-    return path.join(storeDir(backend), id + ".json");
-}
-function readStored(backend: string, id: string): StoredSession | undefined {
-    try { return JSON.parse(fs.readFileSync(storePath(backend, id), "utf8")); } catch { return undefined; }
-}
-function writeStored(s: StoredSession): void {
-    try {
-        fs.mkdirSync(storeDir(s.backend), { recursive: true });
-        fs.writeFileSync(storePath(s.backend, s.id), JSON.stringify(s));
-    } catch { /* best-effort persistence */ }
-}
-
-export interface OpenAIAdapterConfig {
-    /** Detailed caller identity for gateway/activity diagnostics. */
-    clientInfo?: { id: string; version: string; hostname: string; os: string };
-    /** Which API to call: chat completions or the Responses API. */
-    api: "chat" | "responses";
-    /** Base URL of an OpenAI-compatible API, e.g. https://api.sufficit-ai/v1 */
-    baseUrl: string;
-    /** Default model (empty = first of models). */
-    model: string;
-    /** Models offered in the picker (empty = auto-discover from /models). */
-    models: string[];
-    /** Custom headers (e.g. Authorization, x-api-key) for the sufficit-ai gateway. */
-    headers: Record<string, string>;
-    /** Convenience: if set and no Authorization header, sent as Bearer. */
-    apiKey?: string;
-    /**
-     * Whether this gateway supports the OpenAI `developer` message role.
-     * Built-in Sufficit AI handles this upstream; custom gateways may need the
-     * prompt downgraded to `system`.
-     */
-    supportsDeveloperRole?: boolean;
-    /** Max tool round-trips per turn before pausing (default 50). */
-    maxToolHops?: number;
-    /** Stop the turn after N tool steps with no assistant reply; 0/undefined = off. */
-    noProgressStop?: number;
-    /** Auto-compact the context when a prompt reaches this fraction of the window (0 = off). */
-    autoCompactAt?: number;
-    /**
-     * Sliding window: max conversation messages sent per request.
-     * System/developer prefix and the first user turn are always preserved.
-     * Default 40 (~20 turns). 0 = no trimming (old behaviour).
-     */
-    maxHistoryMessages?: number;
-    /** How local shell tool execution is surfaced: silent, inline stream, or visible VS Code terminal. */
-    shellExecution?: ShellExecutionMode;
-    log?: (message: string) => void;
-}
-
-// Discovered model ids and id→friendly-name per base URL (GET /models cache).
-const discoveredModels = new Map<string, string[]>();
-const discoveredLabels = new Map<string, Record<string, string>>();
-// Discovered per-model context window (tokens), when the gateway's /models
-// catalog reports one — drives the context monitor's "used / total" ratio.
-const discoveredContext = new Map<string, Record<string, number>>();
-
-/** Context window (tokens) a /models entry advertises, across common shapes. */
-function modelContextLength(m: unknown): number | undefined {
-    if (!m || typeof m !== "object") { return undefined; }
-    const o = m as Record<string, any>;
-    const n = Number(
-        o.context_length ?? o.context_window ?? o.max_context_window_tokens ??
-        o.max_context_length ?? o.max_input_tokens ?? o.context?.total ??
-        o.limits?.context_window ?? o.limits?.max_context_window_tokens ?? 0,
-    );
-    return Number.isFinite(n) && n > 0 ? n : undefined;
-}
-
-/** Token usage parsed from an OpenAI-compatible response (chat or responses). */
-interface ApiUsage {
-    inputTokens: number;
-    outputTokens: number;
-    cacheRead: number;
-}
-
-/**
- * Optional Sufficit login access-token provider. When set (at activation) and an
- * adapter has no explicit apiKey/Authorization, the logged-in token is used as
- * the Bearer — so the native "Sufficit AI" backend works right after login with
- * no manual config.
- */
-let openaiTokenProvider: (() => Promise<string | null>) | undefined;
-export function setOpenAITokenProvider(fn: () => Promise<string | null>): void {
-    openaiTokenProvider = fn;
-}
-
-type ChatMessage = ChatMsg;
+    AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES,
+    ALL_AI_TOOL_NAMES, filterTools, runAiTool, ShellExecutionMode,
+} from "../aiTools";
+import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "../lmTools";
+import * as ledger from "../../ledger";
+import { ApiUsage, ChatMessage, ContentPart, OpenAIAdapterConfig, ToolCall } from "./types";
+import { readStored, writeStored } from "./store";
+import { contentText, toResponsesInput } from "./transform";
+import {
+    getDiscoveredContext, getDiscoveredLabels, getDiscoveredModels,
+    modelContextLength, setDiscovered,
+} from "./models";
+import { friendlyToolDetail, toolPath } from "./toolDetail";
+import { getOpenAITokenProvider } from "./token";
 
 /**
  * A direct OpenAI-compatible chat session (no CLI): streams /chat/completions
@@ -191,7 +28,7 @@ type ChatMessage = ChatMsg;
  * models. Stateless server-side, so history is kept here and persisted to disk
  * so the session survives a reload (the API has no transcript of its own).
  */
-class OpenAISession extends EventEmitter implements AgentSession {
+export class OpenAISession extends EventEmitter implements AgentSession {
     readonly sessionId: string;
     private readonly messages: ChatMessage[] = [];
     private abort: AbortController | undefined;
@@ -264,7 +101,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
         }
     }
 
-    private ledgerMeta(): import("../ledger").LedgerMeta {
+    private ledgerMeta(): import("../../ledger").LedgerMeta {
         return {
             id: this.sessionId, backend: this.backend, title: this.title,
             cwd: this.options.cwd, model: this.model(),
@@ -277,13 +114,13 @@ class OpenAISession extends EventEmitter implements AgentSession {
         // discovered models for this gateway, then empty (the user's picked model
         // is applied per-message before send).
         return this.options.model || this.cfg.model || this.cfg.models[0]
-            || discoveredModels.get(this.cfg.baseUrl)?.[0] || "";
+            || getDiscoveredModels(this.cfg.baseUrl)?.[0] || "";
     }
 
     /** Friendly name for a model id, from discovery (falls back to the id). */
     private label(id: string): string {
         if (!id) { return ""; }
-        return discoveredLabels.get(this.cfg.baseUrl)?.[id] ?? id;
+        return getDiscoveredLabels(this.cfg.baseUrl)?.[id] ?? id;
     }
 
     /**
@@ -294,7 +131,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
      */
     private contextWindow(): number {
         const id = this.model();
-        return discoveredContext.get(this.cfg.baseUrl)?.[id] || contextWindowFor(id);
+        return getDiscoveredContext(this.cfg.baseUrl)?.[id] || contextWindowFor(id);
     }
 
     /**
@@ -504,9 +341,10 @@ class OpenAISession extends EventEmitter implements AgentSession {
 
     /** Resolves the login token only when needed (no explicit auth configured). */
     private async authToken(): Promise<string | null> {
+        const provider = getOpenAITokenProvider();
         const hasAuth = Object.keys(this.cfg.headers).some((k) => k.toLowerCase() === "authorization");
-        if (hasAuth || this.cfg.apiKey || !openaiTokenProvider) { return null; }
-        try { return await openaiTokenProvider(); } catch { return null; }
+        if (hasAuth || this.cfg.apiKey || !provider) { return null; }
+        try { return await provider(); } catch { return null; }
     }
 
     /**
@@ -549,9 +387,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
             if (ctx) { context[id] = ctx; }
         }
         if (list.length) {
-            discoveredModels.set(this.cfg.baseUrl, list);
-            discoveredLabels.set(this.cfg.baseUrl, labels);
-            discoveredContext.set(this.cfg.baseUrl, context);
+            setDiscovered(this.cfg.baseUrl, list, labels, context);
             this.cfg.log?.(`[${this.backend}] discovered ${list.length} models from ${url}`);
         }
     }
@@ -998,275 +834,4 @@ class OpenAISession extends EventEmitter implements AgentSession {
         }
         return done();
     }
-}
-
-/** A human-readable one-liner for a tool call, instead of raw JSON args. */
-function friendlyToolDetail(name: string, args: Record<string, unknown>): string {
-    const s = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
-    // A description provided by the model is the human intent — show it.
-    if (typeof args.description === "string" && args.description.trim()) {
-        const d0 = args.description.trim();
-        return d0.length > 160 ? d0.slice(0, 159) + "…" : d0;
-    }
-    let d = "";
-    switch (name) {
-        case "shell": d = s(args.command).split("\n")[0]; break;
-        case "fetch_url": case "open_url": d = s(args.url); break;
-        case "read_file": case "write_file": case "edit_file": case "list_dir": d = s(args.path); break;
-        case "memory_search": case "web_search": d = s(args.query); break;
-        case "memory_save": d = s(args.title); break;
-        default: {
-            const first = Object.values(args).find((v) => typeof v === "string");
-            d = first ? s(first) : (Object.keys(args).length ? JSON.stringify(args) : "");
-        }
-    }
-    return d.length > 160 ? d.slice(0, 159) + "…" : d;
-}
-
-/** File path a tool acts on (gives the row a file icon); else undefined. */
-function toolPath(name: string, args: Record<string, unknown>): string | undefined {
-    if ((name === "read_file" || name === "write_file" || name === "edit_file" || name === "list_dir") && typeof args.path === "string") {
-        return args.path;
-    }
-    return undefined;
-}
-
-/**
- * Converts the internal chat-shaped message log into Responses API `input`
- * items: plain messages stay {role,content}; an assistant tool turn becomes one
- * `function_call` item per call; a tool result becomes a `function_call_output`.
- */
-function toResponsesInput(messages: ChatMessage[]): unknown[] {
-    const out: unknown[] = [];
-    for (const m of messages) {
-        if (m.role === "tool") {
-            out.push({ type: "function_call_output", call_id: m.tool_call_id, output: contentText(m.content) });
-            continue;
-        }
-        if (m.role === "assistant" && m.tool_calls?.length) {
-            const t = contentText(m.content);
-            if (t) { out.push({ role: "assistant", content: t }); }
-            for (const tc of m.tool_calls) {
-                out.push({ type: "function_call", call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments });
-            }
-            continue;
-        }
-        if (Array.isArray(m.content)) {
-            // Map vision parts to the Responses API shape (input_text/input_image).
-            const parts = m.content.map((p) => p.type === "image_url"
-                ? { type: "input_image", image_url: p.image_url.url }
-                : { type: "input_text", text: p.text });
-            out.push({ role: m.role, content: parts });
-        } else {
-            out.push({ role: m.role, content: m.content ?? "" });
-        }
-    }
-    return out;
-}
-
-export class OpenAIAdapter implements AgentAdapter {
-    /**
-     * @param backend  unique id for this adapter instance (built-in "openai" or
-     *                 a custom adapter id).
-     * @param name     display name shown in the UI.
-     */
-    constructor(
-        readonly backend: string,
-        readonly displayName: string,
-        private readonly getConfig: () => OpenAIAdapterConfig,
-    ) { }
-
-    async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
-        const cfg = this.getConfig();
-        if (!cfg.baseUrl) { return { ok: false, error: `set baseUrl for ${this.displayName}` }; }
-        // Best-effort model discovery so the picker is populated when opened.
-        await this.discoverModels(cfg).catch(() => undefined);
-        return { ok: true, version: cfg.baseUrl };
-    }
-
-    async listSessions(): Promise<SessionInfo[]> {
-        const dir = storeDir(this.backend);
-        let files: string[];
-        try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { return []; }
-        const out: SessionInfo[] = [];
-        for (const f of files) {
-            const s = readStored(this.backend, f.slice(0, -5));
-            if (s) {
-                out.push({ backend: this.backend, sessionId: s.id, title: s.title || "Session", cwd: s.cwd, updatedAt: new Date(s.updatedAt), model: s.model });
-            }
-        }
-        return out;
-    }
-
-    async history(info: SessionInfo): Promise<HistoryMessage[]> {
-        // Compacted sessions: the store holds only the summarized model context.
-        // The lossless human transcript lives in the ledger — show that so the
-        // chat still mirrors the full conversation (the model sees the summary).
-        if (ledger.hasLedger(info.sessionId) && ledgerWasCompacted(info.sessionId)) {
-            return historyFromLedger(info.sessionId);
-        }
-        const s = readStored(this.backend, info.sessionId);
-        if (!s) { return []; }
-        const labels = discoveredLabels.get(this.getConfig().baseUrl) ?? {};
-        // Pair each tool result back to the call that produced it.
-        const results = new Map<string, string>();
-        for (const m of s.messages) {
-            if (m.role === "tool" && m.tool_call_id) { results.set(m.tool_call_id, contentText(m.content)); }
-        }
-        const out: HistoryMessage[] = [];
-        for (const m of s.messages) {
-            if (m.role === "user") {
-                const t = contentText(m.content);
-                if (t) { out.push({ role: "user", text: t }); }
-            } else if (m.role === "assistant") {
-                const t = contentText(m.content);
-                if (t) {
-                    out.push({ role: "assistant", text: t, model: m.model, modelLabel: m.model ? (labels[m.model] ?? m.model) : undefined });
-                }
-                // Reconstruct tool rows so a resumed (or reloaded mid-turn)
-                // session shows the same icon+target+diff it had live.
-                for (const tc of m.tool_calls ?? []) {
-                    let args: Record<string, unknown> = {};
-                    try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* leave empty */ }
-                    const counts = diffCounts(tc.function.name, args);
-                    const ap = typeof args.path === "string" && args.path
-                        ? (path.isAbsolute(args.path) ? args.path : path.resolve(s.cwd, args.path))
-                        : undefined;
-                    out.push({
-                        role: "tool", text: tc.function.name, toolName: tc.function.name,
-                        detail: friendlyToolDetail(tc.function.name, args),
-                        input: prettyJson(args),
-                        result: results.get(tc.id),
-                        added: counts?.added, removed: counts?.removed,
-                        path: ap ?? toolPath(tc.function.name, args),
-                        diff: editDiff(tc.function.name, args),
-                    });
-                }
-            }
-        }
-        return out;
-    }
-
-    async deleteSession(info: SessionInfo): Promise<void> {
-        try { fs.rmSync(storePath(this.backend, info.sessionId), { force: true }); } catch { /* ignore */ }
-    }
-
-    start(options: SessionStartOptions): AgentSession {
-        return new OpenAISession(this.backend, this.getConfig(), options);
-    }
-
-    /** API backend: takes one-shot app instructions as developer messages. */
-    roleAware(): boolean { return true; }
-
-    /** Slash commands offered for this backend. `/compact` is intercepted locally
-     *  (summarize + shrink the model context); it also re-enables the context
-     *  popover's "Compact Conversation" button (gated on a `compact` command). */
-    async commands(): Promise<SlashCommand[]> {
-        return [{ name: "compact", description: "Summarize older turns to shrink the model context (full history is preserved)", kind: "builtin" }];
-    }
-
-    /**
-     * Accept inlined images (vision): attached/pasted images are sent as
-     * image_url content parts so a vision-capable model sees them directly,
-     * instead of being handed a file path it reads as binary. The gateway must
-     * route to a vision-capable model for the image to be interpreted.
-     */
-    supportsImages(): boolean { return true; }
-
-    /** GET <baseUrl>/models → cache the offered model ids (OpenAI shape). */
-    private async discoverModels(cfg: OpenAIAdapterConfig): Promise<void> {
-        const url = cfg.baseUrl.replace(/\/+$/, "") + "/models";
-        const headers: Record<string, string> = { ...cfg.headers };
-        if (cfg.clientInfo) {
-            headers["x-client-id"] = cfg.clientInfo.id;
-            headers["x-client-version"] = cfg.clientInfo.version;
-            headers["x-client-hostname"] = cfg.clientInfo.hostname;
-            headers["x-client-os"] = cfg.clientInfo.os;
-            headers["user-agent"] = `${cfg.clientInfo.id}/${cfg.clientInfo.version} (${cfg.clientInfo.os}; ${cfg.clientInfo.hostname})`;
-        }
-        const hasAuth = Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
-        if (!hasAuth && cfg.apiKey) {
-            headers["authorization"] = `Bearer ${cfg.apiKey}`;
-        } else if (!hasAuth && openaiTokenProvider) {
-            const t = await openaiTokenProvider().catch(() => null);
-            if (t) { headers["authorization"] = `Bearer ${t}`; }
-        }
-        const res = await fetch(url, { headers });
-        if (!res.ok) { return; }
-        const json: any = await res.json();
-        const raw: any[] = json?.data ?? json?.models ?? [];
-        const list: string[] = [];
-        const labels: Record<string, string> = {};
-        const context: Record<string, number> = {};
-        for (const m of raw) {
-            const id = typeof m === "string" ? m : m?.id ?? m?.name;
-            if (typeof id !== "string") { continue; }
-            list.push(id);
-            const name = typeof m === "object" ? (m?.name ?? m?.title) : undefined;
-            if (typeof name === "string" && name && name !== id) { labels[id] = name; }
-            const ctx = modelContextLength(m);
-            if (ctx) { context[id] = ctx; }
-        }
-        if (list.length) {
-            discoveredModels.set(cfg.baseUrl, list);
-            discoveredLabels.set(cfg.baseUrl, labels);
-            discoveredContext.set(cfg.baseUrl, context);
-            const cacheKey = `openai:${cfg.baseUrl}`;
-            setCached(cacheKey, { models: list, labels, lastUpdate: new Date().toISOString() });
-        }
-        cfg.log?.(`[${this.backend}] discovered ${list.length} models from ${url}`);
-    }
-
-    /** Friendly id→name labels for the model picker (from discovery). */
-    modelLabels(): Record<string, string> {
-        return discoveredLabels.get(this.getConfig().baseUrl) ?? {};
-    }
-
-    models(): string[] {
-        const cfg = this.getConfig();
-        // Seed in-memory cache from file cache when the process-level map is empty.
-        if (!discoveredModels.has(cfg.baseUrl)) {
-            const cacheKey = `openai:${cfg.baseUrl}`;
-            const stored = getCached(cacheKey);
-            if (stored?.models.length) {
-                discoveredModels.set(cfg.baseUrl, stored.models);
-                discoveredLabels.set(cfg.baseUrl, stored.labels ?? {});
-            }
-        }
-        const configured = cfg.models.length ? cfg.models : (discoveredModels.get(cfg.baseUrl) ?? []);
-        return buildOpenAIModelList(configured, cfg.model);
-    }
-
-    /**
-     * Force a (re)discovery from <baseUrl>/models, then return the freshly
-     * built list + labels. The chat surface awaits this right after opening a
-     * dialogue so the picker reflects the real server models even when the
-     * discovery cache was empty (e.g. first session after a reload). When the
-     * models are pinned in settings, discovery is skipped — the configured
-     * list wins.
-     */
-    async refreshModels(force = false): Promise<{ models: string[]; labels?: Record<string, string> }> {
-        const cfg = this.getConfig();
-        if (!cfg.models.length && cfg.baseUrl) {
-            // Skip network if file cache is fresh and not forced
-            const cacheKey = `openai:${cfg.baseUrl}`;
-            const stored = getCached(cacheKey);
-            if (!force && stored && isFresh(stored)) {
-                discoveredModels.set(cfg.baseUrl, stored.models);
-                discoveredLabels.set(cfg.baseUrl, stored.labels ?? {});
-            } else {
-                await this.discoverModels(cfg).catch(() => undefined);
-            }
-        }
-        return { models: this.models(), labels: this.modelLabels() };
-    }
-
-    // Common OpenAI reasoning_effort values; "default" omits the param.
-    reasoningLevels(): string[] {
-        return ["default", "minimal", "low", "medium", "high"];
-    }
-
-    // No native plan tool over the raw API: inject one and parse a ```todo block.
-    hasNativeTodo(): boolean { return false; }
-    todoInjection(): string { return TODO_INJECTION; }
 }

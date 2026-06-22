@@ -1,0 +1,265 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as vscode from "vscode";
+import { readSession, dumpToText } from "../../sessionReader";
+import { mimeTypeFor } from "../parse";
+import { fetchSessionTasks, markTaskDone, sessionTag } from "../../sync/tasks";
+import { saveGuardrail, clearSessionGuardrails } from "../../sync/guardrails";
+import { workspaceKey, resourceContentPath, ensureScaffold, readWorkspaceBootstrap } from "../../config/root";
+import { ToolContext } from "./types";
+import { canUseRtk, normalizeTerminalId, resolvePath, runShell, runShellInTerminal } from "./shell";
+
+/** Strips HTML to readable text (drops script/style, tags → spaces). */
+function htmlToText(html: string): string {
+    return html
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<!--[\s\S]*?-->/g, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/[ \t\f\r]+/g, " ")
+        .replace(/\n\s*\n\s*\n+/g, "\n\n")
+        .trim();
+}
+
+/** Executes one tool call. Returns a JSON string for the model. */
+export async function runAiTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+    const hub = ctx.hub;
+    const planMode = ctx.permission === "plan";
+    try {
+        // ---- web navigation ----
+        if (name === "fetch_url") {
+            const url = String(args.url ?? "").trim();
+            if (!/^https?:\/\//i.test(url)) { return JSON.stringify({ error: "url must start with http(s)://" }); }
+            const max = Number(args.max_chars) || 30000;
+            const res = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (Symposium VS Code agent)" } });
+            const ct = res.headers.get("content-type") || "";
+            const raw = await res.text();
+            const body = /html/i.test(ct) ? htmlToText(raw) : raw;
+            return JSON.stringify({ url, status: res.status, content_type: ct, content: body.slice(0, max), truncated: body.length > max });
+        }
+        if (name === "open_url") {
+            const url = String(args.url ?? "").trim();
+            if (!/^https?:\/\//i.test(url)) { return JSON.stringify({ error: "url must start with http(s)://" }); }
+            await vscode.commands.executeCommand("simpleBrowser.show", url);
+            return JSON.stringify({ opened: url });
+        }
+        // ---- session memory (read-only, allowed in plan mode) ----
+        if (name === "read_session") {
+            const id = String(args.id ?? "").trim() || ctx.sessionId;
+            if (!id) { return JSON.stringify({ error: "no session id (none provided and no current session)" }); }
+            const dump = readSession(id);
+            if (dump.source === "none") { return JSON.stringify({ error: `session ${id} not found on disk` }); }
+            const tail = typeof args.tail === "number" ? args.tail : undefined;
+            const maxChars = typeof args.max_chars === "number" ? args.max_chars : undefined;
+            return dumpToText(dump, { tail, maxChars });
+        }
+        // ---- per-workspace session bootstrap (a local config file, NOT memory) ----
+        if (name === "get_workspace_bootstrap") {
+            const bs = readWorkspaceBootstrap(ctx.cwd);
+            return JSON.stringify(bs
+                ? { key: bs.name, path: bs.path, text: bs.text }
+                : { key: workspaceKey(ctx.cwd), text: "", note: "no bootstrap set for this workspace" });
+        }
+        if (name === "set_workspace_bootstrap") {
+            const text = String(args.text ?? "").trim();
+            if (!text) { return JSON.stringify({ error: "text is required" }); }
+            ensureScaffold();
+            const key = workspaceKey(ctx.cwd);
+            const file = resourceContentPath("bootstrap", key);
+            fs.mkdirSync(path.dirname(file), { recursive: true });
+            fs.writeFileSync(file, text.endsWith("\n") ? text : text + "\n", "utf8");
+            return JSON.stringify({ ok: true, key, path: file, bytes: Buffer.byteLength(text) });
+        }
+        // ---- local workspace tools (shell / filesystem) ----
+        if (name === "shell") {
+            if (planMode) { return JSON.stringify({ error: "plan mode: command execution is disabled" }); }
+            const command = String(args.command ?? "").trim();
+            if (!command) { return JSON.stringify({ error: "empty command" }); }
+            const cwd = args.cwd ? resolvePath(ctx.cwd, String(args.cwd)) : ctx.cwd;
+            // Timeout: default 30s. 0 (or negative) means UNLIMITED — the model
+            // must opt into that explicitly for long-running services. A bounded
+            // value is clamped to [1s, 1h].
+            const rawTimeout = args.timeout_ms === undefined ? 30000 : Number(args.timeout_ms);
+            const unlimited = !(rawTimeout > 0);
+            const timeout = unlimited ? Number.MAX_SAFE_INTEGER : Math.min(Math.max(rawTimeout, 1000), 3600000);
+            const notify = args.notify === true;
+            const mode = ctx.shellExecution ?? "silent";
+            const terminalId = mode === "terminal" ? normalizeTerminalId(args.terminal_id) : undefined;
+            const shouldUseRtk = mode === "silent" && await canUseRtk(command, cwd);
+            const runCommand = shouldUseRtk ? `rtk ${command}` : command;
+            const terminalRun = mode === "terminal"
+                ? await runShellInTerminal(runCommand, cwd, timeout, ctx.progress, terminalId)
+                : undefined;
+            const { stdout, code } = terminalRun ?? await runShell(runCommand, cwd, timeout, mode === "inline" ? ctx.progress : undefined);
+            // When the model flags the result as relevant, push it through the
+            // progress sink as a steer-style notification so the chat surfaces it
+            // even if the model wouldn't otherwise narrate the outcome.
+            if (notify) {
+                const head = stdout.split("\n").slice(0, 6).join("\n");
+                ctx.progress?.onNotify?.(`shell exit ${code}${head ? `\n${head}` : ""}`);
+            }
+            return JSON.stringify({
+                exit_code: code,
+                output: stdout,
+                display: mode,
+                timed_out: code === 124,
+                unlimited,
+                terminal_id: terminalRun?.terminal_id,
+                reused_terminal: terminalRun?.reused ?? false
+            });
+        }
+        if (name === "read_file") {
+            const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+            const buf = fs.readFileSync(p);
+            const mime = mimeTypeFor(p);
+            const isImage = !!mime && mime.startsWith("image/");
+            // Binary detection: a NUL byte in the first chunk means it isn't text.
+            const isBinary = isImage || buf.subarray(0, 4096).includes(0);
+            if (isBinary) {
+                // Images: return a base64 data URI (capped) instead of UTF-8
+                // garbage, so a vision-capable model/preset can interpret it.
+                const cap = Number(args.max_bytes) || 1_500_000;
+                if (isImage && buf.length <= cap) {
+                    return JSON.stringify({
+                        path: p, mime, bytes: buf.length, image: true,
+                        data_uri: `data:${mime};base64,${buf.toString("base64")}`,
+                        note: "Binary image returned as a base64 data URI — it cannot be read as text. A vision-capable model/preset is needed to interpret it; otherwise ask the user to describe it.",
+                    });
+                }
+                return JSON.stringify({
+                    path: p, mime: mime ?? "application/octet-stream", bytes: buf.length, binary: true,
+                    note: "Binary file — not shown as text" + (isImage ? " (image exceeds the inline cap; raise max_bytes to return base64)" : "") + ".",
+                });
+            }
+            const max = Number(args.max_bytes) || 100000;
+            const data = buf.toString("utf8");
+            return JSON.stringify({ path: p, content: data.slice(0, max), truncated: data.length > max });
+        }
+        if (name === "write_file") {
+            if (planMode) { return JSON.stringify({ error: "plan mode: writing files is disabled" }); }
+            const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+            fs.mkdirSync(path.dirname(p), { recursive: true });
+            fs.writeFileSync(p, String(args.content ?? ""), "utf8");
+            return JSON.stringify({ path: p, bytes: Buffer.byteLength(String(args.content ?? "")) });
+        }
+        if (name === "edit_file") {
+            if (planMode) { return JSON.stringify({ error: "plan mode: editing files is disabled" }); }
+            const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+            const oldStr = String(args.old_string ?? "");
+            const newStr = String(args.new_string ?? "");
+            const replaceAll = args.replace_all === true;
+            if (!oldStr) { return JSON.stringify({ error: "old_string is required and must be non-empty" }); }
+            let content: string;
+            try { content = fs.readFileSync(p, "utf8"); }
+            catch { return JSON.stringify({ error: `file not found: ${p}` }); }
+            const occurrences = content.split(oldStr).length - 1;
+            if (occurrences === 0) { return JSON.stringify({ error: "old_string not found in the file (it must match exactly, including whitespace)" }); }
+            if (occurrences > 1 && !replaceAll) {
+                return JSON.stringify({ error: `old_string is not unique (${occurrences} matches); add surrounding context or set replace_all: true` });
+            }
+            const updated = replaceAll ? content.split(oldStr).join(newStr) : content.replace(oldStr, newStr);
+            fs.writeFileSync(p, updated, "utf8");
+            return JSON.stringify({ path: p, replaced: replaceAll ? occurrences : 1 });
+        }
+        if (name === "list_dir") {
+            const p = args.path ? resolvePath(ctx.cwd, String(args.path)) : ctx.cwd;
+            const entries = fs.readdirSync(p, { withFileTypes: true }).map((e) => ({ name: e.name, dir: e.isDirectory() }));
+            return JSON.stringify({ path: p, entries });
+        }
+        switch (name) {
+            case "memory_search": {
+                const recs = await hub.searchMemory({
+                    query: String(args.query ?? ""),
+                    type: args.type ? String(args.type) : undefined,
+                    limit: typeof args.limit === "number" ? args.limit : undefined,
+                });
+                return JSON.stringify(recs);
+            }
+            case "memory_get_observations": {
+                const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
+                return JSON.stringify(await hub.getByIds(ids));
+            }
+            case "memory_save": {
+                // Bind task observations to the current Symposium chat session so
+                // they can be listed in the Tasks panel and removed with it.
+                let tags = args.tags ? String(args.tags) : "";
+                const type = String(args.type ?? "note");
+                if (ctx.sessionId && type.startsWith("task")) {
+                    const tag = `symposium-session:${ctx.sessionId}`;
+                    if (!tags.split(",").map((t) => t.trim()).includes(tag)) {
+                        tags = tags ? `${tags},${tag}` : tag;
+                    }
+                }
+                const id = await hub.save({
+                    type,
+                    title: String(args.title ?? ""),
+                    summary: String(args.summary ?? ""),
+                    payload: args.payload ? String(args.payload) : undefined,
+                    tags: tags || undefined,
+                });
+                return JSON.stringify({ id });
+            }
+            case "add_task": {
+                if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
+                if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured" }); }
+                const raw = Array.isArray(args.tasks) ? args.tasks : (args.title ? [args.title] : []);
+                const titles = raw.map((t) => (typeof t === "string" ? t : (t && typeof t === "object" ? (t as any).title : ""))).map((s) => String(s ?? "").trim()).filter(Boolean);
+                if (!titles.length) { return JSON.stringify({ error: "provide tasks: [\"step 1\", \"step 2\", …]" }); }
+                const tags = `task-anchor,${sessionTag(ctx.sessionId)}`;
+                const ids: string[] = [];
+                for (const title of titles) {
+                    const id = await hub.save({ type: "task-anchor", title: title.slice(0, 80), summary: title, tags });
+                    if (id) { ids.push(id); }
+                }
+                return JSON.stringify({ ok: true, created: ids.length, ids });
+            }
+            case "list_tasks": {
+                if (!ctx.sessionId) { return JSON.stringify({ tasks: [] }); }
+                const all = await fetchSessionTasks(hub, ctx.sessionId);
+                const includeDone = args.all === true;
+                const tasks = (includeDone ? all : all.filter((t) => !t.done))
+                    .map((t) => ({ id: t.id, type: t.type, title: t.title, summary: t.summary, done: !!t.done }));
+                return JSON.stringify({ tasks, pendingOnly: !includeDone });
+            }
+            case "task_complete": {
+                const id = String(args.id ?? "");
+                if (!id) { return JSON.stringify({ error: "id is required" }); }
+                if (!hub.configured()) { return JSON.stringify({ ok: false, error: "memory hub not configured" }); }
+                await markTaskDone(hub, id);
+                // Verify against the hub (source of truth) so a transient write
+                // failure can't be reported as success — re-read and confirm the tag.
+                let done = false;
+                try {
+                    const [o] = await hub.getByIds([id]);
+                    done = !!o && String(o.tags ?? "").split(",").map((t) => t.trim()).includes("status:done");
+                } catch { /* leave done=false */ }
+                return JSON.stringify(done
+                    ? { ok: true, id, done: true }
+                    : { ok: false, id, error: "could not confirm completion — the task is still pending; try again" });
+            }
+            case "add_guardrail": {
+                const text = String(args.text ?? "").trim();
+                if (!text) { return JSON.stringify({ error: "text is required" }); }
+                if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
+                if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured — guardrails unavailable" }); }
+                const id = await saveGuardrail(hub, ctx.sessionId, text);
+                return JSON.stringify({ id, added: text });
+            }
+            case "clear_guardrails": {
+                if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
+                if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured — guardrails unavailable" }); }
+                const removed = await clearSessionGuardrails(hub, ctx.sessionId);
+                return JSON.stringify({ ok: true, removed });
+            }
+            case "web_search": {
+                const r = await hub.webSearch(String(args.query ?? ""), typeof args.limit === "number" ? args.limit : 8);
+                return JSON.stringify(r).slice(0, 12000);
+            }
+            default:
+                return JSON.stringify({ error: `unknown tool ${name}` });
+        }
+    } catch (err) {
+        return JSON.stringify({ error: String(err) });
+    }
+}

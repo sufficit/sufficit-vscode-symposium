@@ -66,7 +66,15 @@ snapshots.ts         per-session pre-edit baselines for revert without git
 | agents/skills/tools/instructions | `~/.symposium/repo` |
 | extra adapters / settings | `settings.json` (`symposium.*`) |
 
-## Known debt (see review 2026-06-15; refresh 2026-06-21)
+## Known debt (see review 2026-06-15; refresh 2026-06-21; namespace pass 2026-06-22)
+
+The 2026-06-22 namespace pass (see `docs/PLAN-namespace-restructure.md`, Phase
+0+1) added a CI-enforced 400-line guard (`scripts/check-file-size.mjs`) and split
+every adapter (`claude`/`codex`/`copilot`/`openai`), `aiTools`, and `extension.ts`
+into folder modules behind barrels — all source files are now ≤400 lines except a
+tracked EXEMPT set (the webview blobs below, plus `chatSurface`, `chatController`,
+and `openai/session` which carry the live turn/view flow and are deferred to a
+phase verified under a running Extension Host / F5).
 
 The 2026-06-21 architecture pass (see `docs/PLAN-architecture-refactor.md`)
 closed several of these. Remaining items need a running Extension Host to verify.
