@@ -16,5 +16,5 @@
     "skipLibCheck": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "out"]
+  "exclude": ["node_modules", "out", "src/ui/webview"]
 }

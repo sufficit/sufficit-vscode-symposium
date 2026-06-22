@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "rootDir": "src/ui/webview",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["src/ui/webview"]
+}
