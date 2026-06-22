@@ -64,7 +64,7 @@ export class LiveSessions {
     }
 
     /** Live sessions for the list (incl. brand-new ones not yet on disk). */
-    liveInfos(): { backend: string; sessionId: string; title: string; cwd: string; status: "working" | "idle" }[] {
+    liveInfos(): { backend: string; sessionId: string; title: string; cwd: string; status: "working" | "idle"; parentId?: string }[] {
         const out = [];
         for (const [key, c] of this.controllers) {
             out.push({
@@ -73,6 +73,7 @@ export class LiveSessions {
                 title: c.title,
                 cwd: c.cwd,
                 status: c.isBusy ? "working" as const : "idle" as const,
+                parentId: c.parentId,
             });
         }
         return out;

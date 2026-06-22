@@ -167,6 +167,42 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             const entries = fs.readdirSync(p, { withFileTypes: true }).map((e) => ({ name: e.name, dir: e.isDirectory() }));
             return JSON.stringify({ path: p, entries });
         }
+        // ---- subagents (spawn + control) ----
+        if (name === "spawn_agent" || name === "list_agents" || name === "agent_status" || name === "agent_send" || name === "agent_stop") {
+            const host = ctx.subagents;
+            if (!host) { return JSON.stringify({ error: "subagents unavailable (live runtime not ready)" }); }
+            if (name === "list_agents") {
+                return JSON.stringify({ agents: host.list(ctx.sessionId) });
+            }
+            if (name === "agent_status") {
+                const st = host.status(String(args.id ?? ""));
+                return JSON.stringify(st ?? { error: "no such subagent" });
+            }
+            if (name === "agent_send") {
+                const ok = host.send(String(args.id ?? ""), String(args.text ?? ""));
+                return JSON.stringify({ ok, error: ok ? undefined : "no such subagent (or it was stopped)" });
+            }
+            if (name === "agent_stop") {
+                const ok = host.stop(String(args.id ?? ""));
+                return JSON.stringify({ ok, error: ok ? undefined : "no such subagent" });
+            }
+            // spawn_agent — spawning runs tools, so disallow in read-only plan mode.
+            if (planMode) { return JSON.stringify({ error: "plan mode: spawning subagents is disabled" }); }
+            const background = args.background === true;
+            const st = await host.spawn({
+                agent: String(args.agent ?? ""),
+                task: String(args.task ?? ""),
+                backend: args.backend ? String(args.backend) : undefined,
+                model: args.model ? String(args.model) : undefined,
+                cwd: ctx.cwd,
+                background,
+                parentSessionId: ctx.sessionId,
+                parentBackend: ctx.parentBackend,
+            });
+            if (st.error && st.status === "gone") { return JSON.stringify({ error: st.error }); }
+            ctx.progress?.onNotify?.(`spawned ${st.agent} (${st.backend})${background ? " in background" : ""}`);
+            return JSON.stringify(st);
+        }
         switch (name) {
             case "memory_search": {
                 const recs = await hub.searchMemory({

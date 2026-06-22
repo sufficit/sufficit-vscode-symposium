@@ -7,6 +7,10 @@
  * memory/search capability the CLI backends get from the MCP server.
  */
 
+// Subagent tool defs live in their own file (keeps defs.ts under the line cap);
+// re-exported via the aiTools index so callers import them from one place.
+import { SUBAGENT_TOOLS, SUBAGENT_TOOL_NAMES } from "./subagentDefs";
+
 export interface OpenAITool {
     type: "function";
     function: { name: string; description: string; parameters: Record<string, unknown> };
@@ -309,7 +313,7 @@ export const AI_TOOLS_RESPONSES = AI_TOOLS.map(toResponsesShape);
 export const LOCAL_TOOLS_RESPONSES = LOCAL_TOOLS.map(toResponsesShape);
 
 /** All AI tool names this bridge can expose. */
-export const ALL_AI_TOOL_NAMES = [...AI_TOOLS, ...LOCAL_TOOLS].map((t) => t.function.name);
+export const ALL_AI_TOOL_NAMES = [...AI_TOOLS, ...LOCAL_TOOLS, ...SUBAGENT_TOOLS].map((t) => t.function.name);
 
 /**
  * Maps an agent-def's declared capability tokens to the concrete AI tool names
@@ -352,6 +356,11 @@ export function aiToolsForAgent(declared: string[]): string[] {
         names.add("write_file"); names.add("edit_file"); names.add("read_file"); names.add("list_dir");
     }
     if (has(/^list\b|^list_dir\b|^ls\b/i)) { names.add("list_dir"); }
+    // Subagent orchestration: an agent that declares agents/spawn/orchestrate may
+    // itself delegate to other agent-defs (bounded by depth/concurrency guards).
+    if (has(/^agents?\b|^spawn\b|^orchestrate\b|^subagents?\b|^delegate\b/i)) {
+        for (const n of SUBAGENT_TOOL_NAMES) { names.add(n); }
+    }
     return [...names];
 }
 

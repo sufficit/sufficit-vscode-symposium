@@ -8,6 +8,7 @@ import { snapshots } from "../../snapshots";
 import { HubClient } from "../../sync/hubClient";
 import {
     AI_TOOLS, AI_TOOLS_RESPONSES, LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES,
+    SUBAGENT_TOOLS, SUBAGENT_TOOLS_RESPONSES, getSubagentHost,
     ALL_AI_TOOL_NAMES, filterTools, runAiTool, ShellExecutionMode,
 } from "../aiTools";
 import { lmToolDefs, lmToolDefsResponses, isLmTool, invokeLmTool } from "../lmTools";
@@ -534,6 +535,9 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             ? (responses ? AI_TOOLS_RESPONSES : AI_TOOLS)
             : [];
         const localTools = responses ? LOCAL_TOOLS_RESPONSES : LOCAL_TOOLS;
+        // Subagent orchestration tools — only when the live runtime is available
+        // (a SubagentHost is set), so a headless/test session never offers them.
+        const subagentTools = getSubagentHost() ? (responses ? SUBAGENT_TOOLS_RESPONSES : SUBAGENT_TOOLS) : [];
         // VS Code Language Model Tools (runInTerminal, runTask, runTests, …):
         // computed fresh each turn so registry/setting changes take effect.
         const vscodeTools = responses ? lmToolDefsResponses() : lmToolDefs();
@@ -573,7 +577,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
                 // unset, expose all; when set to [], expose none (tools off).
                 const allow = this.options.aiTools;
                 const toolList = filterTools<{ function?: { name: string }; name?: string }>(
-                    [...memoryTools, ...localTools, ...vscodeTools] as { function?: { name: string }; name?: string }[], allow);
+                    [...memoryTools, ...localTools, ...subagentTools, ...vscodeTools] as { function?: { name: string }; name?: string }[], allow);
                 if (toolList.length > 0) {
                     body.tools = toolList;
                     body.tool_choice = "auto";
@@ -705,7 +709,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
                     };
                     const result = isLmTool(tc.function.name)
                         ? await invokeLmTool(tc.function.name, args)
-                        : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission, sessionId: this.sessionId, shellExecution: shellMode, progress });
+                        : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission, sessionId: this.sessionId, shellExecution: shellMode, progress, parentBackend: this.backend, subagents: getSubagentHost() });
                     this.emit("event", { kind: "tool-end", toolName: tc.function.name, toolId: tc.id, result });
                     this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
                     // Ledger (lossless): record the tool call + its result so the full

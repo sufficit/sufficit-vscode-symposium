@@ -235,7 +235,9 @@ export function readWorkspaceBootstrap(cwd: string): { text: string; path: strin
 function template(kind: ResourceKind, name: string, description: string): string {
     const fm = [`name: ${name}`, `description: ${description}`, "version: 1"];
     if (kind === "agent") {
-        fm.push("model: default", "bootstrap: true", "tools: []", "skills: []", "instructions: []");
+        // `backend` is the subagent run-target preference: empty = inherit the
+        // spawning conversation's backend; may be a name, comma-list, or wildcard.
+        fm.push("model: default", "backend: ''", "bootstrap: true", "tools: []", "skills: []", "instructions: []");
         return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nAgent instructions here.\n`;
     }
     if (kind === "tool") {
@@ -328,6 +330,20 @@ export function readAgentBootstrap(name: string): boolean {
 export function readAgentModel(name: string): string {
     try {
         return parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))["model"] ?? "";
+    } catch {
+        return "";
+    }
+}
+
+/**
+ * Reads an agent-def's `backend:` preference/constraint (e.g. `openai`, `claude`,
+ * a comma-list, or a wildcard like `gpt-*`). Empty when absent — meaning the
+ * subagent inherits the spawning conversation's backend. Used by the subagent
+ * spawner to pick and validate the backend a subagent runs on.
+ */
+export function readAgentBackend(name: string): string {
+    try {
+        return parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))["backend"] ?? "";
     } catch {
         return "";
     }

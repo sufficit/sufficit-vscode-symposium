@@ -6,6 +6,8 @@ import { OpenAIAdapter, setOpenAITokenProvider } from "./adapters/openai";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
 import { LiveSessions } from "./sessions/runtime";
+import { SubagentManager } from "./sessions/subagents";
+import { setSubagentHost } from "./adapters/aiTools";
 import { ChatPanel } from "./ui/chatPanel";
 import { ChatViewProvider } from "./ui/chatView";
 import { ConfigPanel } from "./ui/configPanel";
@@ -50,6 +52,13 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // Public API facade (in-process exports, config UI and remote bridge all
     // share this object so every surface stays in lock-step).
     const api = createSymposiumApi({ live: runtime, adapters, onSessionsChanged: sessionsChanged.event });
+
+    // Subagent host: lets the native Sufficit AI backend delegate to other
+    // agent-defs as real sessions (spawn_agent / agent_* tools). Late-bound so
+    // the low-level tool layer never imports the runtime directly.
+    setSubagentHost(new SubagentManager(runtime, adapterByBackend,
+        () => vscode.workspace.getConfiguration("symposium.subagents").get<number>("timeoutMs", 300000)));
+    context.subscriptions.push({ dispose: () => setSubagentHost(undefined) });
 
     // Sufficit Identity login (tokens in SecretStorage; basis for memory/MCP).
     const auth = new SufficitAuth(context, symposiumLog);

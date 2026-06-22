@@ -46,6 +46,8 @@ export interface SessionInfo {
     status?: "working" | "idle";
     /** True while a permanent delete / scrub is in progress in the background. */
     deleting?: boolean;
+    /** Parent session id when this is a spawned subagent (renders nested in the list). */
+    parentId?: string;
 }
 
 /** One past message reconstructed from a stored transcript. */
@@ -152,6 +154,11 @@ export interface SessionStartOptions {
      * `repo/bootstrap/<workspaceKey>.md`.
      */
     bootstrap?: string;
+    /**
+     * Parent session id when this session is a spawned subagent. Carried into the
+     * live runtime so the sessions list can nest it under its parent.
+     */
+    parentId?: string;
 }
 
 /**

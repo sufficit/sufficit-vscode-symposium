@@ -123,6 +123,8 @@ export class ChatController {
 
     get backend(): string { return this.adapter.backend; }
     get cwd(): string { return this.options.cwd; }
+    /** Parent session id when this controller drives a spawned subagent. */
+    get parentId(): string | undefined { return this.options.parentId; }
     /** First user message, used as a title for a not-yet-persisted live session. */
     get title(): string { return this.firstTitle || "New session"; }
 

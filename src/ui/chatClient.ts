@@ -51,6 +51,14 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     if (saved.sendMode) { sendMode.value = saved.sendMode; }
     sendMode.addEventListener("change", () => saveState({ sendMode: sendMode.value }));
 
+    // Parent session ids whose subagent children are collapsed in the list.
+    const collapsedParents = new Set(saved.collapsedSubagents || []);
+    function toggleCollapsed(id) {
+        if (collapsedParents.has(id)) { collapsedParents.delete(id); } else { collapsedParents.add(id); }
+        saveState({ collapsedSubagents: [...collapsedParents] });
+        renderSessions();
+    }
+
     // Split send-button: caret opens a small menu to choose Send/Queue/Steer.
     // Each mode has its own icon and its own keyboard shortcut (like the
     // native chat): Enter sends with the selected default mode, while the
@@ -1744,11 +1752,25 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     function renderSessions() {
         sessionsList.textContent = "";
         const visible = sessions.filter((s) => !s.archived || showArchived);
-        const pinned = visible.filter((s) => s.pinned).sort((a, b) => (a.pinIndex || 0) - (b.pinIndex || 0));
-        const rest = visible.filter((s) => !s.pinned);
+        // Subagents (parentId pointing at a visible session) render nested under
+        // their parent — not as top-level rows — so the list stays a tidy tree.
+        const byId = new Map(visible.map((s) => [s.sessionId, s]));
+        const childrenOf = (id) => visible.filter((s) => s.parentId && s.parentId === id);
+        const isChild = (s) => s.parentId && byId.has(s.parentId);
+        const top = visible.filter((s) => !isChild(s));
+        // Append a row and, when expanded, its subagent children (recursively).
+        const appendTree = (s, depth) => {
+            const kids = childrenOf(s.sessionId);
+            sessionsList.appendChild(renderSessionItem(s, depth, kids.length));
+            if (kids.length && !collapsedParents.has(s.sessionId)) {
+                for (const k of kids) { appendTree(k, depth + 1); }
+            }
+        };
+        const pinned = top.filter((s) => s.pinned).sort((a, b) => (a.pinIndex || 0) - (b.pinIndex || 0));
+        const rest = top.filter((s) => !s.pinned);
         if (pinned.length) {
             sessionsList.appendChild(groupHeader("Pinned", pinned.length));
-            for (const s of pinned) { sessionsList.appendChild(renderSessionItem(s)); }
+            for (const s of pinned) { appendTree(s, 0); }
         }
         let lastBucket = null;
         for (const s of rest) {
@@ -1758,7 +1780,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                 const count = rest.filter((x) => bucket(x.updatedAt) === bk).length;
                 sessionsList.appendChild(groupHeader(bk, count));
             }
-            sessionsList.appendChild(renderSessionItem(s));
+            appendTree(s, 0);
         }
     }
     let dragPinId = null;
@@ -1776,9 +1798,26 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         renderSessions();
         vscode.postMessage({ type: "reorder-pinned", ids: order });
     }
-    function renderSessionItem(s) {
+    function renderSessionItem(s, depth, childCount) {
+            depth = depth || 0; childCount = childCount || 0;
             const el = document.createElement("div");
-            el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "") + (s.pinned ? " pinned" : "") + (s.deleting ? " deleting" : "");
+            el.className = "sessionItem" + (s.sessionId === activeSessionId ? " active" : "") + (s.archived ? " archived" : "") + (s.pinned ? " pinned" : "") + (s.deleting ? " deleting" : "") + (depth ? " subagentChild" : "");
+            if (depth) { el.style.marginLeft = (depth * 16) + "px"; }
+            // Caret to collapse/expand a parent's subagent children.
+            let caretEl = null;
+            if (childCount > 0) {
+                caretEl = document.createElement("button");
+                caretEl.className = "subCaret";
+                caretEl.style.cssText = "background:none;border:none;cursor:pointer;padding:0 2px;display:flex;align-items:center;opacity:0.7";
+                const collapsed = collapsedParents.has(s.sessionId);
+                const cv = svgIcon("chevron");
+                cv.style.transform = collapsed ? "rotate(-90deg)" : "rotate(0deg)";
+                cv.style.transition = "transform 150ms ease";
+                caretEl.appendChild(cv);
+                caretEl.title = collapsed ? "Expand subagents" : "Collapse subagents";
+                caretEl.setAttribute("aria-label", caretEl.title);
+                caretEl.addEventListener("click", (ev) => { ev.stopPropagation(); toggleCollapsed(s.sessionId); });
+            }
             el.tabIndex = 0;
             el.setAttribute("role", "option");
             el.setAttribute("aria-selected", s.sessionId === activeSessionId ? "true" : "false");
@@ -1849,6 +1888,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                 acts.appendChild(more);
             }
 
+            if (caretEl) { el.appendChild(caretEl); }
             el.appendChild(statusDot);
             el.appendChild(body);
             el.appendChild(acts);

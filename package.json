@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "0.79.174",
+  "version": "0.79.175",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -322,6 +322,11 @@
           },
           "default": [],
           "description": "Extra VS Code Language Model Tools to never bridge to the native 'Sufficit AI' backend (substring match on the tool name). Copilot's own memory tools (copilot_memory and *memory* tools, which write to Copilot's store — NOT the Sufficit memory) are always blocked regardless of this list."
+        },
+        "symposium.subagents.timeoutMs": {
+          "type": "number",
+          "default": 300000,
+          "description": "How long (ms) a foreground spawn_agent waits for the subagent to finish before returning the partial result and leaving it running in the background. Default 300000 (5 min)."
         },
         "symposium.bridge.enabled": {
           "type": "boolean",
