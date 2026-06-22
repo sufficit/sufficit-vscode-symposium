@@ -7,7 +7,7 @@ import * as vscode from "vscode";
 import { randomUUID } from "node:crypto";
 import { readSession, dumpToText } from "../sessionReader";
 import { mimeTypeFor } from "./parse";
-import { fetchSessionTasks, markTaskDone } from "../sync/tasks";
+import { fetchSessionTasks, markTaskDone, sessionTag } from "../sync/tasks";
 import { saveGuardrail, clearSessionGuardrails } from "../sync/guardrails";
 import { workspaceKey, resourceContentPath, ensureScaffold, readWorkspaceBootstrap } from "../config/root";
 
@@ -69,6 +69,20 @@ export const AI_TOOLS: OpenAITool[] = [
                     tags: { type: "string", description: "Optional comma-separated tags." },
                 },
                 required: ["type", "title", "summary"],
+            },
+        },
+    },
+    {
+        type: "function",
+        function: {
+            name: "add_task",
+            description: "Create one or more session tasks (a plan), shown in the Tasks panel. Use this the MOMENT the user approves a multi-step plan you proposed: record EACH step as a task BEFORE you start acting, so the plan is tracked and you can mark each task_complete as you finish. Also use it whenever you commit to a new multi-step piece of work.",
+            parameters: {
+                type: "object",
+                properties: {
+                    tasks: { type: "array", items: { type: "string" }, description: "One short title per step/task, in order." },
+                },
+                required: ["tasks"],
             },
         },
     },
@@ -324,7 +338,7 @@ export function aiToolsForAgent(declared: string[]): string[] {
     // earlier/compacted context when the user says "reread the history".
     names.add("read_session");
     // Session task tools are always safe (scoped to this session, no secrets).
-    names.add("list_tasks"); names.add("task_complete");
+    names.add("add_task"); names.add("list_tasks"); names.add("task_complete");
     // Guardrails are session-scoped self-constraints: always available so any
     // agent can lock in a hard rule the user gave it (the user can still remove).
     names.add("add_guardrail"); names.add("clear_guardrails");
@@ -732,6 +746,20 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                     tags: tags || undefined,
                 });
                 return JSON.stringify({ id });
+            }
+            case "add_task": {
+                if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
+                if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured" }); }
+                const raw = Array.isArray(args.tasks) ? args.tasks : (args.title ? [args.title] : []);
+                const titles = raw.map((t) => (typeof t === "string" ? t : (t && typeof t === "object" ? (t as any).title : ""))).map((s) => String(s ?? "").trim()).filter(Boolean);
+                if (!titles.length) { return JSON.stringify({ error: "provide tasks: [\"step 1\", \"step 2\", …]" }); }
+                const tags = `task-anchor,${sessionTag(ctx.sessionId)}`;
+                const ids: string[] = [];
+                for (const title of titles) {
+                    const id = await hub.save({ type: "task-anchor", title: title.slice(0, 80), summary: title, tags });
+                    if (id) { ids.push(id); }
+                }
+                return JSON.stringify({ ok: true, created: ids.length, ids });
             }
             case "list_tasks": {
                 if (!ctx.sessionId) { return JSON.stringify({ tasks: [] }); }

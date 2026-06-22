@@ -81,7 +81,8 @@ export const CHECKPOINT_PREAMBLE =
     "So you MUST externalize anything you will need later: call memory_save (type \"task-checkpoint\") for every result, decision, root cause, file path, id, and \"what's done / what's next\" — written densely enough to resume from that note alone, with no other context. Checkpoint at the start of a non-trivial task and at each milestone. " +
     "And RECALL often: call memory_search whenever you resume, change sub-task, or feel unsure of the current goal, so you never drift back to an earlier task or lose the thread. Treat your checkpoints as your real memory; the chat scrollback is not. " +
     "Your task-checkpoints are automatically bound to THIS chat session (shown in the session's Tasks panel); always reference the current session id in the checkpoint so it stays traceable. " +
-    "Use list_tasks to see your PENDING tasks for this session (pass all=true to include completed ones), and call task_complete(id) the moment you finish what a checkpoint described, so it leaves the pending list. " +
+    "PLAN AS TASKS: when you propose a multi-step plan and the user approves it (or you commit to multi-step work), FIRST call add_task with every step — recording the whole plan up front, BEFORE you start acting — so it's tracked in the Tasks panel. " +
+    "Use list_tasks to see your PENDING tasks for this session (pass all=true to include completed ones), and call task_complete(id) the moment you finish what a task described, so it leaves the pending list. " +
     "Proactively work down the PENDING tasks and briefly remind the user which pendencies remain. If the user explicitly asks for something else, do that first and REORDER your tasks around it (re-checkpoint the new priority) instead of losing the thread — but never silently drop pending tasks.";
 
 export const AUTONOMY_PREAMBLE =

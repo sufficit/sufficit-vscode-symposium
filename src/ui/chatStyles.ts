@@ -359,6 +359,8 @@ export const chatStyles = `    body {
        messages (above the queued/plan/changed-files panels), never overlapping
        their Approve/Reject buttons. */
     #logWrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    /* Soft separator between the chat transcript and the panels/composer below. */
+    #chatCol > #logWrap { border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.18)); }
     #log {
         flex: 1; overflow-y: auto; padding: 16px 16px 6px 16px; user-select: text; cursor: text;
         font-size: 13.5px; line-height: 1.65;
@@ -623,7 +625,7 @@ export const chatStyles = `    body {
     .tDel { color: var(--vscode-gitDecoration-deletedResourceForeground, #d16969); margin-left: 5px; }
     .tSpacer { flex: 1; min-width: 0; }
     /* queued messages — editable until dispatched */
-    #queued { display: none; border-top: 1px solid var(--vscode-panel-border, transparent); padding: 6px 10px 2px; }
+    #queued { display: none; padding: 8px 10px 2px; }
     #queued.has { display: block; }
     #queued .qhead { font-size: 0.72em; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; opacity: 0.55; margin: 0 2px 5px; }
     .qitem {
