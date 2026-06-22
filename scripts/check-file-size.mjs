@@ -11,7 +11,7 @@ const EXEMPT = new Set([
   "src/ui/chatClient.ts",
   "src/ui/chatStyles.ts",
   // Phase 3 (needs a running Extension Host / F5 to verify the live turn + view
-  // flow). Tracked in docs/PLAN-namespace-restructure.md.
+  // flow). Tracked in docs/activities/20260622002801-namespace-restructure.md.
   "src/adapters/openai/session.ts", // OpenAISession turn loop (run/consume/compact)
   "src/ui/chatSurface.ts",
   "src/ui/chatController.ts",

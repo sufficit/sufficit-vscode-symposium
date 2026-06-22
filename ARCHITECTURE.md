@@ -68,8 +68,8 @@ snapshots.ts         per-session pre-edit baselines for revert without git
 
 ## Known debt (see review 2026-06-15; refresh 2026-06-21; namespace pass 2026-06-22)
 
-The 2026-06-22 namespace pass (see `docs/PLAN-namespace-restructure.md`, Phase
-0+1) added a CI-enforced 400-line guard (`scripts/check-file-size.mjs`) and split
+The 2026-06-22 namespace pass (see
+`docs/activities/20260622002801-namespace-restructure.md`, Phase 0+1) added a CI-enforced 400-line guard (`scripts/check-file-size.mjs`) and split
 every adapter (`claude`/`codex`/`copilot`/`openai`), `aiTools`, and `extension.ts`
 into folder modules behind barrels — all source files are now ≤400 lines except a
 tracked EXEMPT set (the webview blobs below, plus `chatSurface`, `chatController`,

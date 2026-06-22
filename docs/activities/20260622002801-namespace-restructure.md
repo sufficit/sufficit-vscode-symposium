@@ -1,9 +1,19 @@
 # PLAN — Namespace Restructure & 400-Line Decomposition
 
-Status: **DRAFT** (2026-06-21). Supersedes the two items deferred by
+Status: **FINALIZED** (2026-06-22). Supersedes the two items deferred by
 `docs/activities/20260621115747-architecture-refactor.md` (#2 webview
 extract+bundle, #8 god-object split) and folds them into one namespace-first
-restructuring. Migrate this file to `docs/activities/<ts>-*.md` when finalized.
+restructuring.
+
+**Outcome:** Phase 0 (400-line CI guard) + Phase 1 (adapter/aiTools/extension
+namespace splits) shipped in v0.79.174 (`main` @ commit 531c275) and deployed to
+the `development` code-server. All source files are ≤400 lines except the tracked
+EXEMPT set (webview blobs `chatClient`/`chatStyles`; `chatSurface`,
+`chatController`, `openai/session` — the live turn/view flow). **Phase 2** (webview
+extract + esbuild bundle + frontend framework — vanilla-TS-store recommended) and
+**Phase 3** (split the three EXEMPT host files) remain OPEN: both mutate the live
+boot/turn path and need a running Extension Host (F5) to verify, so they are
+carried forward as the next pass (see "Phased execution" → Phases 2–4 below).
 
 ## Goals (hard constraints)
 
