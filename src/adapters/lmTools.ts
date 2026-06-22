@@ -36,7 +36,13 @@ const TERMINAL_MATCH = /terminal|task|test|exec|browser|playwright|navigate/i;
 // Also block image/vision tools (e.g. Copilot's copilot_viewImage): Symposium
 // already inlines pasted/attached images as native model vision, so bridging
 // Copilot's image reader is redundant and adds a Copilot dependency.
-const DEFAULT_TOOL_BLOCKLIST = /copilot_memory|^memory$|_memory|memory_|read[_-]?file|write[_-]?file|list[_-]?dir|find[_-]?file|search[_-]?file|grep|glob|workspace[_-]?symbol|text[_-]?search|view[_-]?image|read[_-]?image|copilot_\w*image/i;
+// Also block Copilot's AGENT-ORCHESTRATION tools (switchAgent, *subagent*,
+// new_workspace): Symposium drives its own vendor-neutral multi-agent system, so
+// letting the model invoke Copilot's parallel orchestration fights our routing.
+// And block remaining edit/search/data duplicates (findTextInFiles, replaceString,
+// insertEdit, applyPatch, createFile/Directory, usages, getErrors, fetch) — all
+// have first-class Symposium equivalents (Edit/write_file, Grep, fetch_url).
+const DEFAULT_TOOL_BLOCKLIST = /copilot_memory|^memory$|_memory|memory_|read[_-]?file|write[_-]?file|list[_-]?dir|find[_-]?file|search[_-]?file|grep|glob|workspace[_-]?symbol|text[_-]?search|find[_-]?text|view[_-]?image|read[_-]?image|copilot_\w*image|switch[_-]?agent|sub[_-]?agent|new[_-]?workspace|create[_-]?(file|directory|folder|workspace)|edit[_-]?file|insert[_-]?edit|apply[_-]?patch|replace[_-]?string|(?:^|[_-])usages|get[_-]?errors|copilot_fetch/i;
 
 function isBlocked(name: string): boolean {
     if (DEFAULT_TOOL_BLOCKLIST.test(name)) { return true; }

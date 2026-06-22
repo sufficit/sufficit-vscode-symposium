@@ -1180,6 +1180,17 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         const head = Math.max(max - ell.length - tail, 1);
         return s.slice(0, head) + ell + s.slice(s.length - tail);
     }
+    // Humanize an unmapped tool name for display. Bridged VS Code LM tools arrive
+    // vendor-namespaced (e.g. "copilot_switchAgent", "mcp_foo_bar"); strip the
+    // namespace prefix and split snake/camel case so the action log never shows a
+    // raw "copilot_*" identifier. Symposium's own tools are mapped in TOOL_META
+    // and never reach here.
+    function prettyToolName(name) {
+        let s = String(name || "").replace(/^(copilot|mcp|vscode|github)[_-]+/i, "");
+        s = s.replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").trim();
+        if (!s) { return String(name || "tool"); }
+        return s.charAt(0).toUpperCase() + s.slice(1);
+    }
     // Expandable tool panel (icon + verb + target, click to reveal input/result).
     function renderTool(name, detail, opts) {
         opts = opts || {};
@@ -1192,7 +1203,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         const hasContent = (detail && String(detail).trim()) || opts.input || opts.result || (opts.diff && opts.diff.length) || opts.path;
         if (!hasName && !hasContent) { return null; }
         const stick = nearBottom();
-        const meta = TOOL_META[name] || { icon: "tool", verb: name };
+        const meta = TOOL_META[name] || { icon: "tool", verb: prettyToolName(name) };
         const wrap = document.createElement("div"); wrap.className = "msg toolwrap";
         const head = document.createElement("div"); head.className = "toolrow";
         const ic = document.createElement("span"); ic.className = "tIcon";
