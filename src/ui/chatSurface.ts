@@ -1102,6 +1102,18 @@ export class ChatSurface {
             if (ev?.kind === "session" && ev.sessionId) {
                 this.deps.lastActive.set({ backend, sessionId: ev.sessionId });
             }
+            // Repaint the affected panel the moment a session-mutating tool finishes,
+            // so an agent-added guardrail / task shows immediately instead of only at
+            // turn-end. (A short retry covers the hub search index settling.)
+            if (ev?.kind === "tool-end" && typeof ev.toolName === "string") {
+                const n = ev.toolName;
+                if (n === "add_guardrail" || n === "clear_guardrails") {
+                    const repaint = () => void this.controller?.reloadGuardrails().then(() => this.refreshGuardrails());
+                    repaint(); setTimeout(repaint, 700);
+                } else if (n === "add_task" || n === "task_complete" || (n === "memory_save")) {
+                    void this.refreshTasks(); setTimeout(() => void this.refreshTasks(), 700);
+                }
+            }
             // Refresh the Tasks panel when a turn ends: the agent may have saved
             // task-checkpoints mid-turn (bound to this session), which the panel
             // otherwise wouldn't pick up until reopen/manual refresh.
