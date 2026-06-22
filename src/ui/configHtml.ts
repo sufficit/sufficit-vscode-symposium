@@ -47,14 +47,17 @@ export function renderConfigHtml(): string {
         background: var(--vscode-button-secondaryBackground);
     }
     button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); opacity: 0.85; }
-    nav { display: flex; gap: 2px; padding: 8px 14px 0; border-bottom: 1px solid var(--vscode-panel-border); }
+    nav { display: flex; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
     nav .tab {
-        padding: 6px 12px; cursor: pointer; border: 1px solid transparent;
-        border-bottom: none; border-radius: 4px 4px 0 0; opacity: 0.7;
+        padding: 10px 12px; cursor: pointer; border: none;
+        border-bottom: 2px solid transparent; opacity: 0.65;
+        transition: opacity 150ms ease, border-color 150ms ease, color 150ms ease;
     }
-    nav .tab.active { opacity: 1; background: var(--vscode-tab-activeBackground); border-color: var(--vscode-panel-border); }
-    nav .tab .count { opacity: 0.6; margin-left: 4px; }
-    main { flex: 1; overflow: auto; padding: 12px 14px; }
+    nav .tab:hover { opacity: 1; }
+    nav .tab.active { opacity: 1; color: var(--vscode-foreground); border-bottom-color: var(--vscode-focusBorder, #0a84ff); }
+    nav .tab .count { opacity: 0.6; margin-left: 5px; }
+    main { flex: 1; overflow: auto; padding: 16px 0 32px; }
+    .page { max-width: 960px; margin: 0 auto; padding: 0 14px; }
     .row {
         display: flex; align-items: baseline; gap: 10px; padding: 7px 8px;
         border-radius: 4px; cursor: pointer; transition: background 150ms ease;
@@ -82,9 +85,29 @@ export function renderConfigHtml(): string {
         padding: 3px 6px; border-radius: 3px;
     }
     input:focus-visible, select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 0; }
-    .prefBlock { padding: 9px 8px; display: flex; flex-direction: column; gap: 6px; }
-    .prefBlock .name { font-weight: 600; }
-    .prefBlock .desc { opacity: 0.75; font-size: 0.9em; }
+    .section { margin-bottom: 22px; }
+    .section-title {
+        font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em;
+        opacity: 0.55; padding-bottom: 7px; margin-bottom: 4px;
+        border-bottom: 1px solid var(--vscode-panel-border);
+    }
+    .pref-item {
+        display: grid; grid-template-columns: 1fr 240px; gap: 16px;
+        align-items: center; padding: 11px 10px; border-radius: 6px;
+        transition: background 150ms ease;
+    }
+    .pref-item:hover { background: var(--vscode-list-hoverBackground); }
+    .pref-item .meta { min-width: 0; }
+    .pref-item .name { font-weight: 600; display: block; margin-bottom: 2px; }
+    .pref-item .desc { opacity: 0.7; font-size: 0.9em; line-height: 1.5; white-space: normal; }
+    .pref-item .ctl { justify-self: end; width: 100%; }
+    .pref-item select.pref { width: 100%; cursor: pointer; min-height: 28px; }
+    .pref-block { padding: 11px 10px; display: flex; flex-direction: column; gap: 7px; }
+    .pref-block .desc { opacity: 0.7; font-size: 0.9em; line-height: 1.5; }
+    @media (max-width: 620px) {
+        .pref-item { grid-template-columns: 1fr; gap: 8px; }
+        .pref-item .ctl { justify-self: stretch; }
+    }
     textarea.pref-text {
         font: inherit; color: var(--vscode-input-foreground);
         background: var(--vscode-input-background);
@@ -213,49 +236,63 @@ export function renderConfigHtml(): string {
             '<select class="pref" data-key="' + esc(key) + '">' +
             opts.map(o => '<option value="' + esc(o.v) + '"' + (o.v === value ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") +
             "</select>";
-        const row = (name, desc, ctl) =>
-            '<div class="row"><span class="name">' + esc(name) + '</span><span class="desc">' + esc(desc) + "</span>" + ctl + "</div>";
+        const item = (name, desc, ctl) =>
+            '<div class="pref-item"><div class="meta">' +
+                '<span class="name">' + esc(name) + '</span>' +
+                '<span class="desc">' + esc(desc) + "</span>" +
+            '</div><div class="ctl">' + ctl + "</div></div>";
+        const section = (title, body) =>
+            '<section class="section"><div class="section-title">' + esc(title) + "</div>" + body + "</section>";
+
         return (
-            row("Sessions list", "Which side the sessions list appears on.",
-                sel("symposium.chat.sessionsSide", p.sessionsSide || "auto",
-                    [{ v: "auto", l: "Automatic" }, { v: "left", l: "Left" }, { v: "right", l: "Right" }])) +
-            row("Open session in", "Where a session opens when it starts.",
-                sel("symposium.chat.openIn", p.openIn || "editor",
-                    [{ v: "editor", l: "Editor (center tab)" }, { v: "sidebar", l: "Sidebar" }])) +
-            row("Response language", "Preferred language for AI responses. Empty uses VS Code's display language.",
-                sel("symposium.chat.preferredLanguage", p.preferredLanguage || "",
-                    [{ v: "", l: "Automatic (VS Code)" }, { v: "pt-br", l: "Português (BR)" }, { v: "en", l: "English" },
-                     { v: "es", l: "Español" }, { v: "fr", l: "Français" }, { v: "de", l: "Deutsch" },
-                     { v: "it", l: "Italiano" }, { v: "ja", l: "日本語" }, { v: "zh-cn", l: "中文 (简体)" }])) +
-            row("VS Code tools", "Which Language Model Tools the Sufficit AI backend may use.",
-                sel("symposium.lmTools", p.lmTools || "terminal",
-                    [{ v: "off", l: "Off" }, { v: "terminal", l: "Terminal/tasks/tests" }, { v: "all", l: "All" }])) +
-            row("Step limit per turn", "Max tool actions before pausing (asks for 'continue'). In autonomous mode (presence Away) there is no limit.",
-                sel("symposium.openai.maxToolHops", String(p.maxToolHops || 50),
-                    [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }])) +
-            row("Stop if no reply", "Stop the turn after N tool steps in a row without the agent replying (anti-loop). Unlimited = never auto-stop on silence.",
-                sel("symposium.openai.noProgressStop", String(p.noProgressStop || 0),
-                    [{ v: "0", l: "Unlimited" }, { v: "8", l: "8 steps" }, { v: "12", l: "12 steps" }, { v: "16", l: "16 steps" }, { v: "24", l: "24 steps" }])) +
-            row("Command execution", "How to surface the Ran/shell tool: wait for the result, stream into the chat, or open a VS Code terminal.",
-                sel("symposium.openai.shellExecution", p.shellExecution || "silent",
-                    [{ v: "silent", l: "Wait for result" }, { v: "inline", l: "Stream in chat" }, { v: "terminal", l: "VS Code terminal" }])) +
-            row("Auto-approve agent tools", "Do not ask for confirmation on each action (browser, terminal, edits). Convenient, but the agent runs everything without asking.",
-                sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
-                    [{ v: "true", l: "Yes (no confirmation)" }, { v: "false", l: "No (asks for confirmation)" }])) +
-            '<div class="prefBlock">' +
-                '<div class="name">System instruction (manual)</div>' +
-                '<div class="desc">Free text added to the system prompt of every new conversation. Use it to give all agents persistent guidance.</div>' +
-                '<textarea class="pref-text" data-key="symposium.chat.systemInstruction" rows="4" placeholder="e.g. Always answer concisely and cite your sources.">' + esc(p.systemInstruction || "") + '</textarea>' +
-            '</div>'
+            section("Appearance",
+                item("Sessions list", "Which side the sessions list appears on.",
+                    sel("symposium.chat.sessionsSide", p.sessionsSide || "auto",
+                        [{ v: "auto", l: "Automatic" }, { v: "left", l: "Left" }, { v: "right", l: "Right" }])) +
+                item("Open session in", "Where a session opens when it starts.",
+                    sel("symposium.chat.openIn", p.openIn || "editor",
+                        [{ v: "editor", l: "Editor (center tab)" }, { v: "sidebar", l: "Sidebar" }])) +
+                item("Response language", "Preferred language for AI responses. Empty uses VS Code's display language.",
+                    sel("symposium.chat.preferredLanguage", p.preferredLanguage || "",
+                        [{ v: "", l: "Automatic (VS Code)" }, { v: "pt-br", l: "Português (BR)" }, { v: "en", l: "English" },
+                         { v: "es", l: "Español" }, { v: "fr", l: "Français" }, { v: "de", l: "Deutsch" },
+                         { v: "it", l: "Italiano" }, { v: "ja", l: "日本語" }, { v: "zh-cn", l: "中文 (简体)" }]))
+            ) +
+            section("Agent behavior",
+                item("Step limit per turn", "Max tool actions before pausing (asks for 'continue'). In autonomous mode (presence Away) there is no limit.",
+                    sel("symposium.openai.maxToolHops", String(p.maxToolHops || 50),
+                        [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }])) +
+                item("Stop if no reply", "Stop the turn after N tool steps in a row without the agent replying (anti-loop). Unlimited = never auto-stop on silence.",
+                    sel("symposium.openai.noProgressStop", String(p.noProgressStop || 0),
+                        [{ v: "0", l: "Unlimited" }, { v: "8", l: "8 steps" }, { v: "12", l: "12 steps" }, { v: "16", l: "16 steps" }, { v: "24", l: "24 steps" }])) +
+                item("Auto-approve agent tools", "Do not ask for confirmation on each action (browser, terminal, edits). Convenient, but the agent runs everything without asking.",
+                    sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
+                        [{ v: "true", l: "Yes (no confirmation)" }, { v: "false", l: "No (asks for confirmation)" }]))
+            ) +
+            section("Tools & execution",
+                item("VS Code tools", "Which Language Model Tools the Sufficit AI backend may use.",
+                    sel("symposium.lmTools", p.lmTools || "terminal",
+                        [{ v: "off", l: "Off" }, { v: "terminal", l: "Terminal/tasks/tests" }, { v: "all", l: "All" }])) +
+                item("Command execution", "How to surface the Ran/shell tool: wait for the result, stream into the chat, or open a VS Code terminal.",
+                    sel("symposium.openai.shellExecution", p.shellExecution || "silent",
+                        [{ v: "silent", l: "Wait for result" }, { v: "inline", l: "Stream in chat" }, { v: "terminal", l: "VS Code terminal" }]))
+            ) +
+            section("System instruction",
+                '<div class="pref-block">' +
+                    '<div class="desc">Free text added to the system prompt of every new conversation. Use it to give all agents persistent guidance.</div>' +
+                    '<textarea class="pref-text" data-key="symposium.chat.systemInstruction" rows="5" placeholder="e.g. Always answer concisely and cite your sources.">' + esc(p.systemInstruction || "") + '</textarea>' +
+                "</div>"
+            )
         );
     }
 
     function render() {
         renderTabs();
         const main = document.getElementById("content");
-        if (!state) { main.innerHTML = '<div class="empty">Loading…</div>'; return; }
+        const page = (h) => '<div class="page">' + h + "</div>";
+        if (!state) { main.innerHTML = page('<div class="empty">Loading…</div>'); return; }
         if (active === "prefs") {
-            main.innerHTML = prefsView();
+            main.innerHTML = page(prefsView());
             main.querySelectorAll("select.pref").forEach(el => {
                 el.onchange = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
             });
@@ -268,7 +305,7 @@ export function renderConfigHtml(): string {
             return;
         }
         if (active === "backends") {
-            main.innerHTML = backendsView();
+            main.innerHTML = page(backendsView());
             main.querySelectorAll("button.test").forEach(el => {
                 el.onclick = () => {
                     const b = el.getAttribute("data-backend");
@@ -289,7 +326,7 @@ export function renderConfigHtml(): string {
             return;
         }
         if (active === "sync") {
-            main.innerHTML = syncView();
+            main.innerHTML = page(syncView());
             const pull = document.getElementById("sync-pull");
             const push = document.getElementById("sync-push");
             const conf = document.getElementById("sync-config");
@@ -298,7 +335,7 @@ export function renderConfigHtml(): string {
             if (conf) { conf.onclick = () => vscode.postMessage({ type: "config-hub" }); }
             return;
         }
-        main.innerHTML = resourceList(active);
+        main.innerHTML = page(resourceList(active));
         main.querySelectorAll(".row[data-path]").forEach(el => {
             el.onclick = (ev) => {
                 if (ev.target && ev.target.classList.contains("del")) {
