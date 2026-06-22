@@ -719,14 +719,14 @@ export const chatStyles = `    body {
         font-size: 0.82em; transition: background 150ms ease, opacity 150ms ease;
     }
     .ptab:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
-    .ptab.active { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); border-color: var(--vscode-focusBorder, #0078d4); }
+    /* Active tab: gentle tint of its OWN accent (currentColor = the per-type color). */
+    .ptab.active { opacity: 1; border-color: currentColor; background: color-mix(in srgb, currentColor 14%, transparent); }
     .ptab svg { width: 14px; height: 14px; flex-shrink: 0; }
-    .ptab .ptBadge { font-variant-numeric: tabular-nums; opacity: 0.85; font-size: 0.95em; }
-    /* "Attached" line above the textarea */
-    #attached { display: none; align-items: center; gap: 8px; padding: 2px 2px 4px; }
-    #attached.has { display: flex; }
-    #attached .atLabel { flex-shrink: 0; font-size: 0.66em; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.5; font-weight: 700; }
-    #attached #chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
+    .ptab .ptBadge { font-variant-numeric: tabular-nums; opacity: 0.9; font-size: 0.95em; }
+    /* Attached-to-context panel (the 4th tab) */
+    #attachedPanel { margin: 0 12px 8px 12px; border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.25)); border-radius: 8px; overflow: hidden; }
+    #attachedPanel .apHead { padding: 6px 10px; font-size: 0.72em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.55; border-bottom: 1px solid var(--vscode-input-border, rgba(128,128,128,0.18)); }
+    #attachedPanel #chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 10px; }
     .tkitem { display: flex; align-items: baseline; gap: 8px; padding: 3px 2px; line-height: 1.5; font-size: 0.9em; }
     .tkitem .tkbadge { flex-shrink: 0; font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 4px; background: var(--vscode-badge-background, rgba(128,128,128,0.25)); color: var(--vscode-badge-foreground, var(--vscode-foreground)); }
     .tkitem .tkbadge.anchor { background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 35%, transparent); }

@@ -13,7 +13,6 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     const log = document.getElementById("log");
     const input = document.getElementById("input");
     const chips = document.getElementById("chips");
-    const attached = document.getElementById("attached");
     const addContext = document.getElementById("addContext");
     const modelPicker = document.getElementById("modelPicker");
     const reasoningPicker = document.getElementById("reasoningPicker");
@@ -1563,13 +1562,17 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     // strip above the composer; click an icon to open that panel (one at a time).
     const panelBody = document.getElementById("panelBody");
     const panelTabs = document.getElementById("panelTabs");
-    let activePanel = null;   // "guardrails" | "tasks" | "changed" | null
+    const attachedPanel = document.getElementById("attachedPanel");
+    let activePanel = null;   // "guardrails" | "tasks" | "changed" | "attached" | null
+    // Soft, theme-aware accent per tag type (VS Code chart colors) so each is
+    // distinguishable at a glance; dimmed by the .ptab opacity so they stay gentle.
     function panelDefs() {
         const pending = lastTaskItems.filter((t) => !t.done).length;
         return [
-            { key: "guardrails", icon: "shield", el: guardrailsEl, title: "Guardrails", count: lastGuardrailItems.length, badge: String(lastGuardrailItems.length) },
-            { key: "tasks", icon: "list", el: tasksEl, title: "Tasks", count: lastTaskItems.length, badge: pending + "/" + lastTaskItems.length },
-            { key: "changed", icon: "diff", el: changedFiles, title: "Edited files", count: changedItems.length, badge: String(changedItems.length) },
+            { key: "attached", icon: "file", el: attachedPanel, title: "Attached to context", count: chips.children.length, badge: String(chips.children.length), color: "var(--vscode-charts-orange, #d9a45b)" },
+            { key: "guardrails", icon: "shield", el: guardrailsEl, title: "Guardrails", count: lastGuardrailItems.length, badge: String(lastGuardrailItems.length), color: "var(--vscode-charts-purple, #b180d7)" },
+            { key: "tasks", icon: "list", el: tasksEl, title: "Tasks", count: lastTaskItems.length, badge: pending + "/" + lastTaskItems.length, color: "var(--vscode-charts-blue, #4e9bd6)" },
+            { key: "changed", icon: "diff", el: changedFiles, title: "Edited files", count: changedItems.length, badge: String(changedItems.length), color: "var(--vscode-charts-green, #89c374)" },
         ];
     }
     function refreshPanels() {
@@ -1581,6 +1584,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
             const b = document.createElement("button");
             b.className = "ptab" + (activePanel === d.key ? " active" : "");
             b.title = d.title; b.setAttribute("aria-label", d.title + " (" + d.count + ")");
+            b.style.color = d.color;
             b.appendChild(svgIcon(d.icon));
             const badge = document.createElement("span"); badge.className = "ptBadge"; badge.textContent = d.badge;
             b.appendChild(badge);
@@ -1938,8 +1942,9 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                 renderChips();
             }, false, file.path));
         }
-        // The "Attached" line shows only when something is attached.
-        attached.classList.toggle("has", chips.children.length > 0);
+        // Attached files are a panel tab now — refresh the strip so its count/icon
+        // tracks what's attached.
+        refreshPanels();
     }
 
     // Footer status bar: cwd · backend · permission/mode (like the native bar).

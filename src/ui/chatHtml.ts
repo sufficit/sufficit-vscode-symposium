@@ -76,11 +76,11 @@ ${chatStyles}
             <div id="guardrails"></div>
             <div id="tasks"></div>
             <div id="changedFiles"></div>
+            <div id="attachedPanel"><div class="apHead">Attached to context</div><div id="chips"></div></div>
         </div>
         <div id="panelTabs"></div>
         <div id="composer">
             <div id="slash"></div>
-            <div id="attached"><span class="atLabel">Attached</span><div id="chips"></div></div>
             <textarea id="input" placeholder="Ask the agent…  (Enter sends · Shift+Enter newline)"></textarea>
             <div id="toolbar">
                 <button id="addContext" class="iconBtn" title="Attach files" aria-label="Attach files">
