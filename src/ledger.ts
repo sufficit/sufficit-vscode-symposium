@@ -38,6 +38,13 @@ export interface LedgerMessage {
     at?: string;
     /** Optional turn index (incremented per assistant turn). */
     turn?: number;
+    /**
+     * Event kind for non-message entries. "compaction" marks where the live model
+     * context was summarized: the raw turns above stay in the ledger (lossless),
+     * but the model only sees the summary from here on. Drives the "⊟ compacted
+     * here" divider and lets readers distinguish a fold point from a real message.
+     */
+    kind?: "compaction" | string;
     [k: string]: unknown;
 }
 

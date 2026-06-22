@@ -9,6 +9,7 @@ import {
     HistoryMessage,
     SessionInfo,
     SessionStartOptions,
+    SlashCommand,
 } from "./types";
 import { TODO_INJECTION } from "./todos";
 import { contextWindowFor, diffCounts, editDiff, mimeTypeFor, prettyJson } from "./parse";
@@ -49,6 +50,35 @@ function contentText(content: string | null | ContentPart[]): string {
         return content.filter((p) => p.type === "text").map((p) => (p as { text: string }).text).join("\n");
     }
     return "";
+}
+
+/** True if this session's ledger holds a compaction marker (store is summarized). */
+function ledgerWasCompacted(id: string): boolean {
+    return ledger.readMessages(id).some((m) => m.kind === "compaction");
+}
+
+/**
+ * Reconstructs the LOSSLESS human transcript from the ledger (used after the
+ * store was compacted, so the chat still shows every original turn). Tool entries
+ * render as a simple row; the developer/system scaffolding and compaction markers
+ * are skipped (the marker drives a UI divider, not a message).
+ */
+function historyFromLedger(id: string): HistoryMessage[] {
+    const out: HistoryMessage[] = [];
+    for (const m of ledger.readMessages(id)) {
+        if (m.kind === "compaction") { continue; }
+        const role = String(m.role ?? "");
+        const text = contentText(m.content as string | null | ContentPart[]);
+        if (!text) { continue; }
+        if (role === "user") { out.push({ role: "user", text }); }
+        else if (role === "assistant") { out.push({ role: "assistant", text }); }
+        else if (role === "tool") {
+            const name = String(m.name ?? "tool");
+            out.push({ role: "tool", text: name, toolName: name, detail: String(m.detail ?? ""), result: text });
+        }
+        // developer/system scaffolding intentionally skipped
+    }
+    return out;
 }
 
 interface StoredSession {
@@ -103,6 +133,8 @@ export interface OpenAIAdapterConfig {
     maxToolHops?: number;
     /** Stop the turn after N tool steps with no assistant reply; 0/undefined = off. */
     noProgressStop?: number;
+    /** Auto-compact the context when a prompt reaches this fraction of the window (0 = off). */
+    autoCompactAt?: number;
     /**
      * Sliding window: max conversation messages sent per request.
      * System/developer prefix and the first user turn are always preserved.
@@ -172,6 +204,10 @@ class OpenAISession extends EventEmitter implements AgentSession {
     // windowed request so the model can't lose the thread mid tool-loop.
     private objective = "";
     private progress: string[] = [];
+    // Compaction state: last reported prompt size (for the auto-compact threshold)
+    // and a guard so two compactions never overlap.
+    private lastInputTokens = 0;
+    private compacting = false;
 
     constructor(
         readonly backend: string,
@@ -323,6 +359,130 @@ class OpenAISession extends EventEmitter implements AgentSession {
         return { role, content: lines.join("\n") };
     }
 
+    /** Auto-compaction: fold the context when the last prompt crossed the
+     *  configured fraction of the window. Lazy (runs after turn-end). */
+    private maybeAutoCompact(): void {
+        const at = this.cfg.autoCompactAt ?? 0;
+        if (at <= 0 || this.compacting) { return; }
+        const win = this.contextWindow();
+        if (!win || !this.lastInputTokens) { return; }
+        if (this.lastInputTokens / win >= at) { void this.compact("auto"); }
+    }
+
+    /**
+     * Summarize the middle of the conversation into ONE synthetic message and
+     * rewrite this.messages = prefix + summary + verbatim tail. The raw turns
+     * stay in the ledger (lossless), tool results become pointers (recover via
+     * read_session), and a `kind:"compaction"` marker is committed. Fail-safe:
+     * any error leaves the context untouched (windowing still applies).
+     */
+    private async compact(reason: "manual" | "auto"): Promise<void> {
+        if (this.compacting) { return; }
+        this.compacting = true;
+        const note = (t: string) => this.emit("event", { kind: "text", text: `\n_(${t})_\n` });
+        try {
+            const keepTurns = 6;
+            const firstUserIdx = this.messages.findIndex((m) => m.role === "user");
+            if (firstUserIdx === -1) {
+                if (reason === "manual") { note("nothing to compact yet"); }
+                return;
+            }
+            let prefix = this.messages.slice(0, firstUserIdx);
+            const conv = this.messages.slice(firstUserIdx);
+            if (conv.length <= keepTurns + 2) {
+                if (reason === "manual") { note("conversation is short — nothing to compact yet"); }
+                return;
+            }
+            // Idempotent: a prior summary lives in the prefix region (developer/
+            // system, before the first user msg). Pull it out and re-fold it into
+            // the new summary instead of letting summaries stack.
+            const priorIdx = prefix.findIndex((m) => typeof m.content === "string" && m.content.startsWith("[Summary so far"));
+            let prior: ChatMessage[] = [];
+            if (priorIdx >= 0) { prior = prefix.slice(priorIdx); prefix = prefix.slice(0, priorIdx); }
+            const tail = conv.slice(conv.length - keepTurns);
+            const middle = [...prior, ...conv.slice(0, conv.length - keepTurns)];
+            const summary = await this.summarizeMessages(middle);
+            if (!summary) {
+                if (reason === "manual") { note("compaction failed (summary unavailable) — keeping full context"); }
+                return;   // fail-safe
+            }
+            const role = this.cfg.supportsDeveloperRole !== false ? "developer" : "system";
+            const synthetic: ChatMessage = {
+                role,
+                content: `[Summary so far — the earlier conversation was compacted to save context. The full transcript is preserved; call read_session to recover any detail (e.g. a tool's full output).]\n\n${summary}`,
+            };
+            const folded = middle.length;
+            this.messages.length = 0;
+            this.messages.push(...prefix, synthetic, ...tail);
+            // Ledger marker (raw middle already committed by prior turns) + commit.
+            ledger.appendMessage(this.sessionId, {
+                role: "system", kind: "compaction", content: summary, turn: this.turnNo,
+                summarizedCount: folded, keptTail: keepTurns, summary,
+            });
+            void ledger.commitTurn(this.sessionId, `compact — folded ${folded} msgs (${reason}, model=${this.model()})`);
+            this.safePersist();
+            note(`compacted ${folded} messages — context shrunk; full history preserved (read_session to recover)`);
+        } finally {
+            this.compacting = false;
+            // A manual /compact is its own "turn" from the controller's view — close
+            // it so the composer returns to idle. Auto runs after turn-end already.
+            if (reason === "manual") { this.emit("event", { kind: "turn-end" }); }
+        }
+    }
+
+    /** One-shot, non-streaming summarization call (no tools, no UI streaming). */
+    private async summarizeMessages(messages: ChatMessage[]): Promise<string> {
+        try {
+            const loginToken = await this.authToken();
+            const responses = this.cfg.api === "responses";
+            const url = this.cfg.baseUrl.replace(/\/+$/, "") + (responses ? "/responses" : "/chat/completions");
+            const instruction =
+                "You are compacting a long agent conversation so it fits a smaller context window. " +
+                "Summarize the transcript below, PRESERVING: decisions made, concrete facts, file paths touched, open tasks/todos, user constraints, and the current state. Drop chatter and resolved detours. " +
+                "For tool calls keep only a one-line POINTER (e.g. 'ran shell: git status', 'edited Foo.cs') WITHOUT the tool output — the full output is recoverable via read_session. " +
+                "Write a dense markdown summary (≤ ~1500 tokens) that lets the agent resume from this note alone.";
+            const sys = this.cfg.supportsDeveloperRole !== false ? "developer" : "system";
+            const reqMessages: ChatMessage[] = [
+                { role: sys as ChatMessage["role"], content: instruction },
+                { role: "user", content: this.renderForSummary(messages) },
+            ];
+            const body = responses
+                ? { model: this.model(), input: toResponsesInput(reqMessages), stream: false }
+                : { model: this.model(), messages: reqMessages, stream: false };
+            const res = await fetch(url, { method: "POST", headers: this.headers(loginToken), body: JSON.stringify(body) });
+            if (!res.ok) { return ""; }
+            const json: any = await res.json();
+            if (responses) {
+                if (typeof json.output_text === "string" && json.output_text.trim()) { return json.output_text.trim(); }
+                const parts: string[] = [];
+                for (const item of json.output ?? []) {
+                    for (const c of item.content ?? []) { if (typeof c.text === "string") { parts.push(c.text); } }
+                }
+                return parts.join("").trim();
+            }
+            return String(json?.choices?.[0]?.message?.content ?? "").trim();
+        } catch {
+            return "";
+        }
+    }
+
+    /** Flattens messages to plain text for the summarizer (tool output trimmed). */
+    private renderForSummary(messages: ChatMessage[]): string {
+        const out: string[] = [];
+        for (const m of messages) {
+            const c = contentText(m.content);
+            if (m.role === "tool") {
+                out.push(`[tool result${m.name ? " " + m.name : ""}] ${c.slice(0, 400)}`);
+            } else if (m.role === "assistant") {
+                const calls = (m.tool_calls ?? []).map((t) => `${t.function.name}(${(t.function.arguments || "").slice(0, 80)})`).join(", ");
+                out.push(`[assistant] ${c}${calls ? "\n  tools: " + calls : ""}`);
+            } else {
+                out.push(`[${m.role}] ${c}`);
+            }
+        }
+        return out.join("\n");
+    }
+
     private headers(loginToken?: string | null): Record<string, string> {
         const h: Record<string, string> = { "content-type": "application/json", ...this.cfg.headers };
         if (this.cfg.clientInfo) {
@@ -396,7 +556,18 @@ class OpenAISession extends EventEmitter implements AgentSession {
         }
     }
 
+    /** Append one entry to the lossless ledger for the current turn (best-effort). */
+    private led(role: string, content: unknown, extra?: Record<string, unknown>): void {
+        ledger.appendMessage(this.sessionId, { role, content, turn: this.turnNo, ...extra });
+    }
+
     send(text: string, images?: string[], preamble?: string[]): void {
+        // Intercept /compact: a local command (summarize the conversation to shrink
+        // the model context), NOT a user turn to ship to the gateway.
+        if (text.trim().toLowerCase() === "/compact") {
+            void this.compact("manual");
+            return;
+        }
         // One-shot app instructions (todo capability, autonomy, policy) go in as
         // `developer` messages — above the user turn, below the preset's system —
         // instead of being glued onto the user text. Downgraded to `system` for
@@ -490,6 +661,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
 
     private async run(): Promise<void> {
         this.abort = new AbortController();
+        this.turnNo++;   // each run() is one conversation turn (ledger turn index)
         const responses = this.cfg.api === "responses";
         const base = this.cfg.baseUrl.replace(/\/+$/, "");
         const url = base + (responses ? "/responses" : "/chat/completions");
@@ -575,6 +747,9 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     else { body.reasoning_effort = effort; }
                 }
                 this.cfg.log?.(`[${this.backend}] POST ${url} api=${this.cfg.api} model=${this.model()} tools=${toolList.length} hop=${hop}`);
+                // Ledger audit: record the LITERAL request body (truth of what the
+                // LLM received this hop) — feeds the "Request" inspection view.
+                ledger.recordRequest(this.sessionId, body);
                 const res = await fetch(url, {
                     method: "POST", headers: this.headers(loginToken), body: JSON.stringify(body), signal: this.abort.signal,
                 });
@@ -591,6 +766,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 // is the prompt size = the live context the model just saw, so the
                 // meter tracks "context used / window" like the CLI backends.
                 if (usage && (usage.inputTokens || usage.outputTokens)) {
+                    this.lastInputTokens = usage.inputTokens || this.lastInputTokens;
                     this.emit("event", {
                         kind: "usage",
                         inputTokens: usage.inputTokens,
@@ -606,12 +782,14 @@ class OpenAISession extends EventEmitter implements AgentSession {
                 if (aborted) {
                     if (toolCalls.length > 0) {
                         this.messages.push({ role: "assistant", content: text || null, tool_calls: toolCalls });
+                        if (text) { this.led("assistant", text); }
                         // Satisfy the API contract: every tool_call needs a tool reply.
                         for (const tc of toolCalls) {
                             this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: "(interrupted before execution)" });
                         }
                     } else if (text) {
                         this.messages.push({ role: "assistant", content: text, model: this.model() });
+                        this.led("assistant", text);
                     }
                     hitCap = false;
                     break;
@@ -623,6 +801,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
                     // a dangling user/developer turn; Anthropic-backed gateways then
                     // 400 on the next message because roles no longer alternate.
                     this.messages.push({ role: "assistant", content: text || "", model: this.model() });
+                    if (text) { this.led("assistant", text); }
                     hitCap = false;
                     break;
                 }
@@ -644,6 +823,7 @@ class OpenAISession extends EventEmitter implements AgentSession {
 
                 // Record the assistant turn that requested tools, then run each.
                 this.messages.push({ role: "assistant", content: text || null, tool_calls: toolCalls });
+                if (text) { this.led("assistant", text); }
                 // Persist mid-turn: a window reload restarts the extension host
                 // and wipes the in-memory render log, so only what's on disk
                 // survives. Without this, reloading while tools run loses the
@@ -692,6 +872,9 @@ class OpenAISession extends EventEmitter implements AgentSession {
                         : await runAiTool(tc.function.name, args, { hub: this.hub, cwd: this.options.cwd, permission: this.options.permission, sessionId: this.sessionId, shellExecution: shellMode, progress });
                     this.emit("event", { kind: "tool-end", toolName: tc.function.name, toolId: tc.id, result });
                     this.messages.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: result });
+                    // Ledger (lossless): record the tool call + its result so the full
+                    // transcript and read_session survive context compaction.
+                    this.led("tool", result, { name: tc.function.name, detail: friendlyToolDetail(tc.function.name, args) });
                     // Feed the continuous-follow-up digest (one compact line per step).
                     const step = friendlyToolDetail(tc.function.name, args);
                     this.progress.push((tc.function.name + (step ? " — " + step : "")).slice(0, 110));
@@ -714,6 +897,12 @@ class OpenAISession extends EventEmitter implements AgentSession {
             }
         }
         this.safePersist();
+        // One immutable ledger commit per turn — the lossless snapshot the Chat
+        // mirror and read_session read from, and the safety net under /compact.
+        void ledger.commitTurn(this.sessionId, `turn ${this.turnNo} — user→assistant (model=${this.model()})`);
+        // Auto-compaction: if the context crossed the threshold this turn, fold it
+        // before the next send (lazy, so it never delays this turn-end).
+        this.maybeAutoCompact();
         this.emit("event", { kind: "turn-end" });
     }
 
@@ -910,6 +1099,12 @@ export class OpenAIAdapter implements AgentAdapter {
     }
 
     async history(info: SessionInfo): Promise<HistoryMessage[]> {
+        // Compacted sessions: the store holds only the summarized model context.
+        // The lossless human transcript lives in the ledger — show that so the
+        // chat still mirrors the full conversation (the model sees the summary).
+        if (ledger.hasLedger(info.sessionId) && ledgerWasCompacted(info.sessionId)) {
+            return historyFromLedger(info.sessionId);
+        }
         const s = readStored(this.backend, info.sessionId);
         if (!s) { return []; }
         const labels = discoveredLabels.get(this.getConfig().baseUrl) ?? {};
@@ -962,6 +1157,13 @@ export class OpenAIAdapter implements AgentAdapter {
 
     /** API backend: takes one-shot app instructions as developer messages. */
     roleAware(): boolean { return true; }
+
+    /** Slash commands offered for this backend. `/compact` is intercepted locally
+     *  (summarize + shrink the model context); it also re-enables the context
+     *  popover's "Compact Conversation" button (gated on a `compact` command). */
+    async commands(): Promise<SlashCommand[]> {
+        return [{ name: "compact", description: "Summarize older turns to shrink the model context (full history is preserved)", kind: "builtin" }];
+    }
 
     /**
      * Accept inlined images (vision): attached/pasted images are sent as

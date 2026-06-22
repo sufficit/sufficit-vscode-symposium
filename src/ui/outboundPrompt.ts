@@ -52,6 +52,11 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
     asRoles?: boolean;
 }
 
+export const AGENT_ROLE_PREAMBLE =
+    "[Role] You are a hands-on engineering agent with full access to edit files and run the tools in this workspace. " +
+    "Carry each request through end-to-end: investigate, decide, make the changes, and run the tools needed to finish. " +
+    "When a plan helps, state it briefly and then implement it in the same turn, continuing until the task is done or you genuinely need the user's input.";
+
 export const CANCELED_RETRY_PREAMBLE =
     "[Operational rule] If any tool, command or step returns a status/error containing \"canceled\" or \"cancelled\", do not immediately retry. " +
     "First inspect the tool's own message/output and classify whether it was a manual user cancellation, a timeout, a deterministic error, or a transient issue. " +
@@ -117,6 +122,7 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
         );
     }
     if (!state.policyInjected) {
+        prefixes.push(AGENT_ROLE_PREAMBLE);
         prefixes.push(CANCELED_RETRY_PREAMBLE);
         state.policyInjected = true;
     }

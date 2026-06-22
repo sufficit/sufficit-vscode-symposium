@@ -707,6 +707,26 @@ export const chatStyles = `    body {
     #guardrails .gritem .grtext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #guardrails .gritem .grdel { flex-shrink: 0; background: none; border: none; cursor: pointer; opacity: 0.5; color: var(--vscode-foreground); font-size: 0.85em; padding: 0 2px; }
     #guardrails .gritem .grdel:hover { opacity: 1; color: var(--vscode-errorForeground, #f14c4c); }
+    /* ---- panel tabs: guardrails / tasks / edited-files behind an icon strip ---- */
+    #guardrails { margin: 0 12px 8px 12px; }
+    #panelBody { display: none; }
+    #panelBody.has { display: block; margin-top: 14px; }
+    #panelTabs { display: none; gap: 6px; padding: 5px 12px; align-items: center; }
+    #panelTabs.has { display: flex; }
+    .ptab {
+        display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 6px; cursor: pointer;
+        background: transparent; border: 1px solid transparent; color: var(--vscode-foreground); opacity: 0.75;
+        font-size: 0.82em; transition: background 150ms ease, opacity 150ms ease;
+    }
+    .ptab:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
+    .ptab.active { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); border-color: var(--vscode-focusBorder, #0078d4); }
+    .ptab svg { width: 14px; height: 14px; flex-shrink: 0; }
+    .ptab .ptBadge { font-variant-numeric: tabular-nums; opacity: 0.85; font-size: 0.95em; }
+    /* "Attached" line above the textarea */
+    #attached { display: none; align-items: center; gap: 8px; padding: 2px 2px 4px; }
+    #attached.has { display: flex; }
+    #attached .atLabel { flex-shrink: 0; font-size: 0.66em; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.5; font-weight: 700; }
+    #attached #chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
     .tkitem { display: flex; align-items: baseline; gap: 8px; padding: 3px 2px; line-height: 1.5; font-size: 0.9em; }
     .tkitem .tkbadge { flex-shrink: 0; font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 4px; background: var(--vscode-badge-background, rgba(128,128,128,0.25)); color: var(--vscode-badge-foreground, var(--vscode-foreground)); }
     .tkitem .tkbadge.anchor { background: color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 35%, transparent); }
@@ -1092,6 +1112,13 @@ export const chatStyles = `    body {
         transition: background 150ms ease;
     }
     .usagePop .uCompact:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.3)); }
+    .usagePop .uInspect { display: flex; gap: 6px; margin-top: 10px; }
+    .usagePop .uInspectBtn {
+        flex: 1; padding: 5px 6px; cursor: pointer; border-radius: 5px; font-size: 0.8em;
+        background: transparent; color: var(--vscode-textLink-foreground, inherit);
+        border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3)); transition: background 150ms ease;
+    }
+    .usagePop .uInspectBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.15)); }
 
     /* ---- sessions pane resizer ---- */
     #resizer {

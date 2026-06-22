@@ -13,6 +13,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     const log = document.getElementById("log");
     const input = document.getElementById("input");
     const chips = document.getElementById("chips");
+    const attached = document.getElementById("attached");
     const addContext = document.getElementById("addContext");
     const modelPicker = document.getElementById("modelPicker");
     const reasoningPicker = document.getElementById("reasoningPicker");
@@ -1350,7 +1351,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         lastTaskItems = items || [];
         lastTaskProject = project || "";
         tasksEl.textContent = "";
-        if (!items || !items.length) { tasksEl.classList.remove("has"); taskPrevDone.clear(); return; }
+        if (!items || !items.length) { tasksEl.classList.remove("has"); taskPrevDone.clear(); refreshPanels(); return; }
         // A task that just became done lingers with a completion animation for
         // ~5s (time to notice), then drops from the pending view on re-render.
         for (const it of items) {
@@ -1381,12 +1382,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         const refresh = document.createElement("button"); refresh.className = "tkbtn"; refresh.title = "Refresh from memory";
         refresh.appendChild(svgIcon("refresh"));
         refresh.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "refresh-tasks" }); });
-        const chev = svgIcon("chevron"); chev.classList.add("tkchev");
-        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(filterBtn); head.appendChild(refresh); head.appendChild(chev);
-        head.addEventListener("click", () => {
-            tasksCollapsed = !tasksCollapsed;
-            tasksEl.classList.toggle("collapsed", tasksCollapsed);
-        });
+        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(filterBtn); head.appendChild(refresh);
         card.appendChild(head);
         const list = document.createElement("div"); list.className = "tklist";
         for (const it of visible) {
@@ -1411,33 +1407,30 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         card.appendChild(list);
         tasksEl.appendChild(card);
         tasksEl.classList.add("has");
-        tasksEl.classList.toggle("collapsed", tasksCollapsed);
+        refreshPanels();
     }
 
-    // ---- guardrails (user-defined absolute rules, sent every message) ----
+    // ---- guardrails (agent-defined absolute rules, sent every message) ----
     const guardrailsEl = document.getElementById("guardrails");
-    let guardrailsCollapsed = false;
+    let lastGuardrailItems = [];
     function renderGuardrails(items) {
+        lastGuardrailItems = items || [];
         guardrailsEl.textContent = "";
-        // Hidden when empty (like the tasks/changed-files panels). Only the agent
-        // adds guardrails (via the add_guardrail tool); the user can remove/clear.
-        if (!(items || []).length) { guardrailsEl.classList.remove("has"); return; }
+        if (!lastGuardrailItems.length) { guardrailsEl.classList.remove("has"); refreshPanels(); return; }
         const card = document.createElement("div"); card.className = "grcard";
         const head = document.createElement("div"); head.className = "grhead";
         head.appendChild(svgIcon("shield"));
         const ttl = document.createElement("span"); ttl.className = "grtitle"; ttl.textContent = "Guardrails";
         ttl.title = "Absolute rules the agent set for this session, sent on every message. The agent adds them; you can remove or clear them.";
-        const cnt = document.createElement("span"); cnt.className = "grcount"; cnt.textContent = String((items || []).length);
+        const cnt = document.createElement("span"); cnt.className = "grcount"; cnt.textContent = String(lastGuardrailItems.length);
         const clear = document.createElement("button"); clear.className = "grbtn"; clear.title = "Clear all guardrails";
         clear.setAttribute("aria-label", "Clear all guardrails");
         clear.appendChild(svgIcon("trash"));
-        clear.addEventListener("click", (e) => { e.stopPropagation(); if ((items || []).length) { vscode.postMessage({ type: "clear-guardrails" }); } });
-        const chev = svgIcon("chevron"); chev.classList.add("grchev");
-        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(clear); head.appendChild(chev);
-        head.addEventListener("click", () => { guardrailsCollapsed = !guardrailsCollapsed; guardrailsEl.classList.toggle("collapsed", guardrailsCollapsed); });
+        clear.addEventListener("click", (e) => { e.stopPropagation(); if (lastGuardrailItems.length) { vscode.postMessage({ type: "clear-guardrails" }); } });
+        head.appendChild(ttl); head.appendChild(cnt); head.appendChild(clear);
         card.appendChild(head);
         const list = document.createElement("div"); list.className = "grlist";
-        for (const it of (items || [])) {
+        for (const it of lastGuardrailItems) {
             const row = document.createElement("div"); row.className = "gritem";
             const txt = document.createElement("span"); txt.className = "grtext"; txt.textContent = it.text; txt.title = it.text;
             const del = document.createElement("button"); del.className = "grdel"; del.title = "Remove"; del.textContent = "✕";
@@ -1448,7 +1441,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         card.appendChild(list);
         guardrailsEl.appendChild(card);
         guardrailsEl.classList.add("has");
-        guardrailsEl.classList.toggle("collapsed", guardrailsCollapsed);
+        refreshPanels();
     }
 
     // ---- queued messages (editable until dispatched) ----
@@ -1530,17 +1523,15 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
     function renderChangedFiles() {
         const items = changedItems;
         changedFiles.textContent = "";
-        if (!items.length) { changedFiles.classList.remove("has"); return; }
+        if (!items.length) { changedFiles.classList.remove("has"); refreshPanels(); return; }
         changedFiles.classList.add("has");
         const head = document.createElement("div"); head.className = "cfhead";
-        const chev = svgIcon("chevron"); chev.classList.add("cfchev");
         const ttl = document.createElement("span"); ttl.className = "cftitle"; ttl.textContent = "Edited files (" + items.length + ")";
-        head.appendChild(chev); head.appendChild(ttl);
+        head.appendChild(ttl);
         const acts = document.createElement("span"); acts.className = "cfheadActs";
         acts.appendChild(cfLabelBtn("check", "Approve all", "Accept all (git add)", "ok", () => vscode.postMessage({ type: "file-approve-all" })));
         acts.appendChild(cfLabelBtn("x", "Reject all", "Revert all to pre-edit state", "no", () => vscode.postMessage({ type: "file-reject-all" })));
         head.appendChild(acts);
-        head.addEventListener("click", () => changedFiles.classList.toggle("collapsed"));
         const list = document.createElement("div"); list.className = "cflist";
         for (const c of items) {
             const p = c.path;
@@ -1566,6 +1557,39 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
             list.appendChild(it);
         }
         changedFiles.appendChild(head); changedFiles.appendChild(list);
+        refreshPanels();
+    }
+    // ---- panel tabs: guardrails / tasks / edited-files collapse into an icon
+    // strip above the composer; click an icon to open that panel (one at a time).
+    const panelBody = document.getElementById("panelBody");
+    const panelTabs = document.getElementById("panelTabs");
+    let activePanel = null;   // "guardrails" | "tasks" | "changed" | null
+    function panelDefs() {
+        const pending = lastTaskItems.filter((t) => !t.done).length;
+        return [
+            { key: "guardrails", icon: "shield", el: guardrailsEl, title: "Guardrails", count: lastGuardrailItems.length, badge: String(lastGuardrailItems.length) },
+            { key: "tasks", icon: "list", el: tasksEl, title: "Tasks", count: lastTaskItems.length, badge: pending + "/" + lastTaskItems.length },
+            { key: "changed", icon: "diff", el: changedFiles, title: "Edited files", count: changedItems.length, badge: String(changedItems.length) },
+        ];
+    }
+    function refreshPanels() {
+        const defs = panelDefs();
+        const shown = defs.filter((d) => d.count > 0);
+        if (activePanel && !shown.some((d) => d.key === activePanel)) { activePanel = null; }
+        panelTabs.textContent = "";
+        for (const d of shown) {
+            const b = document.createElement("button");
+            b.className = "ptab" + (activePanel === d.key ? " active" : "");
+            b.title = d.title; b.setAttribute("aria-label", d.title + " (" + d.count + ")");
+            b.appendChild(svgIcon(d.icon));
+            const badge = document.createElement("span"); badge.className = "ptBadge"; badge.textContent = d.badge;
+            b.appendChild(badge);
+            b.addEventListener("click", () => { activePanel = activePanel === d.key ? null : d.key; refreshPanels(); });
+            panelTabs.appendChild(b);
+        }
+        panelTabs.classList.toggle("has", shown.length > 0);
+        for (const d of defs) { d.el.style.display = (d.count > 0 && activePanel === d.key) ? "" : "none"; }
+        panelBody.classList.toggle("has", activePanel != null && shown.some((d) => d.key === activePanel));
     }
     function resetWorkingState() {
         // clear arrives before meta; the controller re-sends changed-files on
@@ -1578,6 +1602,7 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         planEl.classList.remove("has");
         queuedEl.textContent = "";
         queuedEl.classList.remove("has");
+        refreshPanels();
     }
 
     // Per-session actions, shown as hover icons on the right and in the
@@ -1913,6 +1938,8 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
                 renderChips();
             }, false, file.path));
         }
+        // The "Attached" line shows only when something is attached.
+        attached.classList.toggle("has", chips.children.length > 0);
     }
 
     // Footer status bar: cwd · backend · permission/mode (like the native bar).
@@ -2013,6 +2040,18 @@ export const chatClientJs = `    window.addEventListener("error", (e) => {
         if (lastTurn.costUsd) { box.appendChild(row("Cost", "$" + lastTurn.costUsd.toFixed(4))); }
         if (lastTurn.durationMs) { box.appendChild(row("Time", (lastTurn.durationMs / 1000).toFixed(1) + "s")); }
         if (sessionCostUsd > 0) { box.appendChild(row("Session cost", "$" + sessionCostUsd.toFixed(4))); }
+
+        // Inspect (analysis): open the compact model context and the literal last
+        // request as read-only editor tabs. The full transcript stays on screen.
+        const insp = document.createElement("div"); insp.className = "uInspect";
+        const mkInspect = (label, target, title) => {
+            const b = document.createElement("button"); b.className = "uInspectBtn"; b.textContent = label; b.title = title;
+            b.addEventListener("click", () => { hideCtx(); vscode.postMessage({ type: "inspect", target: target }); });
+            return b;
+        };
+        insp.appendChild(mkInspect("Model context", "context", "Open exactly what the model receives now (compact)"));
+        insp.appendChild(mkInspect("Last request", "request", "Open the literal last request body sent to the gateway"));
+        box.appendChild(insp);
 
         // Only offer Compact when the active backend advertises it (claude/codex/
         // copilot). The native API backends have no /compact — they auto-window

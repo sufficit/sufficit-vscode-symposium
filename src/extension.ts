@@ -176,6 +176,7 @@ function openaiConfig(context: vscode.ExtensionContext): OpenAIAdapterConfig {
         apiKey: config.get<string>("apiKey", "") || vscode.workspace.getConfiguration("symposium.hub").get<string>("token", ""),
         maxToolHops: config.get<number>("maxToolHops", 50),
         noProgressStop: config.get<number>("noProgressStop", 0),
+        autoCompactAt: config.get<number>("autoCompactAt", 0.8),
         shellExecution: config.get<any>("shellExecution", "silent"),
         log: symposiumLog,
     };
@@ -231,6 +232,7 @@ function buildCustomAdapters(context: vscode.ExtensionContext, defs: CustomAdapt
                 supportsDeveloperRole: e.supportsDeveloperRole ?? false,
                 maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
                 noProgressStop: vscode.workspace.getConfiguration("symposium.openai").get<number>("noProgressStop", 0),
+                autoCompactAt: vscode.workspace.getConfiguration("symposium.openai").get<number>("autoCompactAt", 0.8),
                 shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<any>("shellExecution", "silent"),
                 log: symposiumLog,
             };

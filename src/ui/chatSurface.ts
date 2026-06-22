@@ -11,6 +11,7 @@ import { TerminalSession } from "./terminalSession";
 import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
 import { approveChange, changedFilesWithCounts, gitRoot, headContent, rejectChange } from "../git";
+import { ledgerDir } from "../ledger";
 import { snapshots } from "../snapshots";
 import { HubClient } from "../sync/hubClient";
 import { readWorkspaceBootstrap } from "../config/root";
@@ -232,6 +233,35 @@ export class ChatSurface {
             } catch { items = []; }
         }
         this.post({ type: "tasks", items, project: sessionId });
+    }
+
+    /**
+     * Opens an inspection view as a read-only editor tab: the compact model
+     * context (the per-backend store = exactly what the LLM receives now) or the
+     * literal last request body (ledger/request-last.json). The on-screen chat
+     * stays the full transcript; these are for analysis of the compacted side.
+     */
+    private async openInspectView(target: "context" | "request"): Promise<void> {
+        const id = this.controller?.sessionId;
+        if (!id) { void vscode.window.showInformationMessage("Open and use a session first."); return; }
+        let file: string | undefined;
+        if (target === "request") {
+            file = path.join(ledgerDir(id), "request-last.json");
+        } else {
+            const root = path.join(os.homedir(), ".symposium", "sessions");
+            try {
+                for (const backend of fs.readdirSync(root)) {
+                    const f = path.join(root, backend, id + ".json");
+                    if (fs.existsSync(f)) { file = f; break; }
+                }
+            } catch { /* no store */ }
+        }
+        if (!file || !fs.existsSync(file)) {
+            void vscode.window.showInformationMessage(
+                "Nothing to inspect yet — send a message first (Sufficit AI / OpenAI backend only).");
+            return;
+        }
+        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(file), { preview: false });
     }
 
     /** Pushes the session's user guardrails to the panel. */
@@ -473,6 +503,10 @@ export class ChatSurface {
                 }
                 case "open-settings": {
                     await vscode.commands.executeCommand("symposium.openSettings");
+                    return;
+                }
+                case "inspect": {
+                    await this.openInspectView(message.target);
                     return;
                 }
                 case "open-file": {

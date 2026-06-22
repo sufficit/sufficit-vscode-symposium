@@ -72,6 +72,7 @@ export type WebviewToHost =
     | { type: "switch-backend"; backend: string }
     | { type: "restart-from-message"; index: number }
     | { type: "open-settings" }
+    | { type: "inspect"; target: "context" | "request" }
     | { type: "open-file"; path: string }
     | { type: "reorder-pinned"; ids?: string[] }
     | { type: "file-diff"; path: string }

@@ -71,13 +71,16 @@ ${chatStyles}
             <button id="scrollBottom" title="Go to the bottom" aria-label="Go to the bottom"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z"/></svg></button>
         </div>
         <div id="queued"></div>
-        <div id="guardrails"></div>
-        <div id="tasks"></div>
         <div id="plan"></div>
-        <div id="changedFiles"></div>
+        <div id="panelBody">
+            <div id="guardrails"></div>
+            <div id="tasks"></div>
+            <div id="changedFiles"></div>
+        </div>
+        <div id="panelTabs"></div>
         <div id="composer">
             <div id="slash"></div>
-            <div id="chips"></div>
+            <div id="attached"><span class="atLabel">Attached</span><div id="chips"></div></div>
             <textarea id="input" placeholder="Ask the agent…  (Enter sends · Shift+Enter newline)"></textarea>
             <div id="toolbar">
                 <button id="addContext" class="iconBtn" title="Attach files" aria-label="Attach files">
