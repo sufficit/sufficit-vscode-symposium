@@ -2,16 +2,16 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { AgentAdapter, FollowHandle, HistoryMessage, SessionInfo, SessionStartOptions } from "../adapters/types";
+import { AgentAdapter, FollowHandle, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "./chatController";
 import { WebviewToHost } from "./protocol";
 import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
 import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
-import { approveChange, changedFilesWithCounts, gitRoot, headContent, rejectChange } from "../git";
 import { ledgerDir } from "../ledger";
-import { snapshots } from "../snapshots";
+import { ChangedFilesManager } from "./changedFiles";
+import { BackendHandoff } from "./backendHandoff";
 import { HubClient } from "../sync/hubClient";
 import { readWorkspaceBootstrap } from "../config/root";
 import { probeRtk } from "../adapters/rtk";
@@ -21,7 +21,6 @@ import {
     activeEditorContext,
     attachmentFromUri,
     isSimpleBrowserOpen,
-    repoCwd,
     writeDroppedFile,
     writePastedImage,
 } from "./chatSurfaceContext";
@@ -63,10 +62,10 @@ export class ChatSurface {
     private ready = false;
     private loggedIn = false;   // cached Sufficit login state (for system hints)
     private queue: unknown[] = [];
-    private gitWatcher: vscode.FileSystemWatcher | undefined;
-    private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
     private readonly disposables: vscode.Disposable[] = [];
+    private readonly changedFiles = new ChangedFilesManager({ post: (m) => this.post(m), getCwd: () => this.cwd(), getSid: () => this.sid(), resolveChanged: (p) => this.controller?.resolveChanged(p), getRawItems: () => this.controller?.changedItemsRaw() ?? [] }, this.disposables);
+    private readonly handoff = new BackendHandoff({ getAdapter: (b) => this.deps.adapterByBackend.get(b), listSessions: () => this.deps.listSessions(), cwdFor: (i) => this.deps.cwdFor(i), openDialogue: (b, o, t) => this.openDialogue(b, o, t), post: (m) => this.post(m), getController: () => this.controller, getTerminalSession: () => this.terminalSession });
 
     constructor(
         private readonly webview: vscode.Webview,
@@ -398,9 +397,9 @@ export class ChatSurface {
                         // A terminal session has no ChatController transcript, so
                         // its handoff reads the CLI transcript instead.
                         if (this.terminalSession && !this.controller) {
-                            await this.switchBackendFromTerminal(message.backend);
+                            await this.handoff.fromTerminal(message.backend);
                         } else {
-                            this.switchBackend(message.backend);
+                            this.handoff.switch(message.backend);
                         }
                     }
                     return;
@@ -432,28 +431,28 @@ export class ChatSurface {
                     return;
                 }
                 case "file-diff": {
-                    await this.openFileDiff(message.path);
+                    await this.changedFiles.openDiff(message.path);
                     return;
                 }
                 case "file-approve": {
                     if (typeof message.path === "string") {
-                        await this.approveFile(message.path);
-                        this.refreshChangedNow();
+                        await this.changedFiles.approve(message.path);
+                        this.changedFiles.refreshNow();
                     }
                     return;
                 }
                 case "file-reject": {
                     if (typeof message.path === "string") {
-                        if (await this.rejectFile(message.path)) { this.controller?.resolveChanged(message.path); }
+                        if (await this.changedFiles.reject(message.path)) { this.controller?.resolveChanged(message.path); }
                         else { void vscode.window.showWarningMessage("Could not revert " + message.path); }
                     }
                     return;
                 }
                 case "file-approve-all": {
                     for (const p of this.controller?.changedPaths() ?? []) {
-                        await this.approveFile(p);
+                        await this.changedFiles.approve(p);
                     }
-                    this.refreshChangedNow();
+                    this.changedFiles.refreshNow();
                     return;
                 }
                 case "file-reject-all": {
@@ -464,7 +463,7 @@ export class ChatSurface {
                         { modal: true }, "Revert");
                     if (pick !== "Revert") { return; }
                     for (const p of paths) {
-                        if (await this.rejectFile(p)) { this.controller?.resolveChanged(p); }
+                        if (await this.changedFiles.reject(p)) { this.controller?.resolveChanged(p); }
                     }
                     return;
                 }
@@ -508,7 +507,7 @@ export class ChatSurface {
                         typeof message.backend === "string" &&
                         typeof message.targetBackend === "string"
                     ) {
-                        await this.switchBackendForSession(
+                        await this.handoff.forSession(
                             message.sessionId,
                             message.backend,
                             message.targetBackend,
@@ -675,38 +674,6 @@ export class ChatSurface {
      * it reads as one continuous dialogue. The original session keeps running
      * in the background (it is only detached), so it can be reopened later.
      */
-    switchBackend(backend: string): void {
-        const from = this.controller;
-        if (!from || from.backend === backend) {
-            return;
-        }
-        const target = this.deps.adapterByBackend.get(backend);
-        if (!target) {
-            return;
-        }
-        const fromName = (this.deps.adapterByBackend.get(from.backend) as any)?.displayName ?? from.backend;
-        const transcript = from.transcript();
-        const title = from.title;
-        const cwd = from.cwd;
-
-        const seedHistory = transcript
-            ? `[Conversation handed off from ${fromName}] You are taking over an ongoing dialogue. ` +
-              `Below is the conversation so far between the user and the previous agent. ` +
-              `Continue seamlessly, as if you had been part of it from the start — do not restart or re-introduce yourself.\n\n` +
-              `=== Prior conversation ===\n${transcript}\n=== End of prior conversation ===`
-            : undefined;
-
-        // Open the new dialogue in this surface (detaches the old controller,
-        // which keeps running in the background), then replay the visible
-        // history so the user sees an uninterrupted conversation.
-        this.openDialogue(backend, { cwd, seedHistory }, title);
-        if (transcript) {
-            this.post({ type: "history", messages: from.transcriptMessages(), carried: true });
-            const targetName = (target as any).displayName ?? backend;
-            this.post({ type: "event", event: { kind: "text", text: `_↪ Conversation continued with **${targetName}** — the prior exchange above was carried over as context._` } });
-            this.post({ type: "event", event: { kind: "turn-end" } });
-        }
-    }
 
     /**
      * Hands a TERMINAL session off to another backend. A terminal session has
@@ -716,52 +683,12 @@ export class ChatSurface {
      * on the target backend seeded with that conversation. The original
      * terminal keeps running (it is only detached), so it can be reopened.
      */
-    private async switchBackendFromTerminal(backend: string): Promise<void> {
-        const from = this.terminalSession;
-        if (!from || from.backend === backend) {
-            return;
-        }
-        const target = this.deps.adapterByBackend.get(backend);
-        if (!target) {
-            return;
-        }
-        const fromName = (this.deps.adapterByBackend.get(from.backend) as any)?.displayName ?? from.backend;
-        const cwd = from.cwd;
-        const messages = await this.historyToRows(await from.historyMessages());
-        const transcript = messages
-            .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
-            .join("\n\n");
-
-        const seedHistory = transcript
-            ? `[Conversation handed off from ${fromName}] You are taking over an ongoing dialogue. ` +
-              `Below is the conversation so far between the user and the previous agent. ` +
-              `Continue seamlessly, as if you had been part of it from the start — do not restart or re-introduce yourself.\n\n` +
-              `=== Prior conversation ===\n${transcript}\n=== End of prior conversation ===`
-            : undefined;
-
-        this.openDialogue(backend, { cwd, seedHistory }, fromName);
-        if (transcript) {
-            this.post({ type: "history", messages, carried: true });
-            const targetName = (target as any).displayName ?? backend;
-            this.post({ type: "event", event: { kind: "text", text: `_↪ Conversation continued with **${targetName}** — the prior exchange above was carried over as context._` } });
-            this.post({ type: "event", event: { kind: "turn-end" } });
-        }
-    }
 
     /**
      * Collapses adapter HistoryMessages down to plain user/assistant rows for a
      * handoff replay — tool rows are dropped (only the human-readable dialogue
      * is carried over), and consecutive same-role rows are kept as-is.
      */
-    private async historyToRows(history: HistoryMessage[]): Promise<{ role: "user" | "assistant"; text: string }[]> {
-        const rows: { role: "user" | "assistant"; text: string }[] = [];
-        for (const m of history) {
-            if ((m.role === "user" || m.role === "assistant") && m.text?.trim()) {
-                rows.push({ role: m.role, text: m.text.trim() });
-            }
-        }
-        return rows;
-    }
 
     /**
      * Hands a STORED session (picked from the sessions list's right-click menu)
@@ -771,47 +698,6 @@ export class ChatSurface {
      * backend in this surface, seeded with that conversation. The original
      * session is untouched (it stays stored and can still be resumed).
      */
-    private async switchBackendForSession(
-        sessionId: string,
-        sourceBackend: string,
-        targetBackend: string,
-    ): Promise<void> {
-        if (sourceBackend === targetBackend) {
-            return;
-        }
-        const target = this.deps.adapterByBackend.get(targetBackend);
-        const source = this.deps.adapterByBackend.get(sourceBackend);
-        if (!target || !source) {
-            return;
-        }
-        const sessions = await this.deps.listSessions();
-        const info = sessions.find((s) => s.sessionId === sessionId && s.backend === sourceBackend);
-        if (!info) {
-            return;
-        }
-        const fromName = (source as any).displayName ?? sourceBackend;
-        const cwd = this.deps.cwdFor(info);
-        const history = source.history ? await source.history(info).catch(() => [] as HistoryMessage[]) : [];
-        const messages = await this.historyToRows(history);
-        const transcript = messages
-            .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
-            .join("\n\n");
-
-        const seedHistory = transcript
-            ? `[Conversation handed off from ${fromName}] You are taking over an ongoing dialogue. ` +
-              `Below is the conversation so far between the user and the previous agent. ` +
-              `Continue seamlessly, as if you had been part of it from the start — do not restart or re-introduce yourself.\n\n` +
-              `=== Prior conversation ===\n${transcript}\n=== End of prior conversation ===`
-            : undefined;
-
-        this.openDialogue(targetBackend, { cwd, seedHistory }, info.title);
-        if (transcript) {
-            this.post({ type: "history", messages, carried: true });
-            const targetName = (target as any).displayName ?? targetBackend;
-            this.post({ type: "event", event: { kind: "text", text: `_↪ Conversation from **${fromName}** continued with **${targetName}** — the prior exchange above was carried over as context._` } });
-            this.post({ type: "event", event: { kind: "turn-end" } });
-        }
-    }
 
     /**
      * Read-only live mirror of a session running elsewhere (e.g. an
@@ -1003,7 +889,7 @@ export class ChatSurface {
             // it against live git status (so staged files drop, unstaging them
             // brings them back) before showing it.
             if ((message as any)?.type === "changed-files") {
-                void this.refreshChanged((message as any).items);
+                void this.changedFiles.refresh((message as any).items);
                 return;
             }
             // Capture a freshly-assigned session id so a brand-new dialogue
@@ -1035,7 +921,7 @@ export class ChatSurface {
                 // Re-mirror the working tree from git: a turn may have edited files
                 // via shell/sed (no tool event, no index change) that the live
                 // changed-files signal and the .git/index watcher both miss.
-                this.refreshChangedNow();
+                this.changedFiles.refreshNow();
             }
             this.post(message);
         });
@@ -1206,107 +1092,27 @@ export class ChatSurface {
      * Accepts a file's changes. The session snapshot baseline is dropped so it
      * can't be reverted anymore; if the file is in a git repo we also stage it.
      */
-    private async approveFile(filePath: string): Promise<void> {
-        // In a git repo, approve = stage (git add). The file then has no
-        // unstaged change, so the git-status filter hides it — and unstaging in
-        // git brings it back. Outside a repo, drop it from the set directly.
-        if (await gitRoot(repoCwd(filePath))) {
-            await approveChange(repoCwd(filePath), filePath);
-        } else {
-            this.controller?.resolveChanged(filePath);
-        }
-    }
 
     /**
      * Filters the controller's raw edited-files set against live git status and
      * pushes the result to the webview. Also (re)arms a watcher on the repos'
      * index so staging/unstaging in git or the SCM view syncs back here.
      */
-    private async refreshChanged(rawItems: { path: string; added: number; removed: number }[]): Promise<void> {
-        // Faithful git mirror: every PENDING file in the session repo with its REAL
-        // +/- counts, so any edit shows correctly regardless of the tool that made
-        // it (write/edit tool, sed, terminal, external). This replaces the old
-        // "tool-tracked ∩ dirty" set, whose counts came from tool args and missed
-        // shell/sed/external edits entirely.
-        const gitItems = await changedFilesWithCounts(this.cwd()).catch(() => [] as { path: string; added: number; removed: number }[]);
-        const seen = new Set(gitItems.map((i) => i.path));
-        const items = [...gitItems];
-        // Tool-tracked files OUTSIDE any git repo (snapshot-resolved, e.g. a file
-        // the agent wrote outside the workspace): git can't see them, so keep them
-        // with the tool's own counts.
-        for (const it of rawItems) {
-            if (seen.has(it.path)) { continue; }
-            const root = await gitRoot(path.dirname(it.path)).catch(() => undefined);
-            if (!root) { items.push(it); seen.add(it.path); }
-        }
-        this.post({ type: "changed-files", items });
-        this.ensureGitWatcher();
-    }
 
     /** Recomputes the displayed set from the controller's current raw set. */
-    private refreshChangedNow(): void {
-        void this.refreshChanged(this.controller?.changedItemsRaw() ?? []);
-    }
 
     /** Watches workspace git indexes so external stage/unstage re-syncs the list. */
-    private ensureGitWatcher(): void {
-        if (this.gitWatcher) { return; }
-        this.gitWatcher = vscode.workspace.createFileSystemWatcher("**/.git/index");
-        const onGit = () => {
-            if (this.refreshTimer) { clearTimeout(this.refreshTimer); }
-            this.refreshTimer = setTimeout(() => this.refreshChangedNow(), 250);
-        };
-        this.gitWatcher.onDidChange(onGit);
-        this.gitWatcher.onDidCreate(onGit);
-        this.gitWatcher.onDidDelete(onGit);
-        this.disposables.push(this.gitWatcher);
-    }
 
     /**
      * Reverts a file to its pre-edit state. Prefers the session snapshot (works
      * with or without git, even for new files); falls back to git restore for
      * resumed sessions that have no snapshot.
      */
-    private async rejectFile(filePath: string): Promise<boolean> {
-        if (snapshots.has(this.sid(), filePath)) {
-            return snapshots.revert(this.sid(), filePath);
-        }
-        if (await gitRoot(repoCwd(filePath))) {
-            return rejectChange(repoCwd(filePath), filePath);
-        }
-        void vscode.window.showWarningMessage(
-            "No pre-edit snapshot for this file (edited before this session started) and it's not in a git repo, so it can't be reverted: " + filePath);
-        return false;
-    }
 
     /**
      * Diffs an edited file against its baseline: the session snapshot if we have
      * one, else the git HEAD version. New files with no baseline just open.
      */
-    private async openFileDiff(filePath: unknown): Promise<void> {
-        if (typeof filePath !== "string") { return; }
-        const fileUri = vscode.Uri.file(filePath);
-        const name = path.basename(filePath);
-        let base: string | null | undefined = snapshots.baseline(this.sid(), filePath);
-        let label = "before ↔ now";
-        if (base === undefined) {
-            base = await headContent(repoCwd(filePath), filePath);
-            label = "HEAD ↔ working";
-        }
-        if (base === undefined || base === null) {
-            // No baseline to diff against (e.g. a brand-new file or a pasted
-            // image). Use vscode.open so binary files like images open in their
-            // proper preview instead of failing in the text editor.
-            await vscode.commands.executeCommand("vscode.open", fileUri, { preview: true });
-            return;
-        }
-        const tmp = path.join(os.tmpdir(), "symposium-diff");
-        await fs.promises.mkdir(tmp, { recursive: true });
-        const baseFile = path.join(tmp, `base-${Date.now()}-${name}`);
-        await fs.promises.writeFile(baseFile, base);
-        await vscode.commands.executeCommand(
-            "vscode.diff", vscode.Uri.file(baseFile), fileUri, `${name} (${label})`);
-    }
 
     dispose(): void {
         // Detach only — the runtime owns controller lifetimes so sessions
