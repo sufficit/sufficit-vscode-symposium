@@ -76,7 +76,7 @@ export function renderPlan() {
 }
 
 // ---- Tasks panel (Sufficit-memory task list, local mirror) ----
-let tasksCollapsed = false;   // persisted across re-renders
+const tasksCollapsed = false;   // persisted across re-renders
 let tasksShowAll = false;     // header filter: pending-only (default) vs all
 let lastTaskItems = [];
 let lastTaskProject = "";

@@ -83,7 +83,9 @@ window.addEventListener("message", ({ data }) => {
             setPermissionModes(data.permissionModes || []);
             setPermissionValue(data.permission || "default");
             setPermissionDefault(data.permission || "default");
-            configBtn.style.display = (permissionModes.length || true) ? "" : "none";
+            // Always shown (the `|| true` made the prior expression constant);
+            // the config button is available regardless of permissionModes.
+            configBtn.style.display = "";
             // Hand-off works for live chat dialogues and for terminal
             // sessions (whose transcript is read back from the CLI). Only
             // read-only live mirrors can't be handed off.

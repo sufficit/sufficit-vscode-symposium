@@ -110,7 +110,7 @@ function codeBlock(lang, code) {
     const tag = document.createElement("span"); tag.textContent = lang || "code";
     const copy = document.createElement("button"); copy.className = "cbcopy"; copy.textContent = "Copy";
     copy.addEventListener("click", () => {
-        navigator.clipboard && navigator.clipboard.writeText(code);
+        if (navigator.clipboard) { navigator.clipboard.writeText(code); }
         copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1200);
     });
     head.appendChild(tag); head.appendChild(copy);

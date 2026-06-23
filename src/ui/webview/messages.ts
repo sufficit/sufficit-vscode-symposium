@@ -157,7 +157,7 @@ export function message(role, text, ts, model) {
         const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy this reply";
         cp.appendChild(svgIcon("copy"));
         cp.addEventListener("click", () => {
-            navigator.clipboard && navigator.clipboard.writeText(wrap._raw != null ? wrap._raw : text);
+            if (navigator.clipboard) { navigator.clipboard.writeText(wrap._raw != null ? wrap._raw : text); }
             cp.classList.add("done"); setTimeout(() => cp.classList.remove("done"), 1000);
         });
         tools.appendChild(cp);

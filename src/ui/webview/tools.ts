@@ -76,8 +76,8 @@ export function diffSection(hunks) {
     };
     hunks.forEach((h, idx) => {
         if (idx > 0) { addLine("dctx", "", "⋯"); }
-        let oldL = (h.old || "").split("\n");
-        let newL = (h.new || "").split("\n");
+        const oldL = (h.old || "").split("\n");
+        const newL = (h.new || "").split("\n");
         // Trim shared prefix/suffix so only the actual change shows.
         let p = 0; while (p < oldL.length && p < newL.length && oldL[p] === newL[p]) { p++; }
         let s = 0; while (s < oldL.length - p && s < newL.length - p && oldL[oldL.length - 1 - s] === newL[newL.length - 1 - s]) { s++; }
