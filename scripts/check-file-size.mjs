@@ -6,12 +6,8 @@ import { join, extname } from "node:path";
 
 const MAX_LINES = 400;
 const ROOT = "src";
-const EXEMPT = new Set([
-  // Phase 3 (needs a running Extension Host / F5 to verify the live turn + view
-  // flow). Tracked in docs/activities/20260622002801-namespace-restructure.md.
-  "src/adapters/openai/session.ts", // OpenAISession turn loop (run/consume/compact)
-  "src/ui/chatSurface.ts",
-]);
+// No exemptions: every source file is at or under the 400-line limit.
+const EXEMPT = new Set([]);
 
 /** @param {string} dir @returns {string[]} */
 function walk(dir) {

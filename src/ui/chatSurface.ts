@@ -10,17 +10,9 @@ import { ChangedFilesManager } from "./changedFiles";
 import { BackendHandoff } from "./backendHandoff";
 import { SurfaceSync } from "./surfaceSync";
 import { SurfaceDialogues } from "./surfaceDialogues";
-import { probeRtk } from "../adapters/rtk";
+import { SurfaceMessages } from "./surfaceMessages";
 import { HubClient } from "../sync/hubClient";
-import { setTaskDone } from "../sync/tasks";
-import { removeGuardrail, clearSessionGuardrails } from "../sync/guardrails";
-import {
-    activeEditorContext,
-    attachmentFromUri,
-    isSimpleBrowserOpen,
-    writeDroppedFile,
-    writePastedImage,
-} from "./chatSurfaceContext";
+import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
 
 export interface ChatSurfaceDeps {
     adapterByBackend: Map<string, AgentAdapter>;
@@ -65,10 +57,11 @@ export class ChatSurface {
     private readonly changedFiles = new ChangedFilesManager({ post: (m) => this.post(m), getCwd: () => this.cwd(), getSid: () => this.sid(), resolveChanged: (p) => this.controller?.resolveChanged(p), getRawItems: () => this.controller?.changedItemsRaw() ?? [] }, this.disposables);
     private readonly handoff = new BackendHandoff({ getAdapter: (b) => this.deps.adapterByBackend.get(b), listSessions: () => this.deps.listSessions(), cwdFor: (i) => this.deps.cwdFor(i), openDialogue: (b, o, t) => this.openDialogue(b, o, t), post: (m) => this.post(m), getController: () => this.controller, getTerminalSession: () => this.terminalSession });
     private readonly sync = new SurfaceSync({ post: (m) => this.post(m), getController: () => this.controller, getTerminalSession: () => this.terminalSession, getAccount: () => this.deps.account, setLoggedIn: (v) => { this.loggedIn = v; }, getCommands: () => this.symposiumCommands });
-    // Constructor-initialized (not a field initializer): it eagerly reads
-    // parameter properties (deps/webview/chatOnly/onTitleChange), which aren't
-    // assigned until the constructor body runs.
+    // Constructor-initialized (not field initializers): they eagerly read
+    // parameter properties (deps/webview/chatOnly/onTitleChange) and the
+    // field-initialized collaborators, which aren't ready until the body runs.
     private readonly dialogues: SurfaceDialogues;
+    private readonly messages: SurfaceMessages;
 
     constructor(
         private readonly webview: vscode.Webview,
@@ -93,6 +86,22 @@ export class ChatSurface {
             onTitleChange: this.onTitleChange,
             sync: this.sync,
             changedFiles: this.changedFiles,
+        });
+        this.messages = new SurfaceMessages({
+            webview: this.webview,
+            deps: this.deps,
+            post: (m) => this.post(m),
+            markReady: () => this.markReady(),
+            refreshSessions: () => this.refreshSessions(),
+            openSession: (info) => this.openSession(info),
+            getController: () => this.controller,
+            getTerminalSession: () => this.terminalSession,
+            getFollowHandle: () => this.followHandle,
+            sync: this.sync,
+            dialogues: this.dialogues,
+            handoff: this.handoff,
+            changedFiles: this.changedFiles,
+            hub: this.hub,
         });
         webview.options = { enableScripts: true };
         webview.html = renderHtml();
