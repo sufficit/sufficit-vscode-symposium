@@ -41,6 +41,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     private streamedText = false;     // got text_delta this turn (skip full block)
     private streamedThinking = false; // got thinking_delta this turn (skip full block)
     private warnedRootBypass = false; // emitted the root+bypassPermissions notice once
+    private cancelled = false;        // cancel() was called (steer) — suppress exit error
 
     constructor(
         private readonly config: ClaudeAdapterConfig,
@@ -142,10 +143,13 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             this.emit("event", { kind: "turn-end" });
         });
         child.on("exit", (code) => {
-            if (!this.disposed && code !== 0 && code !== null) {
+            // SIGINT from cancel/steer → exit code 130 (or null). Don't emit a
+            // crash error; the queue will drain the steered message on turn-end.
+            if (!this.disposed && !this.cancelled && code !== 0 && code !== null) {
                 const detail = stderr.trim().split("\n").slice(-3).join(" ");
                 this.emit("event", { kind: "error", message: `claude exited with code ${code}: ${detail}` });
             }
+            this.cancelled = false;   // reset for next spawn
             this.child = undefined;
             // The process ended (incl. SIGINT from cancel/steer) without a final
             // result event — close the turn so the UI unblocks and the queue runs.
@@ -272,6 +276,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     }
 
     cancel(): void {
+        this.cancelled = true;   // mark so exit handler doesn't emit a crash error
         this.child?.kill("SIGINT");
     }
 

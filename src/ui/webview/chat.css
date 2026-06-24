@@ -476,6 +476,7 @@
     .msg.user .role { opacity: 0.75; }
     .msg.user.stickyUser {
         position: sticky; top: 0; z-index: 4;
+        max-height: 35vh; overflow-y: auto;
         background:
             linear-gradient(
                 var(--vscode-editor-background, #1f1f1f) 0%,
@@ -485,6 +486,7 @@
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         border-bottom: 1px solid color-mix(in srgb, var(--vscode-panel-border, #3C3C3C) 60%, transparent);
         padding-bottom: 8px;
+        scrollbar-width: thin;
     }
     .msg.user.stickyUser .ubody {
         box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 42%, transparent);
