@@ -183,7 +183,7 @@ export async function consumeStream(
         // A paused/interrupted stream (AbortError or transport drop) must NOT
         // discard what we already received — return the partial accumulation
         // so the caller can persist the partial assistant turn and keep context.
-        try { reader.cancel(); } catch { /* ignore */ }
+        try { void reader.cancel(); } catch { /* ignore */ }
         return { text: assistant, toolCalls: calls.filter((c) => c && c.function.name), aborted: true };
     }
     return done();

@@ -185,3 +185,21 @@ export async function timeline(sessionId: string): Promise<{ hash: string; date:
 export function removeLedger(sessionId: string): void {
     try { fs.rmSync(ledgerDir(sessionId), { recursive: true, force: true }); } catch { /* ignore */ }
 }
+
+/**
+ * Lists ALL sessions known to the ledger (scans the ledger root directory).
+ * Each entry is reconstructed from the session's `meta.json`. Used to recover
+ * "orphan" sessions that have a ledger but no store file (e.g. sessions created
+ * before the constructor-persist fix, or sessions whose store was deleted).
+ */
+export function listLedgerSessions(): LedgerMeta[] {
+    const root = ledgerRoot();
+    let entries: string[];
+    try { entries = fs.readdirSync(root).filter((e) => fs.statSync(path.join(root, e)).isDirectory()); } catch { return []; }
+    const out: LedgerMeta[] = [];
+    for (const sessionId of entries) {
+        const meta = readMetaFrom(ledgerDir(sessionId));
+        if (meta) { out.push(meta); }
+    }
+    return out;
+}

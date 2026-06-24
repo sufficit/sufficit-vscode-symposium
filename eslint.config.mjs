@@ -14,6 +14,13 @@ import tseslint from "typescript-eslint";
  * escape-hatch casts that are being removed incrementally (#5/#6). Keeping it a
  * warning means CI stays green while the count is driven down, instead of
  * blocking every build until the last cast is gone.
+ *
+ * TYPE-AWARE RULES: we enable type-checking via `projectService` and turn on
+ * the specific rules that catch the bug class that caused "sessions vanish on
+ * reload" (un-awaited promises, misused async). The full `recommendedTypeChecked`
+ * set is intentionally NOT used wholesale because its `no-unsafe-*` family
+ * produces ~800 violations on the existing codebase — those are being cleaned
+ * up incrementally and can be enabled later.
  */
 export default tseslint.config(
     {
@@ -29,6 +36,7 @@ export default tseslint.config(
             "src/ui/chatStyles.ts",
             "src/ui/chatHtml.ts",
             "src/ui/configHtml.ts",
+            "src/ui/webview/**",
         ],
     },
     js.configs.recommended,
@@ -37,6 +45,10 @@ export default tseslint.config(
         languageOptions: {
             ecmaVersion: 2022,
             sourceType: "module",
+            parserOptions: {
+                projectService: true,
+                tsconfigRootDir: import.meta.dirname,
+            },
         },
         rules: {
             "@typescript-eslint/no-explicit-any": "warn",
@@ -46,6 +58,17 @@ export default tseslint.config(
             ],
             // Empty catch blocks are an intentional "best-effort" pattern here.
             "no-empty": ["error", { allowEmptyCatch: true }],
+
+            // ── Type-aware rules (catch the "session vanishes on reload" class) ──
+            // Promises that are neither awaited nor explicitly voided — the #1
+            // cause of silent data-loss bugs in async constructors / init paths.
+            "@typescript-eslint/no-floating-promises": "error",
+            // Promise callbacks where a non-promise (or void) is returned.
+            "@typescript-eslint/no-misused-promises": "error",
+            // async functions that never await (usually a missing-await bug).
+            "@typescript-eslint/require-await": "warn",
+            // Awaiting something that isn't thenable.
+            "@typescript-eslint/await-thenable": "warn",
         },
     },
     {
@@ -53,6 +76,8 @@ export default tseslint.config(
         files: ["src/test/**/*.ts"],
         rules: {
             "@typescript-eslint/no-explicit-any": "off",
+            "@typescript-eslint/no-floating-promises": "off",
+            "@typescript-eslint/no-misused-promises": "off",
         },
     },
 );

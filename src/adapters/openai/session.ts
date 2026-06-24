@@ -51,7 +51,24 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         super();
         // Resume a stored session if asked, else start a fresh one.
         const resumed = options.resumeSessionId ? readStored(backend, options.resumeSessionId) : undefined;
-        this.sessionId = resumed?.id ?? randomUUID();
+        // Orphan recovery: if a resume was requested but the store file is
+        // missing, keep the requested id (don't generate a new one!) and try to
+        // reconstruct messages from the ledger so the session reappears intact.
+        if (!resumed && options.resumeSessionId && ledger.hasLedger(options.resumeSessionId)) {
+            this.sessionId = options.resumeSessionId;
+            for (const m of ledger.readMessages(this.sessionId)) {
+                if (m.role === "user" || m.role === "assistant") {
+                    const text = typeof m.content === "string" ? m.content : "";
+                    if (text) { this.messages.push({ role: m.role, content: text }); }
+                }
+            }
+            if (!this.title && this.messages.length) {
+                const firstUser = this.messages.find((m) => m.role === "user");
+                if (firstUser) { this.title = (typeof firstUser.content === "string" ? firstUser.content : "").trim().slice(0, 60); }
+            }
+        } else {
+            this.sessionId = resumed?.id ?? randomUUID();
+        }
         this.compactor = new Compactor({
             cfg: this.cfg,
             sessionId: this.sessionId,
@@ -119,6 +136,13 @@ export class OpenAISession extends EventEmitter implements AgentSession {
                 void ledger.commitTurn(this.sessionId, "resume — seeded from store");
             }
         });
+        // For a brand-new (non-resumed) session, persist the store file NOW so
+        // the session is visible in listSessions() immediately — before the first
+        // user message. Without this, reloading the window right after opening a
+        // new dialogue (but before sending) loses the session: the ledger exists
+        // but the store file was never written, and listSessions() only scans the
+        // store directory.
+        if (!resumed) { this.safePersist(); }
         queueMicrotask(() => this.emit("event", { kind: "session", sessionId: this.sessionId, model: this.model() }));
     }
 

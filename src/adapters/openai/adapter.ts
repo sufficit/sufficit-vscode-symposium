@@ -47,14 +47,32 @@ export class OpenAIAdapter implements AgentAdapter {
 
     async listSessions(): Promise<SessionInfo[]> {
         const dir = storeDir(this.backend);
-        let files: string[];
-        try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { return []; }
+        let files: string[] = [];
+        try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { /* store dir may not exist yet */ }
         const out: SessionInfo[] = [];
+        const seen = new Set<string>();
         for (const f of files) {
             const s = readStored(this.backend, f.slice(0, -5));
             if (s) {
+                seen.add(s.id);
                 out.push({ backend: this.backend, sessionId: s.id, title: s.title || "Session", cwd: s.cwd, updatedAt: new Date(s.updatedAt), model: s.model });
             }
+        }
+        // Recover orphans: sessions that have a ledger but no store file (created
+        // before the constructor-persist fix, or whose store was lost). Reconstruct
+        // a minimal SessionInfo from the ledger's meta.json so they reappear in
+        // the UI and can be resumed.
+        for (const meta of ledger.listLedgerSessions()) {
+            if (meta.backend !== this.backend) { continue; }
+            if (seen.has(meta.id)) { continue; }
+            out.push({
+                backend: this.backend,
+                sessionId: meta.id,
+                title: meta.title || "Session (recovered)",
+                cwd: meta.cwd || "",
+                updatedAt: meta.updatedAt ? new Date(meta.updatedAt) : new Date(0),
+                model: meta.model || "",
+            });
         }
         return out;
     }
@@ -110,6 +128,10 @@ export class OpenAIAdapter implements AgentAdapter {
 
     async deleteSession(info: SessionInfo): Promise<void> {
         try { fs.rmSync(storePath(this.backend, info.sessionId), { force: true }); } catch { /* ignore */ }
+        // Also remove the ledger repo so the session isn't left as an orphan
+        // (listSessions only scans the store dir, so a ledger-only session is
+        // invisible in the UI but still consumes disk space).
+        try { ledger.removeLedger(info.sessionId); } catch { /* ignore */ }
     }
 
     start(options: SessionStartOptions): AgentSession {
