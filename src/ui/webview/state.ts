@@ -7,6 +7,8 @@
 // state without a single giant scope.
 import { saved } from "./vscode";
 
+const savedSessionFilters = ((saved && (saved as any).sessionFilters) || {}) as any;
+
 export let attachments: any[] = [];          // [{path, name}]
 export let activeFile: any = null;            // active editor path (removable context)
 export let activeFileRange: any = null;       // { start, end } when lines selected
@@ -23,6 +25,11 @@ export let queued = 0;
 export let loading = false;
 export let sessions: any[] = [];
 export let showArchived = false;
+export let sessionSort = savedSessionFilters.sort || "updated-desc";
+export let sessionBackendFilter: string[] = Array.isArray(savedSessionFilters.backends) ? savedSessionFilters.backends : [];
+export let sessionStatusFilter: string[] = Array.isArray(savedSessionFilters.statuses) ? savedSessionFilters.statuses : [];
+export let sessionScopeFilter: string[] = Array.isArray(savedSessionFilters.scopes) ? savedSessionFilters.scopes : [];
+export let sessionSearchTerm = "";
 export let bootstrapPath = "";
 export let sideMode = "auto";                 // "auto" | "left" | "right", from config
 export let pendingSessionSwitch: any = null;  // anchor for a pending session switch menu
@@ -49,6 +56,11 @@ export function setQueued(v: number) { queued = v; }
 export function setLoadingFlag(v: boolean) { loading = v; }
 export function setSessions(v: any[]) { sessions = v; }
 export function setShowArchived(v: boolean) { showArchived = v; }
+export function setSessionSort(v: string) { sessionSort = v; }
+export function setSessionBackendFilter(v: string[]) { sessionBackendFilter = v; }
+export function setSessionStatusFilter(v: string[]) { sessionStatusFilter = v; }
+export function setSessionScopeFilter(v: string[]) { sessionScopeFilter = v; }
+export function setSessionSearchTerm(v: string) { sessionSearchTerm = v; }
 export function setBootstrapPath(v: string) { bootstrapPath = v; }
 export function setSideMode(v: string) { sideMode = v; }
 export function setPendingSessionSwitch(v: any) { pendingSessionSwitch = v; }

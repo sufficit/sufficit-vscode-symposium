@@ -35,10 +35,12 @@ ${chatStyles}
         <div id="sessionsHeader">
             <span>Sessions</span>
             <span>
+                <button id="sessionFilterBtn" class="iconBtn" title="Filter sessions" aria-label="Filter sessions"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3.75A.75.75 0 0 1 2.75 3h10.5a.75.75 0 0 1 .53 1.28L10 8.06v3.19a.75.75 0 0 1-.33.62l-2 1.33A.75.75 0 0 1 6.5 12.6V8.06L2.22 4.28A.75.75 0 0 1 2 3.75Z"/></svg></button>
                 <button id="newSessionBtn" class="iconBtn" title="New session" aria-label="New session"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg></button>
                 <button id="archToggle" class="iconBtn" title="Show/hide archived" aria-label="Show/hide archived"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M14 2H2a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1ZM2 6v7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6H2Zm4 2h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1Z"/></svg></button>
             </span>
         </div>
+        <input id="sessionSearch" class="sessionSearch" type="search" placeholder="Search sessions…" aria-label="Search sessions" />
         <div id="sessionsList"></div>
         <div id="accountFooter" title="Sufficit account"></div>
     </aside>
