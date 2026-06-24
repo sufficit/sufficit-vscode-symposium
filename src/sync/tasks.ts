@@ -60,14 +60,11 @@ export async function setTaskDone(hub: HubClient, id: string, done: boolean): Pr
 
 /** Marks a task observation completed by adding the DONE_TAG (idempotent). */
 export async function markTaskDone(hub: HubClient, id: string): Promise<boolean> {
-    if (!hub.configured() || !id) { return false; }
-    // Direct upsert: save is id-based (id present → update). No need to read
-    // the observation first — that added a failure point (getByIds returning
-    // empty) and spread stale/extra API fields back into the save payload.
-    try {
-        await hub.save({ id, type: "task-checkpoint", title: "completed", summary: "completed", tags: DONE_TAG });
-        return true;
-    } catch { return false; }
+    // Delegate to setTaskDone which preserves existing tags (including the
+    // critical symposium-session:xxx tag). A blind upsert with only DONE_TAG
+    // wipes the session tag → fetchSessionTasks filter can never find the task
+    // again → panel shows stale "pending" forever.
+    return setTaskDone(hub, id, true);
 }
 
 /** Latest PENDING task-checkpoint for a session (falls back to latest pending task, then any). */

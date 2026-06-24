@@ -304,11 +304,10 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             case "task_complete": {
                 const id = String(args.id ?? "");
                 if (!id) { return JSON.stringify({ error: "id is required" }); }
-                if (!hub.configured()) { return JSON.stringify({ ok: false, error: "memory hub not configured" }); }
+                if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured" }); }
                 const ok = await markTaskDone(hub, id);
-                return JSON.stringify(ok
-                    ? { ok: true, id, done: true }
-                    : { ok: false, id, error: "save failed — check hub configuration" });
+                // Silence success — empty string saves tokens; errors/JSON only on failure.
+                return ok ? "" : JSON.stringify({ error: "save failed — check hub configuration" });
             }
             case "add_guardrail": {
                 const text = String(args.text ?? "").trim();
@@ -316,13 +315,15 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                 if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
                 if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured — guardrails unavailable" }); }
                 const id = await saveGuardrail(hub, ctx.sessionId, text);
-                return JSON.stringify({ id, added: text });
+                // Silence success — empty string saves tokens; only the panel refresh matters.
+                return id ? "" : JSON.stringify({ error: "save failed" });
             }
             case "clear_guardrails": {
                 if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
                 if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured — guardrails unavailable" }); }
                 const removed = await clearSessionGuardrails(hub, ctx.sessionId);
-                return JSON.stringify({ ok: true, removed });
+                // Silence success — empty string saves tokens.
+                return removed >= 0 ? "" : JSON.stringify({ error: "clear failed" });
             }
             case "web_search": {
                 const r = await hub.webSearch(String(args.query ?? ""), typeof args.limit === "number" ? args.limit : 8);
