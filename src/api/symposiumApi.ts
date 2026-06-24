@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import * as vscode from "vscode";
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { LiveSessions } from "../sessions/runtime";
@@ -24,6 +25,8 @@ export type SendMode = "send" | "queue" | "steer";
 /** A backend's health + editable configuration, for the config UI. */
 export interface BackendStatus {
     backend: string;
+    /** Friendly name shown in the UI (adapter.displayName; falls back to `backend`). */
+    displayName: string;
     available: boolean;
     detail: string;
     /** Currently configured model ("" = backend default). */
@@ -36,6 +39,18 @@ export interface BackendStatus {
     executableEditable: boolean;
     /** Whether `model` is editable here (settings-backed backends). */
     modelEditable: boolean;
+    /** True for user-defined OpenAI-compatible endpoints (symposium.adapters),
+     *  i.e. not a built-in backend. Such endpoints can be edited/removed in-place. */
+    custom: boolean;
+}
+
+/** Editable fields of a custom OpenAI-compatible endpoint (symposium.adapters). */
+export interface AdapterPatch {
+    name?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    model?: string;
+    api?: "chat" | "responses";
 }
 
 export interface BackendsApi {
@@ -47,6 +62,12 @@ export interface BackendsApi {
     setModel(backend: string, model: string): Promise<boolean>;
     /** Persists the executable for a CLI backend (global settings). */
     setExecutable(backend: string, executable: string): Promise<boolean>;
+    /** Appends a new custom OpenAI-compatible endpoint; returns its generated id. */
+    addAdapter(patch: AdapterPatch): Promise<string>;
+    /** Updates fields of a custom endpoint by id. False if the id is unknown. */
+    updateAdapter(id: string, patch: AdapterPatch): Promise<boolean>;
+    /** Removes a custom endpoint by id. False if the id is unknown. */
+    removeAdapter(id: string): Promise<boolean>;
 }
 
 /**
@@ -138,6 +159,8 @@ export const API_VERSION = "1.0.0";
 const CLI_BACKENDS = new Set(["claude", "codex", "copilot"]);
 /** Backends whose model is editable via symposium.<backend>.model. */
 const MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
+/** Built-in backends; anything else is a user-defined custom endpoint. */
+const BUILTIN_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
 
 function isModelEditable(backend: string): boolean {
     return MODEL_BACKENDS.has(backend);
@@ -157,6 +180,7 @@ async function probeBackend(a: AgentAdapter): Promise<BackendStatus> {
     }
     return {
         backend: a.backend,
+        displayName: a.displayName ?? a.backend,
         available,
         detail,
         model: cfg.get<string>("model", ""),
@@ -164,7 +188,41 @@ async function probeBackend(a: AgentAdapter): Promise<BackendStatus> {
         executable: CLI_BACKENDS.has(a.backend) ? cfg.get<string>("executable", a.backend) : undefined,
         executableEditable: CLI_BACKENDS.has(a.backend),
         modelEditable: isModelEditable(a.backend),
+        custom: !BUILTIN_BACKENDS.has(a.backend),
     };
+}
+
+/** Reads the raw symposium.adapters array (custom OpenAI-compatible endpoints). */
+function readAdapterDefs(): AdapterEntry[] {
+    const arr = vscode.workspace.getConfiguration("symposium").get<AdapterEntry[]>("adapters", []);
+    return Array.isArray(arr) ? arr.filter((a) => a && typeof a === "object") : [];
+}
+
+async function writeAdapterDefs(defs: AdapterEntry[]): Promise<void> {
+    await vscode.workspace.getConfiguration("symposium")
+        .update("adapters", defs, vscode.ConfigurationTarget.Global);
+}
+
+/** A stored adapter entry (superset of AdapterPatch with its stable id). */
+interface AdapterEntry extends AdapterPatch {
+    id?: string;
+    models?: string[];
+    headers?: Record<string, string>;
+    supportsDeveloperRole?: boolean;
+}
+
+/** Copies only the provided patch fields onto an entry (trims, drops blanks). */
+function applyPatch(entry: AdapterEntry, patch: AdapterPatch): void {
+    const set = (key: "name" | "baseUrl" | "apiKey" | "model", value: string | undefined) => {
+        if (value === undefined) { return; }
+        const v = value.trim();
+        if (v) { entry[key] = v; } else { delete entry[key]; }
+    };
+    set("name", patch.name);
+    set("baseUrl", patch.baseUrl);
+    set("apiKey", patch.apiKey);
+    set("model", patch.model);
+    if (patch.api === "chat" || patch.api === "responses") { entry.api = patch.api; }
 }
 
 /** Builds the public API facade over the running extension state. */
@@ -268,6 +326,29 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                 }
                 await vscode.workspace.getConfiguration(`symposium.${backend}`)
                     .update("executable", executable, vscode.ConfigurationTarget.Global);
+                return true;
+            },
+            addAdapter: async (patch) => {
+                const id = randomUUID().replace(/-/g, "");
+                const entry: AdapterEntry = { id };
+                applyPatch(entry, patch);
+                if (!entry.baseUrl) { entry.baseUrl = ""; }
+                await writeAdapterDefs([...readAdapterDefs(), entry]);
+                return id;
+            },
+            updateAdapter: async (id, patch) => {
+                const defs = readAdapterDefs();
+                const entry = defs.find((d) => d.id === id);
+                if (!entry) { return false; }
+                applyPatch(entry, patch);
+                await writeAdapterDefs(defs);
+                return true;
+            },
+            removeAdapter: async (id) => {
+                const defs = readAdapterDefs();
+                const next = defs.filter((d) => d.id !== id);
+                if (next.length === defs.length) { return false; }
+                await writeAdapterDefs(next);
                 return true;
             },
         },

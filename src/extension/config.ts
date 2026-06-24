@@ -114,6 +114,32 @@ export function customAdapterDefs(): CustomAdapterDef[] {
 }
 
 /**
+ * Human label for an OpenAI-compatible adapter, shown in the New Session picker,
+ * the chat header and the config UI. Prefers the explicit `name`; otherwise
+ * derives a readable host/path from `baseUrl` so an unnamed endpoint never
+ * surfaces its opaque GUID id (which is meaningless to the user).
+ */
+export function adapterLabel(def: { name?: string; baseUrl?: string; id?: string }): string {
+    const name = def.name?.trim();
+    if (name) { return name; }
+    const fromUrl = labelFromBaseUrl(def.baseUrl);
+    return fromUrl || def.id || "endpoint";
+}
+
+/** "https://ai.sufficit.com.br/openai/v1" → "ai.sufficit.com.br/openai/v1". */
+export function labelFromBaseUrl(baseUrl?: string): string {
+    const raw = baseUrl?.trim();
+    if (!raw) { return ""; }
+    try {
+        const u = new URL(raw);
+        const p = u.pathname.replace(/\/+$/, "");
+        return p && p !== "/" ? `${u.host}${p}` : u.host;
+    } catch {
+        return raw.replace(/^[a-z]+:\/\//i, "").replace(/\/+$/, "");
+    }
+}
+
+/**
  * Ensures every adapter has a stable id (so renaming `name` never breaks its
  * sessions). Missing ids get an auto-generated GUID without hyphens; manual ids
  * in any format are kept. Persists generated ids back to settings.json.
@@ -132,7 +158,7 @@ export function normalizeAdapterDefs(): CustomAdapterDef[] {
 /** One OpenAIAdapter per custom def, re-reading its entry live by id. */
 export function buildCustomAdapters(context: vscode.ExtensionContext, defs: CustomAdapterDef[]): OpenAIAdapter[] {
     return defs.map((def) =>
-        new OpenAIAdapter(def.id, def.name || def.id, () => {
+        new OpenAIAdapter(def.id, adapterLabel(def), () => {
             const e = customAdapterDefs().find((x) => x.id === def.id) ?? def;
             return {
                 clientInfo: symposiumClientInfo(context),
