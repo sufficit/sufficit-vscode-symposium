@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { ensureScaffold, ResourceKind, rootDir } from "../config/root";
-import { SymposiumApi } from "../api/symposiumApi";
+import { AdapterPatch, SymposiumApi } from "../api/symposiumApi";
 import { SufficitAuth } from "../auth/identity";
 import { renderConfigHtml } from "./configHtml";
 
@@ -130,10 +130,46 @@ export class ConfigPanel {
                 if (cli) {
                     // CLI backend: its executable/model/etc live in settings.
                     await vscode.commands.executeCommand("workbench.action.openSettings", "symposium." + b);
+                } else if (b === "openai") {
+                    // Built-in Sufficit AI backend lives under symposium.openai.*.
+                    await vscode.commands.executeCommand("workbench.action.openSettings", "symposium.openai");
                 } else {
-                    // API/custom backend (openai, sufficit-ai, …): edit the adapters JSON.
+                    // Custom OpenAI-compatible endpoint: edit the adapters JSON directly.
                     await vscode.commands.executeCommand("symposium.editAdapters");
                 }
+                return;
+            }
+            case "add-endpoint": {
+                const patch = await this.promptEndpoint();
+                if (!patch) { return; }
+                await api.backends.addAdapter(patch);
+                await this.pushState();
+                await this.offerReload(`Endpoint "${patch.name || patch.baseUrl}" added.`);
+                return;
+            }
+            case "edit-endpoint": {
+                const id = message.backend;
+                if (!id) { return; }
+                const current = this.readAdapterEntry(id);
+                if (!current) { return; }
+                const patch = await this.promptEndpoint(current);
+                if (!patch) { return; }
+                await api.backends.updateAdapter(id, patch);
+                await this.pushState();
+                await this.offerReload(`Endpoint updated. Reload to refresh its name in the pickers.`);
+                return;
+            }
+            case "remove-endpoint": {
+                const id = message.backend;
+                if (!id) { return; }
+                const current = this.readAdapterEntry(id);
+                const label = current?.name || current?.baseUrl || id;
+                const ok = await vscode.window.showWarningMessage(
+                    `Remove endpoint "${label}"?`, { modal: true }, "Remove");
+                if (ok !== "Remove") { return; }
+                await api.backends.removeAdapter(id);
+                await this.pushState();
+                await this.offerReload(`Endpoint "${label}" removed.`);
                 return;
             }
             case "set-model":
@@ -188,6 +224,64 @@ export class ConfigPanel {
                 await this.pushState();
                 return;
             }
+        }
+    }
+
+    /** Reads one custom endpoint entry (by id) from symposium.adapters. */
+    private readAdapterEntry(id: string): { id?: string; name?: string; baseUrl?: string; apiKey?: string; model?: string } | undefined {
+        const arr = vscode.workspace.getConfiguration("symposium").get<Array<{ id?: string }>>("adapters", []) ?? [];
+        return Array.isArray(arr) ? arr.find((a) => a && a.id === id) : undefined;
+    }
+
+    /**
+     * Collects the editable endpoint fields through a sequence of input boxes
+     * (base URL → name → API key → model). Returns the patch, or undefined if the
+     * user cancels at any step (Esc). Prefilled from `current` when editing.
+     */
+    private async promptEndpoint(current?: { name?: string; baseUrl?: string; apiKey?: string; model?: string }): Promise<AdapterPatch | undefined> {
+        const baseUrl = await vscode.window.showInputBox({
+            title: current ? "Edit endpoint — Base URL" : "New endpoint — Base URL",
+            prompt: "OpenAI-compatible base URL.",
+            value: current?.baseUrl ?? "",
+            placeHolder: "https://ai.sufficit.com.br/openai/v1",
+            ignoreFocusOut: true,
+            validateInput: (v) => {
+                const s = v.trim();
+                if (!s) { return "Base URL is required."; }
+                try { new URL(s); return undefined; } catch { return "Enter a valid URL (https://…)."; }
+            },
+        });
+        if (baseUrl === undefined) { return undefined; }
+        const name = await vscode.window.showInputBox({
+            title: "Endpoint — Display name (optional)",
+            prompt: "Friendly name for the pickers. Empty derives a name from the URL.",
+            value: current?.name ?? "",
+            ignoreFocusOut: true,
+        });
+        if (name === undefined) { return undefined; }
+        const apiKey = await vscode.window.showInputBox({
+            title: "Endpoint — API key (optional)",
+            prompt: "Sent as 'Authorization: Bearer <key>'. Empty = none.",
+            value: current?.apiKey ?? "",
+            password: true,
+            ignoreFocusOut: true,
+        });
+        if (apiKey === undefined) { return undefined; }
+        const model = await vscode.window.showInputBox({
+            title: "Endpoint — Default model (optional)",
+            prompt: "Default model id. Empty auto-discovers from <baseUrl>/models.",
+            value: current?.model ?? "",
+            ignoreFocusOut: true,
+        });
+        if (model === undefined) { return undefined; }
+        return { baseUrl: baseUrl.trim(), name: name.trim(), apiKey: apiKey.trim(), model: model.trim() };
+    }
+
+    /** Confirms a CRUD change and offers a reload (added/removed endpoints register on reload). */
+    private async offerReload(message: string): Promise<void> {
+        const pick = await vscode.window.showInformationMessage(message, "Reload Window");
+        if (pick === "Reload Window") {
+            await vscode.commands.executeCommand("workbench.action.reloadWindow");
         }
     }
 

@@ -188,8 +188,9 @@ export function renderConfigHtml(): string {
 
     function backendsView() {
         const list = (state?.backends) || [];
-        if (!list.length) { return '<div class="empty">No backend configured.</div>'; }
-        return list.map(b => {
+        const toolbar = '<div class="toolbar"><button id="add-endpoint">+ Add endpoint</button></div>';
+        if (!list.length) { return toolbar + '<div class="empty">No backend configured.</div>'; }
+        return toolbar + list.map(b => {
             const opts = (b.models || []);
             const hasCurrent = b.model && opts.indexOf(b.model) < 0;
             const modelOptions = (hasCurrent ? [b.model] : [])
@@ -209,7 +210,10 @@ export function renderConfigHtml(): string {
                     '<span class="desc">' + esc(b.detail || "") + "</span>" +
                     '<span class="bk-test" data-backend="' + esc(b.backend) + '"></span>' +
                     '<button class="secondary test" data-backend="' + esc(b.backend) + '">Test</button>' +
-                    '<button class="secondary edit" data-backend="' + esc(b.backend) + '">Edit</button>' +
+                    (b.custom
+                        ? '<button class="secondary edit-ep" data-backend="' + esc(b.backend) + '">Edit</button>' +
+                          '<button class="secondary remove-ep" data-backend="' + esc(b.backend) + '">Remove</button>'
+                        : '<button class="secondary edit" data-backend="' + esc(b.backend) + '">Edit</button>') +
                 "</div>" +
                 '<div class="bk-cfg">' + execCtl + modelCtl + "</div>" +
             "</div>";
@@ -359,6 +363,14 @@ export function renderConfigHtml(): string {
             });
             main.querySelectorAll("button.edit").forEach(el => {
                 el.onclick = () => vscode.postMessage({ type: "edit-backend", backend: el.getAttribute("data-backend") });
+            });
+            const addEp = document.getElementById("add-endpoint");
+            if (addEp) { addEp.onclick = () => vscode.postMessage({ type: "add-endpoint" }); }
+            main.querySelectorAll("button.edit-ep").forEach(el => {
+                el.onclick = () => vscode.postMessage({ type: "edit-endpoint", backend: el.getAttribute("data-backend") });
+            });
+            main.querySelectorAll("button.remove-ep").forEach(el => {
+                el.onclick = () => vscode.postMessage({ type: "remove-endpoint", backend: el.getAttribute("data-backend") });
             });
             main.querySelectorAll("select.model").forEach(el => {
                 el.onchange = () => vscode.postMessage({ type: "set-model", backend: el.getAttribute("data-backend"), value: el.value });
