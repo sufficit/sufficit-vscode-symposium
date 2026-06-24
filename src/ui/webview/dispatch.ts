@@ -26,6 +26,8 @@ window.addEventListener("message", ({ data }) => {
             setSideMode(data.sessionsSide || "auto");
             // Seed the default send mode once (don't override a saved choice).
             if (data.whenBusy && !(saved && saved.sendMode)) { sendMode.value = data.whenBusy; }
+            // Apply the real busy state from the host (overrides any stale busy set by render log replay).
+            setBusy(!!data.busy);
             root.classList.toggle("chat-only", !!data.chatOnly);
             layout();   // apply the sessions-side now (meta sets sideMode)
             layout();
