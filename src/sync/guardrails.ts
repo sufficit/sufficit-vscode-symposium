@@ -28,9 +28,14 @@ const hasTag = (tags: unknown, tag: string): boolean =>
 export async function fetchSessionGuardrails(hub: HubClient, sessionId: string): Promise<GuardrailItem[]> {
     if (!hub.configured() || !sessionId) { return []; }
     const tag = sessionTag(sessionId);
-    const recs = await hub.searchMemory({ type: GUARDRAIL_TYPE, limit: 100 });
+    // Mirror fetchSessionTasks: the server-side `type` filter on /api/memory/search
+    // is unreliable (same reason tasks pulls untyped and filters locally), which is
+    // why the typed query left the Guardrails panel empty on reopen. Pull recent
+    // records and filter by type + session tag locally. Limit 200 keeps a margin so
+    // the (few) guardrails aren't diluted out by the many task-checkpoints.
+    const recs = await hub.searchMemory({ limit: 200 });
     return (recs as any[])
-        .filter((r) => hasTag(r.tags, tag))
+        .filter((r) => r.type === GUARDRAIL_TYPE && hasTag(r.tags, tag))
         .sort((a, b) => Date.parse(a.createdAtUtc || 0) - Date.parse(b.createdAtUtc || 0))
         .map((r) => ({ id: String(r.id), text: r.summary || r.title || "", ts: r.createdAtUtc }));
 }

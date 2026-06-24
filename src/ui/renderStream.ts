@@ -12,6 +12,24 @@ export class RenderStream {
     private sink: ((message: unknown) => void) | null = null;
     private readonly observers = new Set<(message: unknown) => void>();
 
+    /**
+     * Optional persistence hook, called for every emitted render message so the
+     * full visual can be saved per session and replayed on reopen. Best-effort:
+     * never throws into the emit path.
+     */
+    constructor(private readonly onPersist?: (message: unknown) => void) { }
+
+    /**
+     * Preloads prior render messages into the buffer WITHOUT persisting or fanning
+     * them out — used to restore a reopened session's exact visual before the
+     * webview sink binds (bindSink then replays the seeded log). Returns the new
+     * buffer length so callers can mark how much is already persisted.
+     */
+    seed(messages: unknown[]): number {
+        for (const m of messages) { this.log.push(m); }
+        return this.log.length;
+    }
+
     /** True while a webview sink is bound. */
     get hasSink(): boolean {
         return this.sink !== null;
@@ -54,6 +72,7 @@ export class RenderStream {
         for (const observer of this.observers) {
             observer(message);
         }
+        try { this.onPersist?.(message); } catch { /* persistence is best-effort */ }
     }
 
     /** Sends a message to the webview sink only (not buffered, not fanned out). */

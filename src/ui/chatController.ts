@@ -7,6 +7,7 @@ import { fetchLatestCheckpoint } from "../sync/tasks";
 import { fetchSessionGuardrails } from "../sync/guardrails";
 import { WebviewToHost } from "./protocol";
 import { RenderStream } from "./renderStream";
+import * as renderLog from "../renderLog";
 import { transcriptText, transcriptMessages, transcriptMessagesUpTo, transcriptUpTo } from "./controllerTranscript";
 import { ChatQueue, PendingMessage, SendMode } from "./controllerQueue";
 import { ChangedFilesState } from "./changedFilesState";
@@ -36,7 +37,12 @@ export class ChatController {
     private readonly changed = new ChangedFilesState();
     private readonly queue = new ChatQueue();
     // Replayable render-message buffer + webview sink + read-only followers.
-    private readonly stream = new RenderStream();
+    // Every emitted message is also persisted (per session) so a reopened session
+    // replays its exact visual — tool rows, diffs, status notices, panels, all of it.
+    private readonly stream = new RenderStream((m) => this.persistEmit(m));
+    // How many render-log entries are already on disk (avoids re-persisting seeded
+    // history and entries flushed before the session id was known).
+    private persistedCount = 0;
     // Watchdog: force-ends a turn that goes silent (no events) for too long, so a
     // stalled tool call or dropped backend connection can't pin the session as
     // "working" forever (it survives reloads since the controller outlives them).
@@ -169,6 +175,34 @@ export class ChatController {
 
     setAiTools(names: string[]): void {
         this.session?.setAiTools?.(names);
+    }
+
+    /**
+     * Persists newly-emitted render messages once the session id is known. Pre-id
+     * emits stay buffered in the stream and are flushed here on the first emit
+     * after the id arrives (we append everything past persistedCount).
+     */
+    private persistEmit(_message: unknown): void {
+        const id = this.sessionId;
+        if (!id) { return; }
+        const log = this.stream.messages;
+        for (let i = this.persistedCount; i < log.length; i++) {
+            renderLog.appendRender(id, log[i]);
+        }
+        this.persistedCount = log.length;
+    }
+
+    /**
+     * Restores a reopened session's exact visual: if a render log exists for the
+     * resume id, preload it into the stream (replayed when the sink binds) and
+     * mark it already-persisted. Returns true when seeded, so the caller skips the
+     * lossy adapter.history() reconstruction.
+     */
+    seedRenderLog(): boolean {
+        const id = this.options.resumeSessionId;
+        if (!id || !renderLog.hasRender(id)) { return false; }
+        this.persistedCount = this.stream.seed(renderLog.readRender(id));
+        return true;
     }
 
     async loadHistory(info: SessionInfo): Promise<void> {

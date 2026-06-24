@@ -42,12 +42,16 @@ export function activeEditorContext(): ActiveEditorContext {
     const ed = vscode.window.activeTextEditor;
     const filePath = ed && ed.document.uri.scheme === "file" ? ed.document.uri.fsPath : undefined;
     if (!filePath || !ed) { return { path: filePath }; }
-    // VS Code "preview" tab (italic title): a peeked file, not really opened.
-    // We surface it only as a context suggestion, not an auto-attachment.
-    let preview = false;
+    // Only a really-open file editor auto-attaches. Everything else — a preview
+    // (italic) tab, or a DIFF view like git "Working Tree" (input has
+    // original/modified URIs, not a plain uri) — is surfaced as a context
+    // suggestion only, never auto-attached. Default to "preview" and clear it
+    // solely for a plain, non-preview text editor whose tab matches the file.
+    let preview = true;
     const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
-    const input = tab?.input as { uri?: vscode.Uri } | undefined;
-    if (tab?.isPreview && input?.uri?.fsPath === filePath) { preview = true; }
+    const input = tab?.input as { uri?: vscode.Uri; original?: vscode.Uri; modified?: vscode.Uri } | undefined;
+    const isPlainFileTab = !!input?.uri && !input.original && !input.modified && input.uri.fsPath === filePath;
+    if (isPlainFileTab && !tab?.isPreview) { preview = false; }
     const sel = ed.selection;
     if (sel.isEmpty) { return { path: filePath, preview }; }
     const start = sel.start.line + 1;

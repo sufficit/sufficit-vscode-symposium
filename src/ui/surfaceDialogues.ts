@@ -294,6 +294,10 @@ export class SurfaceDialogues {
             ? this.d.deps.runtime.findBySessionId(options.resumeSessionId)
             : undefined;
         const controller = existing ?? this.d.deps.runtime.create(adapter, options);
+        // Restore the exact visual for a reopened session: seed the render log
+        // (replayed when the sink binds below) so tool rows, diffs, status notices
+        // and panels reappear — not just text. Skips lossy history reconstruction.
+        const seededVisual = !existing && !!options.resumeSessionId && controller.seedRenderLog();
         this.d.setController(controller);
         void this.d.sync.refreshTasks();   // load this session's tasks into the panel
         void this.d.sync.refreshGuardrails();
@@ -381,7 +385,7 @@ export class SurfaceDialogues {
             }
             this.d.post(message);
         });
-        if (!existing && info) {
+        if (!existing && info && !seededVisual) {
             void controller.loadHistory(info);
         }
         if (options.resumeSessionId) {
