@@ -205,7 +205,7 @@ export function renderConfigHtml(): string {
             return '<div class="bk">' +
                 '<div class="bk-head">' +
                     '<span class="dot ' + (b.available ? "ok" : "no") + '"></span>' +
-                    '<span class="name">' + esc(b.backend) + "</span>" +
+                    '<span class="name">' + esc(b.displayName || b.backend) + "</span>" +
                     '<span class="desc">' + esc(b.detail || "") + "</span>" +
                     '<span class="bk-test" data-backend="' + esc(b.backend) + '"></span>' +
                     '<button class="secondary test" data-backend="' + esc(b.backend) + '">Test</button>' +

@@ -24,6 +24,8 @@ export type SendMode = "send" | "queue" | "steer";
 /** A backend's health + editable configuration, for the config UI. */
 export interface BackendStatus {
     backend: string;
+    /** Friendly name shown in the UI (adapter.displayName; falls back to `backend`). */
+    displayName: string;
     available: boolean;
     detail: string;
     /** Currently configured model ("" = backend default). */
@@ -157,6 +159,7 @@ async function probeBackend(a: AgentAdapter): Promise<BackendStatus> {
     }
     return {
         backend: a.backend,
+        displayName: a.displayName ?? a.backend,
         available,
         detail,
         model: cfg.get<string>("model", ""),
