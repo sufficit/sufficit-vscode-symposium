@@ -198,6 +198,7 @@
         padding: 6px 10px; opacity: 0.8; font-size: 0.85em; text-transform: uppercase;
     }
     #sessionsHeader > span:last-child { display: inline-flex; align-items: center; gap: 4px; }
+    #sessionsHeader .iconBtn svg { width: 15px; height: 15px; flex-shrink: 0; }
     .sessionFilterTextBtn {
         padding: 3px 8px;
         gap: 6px;
