@@ -1053,6 +1053,7 @@
         background: var(--vscode-badge-background, rgba(128,128,128,0.15));
         color: var(--vscode-badge-foreground, inherit);
         max-width: 240px;
+        min-width: 0;
     }
     .chip .chipIcon { width: 11px; height: 11px; opacity: 0.7; flex-shrink: 0; }
     .chip .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
