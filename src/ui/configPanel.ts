@@ -232,16 +232,96 @@ export class ConfigPanel {
             }
             case "add-compression-preset": {
                 const { CompressionManager } = await import("../compression");
+
+                // Step 1: Name
                 const name = await vscode.window.showInputBox({
                     prompt: "Nome do preset de compressão",
-                    validateInput: (v) => v.trim() ? undefined : "Nome inválido",
+                    placeHolder: "Ex: Desenvolvimento, Review Code, Debug Profundo",
+                    validateInput: (v) => v.trim() ? undefined : "Nome obrigatório",
                 });
                 if (!name) { return; }
-                const presets = CompressionManager.getInstance().getPresets();
+
+                // Step 2: Description (optional)
+                const description = await vscode.window.showInputBox({
+                    prompt: "Descrição (opcional)",
+                    placeHolder: "Descreva quando usar este preset",
+                });
+
+                // Step 3: Strategy
+                const strategy = await vscode.window.showQuickPick([
+                    { label: "none", description: "Sem compressão - mantém todo histórico" },
+                    { label: "summarize", description: "Resume mensagens antigas, mantém N recentes" },
+                    { label: "aggressive", description: "Compressão máxima - só 5 mensagens recentes" },
+                    { label: "token-budget", description: "Limite de tokens - corta pelo tamanho estimado" },
+                ], {
+                    placeHolder: "Escolha a estratégia de compressão",
+                });
+                if (!strategy) { return; }
+
                 const id = `custom-${Date.now()}`;
-                const preset = presets[0]; // Clone first preset as template
-                await CompressionManager.getInstance().savePreset({ ...preset, id, name: name.trim() });
+                const preset: any = {
+                    id,
+                    name: name.trim(),
+                    description: description?.trim() || undefined,
+                    strategy: strategy.label,
+                    params: {}
+                };
+
+                // Step 4: Strategy-specific params
+                if (strategy.label === "summarize") {
+                    const keepRecent = await vscode.window.showInputBox({
+                        prompt: "Quantas mensagens recentes manter?",
+                        value: "10",
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n > 0 && n <= 100) ? undefined : "Entre 1 e 100";
+                        }
+                    });
+                    if (!keepRecent) { return; }
+                    preset.params.keepRecent = parseInt(keepRecent);
+
+                } else if (strategy.label === "aggressive") {
+                    const keepRecent = await vscode.window.showInputBox({
+                        prompt: "Quantas mensagens recentes manter?",
+                        value: "5",
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n > 0 && n <= 20) ? undefined : "Entre 1 e 20";
+                        }
+                    });
+                    if (!keepRecent) { return; }
+                    preset.params.keepRecent = parseInt(keepRecent);
+
+                } else if (strategy.label === "token-budget") {
+                    const maxTokens = await vscode.window.showInputBox({
+                        prompt: "Limite máximo de tokens?",
+                        value: "4000",
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n >= 500 && n <= 200000) ? undefined : "Entre 500 e 200000";
+                        }
+                    });
+                    if (!maxTokens) { return; }
+                    preset.params.maxTokens = parseInt(maxTokens);
+                }
+
+                // Step 5: Tool compression level (future: per-tool config)
+                const toolLevel = await vscode.window.showQuickPick([
+                    { label: "none", description: "Não comprimir tool requests" },
+                    { label: "low", description: "Remove headers redundantes (contextId, sessionId)" },
+                    { label: "medium", description: "Compacta em hints (action: 'saved task')" },
+                    { label: "high", description: "Remove tool calls já processados" },
+                ], {
+                    placeHolder: "Nível de compressão de tool requests (opcional)",
+                });
+
+                if (toolLevel) {
+                    preset.params.toolCompressionLevel = toolLevel.label;
+                }
+
+                await CompressionManager.getInstance().savePreset(preset);
                 await this.pushState();
+                vscode.window.showInformationMessage(`Preset "${name.trim()}" criado com sucesso!`);
                 return;
             }
             case "remove-compression-preset": {
@@ -257,20 +337,82 @@ export class ConfigPanel {
                 const presets = CompressionManager.getInstance().getPresets();
                 const preset = presets.find(p => p.id === message.key);
                 if (!preset) { return; }
+
+                // Edit name
                 const name = await vscode.window.showInputBox({
                     prompt: "Nome do preset",
                     value: preset.name,
-                    validateInput: (v) => v.trim() ? undefined : "Nome inválido",
+                    validateInput: (v) => v.trim() ? undefined : "Nome obrigatório",
                 });
                 if (name === undefined) { return; }
-                await CompressionManager.getInstance().savePreset({ ...preset, name: name.trim() });
+
+                // Edit description
+                const description = await vscode.window.showInputBox({
+                    prompt: "Descrição (opcional)",
+                    value: preset.description || "",
+                });
+
+                const updated: any = {
+                    ...preset,
+                    name: name.trim(),
+                    description: description?.trim() || undefined,
+                };
+
+                // Edit strategy-specific params
+                if (preset.strategy === "summarize" || preset.strategy === "aggressive") {
+                    const keepRecent = await vscode.window.showInputBox({
+                        prompt: "Mensagens recentes a manter",
+                        value: String(preset.params?.keepRecent || 10),
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n > 0 && n <= 100) ? undefined : "Entre 1 e 100";
+                        }
+                    });
+                    if (keepRecent !== undefined) {
+                        updated.params = { ...updated.params, keepRecent: parseInt(keepRecent) };
+                    }
+                } else if (preset.strategy === "token-budget") {
+                    const maxTokens = await vscode.window.showInputBox({
+                        prompt: "Limite de tokens",
+                        value: String(preset.params?.maxTokens || 4000),
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n >= 500 && n <= 200000) ? undefined : "Entre 500 e 200000";
+                        }
+                    });
+                    if (maxTokens !== undefined) {
+                        updated.params = { ...updated.params, maxTokens: parseInt(maxTokens) };
+                    }
+                }
+
+                // Edit tool compression level
+                const currentToolLevel = (preset.params as any)?.toolCompressionLevel || "none";
+                const toolLevel = await vscode.window.showQuickPick([
+                    { label: "none", description: "Não comprimir", picked: currentToolLevel === "none" },
+                    { label: "low", description: "Remove headers", picked: currentToolLevel === "low" },
+                    { label: "medium", description: "Hints compactos", picked: currentToolLevel === "medium" },
+                    { label: "high", description: "Remove processados", picked: currentToolLevel === "high" },
+                ], {
+                    placeHolder: "Nível de compressão de tool requests",
+                });
+
+                if (toolLevel) {
+                    updated.params = { ...updated.params, toolCompressionLevel: toolLevel.label };
+                }
+
+                await CompressionManager.getInstance().savePreset(updated);
                 await this.pushState();
+                vscode.window.showInformationMessage(`Preset "${name.trim()}" atualizado!`);
                 return;
             }
             case "set-compression-preset-default": {
                 const { CompressionManager } = await import("../compression");
                 await CompressionManager.getInstance().setDefaultPreset(message.value ?? "");
                 await this.pushState();
+                return;
+            }
+            case "show-compression-manual": {
+                await vscode.commands.executeCommand("symposium.showCompressionManual");
                 return;
             }
         }

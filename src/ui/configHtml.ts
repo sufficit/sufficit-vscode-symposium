@@ -167,7 +167,6 @@ export function renderConfigHtml(): string {
         { id: "instruction", label: "Instructions", key: "instruction" },
         { id: "backends", label: "Backends" },
         { id: "prefs", label: "Preferences" },
-        { id: "compaction", label: "Compaction" },
         { id: "compression", label: "Compression" },
         { id: "sync", label: "Sync" },
     ];
@@ -313,8 +312,11 @@ export function renderConfigHtml(): string {
         );
     }
 
-    function compactionView() {
+    function compressionView() {
+        const presets = (state && state.compressionPresets) || [];
+        const defaultPresetId = (state && state.compressionDefaultPresetId) || "none";
         const p = (state && state.prefs) || {};
+
         const sel = (key, value, opts) =>
             '<select class="pref" data-key="' + esc(key) + '">' +
             opts.map(o => '<option value="' + esc(o.v) + '"' + (o.v === value ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") +
@@ -326,11 +328,37 @@ export function renderConfigHtml(): string {
             '</div><div class="ctl">' + ctl + "</div></div>";
         const section = (title, body) =>
             '<section class="section"><div class="section-title">' + esc(title) + "</div>" + body + "</section>";
-        // autoCompactAt is a 0–1 fraction stored as a number; compare as fixed strings.
+
+        const presetCard = (preset) => {
+            const isDefault = preset.id === defaultPresetId;
+            const isBuiltin = preset.id === "none" || preset.id === "summarize" || preset.id === "aggressive" || preset.id === "token-budget";
+            const defaultBadge = isDefault ? '<span class="badge badge-default">Default</span>' : '';
+
+            return '<div class="card preset-card" data-id="' + esc(preset.id) + '">' +
+                '<div class="card-header">' +
+                    '<span class="preset-name">' + esc(preset.name) + '</span>' +
+                    defaultBadge +
+                '</div>' +
+                '<div class="card-body">' +
+                    '<div class="preset-strategy"><strong>Strategy:</strong> ' + esc(preset.strategy) + '</div>' +
+                    (preset.strategy === "token-budget" ?
+                        '<div class="preset-budget"><strong>Token budget:</strong> ' + esc(preset.tokenBudget || "N/A") + '</div>' :
+                        '<div class="preset-target"><strong>Target ratio:</strong> ' + (preset.targetRatio ? (preset.targetRatio * 100).toFixed(0) + '%' : 'N/A') + '</div>'
+                    ) +
+                '</div>' +
+                '<div class="card-actions">' +
+                    (!isBuiltin ? '<button class="secondary btn-edit-preset" data-id="' + esc(preset.id) + '">Edit</button>' : '') +
+                    (!isBuiltin ? '<button class="btn-delete-preset" data-id="' + esc(preset.id) + '">Delete</button>' : '') +
+                    (!isDefault ? '<button class="btn-set-default-preset" data-id="' + esc(preset.id) + '">Set Default</button>' : '') +
+                '</div>' +
+            '</div>';
+        };
+
+        // Auto-compaction settings (merged from old compaction tab)
         const compactAt = String(p.autoCompactAt != null ? p.autoCompactAt : 0.8);
         const histMsgs = String(p.maxHistoryMessages != null ? p.maxHistoryMessages : 40);
 
-        return (
+        return '<div class="compression-view">' +
             section("Auto-compaction",
                 item("Auto-compact threshold", "Summarize older turns into one note when a request reaches this fraction of the model's context window. The full transcript stays in the lossless ledger (recoverable via read_session). Disabled = only manual /compact.",
                     sel("symposium.openai.autoCompactAt", compactAt,
@@ -351,18 +379,28 @@ export function renderConfigHtml(): string {
                 item("Stop if no reply", "Anti-loop: stop the turn after this many consecutive tool steps with no assistant reply. Unlimited = never auto-stop on silence.",
                     sel("symposium.openai.noProgressStop", String(p.noProgressStop || 0),
                         [{ v: "0", l: "Unlimited" }, { v: "8", l: "8 steps" }, { v: "12", l: "12 steps" }, { v: "16", l: "16 steps" }, { v: "24", l: "24 steps" }]))
-            )
-        );
+            ) +
+            '<section class="section"><div class="section-title">COMPRESSION PRESETS' +
+                '<button class="secondary" id="btn-compression-manual" style="float: right; margin-top: -2px;" title="Show Compression Manual">📖 Manual</button>' +
+            '</div>' +
+            '<div class="preset-actions">' +
+                '<button class="primary" id="btn-add-preset">Create New Preset</button>' +
+            '</div>' +
+            '<div class="presets-grid">' +
+                presets.map(presetCard).join('') +
+            '</div>' +
+            '</section>' +
+        '</div>';
     }
+
 
     function render() {
         renderTabs();
         const main = document.getElementById("content");
         const page = (h) => '<div class="page">' + h + "</div>";
         if (!state) { main.innerHTML = page('<div class="empty">Loading…</div>'); return; }
-        if (active === "prefs" || active === "compaction" || active === "compression") {
+        if (active === "prefs" || active === "compression") {
             main.innerHTML = page(
-                active === "compaction" ? compactionView() :
                 active === "compression" ? compressionView() :
                 prefsView()
             );
@@ -375,6 +413,22 @@ export function renderConfigHtml(): string {
                 el.onblur = save;
                 el.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); save(); } };
             });
+            // Compression presets buttons
+            if (active === "compression") {
+                const addPresetBtn = document.getElementById("btn-add-preset");
+                if (addPresetBtn) {
+                    addPresetBtn.onclick = () => vscode.postMessage({ type: "add-compression-preset" });
+                }
+                main.querySelectorAll(".btn-edit-preset").forEach(el => {
+                    el.onclick = () => vscode.postMessage({ type: "edit-compression-preset", key: el.getAttribute("data-id") });
+                });
+                main.querySelectorAll(".btn-delete-preset").forEach(el => {
+                    el.onclick = () => vscode.postMessage({ type: "remove-compression-preset", key: el.getAttribute("data-id") });
+                });
+                main.querySelectorAll(".btn-set-default-preset").forEach(el => {
+                    el.onclick = () => vscode.postMessage({ type: "set-compression-preset-default", value: el.getAttribute("data-id") });
+                });
+            }
             return;
         }
         if (active === "backends") {
@@ -461,6 +515,11 @@ export function renderConfigHtml(): string {
 
     // Compression preset handlers
     document.addEventListener("click", (e) => {
+        const manualBtn = e.target.closest("#btn-compression-manual");
+        if (manualBtn) {
+            vscode.postMessage({ type: "show-compression-manual" });
+            return;
+        }
         const addPresetBtn = e.target.closest("#add-compression-preset");
         if (addPresetBtn) {
             vscode.postMessage({ type: "add-compression-preset" });

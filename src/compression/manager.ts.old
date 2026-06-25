@@ -1,0 +1,437 @@
+/**
+ * CompressionManager - Gerenciador de presets e configurações de compressão
+ * Centraliza toda a lógica de compressão de tokens por seção no Symposium
+ */
+
+import * as vscode from "vscode";
+import {
+    CompressionPreset,
+    CompressionSettings,
+    SectionCompressionConfig,
+    CompressionDiagnostics,
+    DEFAULT_PRESETS,
+} from "./types";
+import { symposiumLog } from "../extension/log";
+
+/**
+ * Gerenciador central de compressão do Symposium
+ */
+export class CompressionManager {
+    private static instance: CompressionManager;
+    private presets: Map<string, CompressionPreset> = new Map();
+    private sectionConfigs: Map<string, SectionCompressionConfig> = new Map();
+    private settings: CompressionSettings;
+    private changeEmitter = new vscode.EventEmitter<void>();
+
+    /** Evento disparado quando configurações de compressão mudam */
+    static readonly onDidChangeCompression = CompressionManager.getInstance().changeEmitter.event;
+
+    private constructor() {
+        this.settings = {
+            defaultPresetId: "none",
+            presets: DEFAULT_PRESETS,
+            showCompressionSelector: true,
+            showCompressionDiagnostics: true,
+        };
+
+        // Carregar presets do config
+        this.loadPresetsFromConfig();
+
+        // Ouvir mudanças na configuração
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration("symposium.compression")) {
+                this.loadPresetsFromConfig();
+                this.changeEmitter.fire();
+                symposiumLog("Configurações de compressão recarregadas");
+            }
+        });
+    }
+
+    /** Obter instância singleton */
+    static getInstance(): CompressionManager {
+        if (!CompressionManager.instance) {
+            CompressionManager.instance = new CompressionManager();
+        }
+        return CompressionManager.instance;
+    }
+
+    /** Carregar presets das configurações do VSCode */
+    private loadPresetsFromConfig(): void {
+        const config = vscode.workspace.getConfiguration("symposium.compression");
+
+        // Carregar preset padrão
+        this.settings.defaultPresetId = config.get<string>("defaultPresetId", "none");
+
+        // Carregar presets customizados (se houver)
+        const customPresets = config.get<CompressionPreset[]>("presets", []);
+        
+        // Inicializar com presets padrão
+        this.presets.clear();
+        DEFAULT_PRESETS.forEach((preset) => {
+            this.presets.set(preset.id, preset);
+        });
+
+        // Adicionar presets customizados (sobrescrevem padrões com mesmo ID)
+        customPresets.forEach((preset) => {
+            this.presets.set(preset.id, preset);
+        });
+
+        // Carregar outras configurações
+        this.settings.showCompressionSelector = config.get<boolean>("showSelector", true);
+        this.settings.showCompressionDiagnostics = config.get<boolean>("showDiagnostics", true);
+
+        symposiumLog(`CompressionManager carregado: ${this.presets.size} presets, padrão: ${this.settings.defaultPresetId}`);
+    }
+
+    /** Obter todos os presets disponíveis */
+    getAllPresets(): CompressionPreset[] {
+        return Array.from(this.presets.values());
+    }
+
+    /** Obter todos os presets (alias para getAllPresets) */
+    getPresets(): CompressionPreset[] {
+        return this.getAllPresets();
+    }
+
+    /** Obter ID do preset padrão */
+    getDefaultPresetId(): string {
+        return this.settings.defaultPresetId;
+    }
+
+    /** Verificar se compressão por seção está habilitada */
+    isPerSessionEnabled(): boolean {
+        return this.settings.perSessionCompression ?? true;
+    }
+
+    /** Definir preset padrão (alias para setDefaultPresetId) */
+    setDefaultPreset(id: string): void {
+        this.setDefaultPresetId(id);
+    }
+
+    /** Obter preset por ID */
+    getPreset(id: string): CompressionPreset | undefined {
+        return this.presets.get(id);
+    }
+
+    /** Obter preset padrão */
+    getDefaultPreset(): CompressionPreset {
+        return this.getPreset(this.settings.defaultPresetId) || this.getPreset("none")!;
+    }
+
+    /** Definir preset padrão */
+    setDefaultPresetId(id: string): void {
+        if (!this.presets.has(id)) {
+            throw new Error(`Preset "${id}" não existe`);
+        }
+        this.settings.defaultPresetId = id;
+        vscode.workspace.getConfiguration("symposium.compression").update("defaultPresetId", id, vscode.ConfigurationTarget.Global);
+        this.changeEmitter.fire();
+    }
+
+    /** Deletar preset */
+    deletePreset(id: string): void {
+        if (!this.presets.has(id)) {
+            throw new Error(`Preset "${id}" não existe`);
+        }
+        if (DEFAULT_PRESETS.some(p => p.id === id)) {
+            throw new Error(`Não é possível deletar preset padrão "${id}"`);
+        }
+        this.presets.delete(id);
+        
+        // Remover do config
+        const customPresets = Array.from(this.presets.values()).filter(
+            p => !DEFAULT_PRESETS.some(dp => dp.id === p.id)
+        );
+        vscode.workspace.getConfiguration("symposium.compression").update("presets", customPresets, vscode.ConfigurationTarget.Global);
+        
+        this.changeEmitter.fire();
+        symposiumLog(`Preset "${id}" removido`);
+    }
+
+    /** Adicionar ou atualizar preset */
+    savePreset(preset: CompressionPreset): void {
+        this.presets.set(preset.id, preset);
+        
+        // Salvar na configuração (somente presets customizados)
+        const customPresets = Array.from(this.presets.values()).filter(
+            p => !DEFAULT_PRESETS.some(dp => dp.id === p.id)
+        );
+        vscode.workspace.getConfiguration("symposium.compression").update("presets", customPresets, vscode.ConfigurationTarget.Global);
+        this.changeEmitter.fire();
+        symposiumLog(`Preset "${preset.id}" salvo`);
+    }
+
+    /** Remover preset customizado */
+    removePreset(id: string): void {
+        if (DEFAULT_PRESETS.some(p => p.id === id)) {
+            throw new Error(`Não é possível remover preset padrão "${id}"`);
+        }
+        if (!this.presets.has(id)) {
+            throw new Error(`Preset "${id}" não existe`);
+        }
+
+        this.presets.delete(id);
+        
+        // Atualizar presets customizados na configuração
+        const customPresets = Array.from(this.presets.values()).filter(
+            p => !DEFAULT_PRESETS.some(dp => dp.id === p.id)
+        );
+        vscode.workspace.getConfiguration("symposium.compression").update("presets", customPresets, vscode.ConfigurationTarget.Global);
+        
+        // Se era o padrão, resetar para "none"
+        if (this.settings.defaultPresetId === id) {
+            this.setDefaultPresetId("none");
+        }
+        
+        this.changeEmitter.fire();
+        symposiumLog(`Preset "${id}" removido`);
+    }
+
+    /** Obter configuração de compressão para uma seção */
+    getSectionConfig(sessionId: string): CompressionPreset {
+        const sectionConfig = this.sectionConfigs.get(sessionId);
+        if (sectionConfig?.overrideDefault && sectionConfig.presetId) {
+            return this.getPreset(sectionConfig.presetId) || this.getDefaultPreset();
+        }
+        return this.getDefaultPreset();
+    }
+
+    /** Definir configuração de compressão para uma seção */
+    setSectionConfig(sessionId: string, presetId: string, override: boolean = true): void {
+        const preset = this.getPreset(presetId);
+        if (!preset) {
+            throw new Error(`Preset "${presetId}" não existe`);
+        }
+
+        this.sectionConfigs.set(sessionId, {
+            presetId,
+            overrideDefault: override,
+        });
+        
+        symposiumLog(`Seção ${sessionId}: compressão definida para "${presetId}"`);
+    }
+
+    /** Remover configuração de compressão de uma seção */
+    removeSectionConfig(sessionId: string): void {
+        this.sectionConfigs.delete(sessionId);
+        symposiumLog(`Seção ${sessionId}: configuração de compressão removida`);
+    }
+
+    /** Obter opções de compressão para uma requisição */
+    getCompressionOptions(sessionId: string, options?: Partial<CompressionOptions>): CompressionOptions | undefined {
+        const preset = this.getSectionConfig(sessionId);
+        
+        if (preset.strategy === "none" && !options?.force) {
+            return undefined; // Sem compressão
+        }
+
+        return {
+            presetId: preset.id,
+            force: options?.force,
+            onDiagnostics: options?.onDiagnostics,
+        };
+    }
+
+    /** Obter configurações globais */
+    getSettings(): CompressionSettings {
+        return { ...this.settings, presets: this.getAllPresets() };
+    }
+
+    /** Exportar configurações para backup */
+    exportSettings(): string {
+        const data = {
+            defaultPresetId: this.settings.defaultPresetId,
+            customPresets: Array.from(this.presets.values()).filter(
+                p => !DEFAULT_PRESETS.some(dp => dp.id === p.id)
+            ),
+            sectionConfigs: Array.from(this.sectionConfigs.entries()),
+        };
+        return JSON.stringify(data, null, 2);
+    }
+
+    /** Importar configurações de backup */
+    async importSettings(json: string): Promise<void> {
+        try {
+            const data = JSON.parse(json);
+            
+            // Validar estrutura básica
+            if (!data.customPresets || !Array.isArray(data.customPresets)) {
+                throw new Error("Formato inválido: customPresets deve ser um array");
+            }
+
+            // Salvar presets customizados
+            vscode.workspace.getConfiguration("symposium.compression").update("presets", data.customPresets, vscode.ConfigurationTarget.Global);
+            
+            if (data.defaultPresetId) {
+                await vscode.workspace.getConfiguration("symposium.compression").update("defaultPresetId", data.defaultPresetId, vscode.ConfigurationTarget.Global);
+            }
+
+            this.loadPresetsFromConfig();
+            this.changeEmitter.fire();
+            symposiumLog("Configurações de compressão importadas com sucesso");
+        } catch (error) {
+            symposiumLog(`Erro ao importar configurações de compressão: ${error}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Aplicar compressão a uma lista de mensagens (stub para implementação futura)
+     * Esta é a função principal que será chamada pelos adapters
+     */
+    async applyCompression(
+        messages: any[],
+        options: CompressionOptions,
+        _sessionContext?: { sessionId: string; model?: string }
+    ): Promise<{ messages: any[]; diagnostics?: CompressionDiagnostics }> {
+        const preset = this.getPreset(options.presetId || this.settings.defaultPresetId) || this.getDefaultPreset();
+
+        if (preset.strategy === "none") {
+            return { messages };
+        }
+
+        // Estimativa simples de tokens (4 chars ~= 1 token)
+        const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+
+        const originalMessages = messages.length;
+        const originalChars = messages.reduce((sum, m) => sum + JSON.stringify(m).length, 0);
+        const originalTokens = estimateTokens(JSON.stringify(messages));
+
+        // Aplicar estratégia de compressão
+        let compressedMessages = messages;
+
+        switch (preset.strategy) {
+            case "prune-old":
+                compressedMessages = this.pruneOld(messages, preset);
+                break;
+            case "truncate-content":
+                compressedMessages = this.truncateContent(messages, preset);
+                break;
+            case "fold-tokens":
+                compressedMessages = this.foldTokens(messages, preset);
+                break;
+            case "summarize":
+                // TODO: Implementar resumo com LLM
+                symposiumLog("Estratégia 'summarize' ainda não implementada, usando 'prune-old' como fallback");
+                compressedMessages = this.pruneOld(messages, { ...preset, strategy: "prune-old" });
+                break;
+        }
+
+        const compressedMessagesCount = compressedMessages.length;
+        const compressedChars = compressedMessages.reduce((sum, m) => sum + JSON.stringify(m).length, 0);
+        const compressedTokens = estimateTokens(JSON.stringify(compressedMessages));
+
+        const diagnostics: CompressionDiagnostics = {
+            originalMessages,
+            compressedMessages: compressedMessagesCount,
+            originalChars,
+            compressedChars,
+            originalTokens,
+            compressedTokens,
+            presetId: preset.id,
+            affectedMessageIds: [],
+        };
+
+        // Disparar callback de diagnóstico se fornecido
+        if (options.onDiagnostics) {
+            options.onDiagnostics(diagnostics);
+        }
+
+        symposiumLog(
+            `Compressão aplicada: ${preset.strategy} - ` +
+            `${originalMessages} -> ${compressedMessagesCount} msgs, ` +
+            `${originalTokens} -> ${compressedTokens} tokens`
+        );
+
+        return { messages: compressedMessages, diagnostics };
+    }
+
+    /** Estratégia: Prune Old - Remove mensagens antigas */
+    private pruneOld(messages: any[], preset: CompressionPreset): any[] {
+        const maxMessages = preset.maxMessages || 50;
+        
+        if (messages.length <= maxMessages) {
+            return messages;
+        }
+
+        // Preservar mensagens do sistema
+        const systemMessages = messages.filter((m) =>
+            m.role === "system" && (preset.preserveSystemMessages !== false)
+        );
+
+        // Mensagens não-sistema
+        const otherMessages = messages.filter((m) => m.role !== "system" || !preset.preserveSystemMessages);
+
+        // Manter últimas N mensagens
+        const keepCount = maxMessages - systemMessages.length;
+        const kept = otherMessages.slice(-keepCount);
+
+        return [...systemMessages, ...kept];
+    }
+
+    /** Estratégia: Truncate Content - Trunca conteúdo mantendo estrutura */
+    private truncateContent(messages: any[], preset: CompressionPreset): any[] {
+        const maxChars = preset.maxChars || 2000;
+
+        return messages.map((msg) => {
+            if (!msg.content || typeof msg.content !== "string") {
+                return msg;
+            }
+
+            if (msg.content.length <= maxChars) {
+                return msg;
+            }
+
+            return {
+                ...msg,
+                content: msg.content.substring(0, maxChars) + "... [truncated]",
+            };
+        });
+    }
+
+    /** Estratégia: Fold Tokens - Resume/compensa mensagens mantendo estrutura */
+    private foldTokens(messages: any[], preset: CompressionPreset): any[] {
+        const maxTokens = preset.maxTokens || 10000;
+        
+        // Estimar tokens de cada mensagem
+        const messageTokens = messages.map((msg, idx) => ({
+            idx,
+            msg,
+            tokens: Math.ceil(JSON.stringify(msg).length / 4),
+        }));
+
+        // Encontrar ponto de corte
+        let totalTokens = 0;
+        let cutIndex = messageTokens.length;
+        for (let i = messageTokens.length - 1; i >= 0; i--) {
+            if (totalTokens + messageTokens[i].tokens > maxTokens) {
+                cutIndex = i + 1;
+                break;
+            }
+            totalTokens += messageTokens[i].tokens;
+        }
+
+        // Preservar mensagens do sistema
+        const systemMessages = messageTokens.filter(
+            (mt) => mt.msg.role === "system" && preset.preserveSystemMessages !== false
+        ).map(mt => mt.msg);
+
+        // Mensagens não-sistema a manter
+        const otherMessagesToKeep = messageTokens
+            .slice(cutIndex)
+            .filter(mt => mt.msg.role !== "system" || !preset.preserveSystemMessages)
+            .map(mt => mt.msg);
+
+        // Criar mensagem de resumo das mensagens removidas
+        const removedCount = cutIndex - systemMessages.length;
+        if (removedCount > 0) {
+            const summaryMsg = {
+                role: "system" as const,
+                content: `[${removedCount} mensagens anteriores foram removidas para economizar tokens. Use --full-context para incluir histórico completo.]`,
+            };
+            return [...systemMessages, summaryMsg, ...otherMessagesToKeep];
+        }
+
+        return [...systemMessages, ...otherMessagesToKeep];
+    }
+}

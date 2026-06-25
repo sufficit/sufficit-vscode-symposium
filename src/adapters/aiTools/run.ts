@@ -257,6 +257,7 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                 });
                 return JSON.stringify({ id });
             }
+            case "TaskCreate":
             case "add_task": {
                 if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
                 if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured" }); }
@@ -301,10 +302,16 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                     });
                 return JSON.stringify({ tasks, pendingOnly: !includeDone });
             }
+            case "TaskUpdate":
             case "task_complete": {
                 const id = String(args.id ?? "");
                 if (!id) { return JSON.stringify({ error: "id is required" }); }
                 if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured" }); }
+                // TaskUpdate uses done param, task_complete is implicit done=true
+                const isDone = name === "TaskUpdate" ? (args.done !== false) : true;
+                if (!isDone) {
+                    return JSON.stringify({ ok: true, message: "task unchanged (done=false)" });
+                }
                 const ok = await markTaskDone(hub, id);
                 // Silence success — empty string saves tokens; errors/JSON only on failure.
                 return ok ? "" : JSON.stringify({ error: "save failed — check hub configuration" });

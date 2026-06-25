@@ -207,7 +207,7 @@ export class SurfaceMessages {
                             const compressionManager = CompressionManager.getInstance();
                             const presetId = message.compressionPresetId || undefined;
                             if (presetId) {
-                                compressionManager.setSectionConfig(sessionId, presetId, true);
+                                compressionManager.setSectionConfig(sessionId, presetId);
                             } else {
                                 compressionManager.removeSectionConfig(sessionId);
                             }

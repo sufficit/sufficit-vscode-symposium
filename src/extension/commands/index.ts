@@ -2,6 +2,7 @@ import { buildCommandContext, CommandDeps } from "./helpers";
 import { registerCreateCommands } from "./create";
 import { registerSessionCommands } from "./sessions";
 import { registerMiscCommands } from "./misc";
+import { registerShowManualCommand } from "../../commands/showManual";
 
 export type { CommandDeps } from "./helpers";
 
@@ -11,4 +12,5 @@ export function registerCommands(deps: CommandDeps): void {
     registerMiscCommands(ctx);
     registerCreateCommands(ctx);
     registerSessionCommands(ctx);
+    registerShowManualCommand(deps.context);
 }
