@@ -261,8 +261,8 @@ export function renderChangedFiles() {
     const ttl = document.createElement("span"); ttl.className = "cftitle"; ttl.textContent = "Edited files (" + items.length + ")";
     head.appendChild(ttl);
     const acts = document.createElement("span"); acts.className = "cfheadActs";
-    acts.appendChild(cfLabelBtn("check", "Approve all", "Accept all (git add)", "ok", () => vscode.postMessage({ type: "file-approve-all" })));
-    acts.appendChild(cfLabelBtn("x", "Reject all", "Revert all to pre-edit state", "no", () => vscode.postMessage({ type: "file-reject-all" })));
+    acts.appendChild(cfLabelBtn("check", "Approve all", "Accept all (git add)", "ok", () => vscode.postMessage({ type: "file-approve-all", paths: changedItems.map((c) => c.path) })));
+    acts.appendChild(cfLabelBtn("x", "Reject all", "Revert all to pre-edit state", "no", () => vscode.postMessage({ type: "file-reject-all", paths: changedItems.map((c) => c.path) })));
     head.appendChild(acts);
     const list = document.createElement("div"); list.className = "cflist";
     for (const c of items) {
@@ -305,13 +305,17 @@ export function panelDefs() {
         { key: "changed", icon: "diff", el: changedFiles, title: "Edited files", count: changedItems.length, badge: String(changedItems.length), color: "var(--vscode-charts-green, #89c374)" },
     ];
 }
+let prevShownKey = "";   // signature of the previously-shown panel set
 export function refreshPanels() {
     const defs = panelDefs();
     const shown = defs.filter((d) => d.count > 0);
     if (activePanel && !shown.some((d) => d.key === activePanel)) { activePanel = null; }
-    // When exactly one panel has content, open it automatically (0→1) so the
-    // user sees it docked above the composer without having to click its tab.
-    if (activePanel == null && shown.length === 1) { activePanel = shown[0].key; }
+    const shownKey = shown.map((d) => d.key).join(",");
+    // Auto-open a lone panel ONLY when the shown set just changed into a single
+    // panel (e.g. it newly appeared) — NOT on every re-render, otherwise a manual
+    // close is undone on the next render and the panel looks stuck open.
+    if (activePanel == null && shown.length === 1 && shownKey !== prevShownKey) { activePanel = shown[0].key; }
+    prevShownKey = shownKey;
     panelTabs.textContent = "";
     for (const d of shown) {
         const b = document.createElement("button");

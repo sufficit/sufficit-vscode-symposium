@@ -80,8 +80,8 @@ export type WebviewToHost =
     | { type: "file-diff"; path: string }
     | { type: "file-approve"; path: string }
     | { type: "file-reject"; path: string }
-    | { type: "file-approve-all" }
-    | { type: "file-reject-all" }
+    | { type: "file-approve-all"; paths?: string[] }
+    | { type: "file-reject-all"; paths?: string[] }
     | { type: "session-action"; sessionId: string; backend: string; action: SessionActionKind }
     | { type: "session-list-backends"; backend: string }
     | { type: "session-switch-backend"; sessionId: string; backend: string; targetBackend: string }
