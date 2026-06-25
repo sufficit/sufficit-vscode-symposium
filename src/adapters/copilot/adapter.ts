@@ -89,10 +89,10 @@ export class CopilotAdapter implements AgentAdapter {
      * extension under workspaceStorage/<id>/GitHub.copilot-chat/debug-logs. No API
      * call or token needed — the extension fetches and caches it locally.
      */
-    async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
+    refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
         try {
             const wsStorage = path.join(os.homedir(), ".config", "Code", "User", "workspaceStorage");
-            if (!fs.existsSync(wsStorage)) { return { models: this.models() }; }
+            if (!fs.existsSync(wsStorage)) { return Promise.resolve({ models: this.models() }); }
             // Find all models.json files under copilot debug-logs
             const candidates: { mtime: number; file: string }[] = [];
             for (const ws of fs.readdirSync(wsStorage)) {
@@ -106,7 +106,7 @@ export class CopilotAdapter implements AgentAdapter {
                     } catch { /* skip */ }
                 }
             }
-            if (!candidates.length) { return { models: this.models() }; }
+            if (!candidates.length) { return Promise.resolve({ models: this.models() }); }
             candidates.sort((a, b) => b.mtime - a.mtime);
             const raw = JSON.parse(fs.readFileSync(candidates[0].file, "utf8"));
             const list: any[] = Array.isArray(raw) ? raw : (raw?.models ?? []);
@@ -127,13 +127,13 @@ export class CopilotAdapter implements AgentAdapter {
                 setCached("copilot", entry);
                 const cfg = this.getConfig();
                 const configured = cfg.model;
-                return {
+                return Promise.resolve({
                     models: [...new Set(["auto", ...(configured && configured !== "auto" ? [configured] : []), ...models])],
                     labels,
-                };
+                });
             }
         } catch { /* fall through */ }
-        return { models: this.models(), labels: getCached("copilot")?.labels };
+        return Promise.resolve({ models: this.models(), labels: getCached("copilot")?.labels });
     }
 
     // No native plan/todo tool: Symposium injects one and parses a ```todo block.

@@ -73,7 +73,7 @@ export function registerMiscCommands(ctx: CommandContext): void {
 
         // Writes example resources into ~/.symposium so the config UI and API
         // can be validated fully offline.
-        vscode.commands.registerCommand("symposium.seedExamples", async () => {
+        vscode.commands.registerCommand("symposium.seedExamples", () => {
             const created = seedExamples();
             void vscode.window.showInformationMessage(
                 created > 0

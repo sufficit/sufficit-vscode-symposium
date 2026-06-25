@@ -152,6 +152,7 @@ export class TerminalSession {
         }
     }
 
+    // eslint-disable-next-line @typescript-eslint/require-await
     private async discoverSessionId(knownBefore: Set<string>): Promise<void> {
         const deadline = Date.now() + 30_000;
         const tick = async () => {

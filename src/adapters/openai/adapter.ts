@@ -144,8 +144,8 @@ export class OpenAIAdapter implements AgentAdapter {
     /** Slash commands offered for this backend. `/compact` is intercepted locally
      *  (summarize + shrink the model context); it also re-enables the context
      *  popover's "Compact Conversation" button (gated on a `compact` command). */
-    async commands(): Promise<SlashCommand[]> {
-        return [{ name: "compact", description: "Summarize older turns to shrink the model context (full history is preserved)", kind: "builtin" }];
+    commands(): Promise<SlashCommand[]> {
+        return Promise.resolve([{ name: "compact", description: "Summarize older turns to shrink the model context (full history is preserved)", kind: "builtin" }]);
     }
 
     /**
