@@ -165,7 +165,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         if (!line.trim()) {
             return;
         }
-        let event: { type: string; [key: string]: unknown };
+        let event: Record<string, unknown>;
         try {
             event = JSON.parse(line);
         } catch {
@@ -174,32 +174,35 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         switch (event.type) {
             case "stream_event": {
                 // Token-level deltas (--include-partial-messages).
-                const ev = event.event;
+                const ev = typeof event.event === "object" && event.event !== null ? event.event : undefined;
                 if (ev?.type === "content_block_delta") {
-                    if (ev.delta?.type === "text_delta" && ev.delta.text) {
+                    const delta = typeof ev.delta === "object" && ev.delta !== null ? ev.delta : undefined;
+                    if (delta?.type === "text_delta" && typeof delta.text === "string") {
                         this.streamedText = true;
-                        this.emit("event", { kind: "text", text: ev.delta.text });
-                    } else if (ev.delta?.type === "thinking_delta" && ev.delta.thinking) {
+                        this.emit("event", { kind: "text", text: delta.text });
+                    } else if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
                         this.streamedThinking = true;
-                        this.emit("event", { kind: "thinking", text: ev.delta.thinking });
+                        this.emit("event", { kind: "thinking", text: delta.thinking });
                     }
                 }
                 break;
             }
             case "system":
-                if (event.subtype === "init") {
+                if (event.subtype === "init" && typeof event.session_id === "string") {
                     this.sessionId = event.session_id;
-                    this.emit("event", { kind: "session", sessionId: event.session_id, model: event.model });
+                    this.emit("event", { kind: "session", sessionId: event.session_id, model: typeof event.model === "string" ? event.model : undefined });
                 }
                 break;
             case "assistant": {
-                for (const block of event.message?.content ?? []) {
-                    if (block.type === "thinking" && block.thinking) {
-                        if (!this.streamedThinking) { this.emit("event", { kind: "thinking", text: block.thinking }); }
-                    } else if (block.type === "text" && block.text) {
-                        // Already streamed via stream_event deltas — don't repeat.
-                        if (!this.streamedText) { this.emit("event", { kind: "text", text: block.text }); }
-                    } else if (block.type === "tool_use") {
+                const content = typeof event.message === "object" && event.message !== null ? (event.message as { content?: unknown[] }).content : undefined;
+                for (const block of Array.isArray(content) ? content : []) {
+                    if (typeof block === "object" && block !== null) {
+                        if (block.type === "thinking" && typeof block.thinking === "string") {
+                            if (!this.streamedThinking) { this.emit("event", { kind: "thinking", text: block.thinking }); }
+                        } else if (block.type === "text" && typeof block.text === "string") {
+                            // Already streamed via stream_event deltas — don't repeat.
+                            if (!this.streamedText) { this.emit("event", { kind: "text", text: block.text }); }
+                        } else if (block.type === "tool_use") {
                         const counts = diffCounts(block.name, block.input);
                         const filePath = toolFilePath(block.input);
                         // Snapshot the file BEFORE the CLI applies the edit, so the
@@ -222,11 +225,12 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                 break;
             }
             case "user": {
-                for (const block of event.message?.content ?? []) {
-                    if (block.type === "tool_result") {
+                const userContent = typeof event.message === "object" && event.message !== null ? (event.message as { content?: unknown[] }).content : undefined;
+                for (const block of Array.isArray(userContent) ? userContent : []) {
+                    if (typeof block === "object" && block !== null && block.type === "tool_result") {
                         this.emit("event", {
                             kind: "tool-end",
-                            toolName: block.tool_use_id ?? "tool",
+                            toolName: typeof block.tool_use_id === "string" ? block.tool_use_id : "tool",
                             toolId: block.tool_use_id,
                             result: toolResultText(block.content),
                         });
@@ -235,12 +239,12 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                 break;
             }
             case "result": {
-                this.sessionId = event.session_id ?? this.sessionId;
+                this.sessionId = typeof event.session_id === "string" ? event.session_id : this.sessionId;
                 this.streamedText = false; this.streamedThinking = false;   // next turn streams afresh
                 if (event.is_error) {
-                    this.emit("event", { kind: "error", message: event.result ?? event.subtype ?? "unknown error" });
+                    this.emit("event", { kind: "error", message: typeof event.result === "string" ? event.result : typeof event.subtype === "string" ? event.subtype : "unknown error" });
                 }
-                const u = event.usage ?? event.message?.usage;
+                const u = typeof event.usage === "object" && event.usage !== null ? event.usage : (typeof event.message === "object" && event.message !== null ? (event.message as { usage?: unknown }).usage : undefined);
                 if (u) {
                     const cacheRead = (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
                     this.emit("event", {

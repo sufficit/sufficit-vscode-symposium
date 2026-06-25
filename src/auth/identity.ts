@@ -95,7 +95,7 @@ export class SufficitAuth {
             headers: { "content-type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ client_id: clientId, scope: this.scope() }).toString(),
         });
-        const dev = await devRes.json() as any;
+        const dev = await devRes.json() as { verification_uri_complete?: string; verification_uri?: string; user_code: string; error?: string };
         if (!devRes.ok) {
             throw new Error(`device authorization failed: ${dev.error ?? devRes.status}`);
         }
@@ -136,7 +136,7 @@ export class SufficitAuth {
                             client_id: clientId,
                         }).toString(),
                     });
-                    const j = await res.json() as any;
+                    const j = await res.json() as { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string; scope?: string; error?: string; error_description?: string };
                     if (res.ok) {
                         return this.toStored(j);
                     }
@@ -149,9 +149,9 @@ export class SufficitAuth {
             });
     }
 
-    private toStored(j: any): StoredTokens {
+    private toStored(j: { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string; scope?: string; id_token?: string }): StoredTokens {
         return {
-            accessToken: j.access_token,
+            accessToken: j.access_token ?? "",
             refreshToken: j.refresh_token,
             idToken: j.id_token,
             expiresAtMs: Date.now() + ((j.expires_in ?? 3600) * 1000),
@@ -207,12 +207,12 @@ export class SufficitAuth {
             const disco = await this.discovery();
             const res = await fetch(disco.userinfo_endpoint ?? `${this.issuer()}/connect/userinfo`, { headers: { authorization: `Bearer ${token}` } });
             if (!res.ok) { return this.profileCache; }   // keep what we have on a transient failure
-            const j = await res.json() as any;
+            const j = await res.json() as { sub?: string; name?: string; preferred_username?: string; email?: string; picture?: string };
             // Avatar comes from the Sufficit contact endpoint keyed by the user id.
             const picture = j.sub
                 ? `https://endpoints.sufficit.com.br/contact/avatar?contextid=${encodeURIComponent(j.sub)}`
                 : j.picture;
-            this.profileCache = { sub: j.sub, name: j.name ?? j.preferred_username, email: j.email, picture };
+            this.profileCache = { sub: j.sub ?? "", name: j.name ?? j.preferred_username, email: j.email, picture };
             await this.context.globalState.update(PROFILE_KEY, this.profileCache);
             return this.profileCache;
         } catch {

@@ -8,6 +8,7 @@ import { ChangedFilesManager } from "./changedFiles";
 import { readWorkspaceBootstrap } from "../config/root";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
 import { symposiumLog } from "../extension";
+import type { WebviewToHost } from "./protocol";
 
 /**
  * Dialogue lifecycle for a chat surface: opening a dialogue (new / resumed /
@@ -113,7 +114,7 @@ export class SurfaceDialogues {
      * the edited message (anchorIndex excluded), then deliver the edited text as
      * the new message — so we genuinely "restart from this point".
      */
-    editResend(anchorIndex: number, sendMsg: any): void {
+    editResend(anchorIndex: number, sendMsg: WebviewToHost): void {
         const from = this.d.getController();
         if (!from || !Number.isInteger(anchorIndex) || anchorIndex < 0) {
             // Nothing to rewind to — treat as a normal send.
@@ -350,13 +351,14 @@ export class SurfaceDialogues {
             // The controller emits the RAW edited-files set; the surface filters
             // it against live git status (so staged files drop, unstaging them
             // brings them back) before showing it.
-            if ((message as any)?.type === "changed-files") {
-                void this.d.changedFiles.refresh((message as any).items);
+            const msg = message as Record<string, unknown> | null;
+            if (msg?.type === "changed-files" && "items" in msg && Array.isArray(msg.items)) {
+                void this.d.changedFiles.refresh(msg.items);
                 return;
             }
             // Capture a freshly-assigned session id so a brand-new dialogue
             // also becomes the restorable "last active" one.
-            const ev = (message as any)?.event;
+            const ev = msg?.event as { kind?: string; sessionId?: string } | undefined;
             if (ev?.kind === "session" && ev.sessionId) {
                 this.d.deps.lastActive.set({ backend, sessionId: ev.sessionId });
             }

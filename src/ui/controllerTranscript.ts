@@ -15,14 +15,14 @@ export function transcriptMessages(log: unknown[]): TranscriptRow[] {
         if (text) { rows.push({ role: "assistant", text }); }
         assistantBuf = "";
     };
-    for (const message of log as any[]) {
+    for (const message of log as Array<{ type?: string; messages?: unknown[] }>) {
         if (message?.type === "history" && Array.isArray(message.messages)) {
             // Resumed/seeded history: a single log entry holding the prior
             // conversation. Expand its user/assistant turns so a rewind from a
             // resumed session keeps the full context (tool/thinking rows are
             // scaffolding and stay omitted, like live turns).
             flushAssistant();
-            for (const h of message.messages as any[]) {
+            for (const h of message.messages as Array<{ role?: string; text?: unknown }>) {
                 const text = typeof h?.text === "string" ? h.text.trim() : "";
                 if (!text) { continue; }
                 if (h.role === "user") { rows.push({ role: "user", text }); }

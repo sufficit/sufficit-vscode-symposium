@@ -102,7 +102,8 @@ export class RemoteBridge {
                 const cts = new vscode.CancellationTokenSource();
                 try {
                     const r = await vscode.lm.invokeTool(body.name, { input: body.input ?? {}, toolInvocationToken: undefined } as vscode.LanguageModelToolInvocationOptions<object>, cts.token);
-                    const text = (r.content as any[]).map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : JSON.stringify(p))).join("\n");
+                    const content = r.content as Array<vscode.LanguageModelTextPart | vscode.LanguageModelPromptPart>;
+                    const text = content.map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : JSON.stringify(p))).join("\n");
                     return json(res, 200, { ok: true, result: text });
                 } finally { cts.dispose(); }
             }
@@ -230,13 +231,13 @@ function json(res: http.ServerResponse, status: number, body: unknown): void {
     res.end(payload);
 }
 
-function readBody(req: http.IncomingMessage): Promise<any> {
+function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
         let data = "";
         req.on("data", (chunk) => { data += chunk; if (data.length > 1_000_000) { reject(new Error("body too large")); } });
         req.on("end", () => {
             try {
-                resolve(data ? JSON.parse(data) : {});
+                resolve((data ? JSON.parse(data) : {}) as Record<string, unknown>);
             } catch (err) {
                 reject(err);
             }
