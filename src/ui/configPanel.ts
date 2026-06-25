@@ -3,6 +3,7 @@ import { ensureScaffold, ResourceKind, rootDir } from "../config/root";
 import { AdapterPatch, SymposiumApi } from "../api/symposiumApi";
 import { SufficitAuth } from "../auth/identity";
 import { renderConfigHtml } from "./configHtml";
+import { tr } from "./configI18n";
 
 export interface ConfigPanelDeps {
     api: SymposiumApi;
@@ -41,11 +42,11 @@ export class ConfigPanel {
         ensureScaffold();
         this.panel = vscode.window.createWebviewPanel(
             "symposium.config",
-            "Symposium · Configuration",
+            this.tr("config.title"),
             vscode.ViewColumn.Active,
             { enableScripts: true, retainContextWhenHidden: true },
         );
-        this.panel.webview.html = renderConfigHtml();
+        this.panel.webview.html = renderConfigHtml(this.resolveLang());
         this.panel.webview.onDidReceiveMessage(
             (m) => void this.onMessage(m), undefined, this.disposables);
 
@@ -58,6 +59,15 @@ export class ConfigPanel {
         this.disposables.push(watcher);
 
         this.panel.onDidDispose(() => this.dispose(), undefined, context.subscriptions);
+    }
+
+    private resolveLang(): string {
+        const c = vscode.workspace.getConfiguration("symposium.chat");
+        return (c.get<string>("preferredLanguage", "").trim() || vscode.env.language || "en").toLowerCase();
+    }
+
+    private tr(key: string, vars?: Record<string, string | number>): string {
+        return tr(this.resolveLang(), key, vars);
     }
 
     private async onMessage(message: {
@@ -81,7 +91,7 @@ export class ConfigPanel {
             case "seed": {
                 const created = api.resources.seed();
                 void vscode.window.showInformationMessage(
-                    created > 0 ? `Created ${created} example(s).` : "Examples already existed.");
+                    created > 0 ? this.tr("msg.seed.created", { n: created }) : this.tr("msg.seed.existed"));
                 await this.pushState();
                 return;
             }
@@ -89,10 +99,10 @@ export class ConfigPanel {
                 const r = api.resources.importAgents();
                 void vscode.window.showInformationMessage(
                     r.created > 0
-                        ? `Imported ${r.created} agent(s)${r.skipped ? ` (${r.skipped} already existed)` : ""}.`
+                        ? this.tr("msg.import.agents.done", { n: r.created }) + (r.skipped ? this.tr("msg.import.agents.skippedSuffix", { n: r.skipped }) : "")
                         : (r.skipped > 0
-                            ? `All ${r.skipped} agent(s) already existed.`
-                            : "No agents found in .claude/agents or ~/.codex/skills."));
+                            ? this.tr("msg.import.agents.allExisted", { n: r.skipped })
+                            : this.tr("msg.import.agents.none")));
                 await this.pushState();
                 return;
             }
@@ -100,28 +110,28 @@ export class ConfigPanel {
                 const found = api.resources.scanForeignSkills();
                 if (!found.length) {
                     void vscode.window.showInformationMessage(
-                        "No skills found in Claude (~/.claude/skills) or Codex (~/.codex/skills).");
+                        this.tr("msg.import.skills.none"));
                     return;
                 }
                 const picked = await vscode.window.showQuickPick(
                     found.map((s) => ({ label: s.name, description: s.source, detail: s.description, srcPath: s.path })),
-                    { canPickMany: true, placeHolder: "Select skills to import into Symposium" });
+                    { canPickMany: true, placeHolder: this.tr("msg.import.skills.pickPlaceholder") });
                 if (!picked || !picked.length) {
                     return;
                 }
                 const r = api.resources.importSkills(picked.map((p) => p.srcPath));
                 void vscode.window.showInformationMessage(
-                    `Imported ${r.imported} skill(s)` +
-                    (r.skipped ? `, ${r.skipped} skipped` : "") +
-                    (r.errors.length ? `, ${r.errors.length} failed (${r.errors.join(", ")})` : "") + ".");
+                    this.tr("msg.import.skills.done", { n: r.imported }) +
+                    (r.skipped ? this.tr("msg.import.skills.skippedSuffix", { n: r.skipped }) : "") +
+                    (r.errors.length ? this.tr("msg.import.skills.failedSuffix", { n: r.errors.length, errors: r.errors.join(", ") }) : "") + ".");
                 await this.pushState();
                 return;
             }
             case "install-skill-sh": {
                 const pkg = await vscode.window.showInputBox({
-                    prompt: "skills.sh package to install (owner/repo)",
+                    prompt: this.tr("msg.installSkillSh.prompt"),
                     placeHolder: "vercel-labs/agent-skills",
-                    validateInput: (v) => /^[\w.-]+\/[\w.-]+$/.test(v.trim()) ? undefined : "Enter an owner/repo slug.",
+                    validateInput: (v) => /^[\w.-]+\/[\w.-]+$/.test(v.trim()) ? undefined : this.tr("msg.installSkillSh.invalid"),
                 });
                 if (!pkg) {
                     return;
@@ -130,7 +140,7 @@ export class ConfigPanel {
                 term.show();
                 term.sendText(`npx --yes skills add ${pkg.trim()}`);
                 void vscode.window.showInformationMessage(
-                    `Installing ${pkg.trim()} via skills.sh. When it finishes, run "Import skills…" to pull it into Symposium.`);
+                    this.tr("msg.installSkillSh.started", { pkg: pkg.trim() }));
                 return;
             }
             case "new-resource": {
@@ -138,13 +148,13 @@ export class ConfigPanel {
                     return;
                 }
                 const name = await vscode.window.showInputBox({
-                    prompt: `Name of the new ${message.kind}`,
-                    validateInput: (v) => v.trim() ? undefined : "Enter a name.",
+                    prompt: this.tr("msg.newResource.namePrompt", { kind: this.tr("config.kind." + message.kind) }),
+                    validateInput: (v) => v.trim() ? undefined : this.tr("msg.newResource.nameRequired"),
                 });
                 if (!name) {
                     return;
                 }
-                const description = await vscode.window.showInputBox({ prompt: "Description (optional)" }) ?? "";
+                const description = await vscode.window.showInputBox({ prompt: this.tr("msg.newResource.descPrompt") }) ?? "";
                 const file = api.resources.create(message.kind, name.trim(), description);
                 await this.pushState();
                 const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
@@ -155,9 +165,10 @@ export class ConfigPanel {
                 if (!message.kind || !message.name) {
                     return;
                 }
+                const del = this.tr("msg.deleteResource.confirmAction");
                 const ok = await vscode.window.showWarningMessage(
-                    `Delete ${message.kind} "${message.name}"?`, { modal: true }, "Delete");
-                if (ok === "Delete") {
+                    this.tr("msg.deleteResource.confirm", { kind: this.tr("config.kind." + message.kind), name: message.name }), { modal: true }, del);
+                if (ok === del) {
                     api.resources.remove(message.kind, message.name);
                     await this.pushState();
                 }
@@ -167,8 +178,10 @@ export class ConfigPanel {
                 if (message.backend) {
                     const s = await api.backends.test(message.backend);
                     void vscode.window.showInformationMessage(
-                        s ? `${message.backend}: ${s.available ? "OK — " + s.detail : "unavailable — " + s.detail}`
-                            : `${message.backend}: unknown`);
+                        s ? (s.available
+                            ? this.tr("msg.testBackend.ok", { backend: message.backend, detail: s.detail })
+                            : this.tr("msg.testBackend.unavailable", { backend: message.backend, detail: s.detail }))
+                            : this.tr("msg.testBackend.unknown", { backend: message.backend }));
                     await this.pushState();
                 }
                 return;
@@ -192,7 +205,7 @@ export class ConfigPanel {
                 if (!patch) { return; }
                 await api.backends.addAdapter(patch);
                 await this.pushState();
-                await this.offerReload(`Endpoint "${patch.name || patch.baseUrl}" added.`);
+                await this.offerReload(this.tr("msg.endpoint.added", { name: patch.name || patch.baseUrl || "" }));
                 return;
             }
             case "edit-endpoint": {
@@ -204,7 +217,7 @@ export class ConfigPanel {
                 if (!patch) { return; }
                 await api.backends.updateAdapter(id, patch);
                 await this.pushState();
-                await this.offerReload(`Endpoint updated. Reload to refresh its name in the pickers.`);
+                await this.offerReload(this.tr("msg.endpoint.updated"));
                 return;
             }
             case "remove-endpoint": {
@@ -212,12 +225,13 @@ export class ConfigPanel {
                 if (!id) { return; }
                 const current = this.readAdapterEntry(id);
                 const label = current?.name || current?.baseUrl || id;
+                const rm = this.tr("msg.endpoint.removeAction");
                 const ok = await vscode.window.showWarningMessage(
-                    `Remove endpoint "${label}"?`, { modal: true }, "Remove");
-                if (ok !== "Remove") { return; }
+                    this.tr("msg.endpoint.removeConfirm", { label }), { modal: true }, rm);
+                if (ok !== rm) { return; }
                 await api.backends.removeAdapter(id);
                 await this.pushState();
-                await this.offerReload(`Endpoint "${label}" removed.`);
+                await this.offerReload(this.tr("msg.endpoint.removed", { label }));
                 return;
             }
             case "set-model":
@@ -262,13 +276,13 @@ export class ConfigPanel {
                 return;
             case "sync-pull": {
                 const r = await api.sync.pull();
-                this.report("Pull", r);
+                this.report(this.tr("msg.sync.label.pull"), r);
                 await this.pushState();
                 return;
             }
             case "sync-push": {
                 const r = await api.sync.push();
-                this.report("Push", r);
+                this.report(this.tr("msg.sync.label.push"), r);
                 await this.pushState();
                 return;
             }
@@ -288,36 +302,36 @@ export class ConfigPanel {
      */
     private async promptEndpoint(current?: { name?: string; baseUrl?: string; apiKey?: string; model?: string }): Promise<AdapterPatch | undefined> {
         const baseUrl = await vscode.window.showInputBox({
-            title: current ? "Edit endpoint — Base URL" : "New endpoint — Base URL",
-            prompt: "OpenAI-compatible base URL.",
+            title: current ? this.tr("msg.promptEndpoint.baseUrlTitleEdit") : this.tr("msg.promptEndpoint.baseUrlTitleNew"),
+            prompt: this.tr("msg.promptEndpoint.baseUrlPrompt"),
             value: current?.baseUrl ?? "",
             placeHolder: "https://ai.sufficit.com.br/openai/v1",
             ignoreFocusOut: true,
             validateInput: (v) => {
                 const s = v.trim();
-                if (!s) { return "Base URL is required."; }
-                try { new URL(s); return undefined; } catch { return "Enter a valid URL (https://…)."; }
+                if (!s) { return this.tr("msg.promptEndpoint.baseUrlRequired"); }
+                try { new URL(s); return undefined; } catch { return this.tr("msg.promptEndpoint.baseUrlInvalid"); }
             },
         });
         if (baseUrl === undefined) { return undefined; }
         const name = await vscode.window.showInputBox({
-            title: "Endpoint — Display name (optional)",
-            prompt: "Friendly name for the pickers. Empty derives a name from the URL.",
+            title: this.tr("msg.promptEndpoint.nameTitle"),
+            prompt: this.tr("msg.promptEndpoint.namePrompt"),
             value: current?.name ?? "",
             ignoreFocusOut: true,
         });
         if (name === undefined) { return undefined; }
         const apiKey = await vscode.window.showInputBox({
-            title: "Endpoint — API key (optional)",
-            prompt: "Sent as 'Authorization: Bearer <key>'. Empty = none.",
+            title: this.tr("msg.promptEndpoint.apiKeyTitle"),
+            prompt: this.tr("msg.promptEndpoint.apiKeyPrompt"),
             value: current?.apiKey ?? "",
             password: true,
             ignoreFocusOut: true,
         });
         if (apiKey === undefined) { return undefined; }
         const model = await vscode.window.showInputBox({
-            title: "Endpoint — Default model (optional)",
-            prompt: "Default model id. Empty auto-discovers from <baseUrl>/models.",
+            title: this.tr("msg.promptEndpoint.modelTitle"),
+            prompt: this.tr("msg.promptEndpoint.modelPrompt"),
             value: current?.model ?? "",
             ignoreFocusOut: true,
         });
@@ -327,19 +341,21 @@ export class ConfigPanel {
 
     /** Confirms a CRUD change and offers a reload (added/removed endpoints register on reload). */
     private async offerReload(message: string): Promise<void> {
-        const pick = await vscode.window.showInformationMessage(message, "Reload Window");
-        if (pick === "Reload Window") {
+        const reload = this.tr("msg.reloadWindow.action");
+        const pick = await vscode.window.showInformationMessage(message, reload);
+        if (pick === reload) {
             await vscode.commands.executeCommand("workbench.action.reloadWindow");
         }
     }
 
     private report(label: string, r: { pushed: number; pulled: number; skipped: number; errors: string[] }): void {
         if (r.errors.length) {
-            void vscode.window.showWarningMessage(`${label}: ${r.errors.join(" · ")}`);
+            void vscode.window.showWarningMessage(
+                this.tr("msg.sync.report.error", { label, errors: r.errors.join(" · ") }));
             return;
         }
         void vscode.window.showInformationMessage(
-            `${label}: ${r.pulled} baixados, ${r.pushed} enviados, ${r.skipped} inalterados.`);
+            this.tr("msg.sync.report.success", { label, pulled: r.pulled, pushed: r.pushed, skipped: r.skipped }));
     }
 
     private async pushState(): Promise<void> {

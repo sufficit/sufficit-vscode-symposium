@@ -4,6 +4,7 @@ import { resetLastMsg, renderError, append, branchBanner, message, streamDelta, 
 import { renderTool, fillToolResult } from "./tools";
 import { renderStatusbar, openUsagePopover, setLastUsage, setLastTurn, sessionCostUsd, setSessionCostUsd } from "./statusbar";
 import "./dispatch";
+import { t } from "./i18n";
 import { renderTodos, renderPlan, renderTasks, renderGuardrails, renderQueued, renderChangedFiles, refreshPanels, resetWorkingState, startWorkingSet, bindWorkingSet, panelDefs } from "./panels";
 import { bootStep, bootComplete, renderBootStep, bootTimer } from "./boot";
 import { renderSessions, renderAccount, renderSessionItem, groupHeader, toggleCollapsed, dropPinnedOn, openSessionsFilterMenu } from "./sessions";
@@ -16,6 +17,7 @@ import { layout, nearBottom, autoScroll, scrollToBottom, updateScrollBtn, refres
 import { root, log, input, chips, addContext, modelPicker, reasoningPicker, sendMode, sendBtn, status, sessionsList, chatTitle, sessionFilterBtn, sessionRefreshBtn, sessionSearch, listToggle, sendCaret, sendIcon, sendGroup, stopBtn, switchAgentBtn, tipEl, copySessionBtn, presencePicker, configBtn, sessionsPane, resizer, progress, composerEl, planEl, tasksEl, guardrailsEl, queuedEl, changedFiles, panelBody, panelTabs, attachedPanel, ctxMenu, statusbar, slash, addBrowserPage, bootStepsEl, bootHintEl } from "./dom";
 import { renderMarkdown, inline } from "./markdown";
 import { ICONS, svgIcon, fileIcon } from "./icons";
+import { applyStaticI18n } from "./staticI18n";
     window.addEventListener("error", (e) => {
         const bh = document.getElementById("bootHint");
         if (bh) { bh.textContent = "❌ " + (e.message || "JS error") + " @" + (e.lineno || "?"); bh.style.color = "var(--vscode-errorForeground, #f14c4c)"; bh.style.opacity = "1"; }
@@ -83,36 +85,38 @@ import { ICONS, svgIcon, fileIcon } from "./icons";
                 document.execCommand("copy"); document.body.removeChild(ta);
             } catch (_) { /* give up silently */ }
         }
-        showToast("Copied session id + title");
+        showToast(t("chat.copy.toast"));
     }
     copySessionBtn.addEventListener("click", copySession);
     // Clicking the title text also copies (more discoverable than the icon).
     chatTitle.style.cursor = "pointer";
-    chatTitle.title = "Click to copy session id + title";
+    chatTitle.title = t("chat.copy.titleTooltip");
     chatTitle.addEventListener("click", copySession);
 
     // Presence / autonomy — quick toggle in the composer, changeable any time
     // (NOT locked while busy); the value is read on every send.
-    const PRESENCE = [
-        { value: "present", label: "Present", detail: "agent may ask", title: "Normal: the agent can pause to ask you questions." },
-        { value: "away", label: "Away", detail: "full autonomy", title: "The agent proceeds without asking; it won't wait for you." },
+    const presenceMenu = () => [
+        { value: "present", label: t("chat.presence.present"), detail: t("chat.presence.present.detail"), title: t("chat.presence.present.menuTitle") },
+        { value: "away", label: t("chat.presence.away"), detail: t("chat.presence.away.detail"), title: t("chat.presence.away.menuTitle") },
     ];
     const presenceLbl = presencePicker.querySelector(".lbl");
     const presenceIcon = presencePicker.querySelector(".picon");
     function setPresenceLabel() {
         const away = autonomyValue === "away";
-        presenceLbl.textContent = away ? "Away" : "Present";
+        presenceLbl.textContent = away ? t("chat.presence.away") : t("chat.presence.present");
         presenceIcon.innerHTML = "";
         presenceIcon.appendChild(svgIcon(away ? "robot" : "eye"));
         presencePicker.classList.toggle("away", away);
-        presencePicker.title = (away ? "Away — full autonomy" : "Present — agent may ask") + " (change any time)";
+        presencePicker.title = (away ? t("chat.presence.away.tooltip") : t("chat.presence.present.tooltip")) + t("chat.presence.changeSuffix");
     }
     presencePicker.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        openChoiceMenu(presencePicker, PRESENCE, autonomyValue, (v) => { setAutonomyValue(v); saveState({ autonomy: v }); setPresenceLabel(); });
+        openChoiceMenu(presencePicker, presenceMenu(), autonomyValue, (v) => { setAutonomyValue(v); saveState({ autonomy: v }); setPresenceLabel(); });
     });
     // ICONS is imported (no temporal dead zone), so paint the presence icon now.
     setPresenceLabel();
+    // Re-localize the presence control when the host pushes the UI language.
+    window.addEventListener("message", (e) => { if (e && e.data && e.data.type === "setLang") { setPresenceLabel(); } });
 
     // ---- tools & configuration menu (sliders) ----
     // Per-session tool gating (native AI backend). available = all tools the
@@ -310,6 +314,7 @@ import { ICONS, svgIcon, fileIcon } from "./icons";
 
     setStatus();
     refreshEmpty();   // show the placeholder until a conversation loads
+    applyStaticI18n();   // paint default/EN labels now; setLang re-applies later
     // Handshake: the extension queues everything until this script is live,
     // so meta/history posted right after construction are never lost.
     vscode.postMessage({ type: "ready" });
