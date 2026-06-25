@@ -4,6 +4,7 @@ import { AdapterPatch, SymposiumApi } from "../api/symposiumApi";
 import { SufficitAuth } from "../auth/identity";
 import { renderConfigHtml } from "./configHtml";
 import { tr } from "./configI18n";
+import type { CompressionPreset, CompressionStrategyType } from "../compression/types";
 
 export interface ConfigPanelDeps {
     api: SymposiumApi;
@@ -321,11 +322,11 @@ export class ConfigPanel {
                 if (!strategy) { return; }
 
                 const id = `custom-${Date.now()}`;
-                const preset: any = {
+                const preset: CompressionPreset = {
                     id,
                     name: name.trim(),
                     description: description?.trim() || undefined,
-                    strategy: strategy.label,
+                    strategy: strategy.label as CompressionStrategyType,
                     params: {}
                 };
 
@@ -414,7 +415,7 @@ export class ConfigPanel {
                     value: preset.description || "",
                 });
 
-                const updated: any = {
+                const updated: CompressionPreset = {
                     ...preset,
                     name: name.trim(),
                     description: description?.trim() || undefined,
@@ -448,7 +449,7 @@ export class ConfigPanel {
                 }
 
                 // Edit tool compression level
-                const currentToolLevel = (preset.params as any)?.toolCompressionLevel || "none";
+                const currentToolLevel = (preset.params?.toolCompressionLevel as string) || "none";
                 const toolLevel = await vscode.window.showQuickPick([
                     { label: "none", description: "Não comprimir", picked: currentToolLevel === "none" },
                     { label: "low", description: "Remove headers", picked: currentToolLevel === "low" },
