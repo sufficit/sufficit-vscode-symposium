@@ -56,7 +56,7 @@ function parseFrontmatter(text: string): { name?: string; description?: string }
     for (const line of block.split("\n")) {
         const m = /^(name|description)\s*:\s*(.*)$/.exec(line);
         if (m) {
-            const value = m[2].trim().replace(/^[\"']|[\"']$/g, "");
+            const value = m[2].trim().replace(/^["']|["']$/g, "");
             const key = m[1] as "name" | "description";
             out[key] = value;
         }
