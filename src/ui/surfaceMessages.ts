@@ -201,10 +201,18 @@ export class SurfaceMessages {
                 case "set-compression-preset": {
                     const controller = this.d.getController();
                     if (controller && typeof message.compressionPresetId === "string") {
-                        const info = controller.info;
-                        const store = this.d.deps.sessionStore;
-                        await store.setCompressionPreset(info, message.compressionPresetId || undefined);
-                        this.d.post({ type: "compression-preset-set", presetId: message.compressionPresetId });
+                        const sessionId = controller.sessionId;
+                        if (sessionId) {
+                            const { CompressionManager } = await import("../compression");
+                            const compressionManager = CompressionManager.getInstance();
+                            const presetId = message.compressionPresetId || undefined;
+                            if (presetId) {
+                                compressionManager.setSectionConfig(sessionId, presetId, true);
+                            } else {
+                                compressionManager.removeSectionConfig(sessionId);
+                            }
+                            this.d.post({ type: "compression-preset-set", presetId });
+                        }
                     }
                     return;
                 }

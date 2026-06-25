@@ -239,7 +239,7 @@ export class ConfigPanel {
                 if (!name) { return; }
                 const presets = CompressionManager.getInstance().getPresets();
                 const id = `custom-${Date.now()}`;
-                const preset = presets[Object.keys(presets)[0]]; // Clone first preset as template
+                const preset = presets[0]; // Clone first preset as template
                 await CompressionManager.getInstance().savePreset({ ...preset, id, name: name.trim() });
                 await this.pushState();
                 return;
@@ -254,7 +254,8 @@ export class ConfigPanel {
             case "edit-compression-preset": {
                 const { CompressionManager } = await import("../compression");
                 if (!message.key) { return; }
-                const preset = CompressionManager.getInstance().getPresets()[message.key];
+                const presets = CompressionManager.getInstance().getPresets();
+                const preset = presets.find(p => p.id === message.key);
                 if (!preset) { return; }
                 const name = await vscode.window.showInputBox({
                     prompt: "Nome do preset",

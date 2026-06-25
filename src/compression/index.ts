@@ -19,13 +19,14 @@ export type {
     CompressionStrategyType,
 } from "./types";
 export {
-    applyCompression,
-    registerStrategy,
-    NoCompressionStrategy,
+    NoneCompressionStrategy,
     SummarizeCompressionStrategy,
     AggressiveCompressionStrategy,
     TokenBudgetCompressionStrategy,
+    createCompressionStrategy,
+    compressMessages,
     type CompressionStrategy,
+    type CompressionStrategyType as StrategyType,
 } from "./webhook";
 
 /**
@@ -42,6 +43,6 @@ export async function compressionWebhook(
     maxTokens?: number
 ): Promise<unknown[]> {
     // Importar os tipos de mensagem do OpenAI
-    const { applyCompression: apply } = await import("./webhook");
-    return apply(messages as any, presetId, maxTokens);
+    const { compressMessages: compress } = await import("./webhook");
+    return compress(messages as any, presetId as any, maxTokens);
 }

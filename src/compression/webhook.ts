@@ -1,34 +1,33 @@
+/**
+ * Estratégias de compressão de tokens para o Symposium.
+ * Implementa diferentes algoritmos para reduzir o contexto enviado ao modelo.
+ */
+
 import type { ChatMessage } from "../adapters/openai/types";
-import type { CompressionStrategyType } from "./types";
-import { ToolRequestCompressor, type CompressionLevel } from "../chat/compression";
+
+/**
+ * Tipos de estratégia de compressão disponíveis.
+ */
+export type CompressionStrategyType = "none" | "summarize" | "aggressive" | "token-budget";
 
 /**
  * Interface para estratégias de compressão de tokens.
- * Cada preset pode ter sua própria implementação de compressão.
  */
 export interface CompressionStrategy {
-    /**
-     * Aplica compressão a uma lista de mensagens de chat.
-     * @param messages - Mensagens de chat a serem compactadas
-     * @param maxTokens - Limite máximo de tokens desejado (opcional)
-     * @returns Mensagens compactadas
-     */
-    compress(messages: ChatMessage[], maxTokens?: number): ChatMessage[];
+    compress(messages: ChatMessage[]): ChatMessage[];
 }
 
 /**
- * Estratégia de compressão "none" (sem compressão).
- * Retorna as mensagens inalteradas.
+ * Estratégia sem compressão (comportamento original).
  */
-export class NoCompressionStrategy implements CompressionStrategy {
+export class NoneCompressionStrategy implements CompressionStrategy {
     compress(messages: ChatMessage[]): ChatMessage[] {
         return messages;
     }
 }
 
 /**
- * Estratégia de compressão "summarize" (resumo simples).
- * Resume mensagens antigas mantendo as N mensagens mais recentes intactas.
+ * Estratégia de resumo: resume mensagens antigas mantendo as N mais recentes.
  */
 export class SummarizeCompressionStrategy implements CompressionStrategy {
     private readonly keepRecent: number;
@@ -42,194 +41,102 @@ export class SummarizeCompressionStrategy implements CompressionStrategy {
             return messages;
         }
 
-        // Manter as mensagens mais recentes
-        const recentMessages = messages.slice(-this.keepRecent);
+        const toSummarize = messages.slice(0, messages.length - this.keepRecent);
+        const recent = messages.slice(-this.keepRecent);
 
-        // Criar resumo das mensagens antigas
-        const oldMessages = messages.slice(0, -this.keepRecent);
-        const summaryMessage = this.createSummary(oldMessages);
+        // Criar mensagem de resumo
+        const summaryContent = this.summarizeMessages(toSummarize);
+        const summary: ChatMessage = {
+            role: "system",
+            content: `[Histórico resumido: ${toSummarize.length} mensagens compactadas. ${summaryContent}]`,
+        };
 
-        return [summaryMessage, ...recentMessages];
+        return [summary, ...recent];
     }
 
-    private createSummary(messages: ChatMessage[]): ChatMessage {
+    private summarizeMessages(messages: ChatMessage[]): string {
         const userMsgs = messages.filter(m => m.role === "user").length;
         const assistantMsgs = messages.filter(m => m.role === "assistant").length;
-        const toolMsgs = messages.filter(m => m.role === "tool").length;
-
-        const summaryText = `[Context summary: ${userMsgs} user messages, ${assistantMsgs} assistant responses, ${toolMsgs} tool calls]`;
-
-        return {
-            role: "system",
-            content: summaryText,
-        };
+        return `Mantidos ${userMsgs} pedidos do usuário e ${assistantMsgs} respostas. O contexto completo pode ser recuperado via search na memória Sufficit.`;
     }
 }
 
 /**
- * Estratégia de compressão "aggressive" (compactação agressiva).
- * Resume mantendo apenas 5 mensagens recentes.
+ * Estratégia de compressão agressiva: mantém apenas as 5 mensagens mais recentes.
  */
 export class AggressiveCompressionStrategy implements CompressionStrategy {
-    private readonly keepRecent = 5;
-    private readonly summarizeStrategy = new SummarizeCompressionStrategy(this.keepRecent);
+    private readonly summarizeStrategy = new SummarizeCompressionStrategy(5);
 
-    compress(messages: ChatMessage[], maxTokens?: number): ChatMessage[] {
-        return this.summarizeStrategy.compress(messages, maxTokens);
+    compress(messages: ChatMessage[]): ChatMessage[] {
+        return this.summarizeStrategy.compress(messages);
     }
 }
 
 /**
- * Estratégia de compressão "token-budget" (baseada em limite de tokens).
- * Usa um estimador simples de tokens para limitar o tamanho total.
+ * Estratégia baseada em limite de tokens.
  */
 export class TokenBudgetCompressionStrategy implements CompressionStrategy {
     private readonly maxTokens: number;
-    private readonly tokensPerChar = 0.25; // Estimativa aproximada
 
     constructor(maxTokens: number = 4000) {
         this.maxTokens = maxTokens;
     }
 
     compress(messages: ChatMessage[]): ChatMessage[] {
-        const result: ChatMessage[] = [];
-        let estimatedTokens = 0;
-
-        // Processa mensagens do fim para o início (mais recentes primeiro)
-        for (let i = messages.length - 1; i >= 0; i--) {
-            const msg = messages[i];
-            const msgTokens = this.estimateTokens(msg);
-
-            if (estimatedTokens + msgTokens > this.maxTokens) {
-                // Se adicionar esta mensagem ultrapassar o limite, paramos aqui
-                break;
-            }
-
-            estimatedTokens += msgTokens;
-            result.unshift(msg);
+        const estimated = this.estimateTokens(messages);
+        if (estimated <= this.maxTokens) {
+            return messages;
         }
 
-        // Se removeu mensagens, adiciona um resumo
-        if (result.length < messages.length) {
-            const oldMessages = messages.slice(0, -result.length);
-            const summaryMessage = this.createSummary(oldMessages, estimatedTokens);
-            result.unshift(summaryMessage);
+        // Aplicar resumo progressivo até ficar dentro do limite
+        let compressed = messages;
+        let attempts = 0;
+        const maxAttempts = 5;
+        let summarizeStrategy = new SummarizeCompressionStrategy(10);
+
+        while (this.estimateTokens(compressed) > this.maxTokens && attempts < maxAttempts) {
+            const keepCount = Math.max(3, Math.floor(compressed.length * 0.7));
+            summarizeStrategy = new SummarizeCompressionStrategy(keepCount);
+            compressed = summarizeStrategy.compress(compressed);
+            attempts++;
         }
 
-        return result;
+        return compressed;
     }
 
-    private estimateTokens(message: ChatMessage): number {
-        const content = typeof message.content === "string"
-            ? message.content
-            : JSON.stringify(message.content);
-        return Math.ceil(content.length * this.tokensPerChar);
-    }
-
-    private createSummary(messages: ChatMessage[], currentTokens: number): ChatMessage {
-        const userMsgs = messages.filter(m => m.role === "user").length;
-        const assistantMsgs = messages.filter(m => m.role === "assistant").length;
-
-        const summaryText = `[Compressed context: ${userMsgs} user messages, ${assistantMsgs} assistant responses removed. Current context: ~${currentTokens} estimated tokens]`;
-
-        return {
-            role: "system",
-            content: summaryText,
-        };
+    private estimateTokens(messages: ChatMessage[]): number {
+        // Estimativa simples: 4 caracteres ≈ 1 token
+        const totalChars = messages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
+        return Math.ceil(totalChars / 4);
     }
 }
 
 /**
- * Mapa de estratégias de compressão disponíveis.
+ * Factory para criar estratégias de compressão baseadas no tipo.
  */
-const STRATEGIES: Record<CompressionStrategyType, CompressionStrategy> = {
-    none: new NoCompressionStrategy(),
-    summarize: new SummarizeCompressionStrategy(10),
-    aggressive: new AggressiveCompressionStrategy(),
-    "token-budget": new TokenBudgetCompressionStrategy(4000),
-};
-
-/**
- * Global tool request compressor instance.
- * Registered compressors are shared across all sessions.
- */
-let toolCompressor: ToolRequestCompressor | undefined;
-
-/**
- * Get or create the global tool compressor and ensure compressors are registered.
- */
-function getToolCompressor(): ToolRequestCompressor {
-    if (!toolCompressor) {
-        toolCompressor = new ToolRequestCompressor();
-        // Register built-in tool compressors
-        import("../chat/compression/compressors").then(({ memorySaveCompressor, memorySearchCompressor, memoryGetObservationsCompressor }) => {
-            toolCompressor!.register(memorySaveCompressor);
-            toolCompressor!.register(memorySearchCompressor);
-            toolCompressor!.register(memoryGetObservationsCompressor);
-        }).catch(() => {
-            // Silently continue if compressors fail to load
-        });
-    }
-    return toolCompressor;
-}
-
-/**
- * Maps compression preset ID to tool compression level.
- */
-function presetToToolLevel(presetId: CompressionStrategyType): CompressionLevel {
-    switch (presetId) {
+export function createCompressionStrategy(strategyType: CompressionStrategyType, params?: any): CompressionStrategy {
+    switch (strategyType) {
         case "none":
-            return "none";
+            return new NoneCompressionStrategy();
         case "summarize":
-        case "dev":
-        case "review":
-            return "low";
+            return new SummarizeCompressionStrategy(params?.keepRecent ?? 10);
         case "aggressive":
-        case "debug":
-            return "medium";
+            return new AggressiveCompressionStrategy();
         case "token-budget":
-            return "high";
+            return new TokenBudgetCompressionStrategy(params?.maxTokens ?? 4000);
         default:
-            return "low";
+            return new NoneCompressionStrategy();
     }
 }
 
 /**
- * Aplica compressão a mensagens de chat usando o preset especificado.
- *
- * Two-stage compression:
- * 1. Tool request compression - removes redundant fields from known tool calls
- * 2. Message-level compression - applies preset strategy (summarize, aggressive, etc)
- *
- * @param messages - Mensagens de chat a serem compactadas
- * @param presetId - ID do preset de compressão (ex: "none", "summarize", "aggressive", "token-budget")
- * @param maxTokens - Limite opcional de tokens (para presets que o suportam)
- * @returns Mensagens compactadas
+ * Comprime mensagens usando um preset específico.
  */
-export function applyCompression(
+export function compressMessages(
     messages: ChatMessage[],
-    presetId: CompressionStrategyType = "none",
-    maxTokens?: number
+    strategyType: CompressionStrategyType,
+    params?: any
 ): ChatMessage[] {
-    // Stage 1: Compress known tool requests (removes redundant input fields)
-    const toolLevel = presetToToolLevel(presetId);
-    const compressor = getToolCompressor();
-    const toolCompressed = compressor.compressMessages(
-        messages as any[],
-        toolLevel
-    ) as ChatMessage[];
-
-    // Stage 2: Apply message-level compression strategy
-    const strategy = STRATEGIES[presetId] || STRATEGIES.none;
-    return strategy.compress(toolCompressed, maxTokens);
-}
-
-/**
- * Registra uma nova estratégia de compressão personalizada.
- *
- * @param presetId - ID do preset (usado para selecionar a estratégia)
- * @param strategy - Instância da estratégia de compressão
- */
-export function registerStrategy(presetId: CompressionStrategyType, strategy: CompressionStrategy): void {
-    STRATEGIES[presetId] = strategy;
+    const strategy = createCompressionStrategy(strategyType, params);
+    return strategy.compress(messages);
 }

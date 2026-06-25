@@ -16,7 +16,7 @@ import { consumeStream } from "./streamConsume";
 import {
     RequestEstimate, windowMessages, isWindowTruncated, estimateRequest, requestEstimateDiagnostic,
 } from "./requestWindow";
-import { applyCompression } from "../../compression";
+import { compressMessages } from "../../compression";
 
 /**
  * Strip source prefix from tool name (sym_, local_, agent_, vscode_).
@@ -91,7 +91,7 @@ export class TurnRunner {
         let workingMessages = messages;
         if (compressionPresetId && compressionPresetId !== "none") {
             try {
-                workingMessages = applyCompression(messages, compressionPresetId);
+                workingMessages = compressMessages(messages, compressionPresetId as any);
                 this.d.emit({ kind: "info", message: `[Compression: applied preset "${compressionPresetId}" - ${messages.length} → ${workingMessages.length} messages]` });
             } catch (err) {
                 this.d.emit({ kind: "error", message: `[Compression: failed to apply preset "${compressionPresetId}": ${err instanceof Error ? err.message : String(err)}` });

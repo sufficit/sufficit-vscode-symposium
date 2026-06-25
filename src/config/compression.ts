@@ -71,6 +71,8 @@ export interface CompressionSettings {
     showCompressionSelector: boolean;
     /** Se true, mostra diagnóstico de compressão na barra de status */
     showCompressionDiagnostics: boolean;
+    /** Habilitar compressão por seção */
+    perSessionCompression?: boolean;
 }
 
 /**
