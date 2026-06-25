@@ -67,7 +67,9 @@ export type WebviewToHost =
     | { type: "clear-guardrails" }
     | { type: "pin-model"; model: string }
     | { type: "set-model-default"; model: string }
-    | { type: "new-session" }
+    | { type: "new-session"; compressionPresetId?: string }
+    | { type: "set-compression-preset"; compressionPresetId: string }
+    | { type: "compression-preset-set"; presetId: string }
     | { type: "list-backends" }
     | { type: "switch-backend"; backend: string }
     | { type: "restart-from-message"; index: number }

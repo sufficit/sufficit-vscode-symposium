@@ -224,6 +224,54 @@ export class ConfigPanel {
                 await this.pushState();
                 return;
             }
+            case "list-compression-presets": {
+                const { CompressionManager } = await import("../compression");
+                const presets = CompressionManager.getInstance().getPresets();
+                this.panel.webview.postMessage({ type: "compression-presets", presets });
+                return;
+            }
+            case "add-compression-preset": {
+                const { CompressionManager } = await import("../compression");
+                const name = await vscode.window.showInputBox({
+                    prompt: "Nome do preset de compressão",
+                    validateInput: (v) => v.trim() ? undefined : "Nome inválido",
+                });
+                if (!name) { return; }
+                const presets = CompressionManager.getInstance().getPresets();
+                const id = `custom-${Date.now()}`;
+                const preset = presets[Object.keys(presets)[0]]; // Clone first preset as template
+                await CompressionManager.getInstance().savePreset({ ...preset, id, name: name.trim() });
+                await this.pushState();
+                return;
+            }
+            case "remove-compression-preset": {
+                const { CompressionManager } = await import("../compression");
+                if (!message.key) { return; }
+                await CompressionManager.getInstance().deletePreset(message.key);
+                await this.pushState();
+                return;
+            }
+            case "edit-compression-preset": {
+                const { CompressionManager } = await import("../compression");
+                if (!message.key) { return; }
+                const preset = CompressionManager.getInstance().getPresets()[message.key];
+                if (!preset) { return; }
+                const name = await vscode.window.showInputBox({
+                    prompt: "Nome do preset",
+                    value: preset.name,
+                    validateInput: (v) => v.trim() ? undefined : "Nome inválido",
+                });
+                if (name === undefined) { return; }
+                await CompressionManager.getInstance().savePreset({ ...preset, name: name.trim() });
+                await this.pushState();
+                return;
+            }
+            case "set-compression-preset-default": {
+                const { CompressionManager } = await import("../compression");
+                await CompressionManager.getInstance().setDefaultPreset(message.value ?? "");
+                await this.pushState();
+                return;
+            }
         }
     }
 
@@ -299,6 +347,8 @@ export class ConfigPanel {
         const profile = this.deps.auth ? await this.deps.auth.getProfile().catch(() => undefined) : undefined;
         const chat = vscode.workspace.getConfiguration("symposium.chat");
         const root = vscode.workspace.getConfiguration("symposium");
+        const { CompressionManager } = await import("../compression");
+        const compressionManager = CompressionManager.getInstance();
         const state = {
             root: api.resources.root(),
             resources: api.resources.scan(),
@@ -318,6 +368,11 @@ export class ConfigPanel {
                 maxHistoryMessages: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxHistoryMessages", 40),
                 shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
                 autoApprove: vscode.workspace.getConfiguration().get<boolean>("chat.tools.global.autoApprove", false),
+            },
+            compression: {
+                presets: compressionManager.getPresets(),
+                defaultPresetId: compressionManager.getDefaultPresetId(),
+                perSessionEnabled: compressionManager.isPerSessionEnabled(),
             },
         };
         await this.panel.webview.postMessage({ type: "state", state });

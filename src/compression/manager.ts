@@ -89,6 +89,26 @@ export class CompressionManager {
         return Array.from(this.presets.values());
     }
 
+    /** Obter todos os presets (alias para getAllPresets) */
+    getPresets(): CompressionPreset[] {
+        return this.getAllPresets();
+    }
+
+    /** Obter ID do preset padrão */
+    getDefaultPresetId(): string {
+        return this.settings.defaultPresetId;
+    }
+
+    /** Verificar se compressão por seção está habilitada */
+    isPerSessionEnabled(): boolean {
+        return this.settings.perSessionCompression ?? true;
+    }
+
+    /** Definir preset padrão (alias para setDefaultPresetId) */
+    setDefaultPreset(id: string): void {
+        this.setDefaultPresetId(id);
+    }
+
     /** Obter preset por ID */
     getPreset(id: string): CompressionPreset | undefined {
         return this.presets.get(id);
@@ -107,6 +127,26 @@ export class CompressionManager {
         this.settings.defaultPresetId = id;
         vscode.workspace.getConfiguration("symposium.compression").update("defaultPresetId", id, vscode.ConfigurationTarget.Global);
         this.changeEmitter.fire();
+    }
+
+    /** Deletar preset */
+    deletePreset(id: string): void {
+        if (!this.presets.has(id)) {
+            throw new Error(`Preset "${id}" não existe`);
+        }
+        if (DEFAULT_PRESETS.some(p => p.id === id)) {
+            throw new Error(`Não é possível deletar preset padrão "${id}"`);
+        }
+        this.presets.delete(id);
+        
+        // Remover do config
+        const customPresets = Array.from(this.presets.values()).filter(
+            p => !DEFAULT_PRESETS.some(dp => dp.id === p.id)
+        );
+        vscode.workspace.getConfiguration("symposium.compression").update("presets", customPresets, vscode.ConfigurationTarget.Global);
+        
+        this.changeEmitter.fire();
+        symposiumLog(`Preset "${id}" removido`);
     }
 
     /** Adicionar ou atualizar preset */

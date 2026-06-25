@@ -198,6 +198,16 @@ export class SurfaceMessages {
                     await vscode.commands.executeCommand("symposium.newSession");
                     return;
                 }
+                case "set-compression-preset": {
+                    const controller = this.d.getController();
+                    if (controller && typeof message.compressionPresetId === "string") {
+                        const info = controller.info;
+                        const store = this.d.deps.sessionStore;
+                        await store.setCompressionPreset(info, message.compressionPresetId || undefined);
+                        this.d.post({ type: "compression-preset-set", presetId: message.compressionPresetId });
+                    }
+                    return;
+                }
                 case "list-backends": {
                     // Offer the agents the current dialogue can be handed off to
                     // (every configured backend except the one in use now). The

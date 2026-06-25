@@ -16,6 +16,7 @@ import { consumeStream } from "./streamConsume";
 import {
     RequestEstimate, windowMessages, isWindowTruncated, estimateRequest, requestEstimateDiagnostic,
 } from "./requestWindow";
+import { applyCompression } from "../../compression";
 
 /**
  * Strip source prefix from tool name (sym_, local_, agent_, vscode_).
@@ -85,6 +86,18 @@ export class TurnRunner {
         const url = base + (responses ? "/responses" : "/chat/completions");
         const effort = this.d.options.reasoning;
         const loginToken = await this.d.authToken();   // logged-in Bearer, if needed
+        // Apply compression if configured
+        const compressionPresetId = this.d.options.compressionPresetId;
+        let workingMessages = messages;
+        if (compressionPresetId && compressionPresetId !== "none") {
+            try {
+                workingMessages = applyCompression(messages, compressionPresetId);
+                this.d.emit({ kind: "info", message: `[Compression: applied preset "${compressionPresetId}" - ${messages.length} → ${workingMessages.length} messages]` });
+            } catch (err) {
+                this.d.emit({ kind: "error", message: `[Compression: failed to apply preset "${compressionPresetId}": ${err instanceof Error ? err.message : String(err)}` });
+                workingMessages = messages; // fallback to original messages
+            }
+        }
         // Auth guard: when the gateway has no explicit apiKey/Authorization
         // configured, it relies on the logged-in Sufficit token. If that token
         // is missing (not logged in, or the token didn't persist — e.g. a
@@ -188,7 +201,7 @@ export class TurnRunner {
             // Tool-call loop: keep round-tripping while the model requests tools.
             for (let hop = 0; hop < maxHops; hop++) {
                 this.abort = new AbortController();
-                const windowed = windowMessages(messages, this.d.cfg.maxHistoryMessages ?? 40);
+                const windowed = windowMessages(workingMessages, this.d.cfg.maxHistoryMessages ?? 40);
                 // Continuous follow-up: once history is being windowed out (or after
                 // a few hops into the tool-loop), append a fresh objective+progress
                 // anchor at the tail so a small-context model keeps the thread.

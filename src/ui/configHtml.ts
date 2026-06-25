@@ -102,6 +102,27 @@ export function renderConfigHtml(): string {
     .pref-item .desc { opacity: 0.7; font-size: 0.9em; line-height: 1.5; white-space: normal; }
     .pref-item .ctl { justify-self: end; width: 100%; }
     .pref-item select.pref { width: 100%; cursor: pointer; min-height: 28px; }
+    .preset-item {
+        padding: 10px 12px; border-bottom: 1px solid var(--vscode-panel-border);
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .preset-item:hover { background: var(--vscode-list-hoverBackground); }
+    .preset-item.default { background: var(--vscode-list-activeSelectionBackground); }
+    .preset-info { flex: 1; min-width: 0; }
+    .preset-name { font-weight: 600; display: block; margin-bottom: 4px; }
+    .preset-desc { opacity: 0.7; font-size: 0.9em; line-height: 1.4; }
+    .preset-actions { display: flex; gap: 6px; }
+    .badge-default {
+        display: inline-block; padding: 2px 6px; margin-left: 8px;
+        background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+        font-size: 0.75em; border-radius: 3px;
+    }
+    .btn-delete, .btn-edit {
+        padding: 4px 8px; font-size: 1.1em; background: transparent; color: var(--vscode-foreground);
+        border: 1px solid var(--vscode-panel-border);
+    }
+    .btn-delete:hover { background: var(--vscode-errorBackground); color: var(--vscode-errorForeground); border-color: var(--vscode-errorBorder); }
+    .btn-edit:hover { background: var(--vscode-toolbar-hoverBackground); }
     .pref-block { padding: 11px 10px; display: flex; flex-direction: column; gap: 7px; }
     .pref-block .desc { opacity: 0.7; font-size: 0.9em; line-height: 1.5; }
     @media (max-width: 620px) {
@@ -147,6 +168,7 @@ export function renderConfigHtml(): string {
         { id: "backends", label: "Backends" },
         { id: "prefs", label: "Preferences" },
         { id: "compaction", label: "Compaction" },
+        { id: "compression", label: "Compression" },
         { id: "sync", label: "Sync" },
     ];
 
@@ -338,8 +360,12 @@ export function renderConfigHtml(): string {
         const main = document.getElementById("content");
         const page = (h) => '<div class="page">' + h + "</div>";
         if (!state) { main.innerHTML = page('<div class="empty">Loading…</div>'); return; }
-        if (active === "prefs" || active === "compaction") {
-            main.innerHTML = page(active === "compaction" ? compactionView() : prefsView());
+        if (active === "prefs" || active === "compaction" || active === "compression") {
+            main.innerHTML = page(
+                active === "compaction" ? compactionView() :
+                active === "compression" ? compressionView() :
+                prefsView()
+            );
             main.querySelectorAll("select.pref").forEach(el => {
                 el.onchange = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
             });
@@ -432,6 +458,33 @@ export function renderConfigHtml(): string {
     document.getElementById("refresh").onclick = () => vscode.postMessage({ type: "refresh" });
     document.getElementById("open-root").onclick = () => vscode.postMessage({ type: "open-root" });
     document.getElementById("seed").onclick = () => vscode.postMessage({ type: "seed" });
+
+    // Compression preset handlers
+    document.addEventListener("click", (e) => {
+        const addPresetBtn = e.target.closest("#add-compression-preset");
+        if (addPresetBtn) {
+            vscode.postMessage({ type: "add-compression-preset" });
+            return;
+        }
+        const deleteBtn = e.target.closest(".btn-delete");
+        if (deleteBtn) {
+            const id = deleteBtn.getAttribute("data-id");
+            if (id) vscode.postMessage({ type: "remove-compression-preset", key: id });
+            return;
+        }
+        const editBtn = e.target.closest(".btn-edit");
+        if (editBtn) {
+            const id = editBtn.getAttribute("data-id");
+            if (id) vscode.postMessage({ type: "edit-compression-preset", key: id });
+            return;
+        }
+    });
+
+    document.addEventListener("change", (e) => {
+        if (e.target.id === "per-session-toggle") {
+            vscode.postMessage({ type: "enable-compression-per-session", value: e.target.checked });
+        }
+    });
 
     window.addEventListener("message", (e) => {
         if (e.data?.type === "state") { applyState(e.data.state); }
