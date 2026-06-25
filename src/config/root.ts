@@ -31,12 +31,20 @@ export interface ResourceEntry {
 }
 
 export interface SyncState {
-    /** Last known health of the sufficit-ai memory hub. */
-    health: "ok" | "down" | "unknown";
+    /**
+     * Last known state of the sufficit-ai memory hub:
+     *  - "ok": reachable AND the last sync succeeded
+     *  - "unauthorized": reachable but the hub rejected auth (401) — needs a token
+     *  - "down": unreachable (health-gate failed)
+     *  - "unknown": never synced
+     */
+    health: "ok" | "down" | "unauthorized" | "unknown";
     /** ISO timestamp of the last successful sync, if any. */
     lastSyncUtc?: string;
     /** Resource names with local edits not yet pushed to the hub. */
     pendingPush: string[];
+    /** Summary of the most recent push/pull attempt, for the UI. */
+    lastResult?: { label: string; pushed: number; pulled: number; skipped: number; errors: string[]; at: string };
 }
 
 const DEFAULT_STATE: SyncState = { health: "unknown", pendingPush: [] };

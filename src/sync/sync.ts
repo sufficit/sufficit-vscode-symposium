@@ -81,7 +81,7 @@ export class SyncEngine {
         }
         if (!(await this.hub.health())) {
             result.errors.push("hub unavailable — push blocked (health-gate).");
-            return this.persist(result, false);
+            return this.persist(result, false, "push");
         }
 
         const map = readMap();
@@ -119,7 +119,7 @@ export class SyncEngine {
             }
         }
         writeMap(map);
-        return this.persist(result, true, pending);
+        return this.persist(result, true, "push", pending);
     }
 
     /** Pull hub resources into local files. Writes only on content change. */
@@ -132,7 +132,7 @@ export class SyncEngine {
         }
         if (!(await this.hub.health())) {
             result.errors.push("hub unavailable — using local cache.");
-            return this.persist(result, false);
+            return this.persist(result, false, "pull");
         }
 
         const map = readMap();
@@ -177,7 +177,7 @@ export class SyncEngine {
             }
         }
         writeMap(map);
-        return this.persist(result, true);
+        return this.persist(result, true, "pull");
     }
 
     private parsePayload(payload?: string): { kind: ResourceKind; name: string; content: string } | null {
@@ -199,14 +199,24 @@ export class SyncEngine {
         }
     }
 
-    /** Records health + last-sync into state.json so the UI reflects it. */
-    private persist(result: SyncResult, healthy: boolean, pending: string[] = []): SyncResult {
+    /** Records health + last-sync + last result into state.json so the UI reflects it. */
+    private persist(result: SyncResult, healthy: boolean, label: string, pending: string[] = []): SyncResult {
         const state = readState();
-        state.health = healthy ? "ok" : "down";
-        if (healthy) {
+        // Reachable (health passed) but the hub rejected the credentials.
+        const unauthorized = healthy && result.errors.some((e) => /\b40[13]\b/.test(e));
+        state.health = !healthy ? "down" : unauthorized ? "unauthorized" : "ok";
+        if (healthy && !unauthorized) {
             state.lastSyncUtc = new Date().toISOString();
         }
         state.pendingPush = pending;
+        state.lastResult = {
+            label,
+            pushed: result.pushed,
+            pulled: result.pulled,
+            skipped: result.skipped,
+            errors: result.errors,
+            at: new Date().toISOString(),
+        };
         writeState(state);
         return result;
     }

@@ -242,9 +242,26 @@ export function renderConfigHtml(lang: string): string {
             : '<div class="toolbar"><button id="sync-config">' + esc(t("config.btn.syncConfig")) + '</button></div>';
         const note = configured ? "" :
             '<div class="empty">' + esc(t("config.empty.hub")) + '</div>';
-        return toolbar + note +
-            '<div class="row"><span class="name">' + esc(t("config.sync.hub")) + '</span><span class="desc">' + esc(s.health || t("config.value.unknown")) + "</span></div>" +
+        const health = s.health || "unknown";
+        const color = health === "ok" ? "var(--vscode-charts-green,#89c374)"
+            : health === "unauthorized" ? "var(--vscode-charts-orange,#d9a45b)"
+            : health === "down" ? "var(--vscode-charts-red,#e26d6d)"
+            : "var(--vscode-descriptionForeground,#888)";
+        const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:6px;vertical-align:middle"></span>';
+        const statusRow = '<div class="row"><span class="name">' + esc(t("config.sync.hub")) + '</span><span class="desc">' + dot + esc(t("config.sync.status." + health)) + "</span></div>";
+        let resultRow = "";
+        const lr = s.lastResult;
+        if (lr) {
+            if (lr.errors && lr.errors.length) {
+                const hint = lr.errors.some(function (e) { return /\b40[13]\b/.test(e); }) ? " — " + t("config.sync.authHint") : "";
+                resultRow = '<div class="row"><span class="name">' + esc(t("config.sync.lastResult")) + '</span><span class="desc" style="color:' + color + '">' + esc(lr.label + ": " + lr.errors.join(" · ") + hint) + "</span></div>";
+            } else {
+                resultRow = '<div class="row"><span class="name">' + esc(t("config.sync.lastResult")) + '</span><span class="desc">' + esc(t("msg.sync.report.success", { label: lr.label, pulled: lr.pulled, pushed: lr.pushed, skipped: lr.skipped })) + "</span></div>";
+            }
+        }
+        return toolbar + note + statusRow +
             '<div class="row"><span class="name">' + esc(t("config.sync.lastSync")) + '</span><span class="desc">' + esc(s.lastSyncUtc || t("config.sync.never")) + "</span></div>" +
+            resultRow +
             '<div class="row"><span class="name">' + esc(t("config.sync.pendingPush")) + '</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || t("config.value.none")) + "</span></div>";
     }
 
