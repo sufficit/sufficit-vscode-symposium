@@ -95,12 +95,12 @@ export class SufficitAuth {
             headers: { "content-type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ client_id: clientId, scope: this.scope() }).toString(),
         });
-        const dev = await devRes.json() as { verification_uri_complete?: string; verification_uri?: string; user_code: string; error?: string };
+        const dev = await devRes.json() as { verification_uri_complete?: string; verification_uri?: string; user_code: string; error?: string; device_code?: string; interval?: number; expires_in?: number };
         if (!devRes.ok) {
             throw new Error(`device authorization failed: ${dev.error ?? devRes.status}`);
         }
 
-        const verifyUrl: string = dev.verification_uri_complete ?? dev.verification_uri;
+        const verifyUrl: string = dev.verification_uri_complete ?? dev.verification_uri ?? "";
         const pick = await vscode.window.showInformationMessage(
             `Sufficit: open the browser and confirm the code ${dev.user_code}`, "Open browser");
         if (pick) {
@@ -108,6 +108,7 @@ export class SufficitAuth {
         }
 
         // 2. Poll the token endpoint until the user approves (or timeout).
+        if (!dev.device_code) { return undefined; }
         const tokens = await this.pollToken(disco.token_endpoint, clientId, dev.device_code, dev.interval ?? 5, dev.expires_in ?? 300);
         if (!tokens) {
             return undefined;
@@ -180,7 +181,7 @@ export class SufficitAuth {
                     headers: { "content-type": "application/x-www-form-urlencoded" },
                     body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: t.refreshToken, client_id: this.clientId() }).toString(),
                 });
-                if (res.ok) { t = this.toStored(await res.json()); await this.writeTokens(t); return t.accessToken; }
+                if (res.ok) { t = this.toStored(await res.json() as { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string; scope?: string; id_token?: string }); await this.writeTokens(t); return t.accessToken; }
             } catch (err) {
                 this.log(`[auth] refresh failed: ${err}`);
             }

@@ -131,10 +131,13 @@ export class Compactor {
                 const output = Array.isArray(obj.output) ? obj.output : [];
                 for (const item of output) {
                     if (typeof item === "object" && item !== null) {
-                        const content = Array.isArray((item as Record<string, unknown>).content) ? (item as Record<string, unknown>).content : [];
+                        const itemRecord = item as Record<string, unknown>;
+                        const contentValue = itemRecord.content;
+                        const content = Array.isArray(contentValue) ? contentValue : [];
                         for (const c of content) {
-                            if (typeof c === "object" && c !== null && typeof (c as Record<string, unknown>).text === "string") {
-                                parts.push((c as Record<string, unknown>).text);
+                            const contentItem = typeof c === "object" && c !== null ? c as Record<string, unknown> : null;
+                            if (contentItem && typeof contentItem.text === "string") {
+                                parts.push(contentItem.text);
                             }
                         }
                     }

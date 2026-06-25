@@ -327,7 +327,7 @@ export class ConfigPanel {
                     name: name.trim(),
                     description: description?.trim() || undefined,
                     strategy: strategy.label as CompressionStrategyType,
-                    params: {}
+                    params: { keepRecent: 10, maxTokens: 4000, toolCompressionLevel: undefined }
                 };
 
                 // Step 4: Strategy-specific params
@@ -341,6 +341,7 @@ export class ConfigPanel {
                         }
                     });
                     if (!keepRecent) { return; }
+                    if (!preset.params) { preset.params = {}; }
                     preset.params.keepRecent = parseInt(keepRecent);
 
                 } else if (strategy.label === "aggressive") {
@@ -353,6 +354,7 @@ export class ConfigPanel {
                         }
                     });
                     if (!keepRecent) { return; }
+                    if (!preset.params) { preset.params = {}; }
                     preset.params.keepRecent = parseInt(keepRecent);
 
                 } else if (strategy.label === "token-budget") {
@@ -365,6 +367,7 @@ export class ConfigPanel {
                         }
                     });
                     if (!maxTokens) { return; }
+                    if (!preset.params) { preset.params = {}; }
                     preset.params.maxTokens = parseInt(maxTokens);
                 }
 
@@ -379,6 +382,7 @@ export class ConfigPanel {
                 });
 
                 if (toolLevel) {
+                    if (!preset.params) { preset.params = {}; }
                     preset.params.toolCompressionLevel = toolLevel.label;
                 }
 

@@ -15,7 +15,7 @@ export function transcriptMessages(log: unknown[]): TranscriptRow[] {
         if (text) { rows.push({ role: "assistant", text }); }
         assistantBuf = "";
     };
-    for (const message of log as Array<{ type?: string; messages?: unknown[] }>) {
+    for (const message of log as Array<{ type?: string; messages?: unknown[]; text?: unknown; event?: { kind?: string; text?: string } }>) {
         if (message?.type === "history" && Array.isArray(message.messages)) {
             // Resumed/seeded history: a single log entry holding the prior
             // conversation. Expand its user/assistant turns so a rewind from a

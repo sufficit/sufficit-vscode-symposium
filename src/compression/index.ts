@@ -8,8 +8,13 @@
  * - Webhook de compressão que pode ser usado pelos adapters
  */
 
+import type { ChatMessage } from "../adapters/openai/types";
+import type {
+    CompressionStrategyType,
+} from "./types";
+
 export { CompressionManager } from "./manager";
-export type {
+export {
     CompressionPreset,
     CompressionSettings,
     SectionCompressionConfig,
@@ -44,5 +49,6 @@ export async function compressionWebhook(
 ): Promise<unknown[]> {
     // Importar os tipos de mensagem do OpenAI
     const { compressMessages: compress } = await import("./webhook");
-    return compress(messages as unknown[], presetId as string, maxTokens);
+    const params = maxTokens !== undefined ? { maxTokens } : undefined;
+    return compress(messages as ChatMessage[], presetId as CompressionStrategyType, params);
 }

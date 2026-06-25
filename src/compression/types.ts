@@ -14,6 +14,16 @@ export type CompressionStrategyType =
     | "token-budget";  // Baseada em limite de tokens
 
 /**
+ * Parâmetros para estratégias de compressão.
+ */
+export interface CompressionStrategyParams {
+    /** Número de mensagens recentes a manter (para summarize) */
+    keepRecent?: number;
+    /** Limite máximo de tokens (para token-budget) */
+    maxTokens?: number;
+}
+
+/**
  * Preset de compressão configurável pelo usuário.
  */
 export interface CompressionPreset {
@@ -33,6 +43,8 @@ export interface CompressionPreset {
         maxTokens?: number;
         /** Fator de compressão (opcional) */
         compressionFactor?: number;
+        /** Nível de compressão de tool requests (none|low|medium|high) */
+        toolCompressionLevel?: string;
     };
 }
 

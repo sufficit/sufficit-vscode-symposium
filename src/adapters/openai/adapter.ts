@@ -74,7 +74,7 @@ export class OpenAIAdapter implements AgentAdapter {
                 model: meta.model || "",
             });
         }
-        return out;
+        return Promise.resolve(out);
     }
 
     history(info: SessionInfo): Promise<HistoryMessage[]> {
@@ -132,6 +132,7 @@ export class OpenAIAdapter implements AgentAdapter {
         // (listSessions only scans the store dir, so a ledger-only session is
         // invisible in the UI but still consumes disk space).
         try { ledger.removeLedger(info.sessionId); } catch { /* ignore */ }
+        return Promise.resolve();
     }
 
     start(options: SessionStartOptions): AgentSession {
@@ -185,10 +186,18 @@ export class OpenAIAdapter implements AgentAdapter {
         const labels: Record<string, string> = {};
         const context: Record<string, number> = {};
         for (const m of raw) {
-            const id = typeof m === "string" ? m : m?.id ?? m?.name;
-            if (typeof id !== "string") { continue; }
+            let id: string;
+            if (typeof m === "string") {
+                id = m;
+            } else if (typeof m === "object" && m !== null) {
+                const obj = m as Record<string, unknown>;
+                id = typeof obj.id === "string" ? obj.id : (typeof obj.name === "string" ? obj.name : "");
+            } else {
+                continue;
+            }
+            if (!id) { continue; }
             list.push(id);
-            const name = typeof m === "object" ? (m?.name ?? m?.title) : undefined;
+            const name = typeof m === "object" ? (typeof (m as Record<string, unknown>).name === "string" ? (m as Record<string, unknown>).name : typeof (m as Record<string, unknown>).title === "string" ? (m as Record<string, unknown>).title : undefined) : undefined;
             if (typeof name === "string" && name && name !== id) { labels[id] = name; }
             const ctx = modelContextLength(m);
             if (ctx) { context[id] = ctx; }

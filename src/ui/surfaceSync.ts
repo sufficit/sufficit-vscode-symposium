@@ -106,7 +106,7 @@ export class SurfaceSync {
         try {
             const r = await lm.invokeTool("open_browser_page",
                 { input: {}, toolInvocationToken: undefined } as vscode.LanguageModelToolInvocationOptions<object>, cts.token);
-            const content = r.content as Array<vscode.LanguageModelTextPart | vscode.LanguageModelPromptPart>;
+            const content = r.content as Array<vscode.LanguageModelTextPart | vscode.LanguageModelPromptTsxPart>;
             const text = content.map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : "")).join("\n").trim();
             if (!text || /opted not to share|no .*page/i.test(text)) {
                 void vscode.window.showInformationMessage("No browser page shared.");

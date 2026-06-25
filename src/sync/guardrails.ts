@@ -36,8 +36,8 @@ export async function fetchSessionGuardrails(hub: HubClient, sessionId: string):
     const recs = await hub.searchMemory({ limit: 200 });
     return (recs as Array<{ type: string; tags?: string | string[]; id: unknown; summary?: string; title?: string; createdAtUtc?: string | number }>)
         .filter((r) => r.type === GUARDRAIL_TYPE && hasTag(r.tags, tag))
-        .sort((a, b) => Date.parse(a.createdAtUtc || "0") - Date.parse(b.createdAtUtc || "0"))
-        .map((r) => ({ id: String(r.id), text: r.summary || r.title || "", ts: r.createdAtUtc }));
+        .sort((a, b) => Date.parse(String(a.createdAtUtc || "0")) - Date.parse(String(b.createdAtUtc || "0")))
+        .map((r) => ({ id: String(r.id), text: r.summary || r.title || "", ts: String(r.createdAtUtc || "") }));
 }
 
 /** Adds a guardrail for the session. Returns the new id. */

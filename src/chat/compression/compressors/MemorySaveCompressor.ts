@@ -22,10 +22,12 @@ export const memorySaveCompressor: ToolCompressor = {
 
             case 'medium': {
                 // Keep only essential identifiers
+                const titleVal = input.title;
+                const titleStr = typeof titleVal === "string" ? titleVal : "";
                 return {
                     _compressed: true,
-                    action: `saved ${input.type || 'observation'}`,
-                    title: input.title?.substring(0, 50)
+                    action: `saved ${typeof input.type === "string" ? input.type : "observation"}`,
+                    title: titleStr.substring(0, 50)
                 };
             }
 

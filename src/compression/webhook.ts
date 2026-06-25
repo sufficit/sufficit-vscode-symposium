@@ -4,6 +4,7 @@
  */
 
 import type { ChatMessage } from "../adapters/openai/types";
+import type { CompressionStrategyParams } from "./types";
 
 /**
  * Tipos de estratégia de compressão disponíveis.

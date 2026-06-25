@@ -79,11 +79,13 @@ export function parseCodexUsage(event: unknown): CodexUsage | undefined {
               e.usage ??
               ((e.message as { usage?: unknown })?.usage);
     if (!u || typeof u !== "object") { return undefined; }
-    const input = Number(u.input_tokens ?? 0);
-    const output = Number(u.output_tokens ?? 0);
-    const cached = Number(u.cached_input_tokens ?? u.cache_read_input_tokens ?? 0);
+    const uObj = u as Record<string, unknown>;
+    const infoObj = typeof info === "object" && info !== null ? info as Record<string, unknown> : null;
+    const input = Number(uObj.input_tokens ?? 0);
+    const output = Number(uObj.output_tokens ?? 0);
+    const cached = Number(uObj.cached_input_tokens ?? uObj.cache_read_input_tokens ?? 0);
     if (!input && !output && !cached) { return undefined; }
-    const win = Number(info?.model_context_window ?? 0) || undefined;
+    const win = Number(infoObj?.model_context_window ?? 0) || undefined;
     return { inputTokens: input, outputTokens: output, cacheRead: cached, contextWindow: win };
 }
 
