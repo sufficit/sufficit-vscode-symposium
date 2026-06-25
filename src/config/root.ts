@@ -270,6 +270,58 @@ export function createResource(kind: ResourceKind, name: string, description = "
     return file;
 }
 
+/** Well-known source dirs for importable foreign skill bundles (Claude + Codex). */
+function foreignSkillRoots(): { source: string; dir: string }[] {
+    const home = os.homedir();
+    const roots: { source: string; dir: string }[] = [];
+    for (const f of vscode.workspace.workspaceFolders ?? []) {
+        roots.push({ source: "claude-workspace", dir: path.join(f.uri.fsPath, ".claude", "skills") });
+    }
+    roots.push({ source: "claude", dir: path.join(home, ".claude", "skills") });
+    roots.push({ source: "codex", dir: path.join(home, ".codex", "skills") });
+    roots.push({ source: "codex-system", dir: path.join(home, ".codex", "skills", ".system") });
+    return roots;
+}
+
+/**
+ * Lists importable skill bundles from the Claude/Codex skill dirs. Symlinked
+ * bundles are dereferenced (the Claude→.agents Superpowers layout uses them);
+ * broken links and non-directories are skipped.
+ */
+export function scanForeignSkills(): { source: string; name: string; description: string; path: string }[] {
+    const out: { source: string; name: string; description: string; path: string }[] = [];
+    for (const { source, dir } of foreignSkillRoots()) {
+        let entries: fs.Dirent[];
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+        for (const e of entries) {
+            if (e.name.startsWith(".")) { continue; }
+            let bundle: string;
+            try {
+                bundle = fs.realpathSync(path.join(dir, e.name));
+                if (!fs.statSync(bundle).isDirectory()) { continue; }
+            } catch { continue; }
+            if (!fs.existsSync(path.join(bundle, "SKILL.md"))) { continue; }
+            const b = readSkillBundle(bundle);
+            out.push({ source, name: b.name, description: b.description, path: bundle });
+        }
+    }
+    return out;
+}
+
+/** Copies a foreign skill bundle directory into repo/skills/. Skips if present unless overwrite. */
+export function importSkill(srcDir: string, overwrite = false): { name: string; status: "imported" | "skipped" | "error" } {
+    ensureScaffold();
+    const b = readSkillBundle(srcDir);
+    const dest = path.join(repoDir(), KIND_DIR.skill, sanitize(b.name));
+    try {
+        if (fs.existsSync(dest) && !overwrite) { return { name: b.name, status: "skipped" }; }
+        fs.cpSync(srcDir, dest, { recursive: true, dereference: true, force: true });
+        return { name: b.name, status: "imported" };
+    } catch {
+        return { name: b.name, status: "error" };
+    }
+}
+
 /** Deletes a resource (single file, or the whole skill bundle directory). */
 export function deleteResource(kind: ResourceKind, name: string): void {
     if (kind === "skill") {

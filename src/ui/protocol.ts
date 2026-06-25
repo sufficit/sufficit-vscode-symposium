@@ -60,6 +60,7 @@ export type WebviewToHost =
     | { type: "drop-uris"; uris: string[] }
     | { type: "refresh-tasks" }
     | { type: "refresh-models" }
+    | { type: "refresh-sessions" }
     | { type: "recheck-shell-tools" }
     | { type: "task-set-done"; id: string; done: boolean }
     | { type: "add-guardrail" }

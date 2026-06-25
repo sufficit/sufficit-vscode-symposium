@@ -12,6 +12,7 @@ export const status = document.getElementById("status") as HTMLElement;
 export const sessionsList = document.getElementById("sessionsList") as HTMLElement;
 export const chatTitle = document.getElementById("chatTitle") as HTMLElement;
 export const sessionFilterBtn = document.getElementById("sessionFilterBtn") as HTMLButtonElement;
+export const sessionRefreshBtn = document.getElementById("sessionRefreshBtn") as HTMLButtonElement;
 export const sessionSearch = document.getElementById("sessionSearch") as HTMLInputElement;
 export const listToggle = document.getElementById("listToggle") as HTMLButtonElement;
 export const sendCaret = document.getElementById("sendCaret") as HTMLButtonElement;

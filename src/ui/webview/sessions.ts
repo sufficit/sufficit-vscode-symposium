@@ -127,6 +127,7 @@ export function openSessionsFilterMenu(anchorEl: HTMLElement) {
     ctxMenu.appendChild(head);
 
     appendFilterSection(t("sessions.group.label"), [
+        { label: t("sessions.group.projectConversation"), active: sessionGroupBy === "project-conversation", onToggle: () => { setSessionGroupBy("project-conversation"); persistSessionFilters(); renderSessions(); } },
         { label: t("sessions.group.conversation"), active: sessionGroupBy === "conversation", onToggle: () => { setSessionGroupBy("conversation"); persistSessionFilters(); renderSessions(); } },
         { label: t("sessions.group.time"), active: sessionGroupBy === "time", onToggle: () => { setSessionGroupBy("time"); persistSessionFilters(); renderSessions(); } },
         { label: t("sessions.group.project"), active: sessionGroupBy === "project", onToggle: () => { setSessionGroupBy("project"); persistSessionFilters(); renderSessions(); } },
@@ -278,6 +279,29 @@ export function renderSessions() {
             for (const k of kids) { appendTree(k, depth + 1); }
         }
     };
+    // Collapse a list of sessions into conversation lineages: the latest session
+    // of each lineage is the head; its older sessions nest below in descending
+    // order (accordion, collapsed by default). Reused by "Conversation" and the
+    // inner level of "Project + Conversation".
+    const byRecent = (a, b) => (b.updatedAt ? new Date(b.updatedAt).getTime() : 0) - (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
+    const appendLineages = (items) => {
+        const lin = new Map();
+        for (const s of items) {
+            const k = s.lineageId || s.sessionId;
+            if (!lin.has(k)) { lin.set(k, []); }
+            lin.get(k).push(s);
+        }
+        const lineages = [...lin.values()].map((arr) => [...arr].sort(byRecent));
+        lineages.sort((a, b) => byRecent(a[0], b[0]));
+        for (const arr of lineages) {
+            const head = arr[0];
+            const older = arr.slice(1);
+            sessionsList.appendChild(renderSessionItem(head, 0, older.length));
+            if (older.length && expandedParents.has(head.sessionId)) {
+                for (const o of older) { sessionsList.appendChild(renderSessionItem(o, 1, 0)); }
+            }
+        }
+    };
     const pinned = sortSessions(top.filter((s) => s.pinned)).sort((a, b) => (a.pinIndex || 0) - (b.pinIndex || 0));
     const rest = sortSessions(top.filter((s) => !s.pinned));
     if (pinned.length) {
@@ -296,33 +320,16 @@ export function renderSessions() {
             appendTree(s, 0);
         }
     } else if (sessionGroupBy === "conversation") {
-        // Conversation lineage: ONE logical conversation = one entry (the latest
-        // session as head), with its older sessions nested below in descending
-        // order (accordion, collapsed by default). Sessions sharing a lineageId
-        // (claude-mem originSessionId) are the same conversation; the rest are
-        // their own single-session lineage.
-        const lineageOf = (s) => s.lineageId || s.sessionId;
-        const lin = new Map();
-        for (const s of rest) {
-            const k = lineageOf(s);
-            if (!lin.has(k)) { lin.set(k, []); }
-            lin.get(k).push(s);
-        }
-        const byRecent = (a, b) => (b.updatedAt ? new Date(b.updatedAt).getTime() : 0) - (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
-        const lineages = [...lin.values()].map((arr) => [...arr].sort(byRecent));
-        lineages.sort((a, b) => byRecent(a[0], b[0]));
-        for (const arr of lineages) {
-            const head = arr[0];
-            const older = arr.slice(1);
-            sessionsList.appendChild(renderSessionItem(head, 0, older.length));
-            if (older.length && expandedParents.has(head.sessionId)) {
-                for (const o of older) { sessionsList.appendChild(renderSessionItem(o, 1, 0)); }
-            }
-        }
+        // ONE logical conversation = one entry (latest session as head + older nested).
+        appendLineages(rest);
     } else {
-        // Group by project (cwd) or git branch — collapsible accordion, closed by default.
-        const keyOf = (s) => sessionGroupBy === "branch" ? (s.gitBranch || "__nobranch__") : (s.cwd || "__noproject__");
-        const labelOf = (s) => sessionGroupBy === "branch" ? (s.gitBranch || t("sessions.group.noBranch")) : projectName(s.cwd);
+        // Group by project (cwd) or git branch — collapsible accordion, closed by
+        // default. "project-conversation" groups by project AND collapses each
+        // conversation lineage inside it (latest head + older nested).
+        const useLineages = sessionGroupBy === "project-conversation";
+        const byBranch = sessionGroupBy === "branch";
+        const keyOf = (s) => byBranch ? (s.gitBranch || "__nobranch__") : (s.cwd || "__noproject__");
+        const labelOf = (s) => byBranch ? (s.gitBranch || t("sessions.group.noBranch")) : projectName(s.cwd);
         const groups = new Map();
         for (const s of rest) {
             const k = keyOf(s);
@@ -336,8 +343,13 @@ export function renderSessions() {
         for (const k of keys) {
             const g = groups.get(k);
             const expanded = expandedGroups.has(k);
-            sessionsList.appendChild(collapsibleGroupHeader(k, g.label, g.items.length, expanded));
-            if (expanded) { for (const s of g.items) { appendTree(s, 0); } }
+            // In the combined mode the count is the number of CONVERSATIONS, not sessions.
+            const count = useLineages ? new Set(g.items.map((s) => s.lineageId || s.sessionId)).size : g.items.length;
+            sessionsList.appendChild(collapsibleGroupHeader(k, g.label, count, expanded));
+            if (expanded) {
+                if (useLineages) { appendLineages(g.items); }
+                else { for (const s of g.items) { appendTree(s, 0); } }
+            }
         }
     }
 }

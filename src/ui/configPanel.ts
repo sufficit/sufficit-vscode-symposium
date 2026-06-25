@@ -85,6 +85,54 @@ export class ConfigPanel {
                 await this.pushState();
                 return;
             }
+            case "import-agents": {
+                const r = api.resources.importAgents();
+                void vscode.window.showInformationMessage(
+                    r.created > 0
+                        ? `Imported ${r.created} agent(s)${r.skipped ? ` (${r.skipped} already existed)` : ""}.`
+                        : (r.skipped > 0
+                            ? `All ${r.skipped} agent(s) already existed.`
+                            : "No agents found in .claude/agents or ~/.codex/skills."));
+                await this.pushState();
+                return;
+            }
+            case "import-skills": {
+                const found = api.resources.scanForeignSkills();
+                if (!found.length) {
+                    void vscode.window.showInformationMessage(
+                        "No skills found in Claude (~/.claude/skills) or Codex (~/.codex/skills).");
+                    return;
+                }
+                const picked = await vscode.window.showQuickPick(
+                    found.map((s) => ({ label: s.name, description: s.source, detail: s.description, srcPath: s.path })),
+                    { canPickMany: true, placeHolder: "Select skills to import into Symposium" });
+                if (!picked || !picked.length) {
+                    return;
+                }
+                const r = api.resources.importSkills(picked.map((p) => p.srcPath));
+                void vscode.window.showInformationMessage(
+                    `Imported ${r.imported} skill(s)` +
+                    (r.skipped ? `, ${r.skipped} skipped` : "") +
+                    (r.errors.length ? `, ${r.errors.length} failed (${r.errors.join(", ")})` : "") + ".");
+                await this.pushState();
+                return;
+            }
+            case "install-skill-sh": {
+                const pkg = await vscode.window.showInputBox({
+                    prompt: "skills.sh package to install (owner/repo)",
+                    placeHolder: "vercel-labs/agent-skills",
+                    validateInput: (v) => /^[\w.-]+\/[\w.-]+$/.test(v.trim()) ? undefined : "Enter an owner/repo slug.",
+                });
+                if (!pkg) {
+                    return;
+                }
+                const term = vscode.window.createTerminal({ name: "skills.sh", env: { DISABLE_TELEMETRY: "1" } });
+                term.show();
+                term.sendText(`npx --yes skills add ${pkg.trim()}`);
+                void vscode.window.showInformationMessage(
+                    `Installing ${pkg.trim()} via skills.sh. When it finishes, run "Import skills…" to pull it into Symposium.`);
+                return;
+            }
             case "new-resource": {
                 if (!message.kind) {
                     return;

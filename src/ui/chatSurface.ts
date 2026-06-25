@@ -143,6 +143,11 @@ export class ChatSurface {
     private markReady(): void {
         this.ready = true;
         void this.webview.postMessage({ type: "boot", id: "host", label: "Extension host connected", status: "ok" });
+        // Localize the webview UI: same precedence as the AI language hint
+        // (symposium.chat.preferredLanguage, else VS Code's display language).
+        const langCfg = vscode.workspace.getConfiguration("symposium.chat");
+        const lang = langCfg.get<string>("preferredLanguage", "").trim() || vscode.env.language || "en";
+        void this.webview.postMessage({ type: "setLang", lang });
         for (const queued of this.queue) {
             void this.webview.postMessage(queued);
         }

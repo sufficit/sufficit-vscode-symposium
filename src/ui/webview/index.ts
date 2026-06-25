@@ -13,7 +13,7 @@ import { openChoiceMenu, showToast, showCtx, showFileMenu, showTip, hideTip, hid
 import { attachments, activeFile, activeFileRange, activeFileDismissed, activeFilePreview, activeFilePinned, currentBackend, currentBackendName, agentLabels, activeModel, activeSessionId, busy, queued, loading, sessions, showArchived, bootstrapPath, setAttachments, setActiveFile, setActiveFileRange, setActiveFileDismissed, setActiveFilePreview, setActiveFilePinned, setCurrentBackend, setCurrentBackendName, setAgentLabels, setActiveModel, setActiveSessionId, setBusy, setQueued, setLoadingFlag, setSessions, setShowArchived, setSessionSearchTerm, setBootstrapPath, setSideMode, pendingSessionSwitch, setPendingSessionSwitch, conversationRows, commands, setConversationRows, setCommands, autonomyValue, setAutonomyValue, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPermissionModes, setPermissionValue, setPermissionDefault, setAiToolsAvailable, setAiToolsEnabled, setPendingSwitchAnchor } from "./state";
 import { allDigits, middleEllipsisPath, relWhen, relTime, bucket, fmtTokens, usageColor } from "./format";
 import { layout, nearBottom, autoScroll, scrollToBottom, updateScrollBtn, refreshEmpty, sideIsRight, lastAutoScroll } from "./scroll";
-import { root, log, input, chips, addContext, modelPicker, reasoningPicker, sendMode, sendBtn, status, sessionsList, chatTitle, sessionFilterBtn, sessionSearch, listToggle, sendCaret, sendIcon, sendGroup, stopBtn, switchAgentBtn, tipEl, copySessionBtn, presencePicker, configBtn, sessionsPane, resizer, progress, composerEl, planEl, tasksEl, guardrailsEl, queuedEl, changedFiles, panelBody, panelTabs, attachedPanel, ctxMenu, statusbar, slash, addBrowserPage, bootStepsEl, bootHintEl } from "./dom";
+import { root, log, input, chips, addContext, modelPicker, reasoningPicker, sendMode, sendBtn, status, sessionsList, chatTitle, sessionFilterBtn, sessionRefreshBtn, sessionSearch, listToggle, sendCaret, sendIcon, sendGroup, stopBtn, switchAgentBtn, tipEl, copySessionBtn, presencePicker, configBtn, sessionsPane, resizer, progress, composerEl, planEl, tasksEl, guardrailsEl, queuedEl, changedFiles, panelBody, panelTabs, attachedPanel, ctxMenu, statusbar, slash, addBrowserPage, bootStepsEl, bootHintEl } from "./dom";
 import { renderMarkdown, inline } from "./markdown";
 import { ICONS, svgIcon, fileIcon } from "./icons";
     window.addEventListener("error", (e) => {
@@ -27,7 +27,13 @@ import { ICONS, svgIcon, fileIcon } from "./icons";
     document.getElementById("emptyNewSession").addEventListener("click", () => { setLoading(true, "Starting…"); vscode.postMessage({ type: "new-session" }); });
     document.getElementById("bootstrapLink").addEventListener("click", () => { if (bootstrapPath) { vscode.postMessage({ type: "open-file", path: bootstrapPath }); } });
     document.getElementById("archToggle").addEventListener("click", () => { setShowArchived(!showArchived); renderSessions(); });
-    sessionFilterBtn.addEventListener("click", (ev) => { ev.stopPropagation(); openSessionsFilterMenu(sessionFilterBtn); });
+    sessionFilterBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        // Toggle: clicking the funnel again closes the open filter menu.
+        if (ctxMenu.style.display === "block" && ctxMenu.classList.contains("sessionFiltersMenu")) { hideCtx(); }
+        else { openSessionsFilterMenu(sessionFilterBtn); }
+    });
+    if (sessionRefreshBtn) { sessionRefreshBtn.addEventListener("click", (ev) => { ev.stopPropagation(); vscode.postMessage({ type: "refresh-sessions" }); }); }
     if (sessionSearch) { sessionSearch.addEventListener("input", () => { setSessionSearchTerm(sessionSearch.value); renderSessions(); }); }
 
     // Persisted UI state (send mode + sessions pane width).

@@ -28,7 +28,7 @@ export function renderConfigHtml(): string {
     }
     header {
         padding: 10px 14px; border-bottom: 1px solid var(--vscode-panel-border);
-        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex-shrink: 0;
     }
     header .root { opacity: 0.8; font-family: var(--vscode-editor-font-family); }
     .health { padding: 2px 8px; border-radius: 10px; font-size: 11px; }
@@ -47,7 +47,7 @@ export function renderConfigHtml(): string {
         background: var(--vscode-button-secondaryBackground);
     }
     button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-secondaryBackground)); opacity: 0.85; }
-    nav { display: flex; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--vscode-panel-border); }
+    nav { display: flex; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--vscode-panel-border); flex-shrink: 0; flex-wrap: wrap; }
     nav .tab {
         padding: 10px 12px; cursor: pointer; border: none;
         border-bottom: 2px solid transparent; opacity: 0.65;
@@ -56,7 +56,7 @@ export function renderConfigHtml(): string {
     nav .tab:hover { opacity: 1; }
     nav .tab.active { opacity: 1; color: var(--vscode-foreground); border-bottom-color: var(--vscode-focusBorder, #0a84ff); }
     nav .tab .count { opacity: 0.6; margin-left: 5px; }
-    main { flex: 1; overflow: auto; padding: 16px 0 32px; }
+    main { flex: 1; min-height: 0; overflow: auto; padding: 16px 0 32px; }
     .page { max-width: 960px; margin: 0 auto; padding: 0 14px; }
     .row {
         display: flex; align-items: baseline; gap: 10px; padding: 7px 8px;
@@ -173,7 +173,10 @@ export function renderConfigHtml(): string {
 
     function resourceList(kind) {
         const items = (state?.resources[kind]) || [];
-        const toolbar = '<div class="toolbar"><button id="new-res">+ New ' + esc(LABEL[kind]) + "</button></div>";
+        const toolbar = '<div class="toolbar"><button id="new-res">+ New ' + esc(LABEL[kind]) + "</button>"
+            + (kind === "agent" ? '<button class="secondary" id="import-agents">Import agents</button>' : "")
+            + (kind === "skill" ? '<button class="secondary" id="import-skills">Import skills…</button><button class="secondary" id="install-skill-sh">Install from skills.sh…</button>' : "")
+            + "</div>";
         if (!items.length) {
             return toolbar + '<div class="empty">No resources. Import from a CLI or create a new one.</div>';
         }
@@ -403,6 +406,12 @@ export function renderConfigHtml(): string {
         });
         const nb = document.getElementById("new-res");
         if (nb) { nb.onclick = () => vscode.postMessage({ type: "new-resource", kind: active }); }
+        const ia = document.getElementById("import-agents");
+        if (ia) { ia.onclick = () => vscode.postMessage({ type: "import-agents" }); }
+        const isk = document.getElementById("import-skills");
+        if (isk) { isk.onclick = () => vscode.postMessage({ type: "import-skills" }); }
+        const ish = document.getElementById("install-skill-sh");
+        if (ish) { ish.onclick = () => vscode.postMessage({ type: "install-skill-sh" }); }
     }
 
     function renderProfile(p) {

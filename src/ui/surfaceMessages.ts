@@ -287,6 +287,11 @@ export class SurfaceMessages {
                     }
                     return;
                 }
+                case "refresh-sessions": {
+                    const all = await this.d.deps.listSessions();
+                    this.d.post({ type: "sessions", items: all.map((s) => ({ ...s, updatedAt: s.updatedAt?.toISOString() })) });
+                    return;
+                }
                 case "session-action": {
                     const sessions = await this.d.deps.listSessions();
                     const info = sessions.find((s) => s.sessionId === message.sessionId && s.backend === message.backend);

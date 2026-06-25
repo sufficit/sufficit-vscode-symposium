@@ -177,11 +177,6 @@
           "group": "navigation@2"
         },
         {
-          "command": "symposium.refreshSessions",
-          "when": "view == symposium.chat",
-          "group": "navigation@3"
-        },
-        {
           "command": "symposium.reattachPersistent",
           "when": "view == symposium.chat",
           "group": "navigation@4"
@@ -190,16 +185,6 @@
           "command": "symposium.openConfig",
           "when": "view == symposium.chat",
           "group": "navigation@5"
-        },
-        {
-          "command": "symposium.openSettings",
-          "when": "view == symposium.chat",
-          "group": "navigation@6"
-        },
-        {
-          "command": "symposium.editAdapters",
-          "when": "view == symposium.chat",
-          "group": "navigation@6"
         },
         {
           "command": "symposium.reload",

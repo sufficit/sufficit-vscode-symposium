@@ -203,6 +203,7 @@ export function hideCtx() { ctxMenu.style.display = "none"; }
 
 export function showCtx(ev, s) {
     ctxMenu.textContent = "";
+    ctxMenu.classList.remove("sessionFiltersMenu");
     for (const a of actionsFor(s)) {
         if (a.danger) {
             const sep = document.createElement("div"); sep.className = "sep"; ctxMenu.appendChild(sep);

@@ -3,10 +3,11 @@ import * as vscode from "vscode";
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { LiveSessions } from "../sessions/runtime";
 import {
-    createResource, deleteResource, readAgentBody, readAgentTools, readState, readToolCredential,
-    ResourceEntry, ResourceKind, rootDir, scanAll, SyncState,
+    createResource, deleteResource, importSkill, readAgentBody, readAgentTools, readState, readToolCredential,
+    ResourceEntry, ResourceKind, rootDir, scanAll, scanForeignSkills, SyncState,
 } from "../config/root";
 import { aiToolsForAgent } from "../adapters/aiTools";
+import { importAgents } from "../config/importAgents";
 import { seedExamples } from "../config/seed";
 import { HubClient } from "../sync/hubClient";
 import { SyncEngine, SyncResult } from "../sync/sync";
@@ -112,6 +113,12 @@ export interface SymposiumApi {
         remove(kind: ResourceKind, name: string): void;
         /** Writes example resources for offline validation. Returns count created. */
         seed(): number;
+        /** Imports CLI agents (.claude/agents, ~/.codex/skills) as agent-defs. */
+        importAgents(): { created: number; skipped: number };
+        /** Lists importable skill bundles from Claude/Codex dirs. */
+        scanForeignSkills(): { source: string; name: string; description: string; path: string }[];
+        /** Copies the given skill bundle dirs into repo/skills/. */
+        importSkills(srcDirs: string[], overwrite?: boolean): { imported: number; skipped: number; errors: string[] };
         /** Local storage root (~/.symposium by default). */
         root(): string;
     };
@@ -178,17 +185,21 @@ async function probeBackend(a: AgentAdapter): Promise<BackendStatus> {
     } catch (err) {
         detail = String(err);
     }
+    const custom = !BUILTIN_BACKENDS.has(a.backend);
     return {
         backend: a.backend,
         displayName: a.displayName ?? a.backend,
         available,
         detail,
-        model: cfg.get<string>("model", ""),
+        // Custom OpenAI-compatible endpoints keep their model in symposium.adapters[].model
+        // (not symposium.<id>.model); built-in backends use the per-backend setting.
+        model: custom ? (readAdapterDefs().find((d) => d.id === a.backend)?.model ?? "") : cfg.get<string>("model", ""),
         models: a.models ? a.models() : [],
         executable: CLI_BACKENDS.has(a.backend) ? cfg.get<string>("executable", a.backend) : undefined,
         executableEditable: CLI_BACKENDS.has(a.backend),
-        modelEditable: isModelEditable(a.backend),
-        custom: !BUILTIN_BACKENDS.has(a.backend),
+        // Custom endpoints are model-editable too (their picker writes back into the adapter entry).
+        modelEditable: isModelEditable(a.backend) || custom,
+        custom,
     };
 }
 
@@ -303,6 +314,19 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
             create: (kind, name, description) => createResource(kind, name, description),
             remove: (kind, name) => deleteResource(kind, name),
             seed: () => seedExamples(),
+            importAgents: () => importAgents(),
+            scanForeignSkills: () => scanForeignSkills(),
+            importSkills: (srcDirs, overwrite) => {
+                let imported = 0, skipped = 0;
+                const errors: string[] = [];
+                for (const dir of srcDirs) {
+                    const r = importSkill(dir, overwrite);
+                    if (r.status === "imported") { imported++; }
+                    else if (r.status === "skipped") { skipped++; }
+                    else { errors.push(r.name); }
+                }
+                return { imported, skipped, errors };
+            },
             root: () => rootDir(),
         },
 
@@ -313,7 +337,21 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                 return a ? probeBackend(a) : undefined;
             },
             setModel: async (backend, model) => {
-                if (!adapterByBackend.has(backend) || !isModelEditable(backend)) {
+                if (!adapterByBackend.has(backend)) {
+                    return false;
+                }
+                // Custom OpenAI-compatible endpoints persist the model into their
+                // symposium.adapters[] entry (where buildCustomAdapters reads it),
+                // not into a symposium.<id>.model setting that nothing reads.
+                if (!BUILTIN_BACKENDS.has(backend)) {
+                    const defs = readAdapterDefs();
+                    const entry = defs.find((d) => d.id === backend);
+                    if (!entry) { return false; }
+                    applyPatch(entry, { model });
+                    await writeAdapterDefs(defs);
+                    return true;
+                }
+                if (!isModelEditable(backend)) {
                     return false;
                 }
                 await vscode.workspace.getConfiguration(`symposium.${backend}`)
