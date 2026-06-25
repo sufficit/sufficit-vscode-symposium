@@ -101,6 +101,8 @@ export interface SessionInfo {
     deleting?: boolean;
     /** Parent session id when this is a spawned subagent (renders nested in the list). */
     parentId?: string;
+    /** ID do preset de compressão configurado para esta seção (vazio usa padrão global). */
+    compressionPresetId?: string;
 }
 
 /** One past message reconstructed from a stored transcript. */
@@ -156,6 +158,8 @@ export interface SessionStartOptions {
     reasoning?: string;
     /** Permission/approval mode (backend-specific); adapters map it to a flag. */
     permission?: string;
+    /** ID do preset de compressão para esta seção (vazio usa padrão global). */
+    compressionPresetId?: string;
     /**
      * Prior conversation transcript to seed a brand-new session with, used when
      * handing a dialogue off from one backend to another so the new agent can

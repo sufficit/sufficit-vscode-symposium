@@ -12,6 +12,7 @@ import { transcriptText, transcriptMessages, transcriptMessagesUpTo, transcriptU
 import { ChatQueue, PendingMessage, SendMode } from "./controllerQueue";
 import { ChangedFilesState } from "./changedFilesState";
 import { handleControllerMessage } from "./controllerMessageHandler";
+import { CompressionManager } from "../compression";
 
 /** Owns one live dialogue process; view switches only detach/replay the stream. */
 export class ChatController {

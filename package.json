@@ -605,6 +605,26 @@
           ],
           "default": "queue",
           "description": "What sending does WHILE a turn is running. When the agent is idle it always sends immediately, so this only applies when it's busy. Overridable per message with the dropdown next to the send button."
+        },
+        "symposium.compression.defaultPresetId": {
+          "type": "string",
+          "default": "none",
+          "description": "ID do preset de compressão padrão para novas seções de chat."
+        },
+        "symposium.compression.presets": {
+          "type": "array",
+          "default": [],
+          "description": "Configuração customizada de presets de compressão (JSON array de CompressionPreset). Use a tela de configurações para editar."
+        },
+        "symposium.compression.showSelector": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mostra seletor de compressão na interface de chat."
+        },
+        "symposium.compression.showDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Mostra diagnóstico de compressão na barra de status."
         }
       }
     }
