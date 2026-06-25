@@ -4,7 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import { builtinCommands } from "../builtins";
 import { resolveExecutable } from "../exec";
-import { discoverSlashCommands, findNamedDirs, mergeCommands } from "../skills";
+import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
 import { TODO_INJECTION } from "../todos";
 import {
     AgentAdapter,
@@ -108,8 +108,14 @@ export class CopilotAdapter implements AgentAdapter {
             }
             if (!candidates.length) { return Promise.resolve({ models: this.models() }); }
             candidates.sort((a, b) => b.mtime - a.mtime);
-            const raw = JSON.parse(fs.readFileSync(candidates[0].file, "utf8")) as { models?: unknown[] };
-            const list: Array<{ id?: string; name?: string; capabilities?: { type?: string } }> = Array.isArray(raw) ? raw : (raw?.models ?? []);
+            const json = JSON.parse(fs.readFileSync(candidates[0].file, "utf8")) as { models?: unknown[] } | unknown[];
+            const raw = Array.isArray(json) ? json : (typeof json === "object" && json !== null && "models" in json && Array.isArray(json.models) ? json.models : []);
+            const list: Array<{ id?: string; name?: string; capabilities?: { type?: string } }> = [];
+            for (const m of raw) {
+                if (typeof m === "object" && m !== null) {
+                    list.push(m as { id?: string; name?: string; capabilities?: { type?: string } });
+                }
+            }
             const models: string[] = [];
             const labels: Record<string, string> = {};
             for (const m of list) {
