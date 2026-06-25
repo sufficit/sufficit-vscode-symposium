@@ -6,7 +6,8 @@ import { append, branchBanner, endStream, message, renderError, renderStatusNoti
 import { fillToolResult, renderTool } from "./tools";
 import { bindWorkingSet, renderChangedFiles, renderGuardrails, renderQueued, renderTasks, renderPlan, resetWorkingState, startWorkingSet, refreshPanels, changedItems, setChangedItems } from "./panels";
 import { renderAccount, renderSessions } from "./sessions";
-import { setLang } from "./i18n";
+import { setLang, t } from "./i18n";
+import { applyStaticI18n } from "./staticI18n";
 import { renderStatusbar, openUsagePopover, setLastTurn, setLastUsage, setSessionCostUsd, sessionCostUsd } from "./statusbar";
 import { setStatus, setLoading, updateSendTitle } from "./status";
 import { hideCtx, openChoiceMenu, showToast } from "./menus";
@@ -23,7 +24,7 @@ window.addEventListener("message", ({ data }) => {
             bootStep(data.id, data.label, data.status, data.detail);
             break;
         }
-        case "setLang": { setLang(String(data.lang || "en")); break; }
+        case "setLang": { setLang(String(data.lang || "en")); applyStaticI18n(); break; }
         case "meta": {
             setSideMode(data.sessionsSide || "auto");
             // Seed the default send mode once (don't override a saved choice).
@@ -44,7 +45,7 @@ window.addEventListener("message", ({ data }) => {
             const bootEl = document.getElementById("bootstrapLink");
             if (data.bootstrapLink && data.bootstrapLink.path) {
                 setBootstrapPath(data.bootstrapLink.path);
-                bootEl.querySelector(".lbl").textContent = "Workspace bootstrap: " + (data.bootstrapLink.name || "open");
+                bootEl.querySelector(".lbl").textContent = t("chat.empty.bootstrap.label", { name: data.bootstrapLink.name || t("chat.empty.bootstrap.open") });
                 bootEl.style.display = "inline-flex";
             } else {
                 setBootstrapPath("");

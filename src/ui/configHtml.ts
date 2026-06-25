@@ -1,3 +1,5 @@
+import { makeConfigDict } from "./configI18n";
+
 /**
  * Symposium configuration webview markup.
  *
@@ -8,11 +10,17 @@
  *
  * The shell is static; content arrives via a "state" postMessage (see
  * ConfigPanel) so the panel can refresh live on file/sync changes.
+ *
+ * `lang` localizes the UI: host-rendered strings use the host-side t(); the
+ * inline script gets a serialized dict + its own t() (same keys), so both
+ * execution contexts share one translation table (see configI18n.ts).
  */
-export function renderConfigHtml(): string {
+export function renderConfigHtml(lang: string): string {
+    const dict = makeConfigDict(lang);
+    const t = (k: string): string => (dict[k] != null ? dict[k] : k);
     const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';`;
     return /* html */ `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
@@ -144,31 +152,33 @@ export function renderConfigHtml(): string {
 </head>
 <body>
 <header>
-    <strong>Symposium · Configuration</strong>
-    <span id="health" class="health unknown">hub: —</span>
+    <strong>${t("config.title")}</strong>
+    <span id="health" class="health unknown">${t("config.header.hubUnknown")}</span>
     <span class="root" id="root"></span>
     <span style="flex:1"></span>
     <span id="profile" class="profile"></span>
-    <button class="secondary" id="seed">Seed examples</button>
-    <button class="secondary" id="open-root">Open folder</button>
-    <button id="refresh">Refresh</button>
+    <button class="secondary" id="seed">${t("config.btn.seed")}</button>
+    <button class="secondary" id="open-root">${t("config.btn.openRoot")}</button>
+    <button id="refresh">${t("config.btn.refresh")}</button>
 </header>
 <nav id="tabs"></nav>
-<main id="content"><div class="empty">Loading…</div></main>
+<main id="content"><div class="empty">${t("config.loading")}</div></main>
 <script>
     const vscode = acquireVsCodeApi();
+    const I18N = ${JSON.stringify(dict).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029")};
+    function t(k, vars){ let s = (I18N[k] != null ? I18N[k] : k); if (vars) { for (const n in vars) { s = s.split('{' + n + '}').join(String(vars[n])); } } return s; }
     let state = null;
     let active = "agent";
 
     const TABS = [
-        { id: "agent", label: "Agents", key: "agent" },
-        { id: "skill", label: "Skills", key: "skill" },
-        { id: "tool", label: "Tools", key: "tool" },
-        { id: "instruction", label: "Instructions", key: "instruction" },
-        { id: "backends", label: "Backends" },
-        { id: "prefs", label: "Preferences" },
-        { id: "compression", label: "Compression" },
-        { id: "sync", label: "Sync" },
+        { id: "agent", label: t("config.tab.agents"), key: "agent" },
+        { id: "skill", label: t("config.tab.skills"), key: "skill" },
+        { id: "tool", label: t("config.tab.tools"), key: "tool" },
+        { id: "instruction", label: t("config.tab.instructions"), key: "instruction" },
+        { id: "backends", label: t("config.tab.backends") },
+        { id: "prefs", label: t("config.tab.preferences") },
+        { id: "compaction", label: t("config.tab.compaction") },
+        { id: "sync", label: t("config.tab.sync") },
     ];
 
     function esc(s) {
@@ -179,53 +189,51 @@ export function renderConfigHtml(): string {
     function renderTabs() {
         const nav = document.getElementById("tabs");
         nav.innerHTML = "";
-        for (const t of TABS) {
+        for (const tab of TABS) {
             const el = document.createElement("div");
-            el.className = "tab" + (t.id === active ? " active" : "");
+            el.className = "tab" + (tab.id === active ? " active" : "");
             let count = "";
-            if (t.key && state) { count = '<span class="count">' + (state.resources[t.key]?.length || 0) + "</span>"; }
-            el.innerHTML = esc(t.label) + count;
-            el.onclick = () => { active = t.id; render(); };
+            if (tab.key && state) { count = '<span class="count">' + (state.resources[tab.key]?.length || 0) + "</span>"; }
+            el.innerHTML = esc(tab.label) + count;
+            el.onclick = () => { active = tab.id; render(); };
             nav.appendChild(el);
         }
     }
 
-    const LABEL = { agent: "agent", skill: "skill", tool: "tool", instruction: "instruction" };
-
     function resourceList(kind) {
         const items = (state?.resources[kind]) || [];
-        const toolbar = '<div class="toolbar"><button id="new-res">+ New ' + esc(LABEL[kind]) + "</button>"
-            + (kind === "agent" ? '<button class="secondary" id="import-agents">Import agents</button>' : "")
-            + (kind === "skill" ? '<button class="secondary" id="import-skills">Import skills…</button><button class="secondary" id="install-skill-sh">Install from skills.sh…</button>' : "")
+        const toolbar = '<div class="toolbar"><button id="new-res">' + esc(t("config.btn.new." + kind)) + "</button>"
+            + (kind === "agent" ? '<button class="secondary" id="import-agents">' + esc(t("config.btn.importAgents")) + '</button>' : "")
+            + (kind === "skill" ? '<button class="secondary" id="import-skills">' + esc(t("config.btn.importSkills")) + '</button><button class="secondary" id="install-skill-sh">' + esc(t("config.btn.installSkillSh")) + '</button>' : "")
             + "</div>";
         if (!items.length) {
-            return toolbar + '<div class="empty">No resources. Import from a CLI or create a new one.</div>';
+            return toolbar + '<div class="empty">' + esc(t("config.empty.resources")) + '</div>';
         }
         return toolbar + items.map(r =>
             '<div class="row" data-path="' + esc(r.path) + '" data-name="' + esc(r.name) + '">' +
                 '<span class="name">' + esc(r.name) + "</span>" +
-                (r.bundle ? '<span class="badge">bundle</span>' : "") +
+                (r.bundle ? '<span class="badge">' + esc(t("config.badge.bundle")) + '</span>' : "") +
                 '<span class="desc">' + esc(r.description) + "</span>" +
-                '<span class="del" title="Delete">✕</span>' +
+                '<span class="del" title="' + esc(t("config.tooltip.delete")) + '">✕</span>' +
             "</div>").join("");
     }
 
     function backendsView() {
         const list = (state?.backends) || [];
-        const toolbar = '<div class="toolbar"><button id="add-endpoint">+ Add endpoint</button></div>';
-        if (!list.length) { return toolbar + '<div class="empty">No backend configured.</div>'; }
+        const toolbar = '<div class="toolbar"><button id="add-endpoint">' + esc(t("config.btn.addEndpoint")) + '</button></div>';
+        if (!list.length) { return toolbar + '<div class="empty">' + esc(t("config.empty.backends")) + '</div>'; }
         return toolbar + list.map(b => {
             const opts = (b.models || []);
             const hasCurrent = b.model && opts.indexOf(b.model) < 0;
             const modelOptions = (hasCurrent ? [b.model] : [])
                 .concat([""]).concat(opts)
                 .map(m => '<option value="' + esc(m) + '"' + (m === (b.model || "") ? " selected" : "") + ">" +
-                    esc(m === "" ? "(default)" : m) + "</option>").join("");
+                    esc(m === "" ? t("config.model.default") : m) + "</option>").join("");
             const modelCtl = b.modelEditable
                 ? '<select class="model" data-backend="' + esc(b.backend) + '">' + modelOptions + "</select>"
-                : '<span class="desc">model: ' + esc(b.model || "(default)") + "</span>";
+                : '<span class="desc">' + esc(t("config.label.modelPrefix")) + esc(b.model || t("config.model.default")) + "</span>";
             const execCtl = b.executableEditable
-                ? '<input class="exec" data-backend="' + esc(b.backend) + '" value="' + esc(b.executable || "") + '" placeholder="executable" />'
+                ? '<input class="exec" data-backend="' + esc(b.backend) + '" value="' + esc(b.executable || "") + '" placeholder="' + esc(t("config.placeholder.executable")) + '" />'
                 : "";
             return '<div class="bk">' +
                 '<div class="bk-head">' +
@@ -233,11 +241,11 @@ export function renderConfigHtml(): string {
                     '<span class="name">' + esc(b.displayName || b.backend) + "</span>" +
                     '<span class="desc">' + esc(b.detail || "") + "</span>" +
                     '<span class="bk-test" data-backend="' + esc(b.backend) + '"></span>' +
-                    '<button class="secondary test" data-backend="' + esc(b.backend) + '">Test</button>' +
+                    '<button class="secondary test" data-backend="' + esc(b.backend) + '">' + esc(t("config.btn.test")) + '</button>' +
                     (b.custom
-                        ? '<button class="secondary edit-ep" data-backend="' + esc(b.backend) + '">Edit</button>' +
-                          '<button class="secondary remove-ep" data-backend="' + esc(b.backend) + '">Remove</button>'
-                        : '<button class="secondary edit" data-backend="' + esc(b.backend) + '">Edit</button>') +
+                        ? '<button class="secondary edit-ep" data-backend="' + esc(b.backend) + '">' + esc(t("config.btn.edit")) + '</button>' +
+                          '<button class="secondary remove-ep" data-backend="' + esc(b.backend) + '">' + esc(t("config.btn.remove")) + '</button>'
+                        : '<button class="secondary edit" data-backend="' + esc(b.backend) + '">' + esc(t("config.btn.edit")) + '</button>') +
                 "</div>" +
                 '<div class="bk-cfg">' + execCtl + modelCtl + "</div>" +
             "</div>";
@@ -248,15 +256,15 @@ export function renderConfigHtml(): string {
         const s = state?.sync || {};
         const configured = state?.hubConfigured;
         const toolbar = configured
-            ? '<div class="toolbar"><button id="sync-pull">Pull (hub→local)</button>' +
-              '<button id="sync-push">Push (local→hub)</button></div>'
-            : '<div class="toolbar"><button id="sync-config">Configure hub…</button></div>';
+            ? '<div class="toolbar"><button id="sync-pull">' + esc(t("config.btn.syncPull")) + '</button>' +
+              '<button id="sync-push">' + esc(t("config.btn.syncPush")) + '</button></div>'
+            : '<div class="toolbar"><button id="sync-config">' + esc(t("config.btn.syncConfig")) + '</button></div>';
         const note = configured ? "" :
-            '<div class="empty">Hub not configured (symposium.hub.url). Agents work offline from local files.</div>';
+            '<div class="empty">' + esc(t("config.empty.hub")) + '</div>';
         return toolbar + note +
-            '<div class="row"><span class="name">Hub</span><span class="desc">' + esc(s.health || "unknown") + "</span></div>" +
-            '<div class="row"><span class="name">Last sync</span><span class="desc">' + esc(s.lastSyncUtc || "never") + "</span></div>" +
-            '<div class="row"><span class="name">Pending push</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || "none") + "</span></div>";
+            '<div class="row"><span class="name">' + esc(t("config.sync.hub")) + '</span><span class="desc">' + esc(s.health || t("config.value.unknown")) + "</span></div>" +
+            '<div class="row"><span class="name">' + esc(t("config.sync.lastSync")) + '</span><span class="desc">' + esc(s.lastSyncUtc || t("config.sync.never")) + "</span></div>" +
+            '<div class="row"><span class="name">' + esc(t("config.sync.pendingPush")) + '</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || t("config.value.none")) + "</span></div>";
     }
 
     function prefsView() {
@@ -274,42 +282,42 @@ export function renderConfigHtml(): string {
             '<section class="section"><div class="section-title">' + esc(title) + "</div>" + body + "</section>";
 
         return (
-            section("Appearance",
-                item("Sessions list", "Which side the sessions list appears on.",
+            section(t("config.prefs.section.appearance"),
+                item(t("config.prefs.sessionsSide.name"), t("config.prefs.sessionsSide.desc"),
                     sel("symposium.chat.sessionsSide", p.sessionsSide || "auto",
-                        [{ v: "auto", l: "Automatic" }, { v: "left", l: "Left" }, { v: "right", l: "Right" }])) +
-                item("Open session in", "Where a session opens when it starts.",
+                        [{ v: "auto", l: t("config.prefs.sessionsSide.auto") }, { v: "left", l: t("config.prefs.sessionsSide.left") }, { v: "right", l: t("config.prefs.sessionsSide.right") }])) +
+                item(t("config.prefs.openIn.name"), t("config.prefs.openIn.desc"),
                     sel("symposium.chat.openIn", p.openIn || "editor",
-                        [{ v: "editor", l: "Editor (center tab)" }, { v: "sidebar", l: "Sidebar" }])) +
-                item("Response language", "Preferred language for AI responses. Empty uses VS Code's display language.",
+                        [{ v: "editor", l: t("config.prefs.openIn.editor") }, { v: "sidebar", l: t("config.prefs.openIn.sidebar") }])) +
+                item(t("config.prefs.preferredLanguage.name"), t("config.prefs.preferredLanguage.desc"),
                     sel("symposium.chat.preferredLanguage", p.preferredLanguage || "",
-                        [{ v: "", l: "Automatic (VS Code)" }, { v: "pt-br", l: "Português (BR)" }, { v: "en", l: "English" },
+                        [{ v: "", l: t("config.prefs.preferredLanguage.auto") }, { v: "pt-br", l: "Português (BR)" }, { v: "en", l: "English" },
                          { v: "es", l: "Español" }, { v: "fr", l: "Français" }, { v: "de", l: "Deutsch" },
                          { v: "it", l: "Italiano" }, { v: "ja", l: "日本語" }, { v: "zh-cn", l: "中文 (简体)" }]))
             ) +
-            section("Agent behavior",
-                item("Step limit per turn", "Max tool actions before pausing (asks for 'continue'). In autonomous mode (presence Away) there is no limit.",
+            section(t("config.prefs.section.agentBehavior"),
+                item(t("config.prefs.maxToolHops.name"), t("config.prefs.maxToolHops.desc"),
                     sel("symposium.openai.maxToolHops", String(p.maxToolHops || 50),
                         [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }])) +
-                item("Stop if no reply", "Stop the turn after N tool steps in a row without the agent replying (anti-loop). Unlimited = never auto-stop on silence.",
+                item(t("config.prefs.noProgressStop.name"), t("config.prefs.noProgressStop.desc"),
                     sel("symposium.openai.noProgressStop", String(p.noProgressStop || 0),
-                        [{ v: "0", l: "Unlimited" }, { v: "8", l: "8 steps" }, { v: "12", l: "12 steps" }, { v: "16", l: "16 steps" }, { v: "24", l: "24 steps" }])) +
-                item("Auto-approve agent tools", "Do not ask for confirmation on each action (browser, terminal, edits). Convenient, but the agent runs everything without asking.",
+                        [{ v: "0", l: t("config.value.unlimited") }, { v: "8", l: t("config.steps.8") }, { v: "12", l: t("config.steps.12") }, { v: "16", l: t("config.steps.16") }, { v: "24", l: t("config.steps.24") }])) +
+                item(t("config.prefs.autoApprove.name"), t("config.prefs.autoApprove.desc"),
                     sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
-                        [{ v: "true", l: "Yes (no confirmation)" }, { v: "false", l: "No (asks for confirmation)" }]))
+                        [{ v: "true", l: t("config.prefs.autoApprove.yes") }, { v: "false", l: t("config.prefs.autoApprove.no") }]))
             ) +
-            section("Tools & execution",
-                item("VS Code tools", "Which Language Model Tools the Sufficit AI backend may use.",
+            section(t("config.prefs.section.toolsExecution"),
+                item(t("config.prefs.lmTools.name"), t("config.prefs.lmTools.desc"),
                     sel("symposium.lmTools", p.lmTools || "terminal",
-                        [{ v: "off", l: "Off" }, { v: "terminal", l: "Terminal/tasks/tests" }, { v: "all", l: "All" }])) +
-                item("Command execution", "How to surface the Ran/shell tool: wait for the result, stream into the chat, or open a VS Code terminal.",
+                        [{ v: "off", l: t("config.prefs.lmTools.off") }, { v: "terminal", l: t("config.prefs.lmTools.terminal") }, { v: "all", l: t("config.prefs.lmTools.all") }])) +
+                item(t("config.prefs.shellExecution.name"), t("config.prefs.shellExecution.desc"),
                     sel("symposium.openai.shellExecution", p.shellExecution || "silent",
-                        [{ v: "silent", l: "Wait for result" }, { v: "inline", l: "Stream in chat" }, { v: "terminal", l: "VS Code terminal" }]))
+                        [{ v: "silent", l: t("config.prefs.shellExecution.silent") }, { v: "inline", l: t("config.prefs.shellExecution.inline") }, { v: "terminal", l: t("config.prefs.shellExecution.terminal") }]))
             ) +
-            section("System instruction",
+            section(t("config.prefs.section.systemInstruction"),
                 '<div class="pref-block">' +
-                    '<div class="desc">Free text added to the system prompt of every new conversation. Use it to give all agents persistent guidance.</div>' +
-                    '<textarea class="pref-text" data-key="symposium.chat.systemInstruction" rows="5" placeholder="e.g. Always answer concisely and cite your sources.">' + esc(p.systemInstruction || "") + '</textarea>' +
+                    '<div class="desc">' + esc(t("config.prefs.systemInstruction.desc")) + '</div>' +
+                    '<textarea class="pref-text" data-key="symposium.chat.systemInstruction" rows="5" placeholder="' + esc(t("config.prefs.systemInstruction.placeholder")) + '">' + esc(p.systemInstruction || "") + '</textarea>' +
                 "</div>"
             )
         );
@@ -362,32 +370,32 @@ export function renderConfigHtml(): string {
         const histMsgs = String(p.maxHistoryMessages != null ? p.maxHistoryMessages : 40);
 
         return '<div class="compression-view">' +
-            section("Auto-compaction",
-                item("Auto-compact threshold", "Summarize older turns into one note when a request reaches this fraction of the model's context window. The full transcript stays in the lossless ledger (recoverable via read_session). Disabled = only manual /compact.",
+            section(t("config.compaction.section.auto"),
+                item(t("config.compaction.autoCompactAt.name"), t("config.compaction.autoCompactAt.desc"),
                     sel("symposium.openai.autoCompactAt", compactAt,
-                        [{ v: "0", l: "Disabled" }, { v: "0.6", l: "60% of context" }, { v: "0.7", l: "70% of context" },
-                         { v: "0.75", l: "75% of context" }, { v: "0.8", l: "80% of context" }, { v: "0.85", l: "85% of context" },
-                         { v: "0.9", l: "90% of context" }]))
+                        [{ v: "0", l: t("config.value.disabled") }, { v: "0.6", l: t("config.compaction.ctx.60") }, { v: "0.7", l: t("config.compaction.ctx.70") },
+                         { v: "0.75", l: t("config.compaction.ctx.75") }, { v: "0.8", l: t("config.compaction.ctx.80") }, { v: "0.85", l: t("config.compaction.ctx.85") },
+                         { v: "0.9", l: t("config.compaction.ctx.90") }]))
             ) +
-            section("History window",
-                item("Max history messages", "Max recent conversation messages sent per request to OpenAI-compatible backends. System/developer prompts are kept separately. Lower this if long tool-heavy sessions hit provider context limits. Unlimited = no local trimming.",
+            section(t("config.compaction.section.history"),
+                item(t("config.compaction.maxHistoryMessages.name"), t("config.compaction.maxHistoryMessages.desc"),
                     sel("symposium.openai.maxHistoryMessages", histMsgs,
-                        [{ v: "0", l: "Unlimited" }, { v: "20", l: "20 messages" }, { v: "40", l: "40 messages" },
-                         { v: "60", l: "60 messages" }, { v: "100", l: "100 messages" }, { v: "200", l: "200 messages" }]))
+                        [{ v: "0", l: t("config.value.unlimited") }, { v: "20", l: t("config.messages.20") }, { v: "40", l: t("config.messages.40") },
+                         { v: "60", l: t("config.messages.60") }, { v: "100", l: t("config.messages.100") }, { v: "200", l: t("config.messages.200") }]))
             ) +
-            section("Turn limits",
-                item("Step limit per turn", "Max tool round-trips an API backend may run in a single turn before pausing for 'continue'. Ignored in autonomous mode (presence Away = no limit).",
+            section(t("config.compaction.section.turnLimits"),
+                item(t("config.prefs.maxToolHops.name"), t("config.compaction.maxToolHops.desc"),
                     sel("symposium.openai.maxToolHops", String(p.maxToolHops || 50),
                         [{ v: "10", l: "10" }, { v: "25", l: "25" }, { v: "50", l: "50" }, { v: "100", l: "100" }, { v: "200", l: "200" }])) +
-                item("Stop if no reply", "Anti-loop: stop the turn after this many consecutive tool steps with no assistant reply. Unlimited = never auto-stop on silence.",
+                item(t("config.prefs.noProgressStop.name"), t("config.compaction.noProgressStop.desc"),
                     sel("symposium.openai.noProgressStop", String(p.noProgressStop || 0),
-                        [{ v: "0", l: "Unlimited" }, { v: "8", l: "8 steps" }, { v: "12", l: "12 steps" }, { v: "16", l: "16 steps" }, { v: "24", l: "24 steps" }]))
+                        [{ v: "0", l: t("config.value.unlimited") }, { v: "8", l: t("config.steps.8") }, { v: "12", l: t("config.steps.12") }, { v: "16", l: t("config.steps.16") }, { v: "24", l: t("config.steps.24") }]))
             ) +
-            '<section class="section"><div class="section-title">COMPRESSION PRESETS' +
-                '<button class="secondary" id="btn-compression-manual" style="float: right; margin-top: -2px;" title="Show Compression Manual">📖 Manual</button>' +
+            '<section class="section"><div class="section-title">' + esc(t("config.compaction.section.presets")) +
+                '<button class="secondary" id="btn-compression-manual" style="float: right; margin-top: -2px;" title="' + esc(t("config.compaction.btn.manual")) + '">📖 Manual</button>' +
             '</div>' +
             '<div class="preset-actions">' +
-                '<button class="primary" id="btn-add-preset">Create New Preset</button>' +
+                '<button class="primary" id="btn-add-preset">' + esc(t("config.compaction.btn.addPreset")) + '</button>' +
             '</div>' +
             '<div class="presets-grid">' +
                 presets.map(presetCard).join('') +
@@ -401,7 +409,7 @@ export function renderConfigHtml(): string {
         renderTabs();
         const main = document.getElementById("content");
         const page = (h) => '<div class="page">' + h + "</div>";
-        if (!state) { main.innerHTML = page('<div class="empty">Loading…</div>'); return; }
+        if (!state) { main.innerHTML = page('<div class="empty">' + esc(t("config.loading")) + '</div>'); return; }
         if (active === "prefs" || active === "compression") {
             main.innerHTML = page(
                 active === "compression" ? compressionView() :
@@ -440,7 +448,7 @@ export function renderConfigHtml(): string {
                 el.onclick = () => {
                     const b = el.getAttribute("data-backend");
                     const fb = main.querySelector('.bk-test[data-backend="' + b + '"]');
-                    if (fb) { fb.textContent = "testing…"; }
+                    if (fb) { fb.textContent = t("config.status.testing"); }
                     vscode.postMessage({ type: "test-backend", backend: b });
                 };
             });
@@ -468,8 +476,8 @@ export function renderConfigHtml(): string {
             const pull = document.getElementById("sync-pull");
             const push = document.getElementById("sync-push");
             const conf = document.getElementById("sync-config");
-            if (pull) { pull.onclick = () => { pull.textContent = "pulling…"; vscode.postMessage({ type: "sync-pull" }); }; }
-            if (push) { push.onclick = () => { push.textContent = "pushing…"; vscode.postMessage({ type: "sync-push" }); }; }
+            if (pull) { pull.onclick = () => { pull.textContent = t("config.status.pulling"); vscode.postMessage({ type: "sync-pull" }); }; }
+            if (push) { push.onclick = () => { push.textContent = t("config.status.pushing"); vscode.postMessage({ type: "sync-push" }); }; }
             if (conf) { conf.onclick = () => vscode.postMessage({ type: "config-hub" }); }
             return;
         }
@@ -499,10 +507,10 @@ export function renderConfigHtml(): string {
         if (p && (p.name || p.email)) {
             const av = p.picture ? '<img src="' + esc(p.picture) + '" alt="" />' : "";
             el.innerHTML = av + '<span class="uname">' + esc(p.name || p.email) + "</span>" +
-                ' <button class="secondary" id="btn-logout">Sign out</button>';
+                ' <button class="secondary" id="btn-logout">' + esc(t("config.btn.signOut")) + '</button>';
             document.getElementById("btn-logout").onclick = () => vscode.postMessage({ type: "logout" });
         } else {
-            el.innerHTML = '<button id="btn-login">Sign in to Sufficit</button>';
+            el.innerHTML = '<button id="btn-login">' + esc(t("config.btn.signIn")) + '</button>';
             document.getElementById("btn-login").onclick = () => vscode.postMessage({ type: "login" });
         }
     }
@@ -512,9 +520,9 @@ export function renderConfigHtml(): string {
         renderProfile(s.profile);
         document.getElementById("root").textContent = s.root;
         const h = document.getElementById("health");
-        const status = s.sync?.health || "unknown";
+        const status = s.sync?.health || t("config.value.unknown");
         h.className = "health " + status;
-        h.textContent = "hub: " + status;
+        h.textContent = t("config.header.hubPrefix") + status;
         render();
     }
 

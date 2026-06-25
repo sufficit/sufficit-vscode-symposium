@@ -1,5 +1,6 @@
 // Boot overlay: progress steps + force-reveal timers. Seeds + timers run on import.
 import { bootStepsEl, bootHintEl, root } from "./dom";
+import { t } from "./i18n";
 
 // Boot screen: shows immediately on parse, hides once a session resolves.
 // the first session meta/history marks boot complete and hides the overlay.
@@ -42,18 +43,18 @@ export function bootComplete() {
     root.classList.add("booted");
 }
 // Seed the steps we know about up front (extension confirms/overrides them).
-try { bootStep("host", "Connecting to the extension host", "pending"); } catch (e) {}
-try { bootStep("ui", "Loading interface", "ok"); } catch (e) {}
-try { bootStep("session", "Preparing session", "pending"); } catch (e) {}
+try { bootStep("host", t("chat.boot.step.host"), "pending"); } catch (e) {}
+try { bootStep("ui", t("chat.boot.step.ui"), "ok"); } catch (e) {}
+try { bootStep("session", t("chat.boot.step.session"), "pending"); } catch (e) {}
 // Safety: never trap the user behind the boot screen. After a short grace
 // period surface a warning; shortly after, force-reveal the UI even if the
 // extension never resolved the session (e.g. a backend's discovery hung).
 export const bootTimer = setTimeout(() => {
     if (bootDone) { return; }
-    if (bootHintEl) { bootHintEl.textContent = "Taking longer than expected — see Output › Symposium for diagnostics."; }
+    if (bootHintEl) { bootHintEl.textContent = t("chat.boot.slowHint"); }
 }, 8000);
 const bootForce = setTimeout(() => {
     if (bootDone) { return; }
-    bootStep("session", "Preparing session", "warn", "timed out");
+    bootStep("session", t("chat.boot.step.session"), "warn", t("chat.boot.timedOut"));
     bootComplete();   // reveal the composer/list anyway so the user can act
 }, 15000);
