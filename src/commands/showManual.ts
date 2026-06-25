@@ -6,7 +6,15 @@ import * as vscode from "vscode";
 import * as path from "path";
 import * as fs from "fs";
 
-const MANUALS_DIR = path.join(__dirname, "..", "..", "docs", "manuals");
+// Extension root (one level up from out/)
+const getExtensionPath = (context?: vscode.ExtensionContext): string => {
+    if (context) {
+        return context.extensionPath;
+    }
+    // Fallback: assume compiled to out/commands/
+    return path.join(__dirname, "..", "..");
+};
+
 
 const AVAILABLE_MANUALS: Record<string, { en: string; "pt-br": string }> = {
     compression: {
@@ -19,6 +27,7 @@ const AVAILABLE_MANUALS: Record<string, { en: string; "pt-br": string }> = {
 export function registerShowManualCommand(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.commands.registerCommand("symposium.showManual", async (manualId?: string, language?: string) => {
+            const MANUALS_DIR = path.join(getExtensionPath(context), "docs", "manuals");
             // If no manual specified, show picker
             if (!manualId) {
                 const items = Object.entries(AVAILABLE_MANUALS).map(([id, names]) => ({
@@ -76,6 +85,39 @@ export function registerShowManualCommand(context: vscode.ExtensionContext): voi
     context.subscriptions.push(
         vscode.commands.registerCommand("symposium.showCompressionManual", async () => {
             await vscode.commands.executeCommand("symposium.showManual", "compression");
+        })
+    );
+
+    // Tool-specific manual commands
+    context.subscriptions.push(
+        vscode.commands.registerCommand("symposium.showToolManual", async (toolName?: string) => {
+            // Map tool names to manual IDs
+            const toolManuals: Record<string, string> = {
+                "memory_save": "memory",
+                "memory_search": "memory",
+                "memory_get_observations": "memory",
+                "mcp__Sufficit_AI__memory_save": "memory",
+                "mcp__Sufficit_AI__memory_search": "memory",
+                "mcp__Sufficit_AI__memory_get_observations": "memory",
+                "add_task": "tasks",
+                "TaskCreate": "tasks",
+                "task_complete": "tasks",
+                "TaskUpdate": "tasks",
+                "list_tasks": "tasks",
+                "Bash": "bash",
+                "Read": "filesystem",
+                "Edit": "filesystem",
+                "Write": "filesystem",
+                // Add more as manuals are created
+            };
+
+            const manualId = toolName ? toolManuals[toolName] : undefined;
+            if (!manualId) {
+                vscode.window.showInformationMessage(`No manual available for ${toolName || "this tool"} yet`);
+                return;
+            }
+
+            await vscode.commands.executeCommand("symposium.showManual", manualId);
         })
     );
 }

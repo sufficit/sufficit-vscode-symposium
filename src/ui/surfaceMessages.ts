@@ -272,6 +272,50 @@ export class SurfaceMessages {
                     await this.d.changedFiles.openDiff(message.path);
                     return;
                 }
+                case "show-tool-manual": {
+                    await vscode.commands.executeCommand("symposium.showToolManual", message.toolName);
+                    return;
+                }
+                case "show-tool-context-menu": {
+                    const toolName = message.toolName || "unknown";
+                    const items: vscode.QuickPickItem[] = [
+                        {
+                            label: "$(book) Show Manual",
+                            description: `Open ${toolName} manual`,
+                            detail: "View documentation for this tool"
+                        },
+                    ];
+
+                    // Add file-specific actions if path available
+                    if (message.toolPath) {
+                        items.push({
+                            label: "$(go-to-file) Open File",
+                            description: message.toolPath,
+                            detail: "Open file in editor"
+                        });
+                        items.push({
+                            label: "$(diff) Show Diff",
+                            description: message.toolPath,
+                            detail: "Compare with working version"
+                        });
+                    }
+
+                    const selected = await vscode.window.showQuickPick(items, {
+                        placeHolder: `Actions for ${toolName}`,
+                    });
+
+                    if (!selected) { return; }
+
+                    if (selected.label.includes("Show Manual")) {
+                        await vscode.commands.executeCommand("symposium.showToolManual", toolName);
+                    } else if (selected.label.includes("Open File") && message.toolPath) {
+                        const uri = vscode.Uri.file(message.toolPath);
+                        await vscode.window.showTextDocument(uri);
+                    } else if (selected.label.includes("Show Diff") && message.toolPath) {
+                        await this.d.changedFiles.openDiff(message.toolPath);
+                    }
+                    return;
+                }
                 case "file-approve": {
                     if (typeof message.path === "string") {
                         await this.d.changedFiles.approve(message.path);

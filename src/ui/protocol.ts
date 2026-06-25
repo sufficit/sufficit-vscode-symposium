@@ -82,6 +82,8 @@ export type WebviewToHost =
     | { type: "file-reject"; path: string }
     | { type: "file-approve-all" }
     | { type: "file-reject-all" }
+    | { type: "show-tool-manual"; toolName: string }
+    | { type: "show-tool-context-menu"; toolName: string; toolDetail?: string; toolPath?: string }
     | { type: "session-action"; sessionId: string; backend: string; action: SessionActionKind }
     | { type: "session-list-backends"; backend: string }
     | { type: "session-switch-backend"; sessionId: string; backend: string; targetBackend: string }
