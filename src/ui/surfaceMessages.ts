@@ -327,18 +327,22 @@ export class SurfaceMessages {
                     if (typeof message.path === "string") {
                         if (await this.d.changedFiles.reject(message.path)) { this.d.getController()?.resolveChanged(message.path); }
                         else { void vscode.window.showWarningMessage("Could not revert " + message.path); }
+                        this.d.changedFiles.refreshNow();
                     }
                     return;
                 }
                 case "file-approve-all": {
-                    for (const p of this.d.getController()?.changedPaths() ?? []) {
+                    // Operate on exactly the paths the panel shows (sent by the
+                    // webview); fall back to the controller's tracked set.
+                    const paths = message.paths ?? this.d.getController()?.changedPaths() ?? [];
+                    for (const p of paths) {
                         await this.d.changedFiles.approve(p);
                     }
                     this.d.changedFiles.refreshNow();
                     return;
                 }
                 case "file-reject-all": {
-                    const paths = this.d.getController()?.changedPaths() ?? [];
+                    const paths = message.paths ?? this.d.getController()?.changedPaths() ?? [];
                     if (!paths.length) { return; }
                     const pick = await vscode.window.showWarningMessage(
                         `Revert ${paths.length} file(s) to their pre-edit state? This discards the agent's changes.`,
@@ -347,6 +351,7 @@ export class SurfaceMessages {
                     for (const p of paths) {
                         if (await this.d.changedFiles.reject(p)) { this.d.getController()?.resolveChanged(p); }
                     }
+                    this.d.changedFiles.refreshNow();
                     return;
                 }
                 case "refresh-sessions": {
