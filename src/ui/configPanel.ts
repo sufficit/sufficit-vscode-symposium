@@ -48,7 +48,8 @@ export class ConfigPanel {
         );
         this.panel.webview.html = renderConfigHtml(this.resolveLang());
         this.panel.webview.onDidReceiveMessage(
-            (m) => void this.onMessage(m), undefined, this.disposables);
+            (m) => { void this.onMessage(m).catch((e) => void vscode.window.showErrorMessage(this.tr("msg.config.actionFailed", { error: String((e && e.message) || e) }))); },
+            undefined, this.disposables);
 
         // Live refresh when repo files change on disk.
         const watcher = vscode.workspace.createFileSystemWatcher(
@@ -388,7 +389,9 @@ export class ConfigPanel {
         const state = {
             root: api.resources.root(),
             resources: api.resources.scan(),
-            backends: await api.backends.list(),
+            // A failing backends list (e.g. the gateway rejecting a stale token)
+            // must not abort the whole refresh — render the rest of the panel.
+            backends: await api.backends.list().catch(() => []),
             sync: api.sync.status(),
             hubConfigured: api.sync.configured(),
             profile: profile ?? null,

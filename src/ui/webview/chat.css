@@ -396,7 +396,7 @@
     #ctxMenu .mi { display: flex; align-items: center; gap: 8px; }
     #ctxMenu .mi .tick { width: 13px; flex-shrink: 0; color: var(--vscode-focusBorder); }
     #ctxMenu .mi .miico { flex-shrink: 0; opacity: 0.55; display: flex; align-items: center; }
-    #ctxMenu .mi .milbl { flex: 1; overflow: hidden; }
+    #ctxMenu .mi .milbl { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
     #ctxMenu .mi .milbl-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     #ctxMenu .mi.active .milbl-text { color: var(--vscode-focusBorder); font-weight: 600; }
     #ctxMenu .mi .milbl-desc { font-size: 0.77em; opacity: 0.52; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
