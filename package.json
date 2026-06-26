@@ -634,8 +634,10 @@
   },
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
-    "compile": "npm run clean && tsc -p ./ && npm run build:webview",
+    "compile": "npm run clean && tsc -p ./ && npm run build:webview && npm run bundle",
     "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --outfile=out/ui/webview.bundle.js && esbuild src/ui/webview/chat.css --bundle --outfile=out/ui/webview.css",
+    "bundle": "node scripts/bundle.js",
+    "bundle:dev": "node scripts/bundle.js --dev",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src",
     "format": "prettier --write \"src/**/*.ts\"",
