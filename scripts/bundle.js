@@ -12,11 +12,7 @@ const isDev = process.argv.includes('--dev');
 async function build() {
   console.log('📦 Bundling VS Code extension...');
 
-  // Clean output directory
   const outDir = path.join(__dirname, '..', 'out');
-  if (fs.existsSync(outDir)) {
-    fs.rmSync(outDir, { recursive: true, force: true });
-  }
 
   // Build TypeScript with tsc for type checking
   console.log('🔍 Type checking...');
