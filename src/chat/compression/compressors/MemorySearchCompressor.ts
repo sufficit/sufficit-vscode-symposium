@@ -15,7 +15,7 @@ export const memorySearchCompressor: ToolCompressor = {
         switch (level) {
             case 'low': {
                 // Remove server-resolved fields
-                const { contextId, sessionId, ...kept } = input;
+                const { contextId: _contextId, sessionId: _sessionId, ...kept } = input;
                 return kept;
             }
 

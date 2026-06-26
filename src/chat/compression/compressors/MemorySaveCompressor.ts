@@ -16,7 +16,7 @@ export const memorySaveCompressor: ToolCompressor = {
         switch (level) {
             case 'low': {
                 // Remove payload, contextId, sessionId, source (server resolves from headers)
-                const { payload, contextId, sessionId, source, ...kept } = input;
+                const { payload: _payload, contextId: _contextId, sessionId: _sessionId, source: _source, ...kept } = input;
                 return kept;
             }
 
