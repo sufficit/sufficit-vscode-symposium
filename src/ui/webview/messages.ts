@@ -25,8 +25,19 @@ export function renderError(message) {
     if (lastUser) {
         const bar = document.createElement("div"); bar.className = "errActions";
         const b = document.createElement("button"); b.className = "retryBtn";
-        b.appendChild(svgIcon("history")); b.appendChild(document.createTextNode(" Edit & retry"));
-        b.addEventListener("click", () => beginEdit(lastUser.idx, lastUser.text));
+        // Detect timeout/inactivity errors: show only "Retry" (no Edit)
+        const isTimeoutError = message.includes("no activity") || message.includes("stalled tool") || message.includes("dropped connection") || message.includes("Turn ended automatically") || message.includes("504") || message.includes("Gateway");
+        b.appendChild(svgIcon("history"));
+        b.appendChild(document.createTextNode(isTimeoutError ? " Retry" : " Edit & retry"));
+        b.addEventListener("click", () => {
+            if (isTimeoutError) {
+                // Retry without edit: just restart from the last user message
+                vscode.postMessage({ type: "restart-from-message", index: lastUser.idx });
+            } else {
+                // Edit & retry: load into composer
+                beginEdit(lastUser.idx, lastUser.text);
+            }
+        });
         bar.appendChild(b); el.appendChild(bar);
     }
     log.appendChild(el); refreshEmpty(); autoScroll(stick);

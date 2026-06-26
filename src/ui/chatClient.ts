@@ -10,4 +10,4 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 
-export const chatClientJs = readFileSync(join(__dirname, "webview.bundle.js"), "utf8");
+export const chatClientJs = readFileSync(join(__dirname, "ui/webview.bundle.js"), "utf8");

@@ -25,7 +25,17 @@ export async function readCodexMeta(file: string): Promise<{ id?: string; cwd?: 
         if (!line.trim()) {
             continue;
         }
-        let entry: any;
+        interface CodexEntry {
+            type: string;
+            payload?: {
+                type?: string;
+                id?: string;
+                cwd?: string;
+                role?: string;
+                content?: Array<{ type: string; text?: string }>;
+            };
+        }
+        let entry: CodexEntry;
         try {
             entry = JSON.parse(line);
         } catch {
@@ -36,8 +46,8 @@ export async function readCodexMeta(file: string): Promise<{ id?: string; cwd?: 
             cwd = entry.payload?.cwd;
         } else if (!title && entry.type === "response_item" && entry.payload?.type === "message" && entry.payload.role === "user") {
             const text = (entry.payload.content ?? [])
-                .filter((c: any) => c.type === "input_text" || c.type === "text")
-                .map((c: any) => c.text)
+                .filter((c: { type: string }) => c.type === "input_text" || c.type === "text")
+                .map((c: { text?: string }) => c.text)
                 .join("")
                 .trim();
             if (text && !looksInjected(text)) {

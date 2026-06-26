@@ -81,6 +81,21 @@ export const AI_TOOLS: OpenAITool[] = [
     {
         type: "function",
         function: {
+            name: "TaskCreate",
+            description: "Create one or more session tasks (a plan), shown in the Tasks panel. Alias for add_task, compatible with Claude Code naming. Use this the MOMENT the user approves a multi-step plan you proposed: record EACH step as a task BEFORE you start acting, so the plan is tracked and you can mark TaskUpdate(done=true) as you finish.",
+            parameters: {
+                type: "object",
+                properties: {
+                    tasks: { type: "array", items: { type: "string" }, description: "One short title per step/task, in order." },
+                    user_requested: { type: "boolean", description: "Set true when user explicitly requested this task. Default false (agent-created). User-requested tasks require user confirmation before completion." },
+                },
+                required: ["tasks"],
+            },
+        },
+    },
+    {
+        type: "function",
+        function: {
             name: "list_tasks",
             description: "List this chat session's tasks (task-anchor / task-checkpoint memory items bound to the session). Returns PENDING tasks by default; pass all=true to include completed ones too.",
             parameters: {
@@ -101,6 +116,21 @@ export const AI_TOOLS: OpenAITool[] = [
                 type: "object",
                 properties: {
                     id: { type: "string", description: "The task observation id (from list_tasks / memory)." },
+                },
+                required: ["id"],
+            },
+        },
+    },
+    {
+        type: "function",
+        function: {
+            name: "TaskUpdate",
+            description: "Mark a session task as completed. Alias for task_complete, compatible with Claude Code naming. Pass the task id and done=true.",
+            parameters: {
+                type: "object",
+                properties: {
+                    id: { type: "string", description: "The task observation id (from TaskCreate / list_tasks / memory)." },
+                    done: { type: "boolean", description: "Set true to mark task as completed. Default true." },
                 },
                 required: ["id"],
             },
@@ -330,7 +360,7 @@ export function aiToolsForAgent(declared: string[]): string[] {
     // earlier/compacted context when the user says "reread the history".
     names.add("read_session");
     // Session task tools are always safe (scoped to this session, no secrets).
-    names.add("add_task"); names.add("list_tasks"); names.add("task_complete");
+    names.add("add_task"); names.add("TaskCreate"); names.add("list_tasks"); names.add("task_complete"); names.add("TaskUpdate");
     // Guardrails are session-scoped self-constraints: always available so any
     // agent can lock in a hard rule the user gave it (the user can still remove).
     names.add("add_guardrail"); names.add("clear_guardrails");

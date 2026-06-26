@@ -154,7 +154,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         });
     }
 
-    private safePersist(): void {
+    public safePersist(): void {
         try {
             this.persist();
         } catch (error) {
@@ -289,16 +289,24 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         }
         const res = await fetch(url, { headers });
         if (!res.ok) { return; }
-        const json: any = await res.json();
-        const raw: any[] = json?.data ?? json?.models ?? [];
+        const json = await res.json() as { data?: unknown[]; models?: unknown[] };
+        const raw = json?.data ?? json?.models ?? [];
         const list: string[] = [];
         const labels: Record<string, string> = {};
         const context: Record<string, number> = {};
         for (const m of raw) {
-            const id = typeof m === "string" ? m : m?.id ?? m?.name;
-            if (typeof id !== "string") { continue; }
+            let id: string;
+            if (typeof m === "string") {
+                id = m;
+            } else if (typeof m === "object" && m !== null) {
+                const obj = m as Record<string, unknown>;
+                id = typeof obj.id === "string" ? obj.id : (typeof obj.name === "string" ? obj.name : "");
+            } else {
+                continue;
+            }
+            if (!id) { continue; }
             list.push(id);
-            const name = typeof m === "object" ? (m?.name ?? m?.title) : undefined;
+            const name = typeof m === "object" ? (typeof (m as Record<string, unknown>).name === "string" ? (m as Record<string, unknown>).name : typeof (m as Record<string, unknown>).title === "string" ? (m as Record<string, unknown>).title : undefined) : undefined;
             if (typeof name === "string" && name && name !== id) { labels[id] = name; }
             const ctx = modelContextLength(m);
             if (ctx) { context[id] = ctx; }
@@ -380,7 +388,8 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     private shellExecutionMode(): ShellExecutionMode {
         // Per-conversation choice from the composer wins over static config,
         // so the user can flip silent/inline/terminal without changing settings.
-        const v = String(this.options.execDisplay ?? (this.cfg as any).shellExecution ?? "silent");
+        const cfg = this.cfg as { shellExecution?: string };
+        const v = String(this.options.execDisplay ?? cfg.shellExecution ?? "silent");
         return v === "inline" || v === "terminal" ? v : "silent";
     }
 

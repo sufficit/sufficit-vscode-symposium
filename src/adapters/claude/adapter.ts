@@ -5,7 +5,7 @@ import * as path from "path";
 import { builtinCommands } from "../builtins";
 import { resolveExecutable } from "../exec";
 import { removeMatchingFiles, scrubJsonlLines } from "../scrub";
-import { discoverSlashCommands, findNamedDirs, mergeCommands } from "../skills";
+import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
 import {
     AgentAdapter,
     AgentSession,
@@ -125,15 +125,16 @@ export class ClaudeAdapter implements AgentAdapter {
                 },
             });
             if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
-            const json: any = await res.json();
-            const raw: any[] = json?.data ?? [];
+            const json = await res.json() as { data?: unknown[] };
+            const raw = json?.data ?? [];
             const models: string[] = [];
             const labels: Record<string, string> = {};
             for (const m of raw) {
-                const id: string = typeof m === "string" ? m : (m?.id ?? "");
+                if (typeof m !== "object" || m === null) { continue; }
+                const id = "id" in m && typeof m.id === "string" ? m.id : "";
                 if (!id) { continue; }
                 models.push(id);
-                const name = typeof m?.display_name === "string" ? m.display_name : undefined;
+                const name = "display_name" in m && typeof m.display_name === "string" ? m.display_name : undefined;
                 if (name && name !== id) { labels[id] = name; }
             }
             if (models.length) {
@@ -143,8 +144,8 @@ export class ClaudeAdapter implements AgentAdapter {
                 const configured = cfg.model;
                 return { models: [...new Set([...(configured ? [configured] : []), ...models])], labels };
             }
-        } catch (err: any) {
-            cfg.log?.(`[claude] model refresh failed: ${err?.message ?? err}`);
+        } catch (err: unknown) {
+            cfg.log?.(`[claude] model refresh failed: ${err instanceof Error ? err.message : String(err)}`);
         }
         return { models: this.models(), labels: { ...CLAUDE_FALLBACK_LABELS, ...(cached?.labels ?? {}) } };
     }
@@ -168,14 +169,14 @@ export class ClaudeAdapter implements AgentAdapter {
     async commands(): Promise<SlashCommand[]> {
         const root = path.join(os.homedir(), ".claude");
         const marketplaces = path.join(root, "plugins", "marketplaces");
-        const pluginSkills = await findNamedDirs(marketplaces, "skills");
-        const pluginCommands = await findNamedDirs(marketplaces, "commands");
-        const discovered = await discoverSlashCommands(
-            [path.join(root, "skills"), ...pluginSkills],
-            [path.join(root, "commands"), ...pluginCommands],
-        );
+        const pluginRoots = await findNamedDirs(marketplaces, "skills");
+        const discovered = await Promise.all([
+            loadSlashCommands(path.join(root, "skills")),
+            loadSlashCommands(path.join(root, "commands")),
+            ...pluginRoots.map((r) => loadSlashCommands(r)),
+        ]);
         const version = (await this.available()).version;
-        return mergeCommands(builtinCommands("claude", version, this.getConfig().log), discovered);
+        return mergeCommands(builtinCommands("claude", version, this.getConfig().log), discovered.flat());
     }
 
     /**

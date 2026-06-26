@@ -5,7 +5,7 @@ import * as path from "path";
 import { builtinCommands } from "../builtins";
 import { resolveExecutable } from "../exec";
 import { scrubJsonlLines, scrubSqliteRows } from "../scrub";
-import { discoverSlashCommands, findNamedDirs, mergeCommands } from "../skills";
+import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
 import {
     AgentAdapter,
     AgentSession,
@@ -98,7 +98,18 @@ export class CodexAdapter implements AgentAdapter {
             if (!line.trim()) {
                 continue;
             }
-            let entry: any;
+            interface CodexEntry {
+                type: string;
+                payload?: {
+                    type: string;
+                    role?: string;
+                    content?: Array<{
+                        type: string;
+                        text?: string;
+                    }>;
+                };
+            }
+            let entry: CodexEntry;
             try {
                 entry = JSON.parse(line);
             } catch {
@@ -112,8 +123,8 @@ export class CodexAdapter implements AgentAdapter {
                 continue; // skip developer/system scaffolding
             }
             const text = (entry.payload.content ?? [])
-                .filter((c: any) => c.type === "input_text" || c.type === "output_text" || c.type === "text")
-                .map((c: any) => c.text)
+                .filter((c: { type: string }) => c.type === "input_text" || c.type === "output_text" || c.type === "text")
+                .map((c: { text?: string }) => c.text)
                 .join("")
                 .trim();
             // Skip the large injected scaffolding messages (instructions, skills, etc.).
@@ -156,12 +167,13 @@ export class CodexAdapter implements AgentAdapter {
                 headers: { authorization: `Bearer ${apiKey}` },
             });
             if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
-            const json: any = await res.json();
-            const raw: any[] = json?.data ?? json?.models ?? [];
+            const json = await res.json() as { data?: unknown[]; models?: unknown[] };
+            const raw = json?.data ?? json?.models ?? [];
             const models: string[] = [];
             const labels: Record<string, string> = {};
             for (const m of raw) {
-                const id: string = typeof m === "string" ? m : (m?.id ?? "");
+                if (typeof m !== "object" || m === null) { continue; }
+                const id = "id" in m && typeof m.id === "string" ? m.id : "";
                 if (!id) { continue; }
                 // Only include models relevant to Codex (codex/gpt/o-series)
                 if (!/codex|gpt|o\d/i.test(id)) { continue; }
@@ -189,13 +201,13 @@ export class CodexAdapter implements AgentAdapter {
     async commands(): Promise<SlashCommand[]> {
         const root = path.join(os.homedir(), ".codex");
         const pluginSkills = await findNamedDirs(path.join(root, "plugins"), "skills");
-        const discovered = await discoverSlashCommands(
-            // Codex's bundled skills live under skills/.system/<name>/SKILL.md.
-            [path.join(root, "skills"), path.join(root, "skills", ".system"), ...pluginSkills],
-            [path.join(root, "prompts")],
-        );
+        const discovered = await Promise.all([
+            loadSlashCommands(path.join(root, "skills")),
+            loadSlashCommands(path.join(root, "prompts")),
+            ...pluginSkills.map((r) => loadSlashCommands(r)),
+        ]);
         const version = (await this.available()).version;
-        return mergeCommands(builtinCommands("codex", version), discovered);
+        return mergeCommands(builtinCommands("codex", version), ...discovered);
     }
 
     /**

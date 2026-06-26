@@ -4,7 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import { builtinCommands } from "../builtins";
 import { resolveExecutable } from "../exec";
-import { discoverSlashCommands, findNamedDirs, mergeCommands } from "../skills";
+import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
 import { TODO_INJECTION } from "../todos";
 import {
     AgentAdapter,
@@ -47,7 +47,7 @@ export class CopilotAdapter implements AgentAdapter {
      * those as read/history sessions so Symposium's list matches the native
      * Copilot Chat sessions view (including code-server).
      */
-    async listSessions(): Promise<SessionInfo[]> {
+    listSessions(): Promise<SessionInfo[]> {
         const all = allCopilotSessions();
         const out: SessionInfo[] = [];
         for (const [id, e] of all) {
@@ -59,16 +59,16 @@ export class CopilotAdapter implements AgentAdapter {
                 transcriptPath: e.isTranscript ? copilotTranscriptFiles().find((f) => path.basename(f, ".jsonl") === id) : undefined,
             });
         }
-        return out.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+        return Promise.resolve(out.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0)));
     }
 
-    async history(info: SessionInfo): Promise<HistoryMessage[]> {
+    history(info: SessionInfo): Promise<HistoryMessage[]> {
         const file = info.transcriptPath ?? copilotTranscriptFiles().find((p) => path.basename(p, ".jsonl") === info.sessionId);
-        return file ? transcriptHistory(file) : [];
+        return Promise.resolve(file ? transcriptHistory(file) : []);
     }
 
-    async deleteSession(info: SessionInfo): Promise<string[] | void> {
-        return deleteImportedCopilotSession(info);
+    deleteSession(info: SessionInfo): Promise<string[] | void> {
+        return Promise.resolve(deleteImportedCopilotSession(info));
     }
 
     start(options: SessionStartOptions): AgentSession {
@@ -89,10 +89,10 @@ export class CopilotAdapter implements AgentAdapter {
      * extension under workspaceStorage/<id>/GitHub.copilot-chat/debug-logs. No API
      * call or token needed — the extension fetches and caches it locally.
      */
-    async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
+    refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
         try {
             const wsStorage = path.join(os.homedir(), ".config", "Code", "User", "workspaceStorage");
-            if (!fs.existsSync(wsStorage)) { return { models: this.models() }; }
+            if (!fs.existsSync(wsStorage)) { return Promise.resolve({ models: this.models() }); }
             // Find all models.json files under copilot debug-logs
             const candidates: { mtime: number; file: string }[] = [];
             for (const ws of fs.readdirSync(wsStorage)) {
@@ -106,10 +106,16 @@ export class CopilotAdapter implements AgentAdapter {
                     } catch { /* skip */ }
                 }
             }
-            if (!candidates.length) { return { models: this.models() }; }
+            if (!candidates.length) { return Promise.resolve({ models: this.models() }); }
             candidates.sort((a, b) => b.mtime - a.mtime);
-            const raw = JSON.parse(fs.readFileSync(candidates[0].file, "utf8"));
-            const list: any[] = Array.isArray(raw) ? raw : (raw?.models ?? []);
+            const json = JSON.parse(fs.readFileSync(candidates[0].file, "utf8")) as { models?: unknown[] } | unknown[];
+            const raw = Array.isArray(json) ? json : (typeof json === "object" && json !== null && "models" in json && Array.isArray(json.models) ? json.models : []);
+            const list: Array<{ id?: string; name?: string; capabilities?: { type?: string } }> = [];
+            for (const m of raw) {
+                if (typeof m === "object" && m !== null) {
+                    list.push(m as { id?: string; name?: string; capabilities?: { type?: string } });
+                }
+            }
             const models: string[] = [];
             const labels: Record<string, string> = {};
             for (const m of list) {
@@ -127,13 +133,13 @@ export class CopilotAdapter implements AgentAdapter {
                 setCached("copilot", entry);
                 const cfg = this.getConfig();
                 const configured = cfg.model;
-                return {
+                return Promise.resolve({
                     models: [...new Set(["auto", ...(configured && configured !== "auto" ? [configured] : []), ...models])],
                     labels,
-                };
+                });
             }
         } catch { /* fall through */ }
-        return { models: this.models(), labels: getCached("copilot")?.labels };
+        return Promise.resolve({ models: this.models(), labels: getCached("copilot")?.labels });
     }
 
     // No native plan/todo tool: Symposium injects one and parses a ```todo block.
@@ -148,11 +154,13 @@ export class CopilotAdapter implements AgentAdapter {
     async commands(): Promise<SlashCommand[]> {
         const root = path.join(os.homedir(), ".copilot");
         const pluginSkills = await findNamedDirs(path.join(root, "plugins"), "skills");
-        const discovered = await discoverSlashCommands(
-            [path.join(root, "skills"), ...pluginSkills],
-            [path.join(root, "prompts"), path.join(root, "commands")],
-        );
+        const discovered = await Promise.all([
+            loadSlashCommands(path.join(root, "skills")),
+            loadSlashCommands(path.join(root, "prompts")),
+            loadSlashCommands(path.join(root, "commands")),
+            ...pluginSkills.map((r) => loadSlashCommands(r)),
+        ]);
         const version = (await this.available()).version;
-        return mergeCommands(builtinCommands("copilot", version), discovered);
+        return mergeCommands(builtinCommands("copilot", version), ...discovered);
     }
 }

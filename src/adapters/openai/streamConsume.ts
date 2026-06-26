@@ -52,16 +52,17 @@ export async function consumeStream(
     };
     const stringOrUndefined = (value: unknown): string | undefined =>
         typeof value === "string" && value.trim() ? value : undefined;
-    const compressionOrUndefined = (value: any): ApiUsage["compression"] | undefined => {
+    const compressionOrUndefined = (value: unknown): ApiUsage["compression"] | undefined => {
         if (!value || typeof value !== "object") { return undefined; }
+        const v = value as Record<string, unknown>;
         return {
-            savedChars: numberOrUndefined(value.saved_chars),
-            originalChars: numberOrUndefined(value.original_chars),
-            compressedChars: numberOrUndefined(value.compressed_chars),
-            truncatedMessages: numberOrUndefined(value.truncated_messages),
-            removedMessages: numberOrUndefined(value.removed_messages),
-            prunedToolCalls: numberOrUndefined(value.pruned_tool_calls),
-            foldedToolResults: numberOrUndefined(value.folded_tool_results),
+            savedChars: numberOrUndefined(v.saved_chars),
+            originalChars: numberOrUndefined(v.original_chars),
+            compressedChars: numberOrUndefined(v.compressed_chars),
+            truncatedMessages: numberOrUndefined(v.truncated_messages),
+            removedMessages: numberOrUndefined(v.removed_messages),
+            prunedToolCalls: numberOrUndefined(v.pruned_tool_calls),
+            foldedToolResults: numberOrUndefined(v.folded_tool_results),
         };
     };
     const markDelta = () => {

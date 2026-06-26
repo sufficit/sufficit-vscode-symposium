@@ -70,7 +70,7 @@ function runSqliteCli(dbPath: string, table: string, column: string, value: stri
  */
 export async function scrubJsonlLines(
     file: string,
-    shouldDrop: (entry: any) => boolean,
+    shouldDrop: (entry: Record<string, unknown>) => boolean,
 ): Promise<void> {
     let content: string;
     try {
@@ -84,7 +84,7 @@ export async function scrubJsonlLines(
         if (!line.trim()) {
             continue;
         }
-        let entry: any;
+        let entry: Record<string, unknown>;
         try {
             entry = JSON.parse(line);
         } catch {

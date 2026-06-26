@@ -1,6 +1,6 @@
 // Composer: input, send/edit/slash/paste, attachment chips. Listeners run on import.
 import { vscode, saved, saveState } from "./vscode";
-import { log, input, sendMode, sendBtn, sendGroup, sendCaret, stopBtn, chips, addContext, addBrowserPage, slash, composerEl, ctxMenu } from "./dom";
+import { log, input, sendMode, micBtn, sendBtn, sendGroup, sendCaret, stopBtn, chips, addContext, addBrowserPage, slash, composerEl, ctxMenu } from "./dom";
 import { attachments, activeFile, activeFileRange, activeFileDismissed, activeFilePreview, activeFilePinned, busy, currentBackend, conversationRows, commands, setAttachments, setActiveFile, setActiveFileRange, setActiveFileDismissed, setActiveFilePreview, setActiveFilePinned, setBusy, setConversationRows, setCommands, autonomyValue, permissionValue } from "./state";
 import { setStatus, updateSendTitle, MODE_LABELS, MODE_KBD, MODE_ICONS, MODE_DESC, isMac, MOD, ALT } from "./status";
 import { modelValue, reasoningValue } from "./models";
@@ -214,6 +214,182 @@ input.addEventListener("input", () => {
     input.style.height = Math.min(input.scrollHeight, 180) + "px";
     updateSlash();
 });
+
+// Voice input using Web Speech API (SpeechRecognition)
+let recognition: any = null;
+let isRecording = false;
+let recordingDotsInterval: any = null;
+let recordingTextBase = '';
+
+// Audio feedback functions (mimicking VSCode chat sounds)
+function playStartSound() {
+    const audioCtx = new (window as any).AudioContext();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+    
+    oscillator.start(audioCtx.currentTime);
+    oscillator.stop(audioCtx.currentTime + 0.15);
+}
+
+function playStopSound() {
+    const audioCtx = new (window as any).AudioContext();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    oscillator.frequency.setValueAtTime(1200, audioCtx.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+    
+    oscillator.start(audioCtx.currentTime);
+    oscillator.stop(audioCtx.currentTime + 0.15);
+}
+
+// Update recording dots animation
+function updateRecordingDots() {
+    const dots = ['', '.', '..', '...', '..', '.'];
+    let index = 0;
+    
+    recordingDotsInterval = setInterval(() => {
+        index = (index + 1) % dots.length;
+        input.value = recordingTextBase + dots[index];
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 180) + "px";
+    }, 400);
+}
+
+// Voice preferences (default values, updated from host)
+let voicePreferences = {
+    language: 'pt-BR',
+    continuous: true,
+    interimResults: true,
+    dotsAnimation: true,
+    soundFeedback: true,
+};
+
+// Get voice preferences from host or use defaults
+function getVoicePreferences() {
+    const prefs = (window as any).voicePreferences;
+    if (prefs) {
+        voicePreferences = {
+            language: prefs.language || 'pt-BR',
+            continuous: prefs.continuous !== false,
+            interimResults: prefs.interimResults !== false,
+            dotsAnimation: prefs.dotsAnimation !== false,
+            soundFeedback: prefs.soundFeedback !== false,
+        };
+    }
+    return voicePreferences;
+}
+
+// Listen for voice preference updates
+window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'setVoicePreferences') {
+        getVoicePreferences();
+    }
+});
+
+// Check for browser support
+const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    const prefs = getVoicePreferences();
+    recognition.lang = prefs.language;
+    recognition.continuous = prefs.continuous;
+    recognition.interimResults = prefs.interimResults;
+
+    recognition.onstart = () => {
+        isRecording = true;
+        micBtn.classList.add('recording');
+        setStatus('Listening...');
+        if (prefs.soundFeedback) playStartSound();
+        recordingTextBase = input.value;
+        if (prefs.dotsAnimation) updateRecordingDots();
+    };
+
+    recognition.onend = () => {
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        setStatus('Ready');
+        if (recordingDotsInterval) {
+            clearInterval(recordingDotsInterval);
+            recordingDotsInterval = null;
+        }
+    };
+
+    recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript + ' ';
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
+
+        if (finalTranscript) {
+            // Update base text when we get final results
+            recordingTextBase = recordingTextBase + finalTranscript;
+            const dots = ['', '.', '..', '...', '..', '.'];
+            const index = Math.floor(Date.now() / 400) % dots.length;
+            input.value = recordingTextBase + dots[index];
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 180) + "px";
+            setStatus('Listening...');
+        } else if (interimTranscript) {
+            // Show interim results with dots animation
+            const dots = ['', '.', '..', '...', '..', '.'];
+            const index = Math.floor(Date.now() / 400) % dots.length;
+            input.value = recordingTextBase + interimTranscript + dots[index];
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 180) + "px";
+            setStatus('Listening...');
+        }
+    };
+
+    recognition.onerror = (event: any) => {
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        setStatus('Error: ' + event.error);
+        if (recordingDotsInterval) {
+            clearInterval(recordingDotsInterval);
+            recordingDotsInterval = null;
+        }
+        if (prefs.soundFeedback) playStopSound();
+        console.error('Speech recognition error:', event.error);
+    };
+
+    micBtn.addEventListener('click', () => {
+        if (!recognition) {
+            showToast('Speech recognition not supported in this browser');
+            return;
+        }
+
+        if (isRecording) {
+            if (prefs.soundFeedback) playStopSound();
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
+    });
+} else {
+    micBtn.style.display = 'none';
+    console.warn('Web Speech API not supported in this browser');
+}
 input.addEventListener("blur", () => { setTimeout(() => { slash.style.display = "none"; }, 120); });
 export function handlePaste(e) {
     const items = (e.clipboardData && e.clipboardData.items) || [];

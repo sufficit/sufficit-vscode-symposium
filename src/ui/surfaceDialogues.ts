@@ -8,6 +8,7 @@ import { ChangedFilesManager } from "./changedFiles";
 import { readWorkspaceBootstrap } from "../config/root";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
 import { symposiumLog } from "../extension";
+import type { WebviewToHost } from "./protocol";
 
 /**
  * Dialogue lifecycle for a chat surface: opening a dialogue (new / resumed /
@@ -113,11 +114,11 @@ export class SurfaceDialogues {
      * the edited message (anchorIndex excluded), then deliver the edited text as
      * the new message — so we genuinely "restart from this point".
      */
-    editResend(anchorIndex: number, sendMsg: any): void {
+    editResend(anchorIndex: number, sendMsg: WebviewToHost): void {
         const from = this.d.getController();
         if (!from || !Number.isInteger(anchorIndex) || anchorIndex < 0) {
             // Nothing to rewind to — treat as a normal send.
-            void this.d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined });
+            void this.d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
             return;
         }
         const keepTo = anchorIndex - 1;   // exclude the message being edited
@@ -131,14 +132,18 @@ export class SurfaceDialogues {
         if (messages.length) {
             this.d.post({ type: "history", messages, carried: true });
         }
+        // Type guard: ensure sendMsg has the required "send" properties
+        if (!("text" in sendMsg) || typeof sendMsg.text !== "string") {
+            return;
+        }
         void this.d.getController()?.handleMessage({
             type: "send",
             text: sendMsg.text,
-            attachments: sendMsg.attachments ?? [],
-            model: sendMsg.model,
-            reasoning: sendMsg.reasoning,
-            permission: sendMsg.permission,
-            autonomy: sendMsg.autonomy,
+            attachments: "attachments" in sendMsg && Array.isArray(sendMsg.attachments) ? sendMsg.attachments : [],
+            model: "model" in sendMsg && typeof sendMsg.model === "string" ? sendMsg.model : undefined,
+            reasoning: "reasoning" in sendMsg && typeof sendMsg.reasoning === "string" ? sendMsg.reasoning : undefined,
+            permission: "permission" in sendMsg && typeof sendMsg.permission === "string" ? sendMsg.permission : undefined,
+            autonomy: "autonomy" in sendMsg && typeof sendMsg.autonomy === "string" ? sendMsg.autonomy : undefined,
             mode: "send",
         });
     }
@@ -350,13 +355,14 @@ export class SurfaceDialogues {
             // The controller emits the RAW edited-files set; the surface filters
             // it against live git status (so staged files drop, unstaging them
             // brings them back) before showing it.
-            if ((message as any)?.type === "changed-files") {
-                void this.d.changedFiles.refresh((message as any).items);
+            const msg = message as Record<string, unknown> | null;
+            if (msg?.type === "changed-files" && "items" in msg && Array.isArray(msg.items)) {
+                void this.d.changedFiles.refresh(msg.items);
                 return;
             }
             // Capture a freshly-assigned session id so a brand-new dialogue
             // also becomes the restorable "last active" one.
-            const ev = (message as any)?.event;
+            const ev = msg?.event as { kind?: string; sessionId?: string; toolName?: string } | undefined;
             if (ev?.kind === "session" && ev.sessionId) {
                 this.d.deps.lastActive.set({ backend, sessionId: ev.sessionId });
             }

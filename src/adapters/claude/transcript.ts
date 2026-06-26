@@ -43,7 +43,24 @@ export function parseTranscriptLine(line: string): HistoryMessage[] {
     if (!line.trim()) {
         return [];
     }
-    let entry: any;
+    interface TranscriptEntry {
+        isMeta?: boolean;
+        type: "user" | "assistant" | "result";
+        message?: {
+            content?: string | Array<{
+                type: "text" | "thinking" | "tool_use";
+                text?: string;
+                thinking?: string;
+                name?: string;
+                input?: unknown;
+            }>;
+        };
+        is_error?: boolean;
+        result?: unknown;
+        subtype?: unknown;
+        timestamp?: string;
+    }
+    let entry: TranscriptEntry;
     try {
         entry = JSON.parse(line);
     } catch {
@@ -60,7 +77,7 @@ export function parseTranscriptLine(line: string): HistoryMessage[] {
             if (t) { messages.push({ role: "user", text: t }); }
         } else if (Array.isArray(content)) {
             for (const block of content) {
-                if (block.type === "text" && block.text?.trim()) {
+                if (typeof block === "object" && block !== null && block.type === "text" && typeof block.text === "string") {
                     const t = cleanUserText(block.text);
                     if (t) { messages.push({ role: "user", text: t }); }
                 }
@@ -68,21 +85,24 @@ export function parseTranscriptLine(line: string): HistoryMessage[] {
             }
         }
     } else if (entry.type === "assistant") {
-        for (const block of entry.message?.content ?? []) {
-            if (block.type === "thinking" && block.thinking?.trim()) {
-                messages.push({ role: "thinking", text: block.thinking });
-            } else if (block.type === "text" && block.text?.trim()) {
-                messages.push({ role: "assistant", text: block.text });
-            } else if (block.type === "tool_use") {
-                const counts = diffCounts(block.name, block.input);
-                messages.push({
-                    role: "tool", text: block.name, toolName: block.name,
-                    detail: summarizeToolInput(block.input), input: prettyJson(block.input),
-                    added: counts?.added, removed: counts?.removed,
-                    todos: extractTodos(block.name, block.input),
-                    path: toolFilePath(block.input),
-                    diff: editDiff(block.name, block.input),
-                });
+        const assistantContent = entry.message?.content;
+        for (const block of Array.isArray(assistantContent) ? assistantContent : []) {
+            if (typeof block === "object" && block !== null) {
+                if (block.type === "thinking" && typeof block.thinking === "string") {
+                    messages.push({ role: "thinking", text: block.thinking });
+                } else if (block.type === "text" && typeof block.text === "string") {
+                    messages.push({ role: "assistant", text: block.text });
+                } else if (block.type === "tool_use") {
+                    const counts = diffCounts(block.name ?? "", block.input);
+                    messages.push({
+                        role: "tool", text: block.name ?? "", toolName: block.name ?? "",
+                        detail: summarizeToolInput(block.input), input: prettyJson(block.input),
+                        added: counts?.added, removed: counts?.removed,
+                        todos: extractTodos(block.name ?? "", block.input),
+                        path: toolFilePath(block.input),
+                        diff: editDiff(block.name ?? "", block.input),
+                    });
+                }
             }
         }
     } else if (entry.type === "result" && entry.is_error) {
@@ -91,11 +111,11 @@ export function parseTranscriptLine(line: string): HistoryMessage[] {
         // history keeps the same red styling it had when it happened live.
         const msg = (typeof entry.result === "string" && entry.result.trim())
             ? entry.result.trim()
-            : (entry.subtype ?? "unknown error");
+            : (typeof entry.subtype === "string" ? entry.subtype : "unknown error");
         messages.push({ role: "error", text: msg });
     }
     // Stamp the transcript time so history shows real timestamps on hover.
-    const ts = entry.timestamp ? Date.parse(entry.timestamp) : NaN;
+    const ts = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : NaN;
     if (!Number.isNaN(ts)) { for (const m of messages) { m.ts = ts; } }
     return messages;
 }
@@ -129,7 +149,7 @@ export async function readSessionMeta(file: string): Promise<{ title?: string; c
                 if (typeof c === "string" && c.trim() && !c.startsWith("<")) {
                     title = c.slice(0, 80);
                 } else if (Array.isArray(c)) {
-                    const text = c.find((b: any) => b.type === "text")?.text;
+                    const text = c.find((b: { type: string; text?: string }) => b.type === "text")?.text;
                     if (text) {
                         title = String(text).slice(0, 80);
                     }

@@ -107,6 +107,7 @@ ${chatStyles}
                 </select>
                 <div id="sendGroup">
                     <button id="stopBtn" title="Stop the running turn (Esc)" aria-label="Stop the running turn" style="display:none"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg></button>
+                    <button id="mic" title="Voice input" aria-label="Voice input"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0V4a2.5 2.5 0 0 0-2.5-2.5Z"/><path d="M4.75 7.5a.75.75 0 0 1 .75.75 2.5 2.5 0 0 0 5 0 .75.75 0 0 1 1.5 0 4.002 4.002 0 0 1-3.25 3.93V14h1.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5h1.5v-1.82A4.002 4.002 0 0 1 4 8.25a.75.75 0 0 1 .75-.75Z"/></svg></button>
                     <button id="send" title="Send (Enter)" aria-label="Send (Enter)"><span id="sendIcon"></span></button>
                     <button id="sendCaret" title="Send mode" aria-label="Send mode"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                 </div>

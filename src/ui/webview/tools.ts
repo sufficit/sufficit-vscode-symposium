@@ -174,6 +174,16 @@ export function renderTool(name, detail, opts) {
         head.classList.add("expandable");
         head.addEventListener("click", () => wrap.classList.toggle("open"));
     }
+
+    // Context menu for tool actions (right-click on tool name/verb)
+    verb.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        vscode.postMessage({ type: "show-tool-context-menu", toolName: name, toolDetail: detail, toolPath: opts.path });
+    });
+    verb.title = "Right-click for options";
+    verb.style.cursor = "context-menu";
+
     wrap.appendChild(head); wrap.appendChild(body);
     toolGroupBody().appendChild(wrap);
     bumpToolGroup(opts.added, opts.removed);

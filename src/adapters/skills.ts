@@ -57,7 +57,8 @@ function parseFrontmatter(text: string): { name?: string; description?: string }
         const m = /^(name|description)\s*:\s*(.*)$/.exec(line);
         if (m) {
             const value = m[2].trim().replace(/^["']|["']$/g, "");
-            (out as any)[m[1]] = value;
+            const key = m[1] as "name" | "description";
+            out[key] = value;
         }
     }
     return out;
@@ -65,26 +66,18 @@ function parseFrontmatter(text: string): { name?: string; description?: string }
 
 async function readMeta(file: string): Promise<{ name?: string; description?: string }> {
     try {
-        return parseFrontmatter(await fs.promises.readFile(file, "utf8"));
+        const text = await fs.promises.readFile(file, "utf-8");
+        return parseFrontmatter(text);
     } catch {
         return {};
     }
 }
 
-/**
- * Discovers slash commands for a CLI from its skill and command directories:
- *   - skillDirs/<name>/SKILL.md       → /<name>
- *   - commandDirs/<name>.md           → /<name>
- * Name comes from frontmatter when present, else the file/dir basename.
- * Deduplicated by name; hidden dot-entries skipped.
- */
-export async function discoverSlashCommands(
-    skillDirs: string[],
-    commandDirs: string[],
-): Promise<SlashCommand[]> {
-    const byName = new Map<string, SlashCommand>();
-
-    for (const dir of skillDirs) {
+/** Loads all slash commands from *.md files under a directory. */
+export async function loadSlashCommands(root: string): Promise<SlashCommand[]> {
+    const dirs = await findNamedDirs(root, "skills", 4);
+    const cmds: SlashCommand[] = [];
+    for (const dir of dirs) {
         let entries: fs.Dirent[];
         try {
             entries = await fs.promises.readdir(dir, { withFileTypes: true });
@@ -92,41 +85,19 @@ export async function discoverSlashCommands(
             continue;
         }
         for (const entry of entries) {
-            if (!entry.isDirectory() || entry.name.startsWith(".")) {
+            if (!entry.isFile() || !entry.name.endsWith(".md")) {
                 continue;
             }
-            const skillFile = path.join(dir, entry.name, "SKILL.md");
-            try {
-                await fs.promises.access(skillFile);
-            } catch {
-                continue; // empty placeholder dir without a SKILL.md
-            }
-            const meta = await readMeta(skillFile);
-            const name = meta.name?.trim() || entry.name;
-            if (!byName.has(name)) {
-                byName.set(name, { name, description: meta.description, kind: "skill" });
+            const file = path.join(dir, entry.name);
+            const meta = await readMeta(file);
+            if (meta.name) {
+                cmds.push({
+                    name: meta.name,
+                    description: meta.description ?? `Skill from ${entry.name}`,
+                    kind: "skill",
+                });
             }
         }
     }
-
-    for (const dir of commandDirs) {
-        let entries: string[];
-        try {
-            entries = await fs.promises.readdir(dir);
-        } catch {
-            continue;
-        }
-        for (const file of entries) {
-            if (!file.endsWith(".md") || file.startsWith(".") || file.toLowerCase() === "readme.md") {
-                continue;
-            }
-            const meta = await readMeta(path.join(dir, file));
-            const name = meta.name?.trim() || path.basename(file, ".md");
-            if (!byName.has(name)) {
-                byName.set(name, { name, description: meta.description, kind: "command" });
-            }
-        }
-    }
-
-    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+    return cmds;
 }

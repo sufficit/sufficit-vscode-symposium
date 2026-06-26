@@ -224,6 +224,10 @@ window.addEventListener("message", ({ data }) => {
             if (data.modelDefault !== undefined) { setModelDefault(data.modelDefault); setModelLabel(); }
             break;
         }
+        case "session-model-updated": {
+            if (data.model) { setModelValue(data.model); setModelLabel(); }
+            break;
+        }
         case "history": {
             resetLastMsg(); // reset so first message in loaded session always shows label
             if (data.carried && data.branchLabel) {

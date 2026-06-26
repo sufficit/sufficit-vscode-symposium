@@ -4,6 +4,7 @@ import { AdapterPatch, SymposiumApi } from "../api/symposiumApi";
 import { SufficitAuth } from "../auth/identity";
 import { renderConfigHtml } from "./configHtml";
 import { tr } from "./configI18n";
+import type { CompressionPreset, CompressionStrategyType } from "../compression/types";
 
 export interface ConfigPanelDeps {
     api: SymposiumApi;
@@ -285,7 +286,7 @@ export class ConfigPanel {
                 return;
             case "set-pref":
                 if (typeof message.key === "string") {
-                    // Coerce by key: numbers for hops, booleans for autoApprove.
+                    // Coerce by key: numbers for hops, booleans for autoApprove and voice options.
                     let value: unknown = message.value;
                     if (message.key.endsWith("maxToolHops")) { value = Math.max(1, Number(message.value) || 50); }
                     else if (message.key.endsWith("noProgressStop")) { value = Math.max(0, Number(message.value) || 0); }
@@ -295,6 +296,18 @@ export class ConfigPanel {
                         value = message.value === "true";
                         // optIn must be on for the global flag to take effect.
                         await vscode.workspace.getConfiguration().update("chat.tools.global.autoApprove.optIn", true, vscode.ConfigurationTarget.Global);
+                    }
+                    else if (message.key === "symposium.voice.continuous") {
+                        value = message.value === "true";
+                    }
+                    else if (message.key === "symposium.voice.interimResults") {
+                        value = message.value === "true";
+                    }
+                    else if (message.key === "symposium.voice.dotsAnimation") {
+                        value = message.value === "true";
+                    }
+                    else if (message.key === "symposium.voice.soundFeedback") {
+                        value = message.value === "true";
                     }
                     await vscode.workspace.getConfiguration().update(message.key, value, vscode.ConfigurationTarget.Global);
                     await this.pushState();
@@ -318,6 +331,201 @@ export class ConfigPanel {
                 const r = await api.sync.push();
                 this.report(this.tr("msg.sync.label.push"), r);
                 await this.pushState();
+                return;
+            }
+            case "list-compression-presets": {
+                const { CompressionManager } = await import("../compression");
+                const presets = CompressionManager.getInstance().getPresets();
+                this.panel.webview.postMessage({ type: "compression-presets", presets });
+                return;
+            }
+            case "add-compression-preset": {
+                const { CompressionManager } = await import("../compression");
+
+                // Step 1: Name
+                const name = await vscode.window.showInputBox({
+                    prompt: "Nome do preset de compressão",
+                    placeHolder: "Ex: Desenvolvimento, Review Code, Debug Profundo",
+                    validateInput: (v) => v.trim() ? undefined : "Nome obrigatório",
+                });
+                if (!name) { return; }
+
+                // Step 2: Description (optional)
+                const description = await vscode.window.showInputBox({
+                    prompt: "Descrição (opcional)",
+                    placeHolder: "Descreva quando usar este preset",
+                });
+
+                // Step 3: Strategy
+                const strategy = await vscode.window.showQuickPick([
+                    { label: "none", description: "Sem compressão - mantém todo histórico" },
+                    { label: "summarize", description: "Resume mensagens antigas, mantém N recentes" },
+                    { label: "aggressive", description: "Compressão máxima - só 5 mensagens recentes" },
+                    { label: "token-budget", description: "Limite de tokens - corta pelo tamanho estimado" },
+                ], {
+                    placeHolder: "Escolha a estratégia de compressão",
+                });
+                if (!strategy) { return; }
+
+                const id = `custom-${Date.now()}`;
+                const preset: CompressionPreset = {
+                    id,
+                    name: name.trim(),
+                    description: description?.trim() || undefined,
+                    strategy: strategy.label as CompressionStrategyType,
+                    params: { keepRecent: 10, maxTokens: 4000, toolCompressionLevel: undefined }
+                };
+
+                // Step 4: Strategy-specific params
+                if (strategy.label === "summarize") {
+                    const keepRecent = await vscode.window.showInputBox({
+                        prompt: "Quantas mensagens recentes manter?",
+                        value: "10",
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n > 0 && n <= 100) ? undefined : "Entre 1 e 100";
+                        }
+                    });
+                    if (!keepRecent) { return; }
+                    if (!preset.params) { preset.params = {}; }
+                    preset.params.keepRecent = parseInt(keepRecent);
+
+                } else if (strategy.label === "aggressive") {
+                    const keepRecent = await vscode.window.showInputBox({
+                        prompt: "Quantas mensagens recentes manter?",
+                        value: "5",
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n > 0 && n <= 20) ? undefined : "Entre 1 e 20";
+                        }
+                    });
+                    if (!keepRecent) { return; }
+                    if (!preset.params) { preset.params = {}; }
+                    preset.params.keepRecent = parseInt(keepRecent);
+
+                } else if (strategy.label === "token-budget") {
+                    const maxTokens = await vscode.window.showInputBox({
+                        prompt: "Limite máximo de tokens?",
+                        value: "4000",
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n >= 500 && n <= 200000) ? undefined : "Entre 500 e 200000";
+                        }
+                    });
+                    if (!maxTokens) { return; }
+                    if (!preset.params) { preset.params = {}; }
+                    preset.params.maxTokens = parseInt(maxTokens);
+                }
+
+                // Step 5: Tool compression level (future: per-tool config)
+                const toolLevel = await vscode.window.showQuickPick([
+                    { label: "none", description: "Não comprimir tool requests" },
+                    { label: "low", description: "Remove headers redundantes (contextId, sessionId)" },
+                    { label: "medium", description: "Compacta em hints (action: 'saved task')" },
+                    { label: "high", description: "Remove tool calls já processados" },
+                ], {
+                    placeHolder: "Nível de compressão de tool requests (opcional)",
+                });
+
+                if (toolLevel) {
+                    if (!preset.params) { preset.params = {}; }
+                    preset.params.toolCompressionLevel = toolLevel.label;
+                }
+
+                await CompressionManager.getInstance().savePreset(preset);
+                await this.pushState();
+                vscode.window.showInformationMessage(`Preset "${name.trim()}" criado com sucesso!`);
+                return;
+            }
+            case "remove-compression-preset": {
+                const { CompressionManager } = await import("../compression");
+                if (!message.key) { return; }
+                await CompressionManager.getInstance().deletePreset(message.key);
+                await this.pushState();
+                return;
+            }
+            case "edit-compression-preset": {
+                const { CompressionManager } = await import("../compression");
+                if (!message.key) { return; }
+                const presets = CompressionManager.getInstance().getPresets();
+                const preset = presets.find(p => p.id === message.key);
+                if (!preset) { return; }
+
+                // Edit name
+                const name = await vscode.window.showInputBox({
+                    prompt: "Nome do preset",
+                    value: preset.name,
+                    validateInput: (v) => v.trim() ? undefined : "Nome obrigatório",
+                });
+                if (name === undefined) { return; }
+
+                // Edit description
+                const description = await vscode.window.showInputBox({
+                    prompt: "Descrição (opcional)",
+                    value: preset.description || "",
+                });
+
+                const updated: CompressionPreset = {
+                    ...preset,
+                    name: name.trim(),
+                    description: description?.trim() || undefined,
+                };
+
+                // Edit strategy-specific params
+                if (preset.strategy === "summarize" || preset.strategy === "aggressive") {
+                    const keepRecent = await vscode.window.showInputBox({
+                        prompt: "Mensagens recentes a manter",
+                        value: String(preset.params?.keepRecent || 10),
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n > 0 && n <= 100) ? undefined : "Entre 1 e 100";
+                        }
+                    });
+                    if (keepRecent !== undefined) {
+                        updated.params = { ...updated.params, keepRecent: parseInt(keepRecent) };
+                    }
+                } else if (preset.strategy === "token-budget") {
+                    const maxTokens = await vscode.window.showInputBox({
+                        prompt: "Limite de tokens",
+                        value: String(preset.params?.maxTokens || 4000),
+                        validateInput: (v) => {
+                            const n = parseInt(v);
+                            return (n >= 500 && n <= 200000) ? undefined : "Entre 500 e 200000";
+                        }
+                    });
+                    if (maxTokens !== undefined) {
+                        updated.params = { ...updated.params, maxTokens: parseInt(maxTokens) };
+                    }
+                }
+
+                // Edit tool compression level
+                const currentToolLevel = (preset.params?.toolCompressionLevel as string) || "none";
+                const toolLevel = await vscode.window.showQuickPick([
+                    { label: "none", description: "Não comprimir", picked: currentToolLevel === "none" },
+                    { label: "low", description: "Remove headers", picked: currentToolLevel === "low" },
+                    { label: "medium", description: "Hints compactos", picked: currentToolLevel === "medium" },
+                    { label: "high", description: "Remove processados", picked: currentToolLevel === "high" },
+                ], {
+                    placeHolder: "Nível de compressão de tool requests",
+                });
+
+                if (toolLevel) {
+                    updated.params = { ...updated.params, toolCompressionLevel: toolLevel.label };
+                }
+
+                await CompressionManager.getInstance().savePreset(updated);
+                await this.pushState();
+                vscode.window.showInformationMessage(`Preset "${name.trim()}" atualizado!`);
+                return;
+            }
+            case "set-compression-preset-default": {
+                const { CompressionManager } = await import("../compression");
+                await CompressionManager.getInstance().setDefaultPreset(message.value ?? "");
+                await this.pushState();
+                return;
+            }
+            case "show-compression-manual": {
+                await vscode.commands.executeCommand("symposium.showCompressionManual");
                 return;
             }
         }
@@ -397,6 +605,8 @@ export class ConfigPanel {
         const profile = this.deps.auth ? await this.deps.auth.getProfile().catch(() => undefined) : undefined;
         const chat = vscode.workspace.getConfiguration("symposium.chat");
         const root = vscode.workspace.getConfiguration("symposium");
+        const { CompressionManager } = await import("../compression");
+        const compressionManager = CompressionManager.getInstance();
         const state = {
             root: api.resources.root(),
             resources: api.resources.scan(),
@@ -418,6 +628,17 @@ export class ConfigPanel {
                 maxHistoryMessages: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxHistoryMessages", 40),
                 shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
                 autoApprove: vscode.workspace.getConfiguration().get<boolean>("chat.tools.global.autoApprove", false),
+                // Voice input preferences
+                voiceLanguage: root.get<string>("voice.language", "pt-BR"),
+                voiceContinuous: root.get<boolean>("voice.continuous", true),
+                voiceInterimResults: root.get<boolean>("voice.interimResults", true),
+                voiceDotsAnimation: root.get<boolean>("voice.dotsAnimation", true),
+                voiceSoundFeedback: root.get<boolean>("voice.soundFeedback", true),
+            },
+            compression: {
+                presets: compressionManager.getPresets(),
+                defaultPresetId: compressionManager.getDefaultPresetId(),
+                perSessionEnabled: compressionManager.isPerSessionEnabled(),
             },
         };
         await this.panel.webview.postMessage({ type: "state", state });

@@ -106,7 +106,8 @@ export class SurfaceSync {
         try {
             const r = await lm.invokeTool("open_browser_page",
                 { input: {}, toolInvocationToken: undefined } as vscode.LanguageModelToolInvocationOptions<object>, cts.token);
-            const text = (r.content as any[]).map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : "")).join("\n").trim();
+            const content = r.content as Array<vscode.LanguageModelTextPart | vscode.LanguageModelPromptTsxPart>;
+            const text = content.map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : "")).join("\n").trim();
             if (!text || /opted not to share|no .*page/i.test(text)) {
                 void vscode.window.showInformationMessage("No browser page shared.");
                 return;
@@ -154,11 +155,12 @@ export class SurfaceSync {
     }
 
     /** Pushes the Sufficit account (or null) for the sessions-pane footer. */
-    async pushAccount(): Promise<void> {
+    pushAccount(): void {
         const account = this.d.getAccount();
         if (!account) { return; }
-        const profile = await account.get().catch(() => undefined);
-        this.d.setLoggedIn(!!profile);
-        this.d.post({ type: "account", profile: profile ?? null });
+        void account.get().then((profile) => {
+            this.d.setLoggedIn(!!profile);
+            this.d.post({ type: "account", profile: profile ?? null });
+        }).catch(() => undefined);
     }
 }

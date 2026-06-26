@@ -174,6 +174,22 @@ export class SurfaceMessages {
                     }
                     return;
                 }
+                case "set-model": {
+                    // Persistir o modelo selecionado no controller atual
+                    const controller = this.d.getController();
+                    if (controller && typeof message.model === "string") {
+                        // Atualizar o modelo no controller
+                        controller.setModel(message.model);
+                        // Forçar persistência imediata do modelo no adapter
+                        const session = controller.getSession();
+                        if (session?.safePersist) {
+                            session.safePersist();
+                        }
+                        // Notificar a webview que o modelo foi atualizado
+                        this.d.post({ type: "session-model-updated", model: message.model });
+                    }
+                    return;
+                }
                 case "pin-model": {
                     const pinBackend = this.d.getController()?.backend ?? this.d.getTerminalSession()?.backend;
                     if (pinBackend && typeof message.model === "string") {
@@ -196,6 +212,24 @@ export class SurfaceMessages {
                 }
                 case "new-session": {
                     await vscode.commands.executeCommand("symposium.newSession");
+                    return;
+                }
+                case "set-compression-preset": {
+                    const controller = this.d.getController();
+                    if (controller && typeof message.compressionPresetId === "string") {
+                        const sessionId = controller.sessionId;
+                        if (sessionId) {
+                            const { CompressionManager } = await import("../compression");
+                            const compressionManager = CompressionManager.getInstance();
+                            const presetId = message.compressionPresetId || undefined;
+                            if (presetId) {
+                                await compressionManager.setSectionConfig(sessionId, presetId);
+                            } else {
+                                await compressionManager.removeSectionConfig(sessionId);
+                            }
+                            this.d.post({ type: "compression-preset-set", presetId });
+                        }
+                    }
                     return;
                 }
                 case "list-backends": {
@@ -252,6 +286,50 @@ export class SurfaceMessages {
                 }
                 case "file-diff": {
                     await this.d.changedFiles.openDiff(message.path);
+                    return;
+                }
+                case "show-tool-manual": {
+                    await vscode.commands.executeCommand("symposium.showToolManual", message.toolName);
+                    return;
+                }
+                case "show-tool-context-menu": {
+                    const toolName = message.toolName || "unknown";
+                    const items: vscode.QuickPickItem[] = [
+                        {
+                            label: "$(book) Show Manual",
+                            description: `Open ${toolName} manual`,
+                            detail: "View documentation for this tool"
+                        },
+                    ];
+
+                    // Add file-specific actions if path available
+                    if (message.toolPath) {
+                        items.push({
+                            label: "$(go-to-file) Open File",
+                            description: message.toolPath,
+                            detail: "Open file in editor"
+                        });
+                        items.push({
+                            label: "$(diff) Show Diff",
+                            description: message.toolPath,
+                            detail: "Compare with working version"
+                        });
+                    }
+
+                    const selected = await vscode.window.showQuickPick(items, {
+                        placeHolder: `Actions for ${toolName}`,
+                    });
+
+                    if (!selected) { return; }
+
+                    if (selected.label.includes("Show Manual")) {
+                        await vscode.commands.executeCommand("symposium.showToolManual", toolName);
+                    } else if (selected.label.includes("Open File") && message.toolPath) {
+                        const uri = vscode.Uri.file(message.toolPath);
+                        await vscode.window.showTextDocument(uri);
+                    } else if (selected.label.includes("Show Diff") && message.toolPath) {
+                        await this.d.changedFiles.openDiff(message.toolPath);
+                    }
                     return;
                 }
                 case "file-approve": {

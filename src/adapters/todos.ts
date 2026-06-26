@@ -9,14 +9,15 @@ function normStatus(s: unknown): TodoItem["status"] {
 }
 
 /** Maps one raw item ({content|step|text|title|task}, {status|state}) to a TodoItem. */
-function toItem(raw: any): TodoItem | undefined {
+function toItem(raw: string | Record<string, unknown>): TodoItem | undefined {
     if (raw == null) { return undefined; }
     if (typeof raw === "string") { return { content: raw, status: "pending" }; }
-    const content = raw.content ?? raw.step ?? raw.text ?? raw.title ?? raw.task ?? raw.name;
+    const obj = raw as Record<string, unknown>;
+    const content = obj.content ?? obj.step ?? obj.text ?? obj.title ?? obj.task ?? obj.name;
     if (typeof content !== "string" || !content.trim()) { return undefined; }
-    const orderRaw = raw.order ?? raw.index ?? raw.number ?? raw.stepNumber ?? raw.step_number;
+    const orderRaw = obj.order ?? obj.index ?? obj.number ?? obj.stepNumber ?? obj.step_number;
     const order = Number(orderRaw);
-    return { content: content.trim(), status: normStatus(raw.status ?? raw.state), ...(Number.isFinite(order) && order > 0 ? { order } : {}) };
+    return { content: String(content).trim(), status: normStatus(obj.status ?? obj.state), ...(Number.isFinite(order) && order > 0 ? { order } : {}) };
 }
 
 function toItems(arr: unknown): TodoItem[] | undefined {

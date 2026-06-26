@@ -60,6 +60,7 @@ export type WebviewToHost =
     | { type: "drop-uris"; uris: string[] }
     | { type: "refresh-tasks" }
     | { type: "refresh-models" }
+    | { type: "set-model"; model: string }
     | { type: "refresh-sessions" }
     | { type: "recheck-shell-tools" }
     | { type: "task-set-done"; id: string; done: boolean }
@@ -68,7 +69,9 @@ export type WebviewToHost =
     | { type: "clear-guardrails" }
     | { type: "pin-model"; model: string }
     | { type: "set-model-default"; model: string }
-    | { type: "new-session" }
+    | { type: "new-session"; compressionPresetId?: string }
+    | { type: "set-compression-preset"; compressionPresetId: string }
+    | { type: "compression-preset-set"; presetId: string }
     | { type: "list-backends" }
     | { type: "switch-backend"; backend: string }
     | { type: "restart-from-message"; index: number }
@@ -81,6 +84,8 @@ export type WebviewToHost =
     | { type: "file-reject"; path: string }
     | { type: "file-approve-all"; paths?: string[] }
     | { type: "file-reject-all"; paths?: string[] }
+    | { type: "show-tool-manual"; toolName: string }
+    | { type: "show-tool-context-menu"; toolName: string; toolDetail?: string; toolPath?: string }
     | { type: "session-action"; sessionId: string; backend: string; action: SessionActionKind }
     | { type: "session-list-backends"; backend: string }
     | { type: "session-switch-backend"; sessionId: string; backend: string; targetBackend: string }

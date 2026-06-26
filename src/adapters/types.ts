@@ -250,6 +250,8 @@ export interface AgentSession extends EventEmitter {
      */
     aiTools?(): { available: string[]; enabled: string[] };
     setAiTools?(names: string[]): void;
+    /** Persistir o estado da sessão (apenas para backends que suportam persistência local). */
+    safePersist?(): void;
 }
 
 /** Factory + discovery surface for one backend CLI. */

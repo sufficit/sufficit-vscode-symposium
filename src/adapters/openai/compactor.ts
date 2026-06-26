@@ -123,16 +123,32 @@ export class Compactor {
                 : { model: this.d.model(), messages: reqMessages, stream: false };
             const res = await fetch(url, { method: "POST", headers: this.d.headers(loginToken), body: JSON.stringify(body) });
             if (!res.ok) { return ""; }
-            const json: any = await res.json();
+            const json = await res.json() as unknown;
             if (responses) {
-                if (typeof json.output_text === "string" && json.output_text.trim()) { return json.output_text.trim(); }
+                const obj = typeof json === "object" && json !== null ? json as Record<string, unknown> : {};
+                if (typeof obj.output_text === "string" && obj.output_text.trim()) { return obj.output_text.trim(); }
                 const parts: string[] = [];
-                for (const item of json.output ?? []) {
-                    for (const c of item.content ?? []) { if (typeof c.text === "string") { parts.push(c.text); } }
+                const output = Array.isArray(obj.output) ? obj.output : [];
+                for (const item of output) {
+                    if (typeof item === "object" && item !== null) {
+                        const itemRecord = item as Record<string, unknown>;
+                        const contentValue = itemRecord.content;
+                        const content = Array.isArray(contentValue) ? contentValue : [];
+                        for (const c of content) {
+                            const contentItem = typeof c === "object" && c !== null ? c as Record<string, unknown> : null;
+                            if (contentItem && typeof contentItem.text === "string") {
+                                parts.push(contentItem.text);
+                            }
+                        }
+                    }
                 }
                 return parts.join("").trim();
             }
-            return String(json?.choices?.[0]?.message?.content ?? "").trim();
+            const obj = typeof json === "object" && json !== null ? json as Record<string, unknown> : {};
+            const choices = Array.isArray(obj.choices) ? obj.choices : [];
+            const first = choices.length > 0 && typeof choices[0] === "object" ? choices[0] as Record<string, unknown> : null;
+            const msg = typeof first?.message === "object" && first.message !== null ? first.message as Record<string, unknown> : null;
+            return String(msg?.content ?? "").trim();
         } catch {
             return "";
         }

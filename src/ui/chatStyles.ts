@@ -9,4 +9,4 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 
-export const chatStyles = readFileSync(join(__dirname, "webview.css"), "utf8");
+export const chatStyles = readFileSync(join(__dirname, "ui/webview.css"), "utf8");

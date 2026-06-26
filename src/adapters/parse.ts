@@ -71,16 +71,21 @@ export interface CodexUsage {
  * NOT add them again (unlike Claude, where cache reads are a separate bucket).
  */
 export function parseCodexUsage(event: unknown): CodexUsage | undefined {
-    const e = (event ?? {}) as Record<string, any>;
+    const e = (event ?? {}) as Record<string, unknown>;
     // Shape 2: token_count carries the richest data (incl. context window).
-    const info = e.info ?? e.payload?.info;
-    const u = info?.last_token_usage ?? info?.total_token_usage ?? e.usage ?? e.message?.usage;
+    const info = e.info ?? (e.payload as { info?: unknown })?.info;
+    const u = (info as { last_token_usage?: unknown; total_token_usage?: unknown })?.last_token_usage ??
+              (info as { last_token_usage?: unknown; total_token_usage?: unknown })?.total_token_usage ??
+              e.usage ??
+              ((e.message as { usage?: unknown })?.usage);
     if (!u || typeof u !== "object") { return undefined; }
-    const input = Number(u.input_tokens ?? 0);
-    const output = Number(u.output_tokens ?? 0);
-    const cached = Number(u.cached_input_tokens ?? u.cache_read_input_tokens ?? 0);
+    const uObj = u as Record<string, unknown>;
+    const infoObj = typeof info === "object" && info !== null ? info as Record<string, unknown> : null;
+    const input = Number(uObj.input_tokens ?? 0);
+    const output = Number(uObj.output_tokens ?? 0);
+    const cached = Number(uObj.cached_input_tokens ?? uObj.cache_read_input_tokens ?? 0);
     if (!input && !output && !cached) { return undefined; }
-    const win = Number(info?.model_context_window ?? 0) || undefined;
+    const win = Number(infoObj?.model_context_window ?? 0) || undefined;
     return { inputTokens: input, outputTokens: output, cacheRead: cached, contextWindow: win };
 }
 
@@ -110,7 +115,10 @@ export function diffCounts(name: string, input: unknown): { added: number; remov
     }
     if (name === "MultiEdit" && Array.isArray(o.edits)) {
         let added = 0, removed = 0;
-        for (const e of o.edits as any[]) { added += lineCount(e?.new_string); removed += lineCount(e?.old_string); }
+        for (const e of o.edits as Array<{ new_string?: string; old_string?: string }>) {
+            added += lineCount(e?.new_string);
+            removed += lineCount(e?.old_string);
+        }
         return { added, removed };
     }
     return undefined;
@@ -123,7 +131,7 @@ export function editDiff(name: string, input: unknown): { old: string; new: stri
         return [{ old: o.old_string, new: typeof o.new_string === "string" ? o.new_string : "" }];
     }
     if (name === "MultiEdit" && Array.isArray(o.edits)) {
-        return (o.edits as any[])
+        return (o.edits as Array<{ old_string?: string; new_string?: string }>)
             .map((e) => ({ old: String(e?.old_string ?? ""), new: String(e?.new_string ?? "") }))
             .filter((e) => e.old || e.new);
     }
@@ -154,7 +162,7 @@ export function toolResultText(content: unknown): string {
     if (typeof content === "string") {
         s = content;
     } else if (Array.isArray(content)) {
-        s = content.map((b: any) => (typeof b === "string" ? b : b?.text ?? "")).join("");
+        s = content.map((b: string | { text?: string }) => (typeof b === "string" ? b : b?.text ?? "")).join("");
     } else {
         try { s = JSON.stringify(content); } catch { s = String(content ?? ""); }
     }

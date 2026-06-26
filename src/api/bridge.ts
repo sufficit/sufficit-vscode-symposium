@@ -92,6 +92,7 @@ export class RemoteBridge {
             // POST /vscode/command  {id, args?}  — run a whitelisted VS Code command
             if (method === "POST" && parts[0] === "vscode" && parts[1] === "command") {
                 const body = await readBody(req);
+                if (typeof body.id !== "string") { return json(res, 400, { error: "id must be a string" }); }
                 if (!ALLOWED_COMMANDS.has(body.id)) { return json(res, 403, { error: `command not allowed: ${body.id}` }); }
                 const result = await vscode.commands.executeCommand(body.id, ...(Array.isArray(body.args) ? body.args : []));
                 return json(res, 200, { ok: true, result: result ?? null });
@@ -99,10 +100,12 @@ export class RemoteBridge {
             // POST /vscode/lmtool  {name, input?}  — invoke a VS Code Language Model Tool
             if (method === "POST" && parts[0] === "vscode" && parts[1] === "lmtool") {
                 const body = await readBody(req);
+                if (typeof body.name !== "string") { return json(res, 400, { error: "name must be a string" }); }
                 const cts = new vscode.CancellationTokenSource();
                 try {
                     const r = await vscode.lm.invokeTool(body.name, { input: body.input ?? {}, toolInvocationToken: undefined } as vscode.LanguageModelToolInvocationOptions<object>, cts.token);
-                    const text = (r.content as any[]).map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : JSON.stringify(p))).join("\n");
+                    const content = r.content as Array<vscode.LanguageModelTextPart | vscode.LanguageModelPromptTsxPart>;
+                    const text = content.map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : JSON.stringify(p))).join("\n");
                     return json(res, 200, { ok: true, result: text });
                 } finally { cts.dispose(); }
             }
@@ -118,12 +121,20 @@ export class RemoteBridge {
             // POST /sessions  {backend, cwd, model?, tools?}
             if (method === "POST" && parts[0] === "sessions" && parts.length === 1) {
                 const body = await readBody(req);
-                const id = await this.api.sessions.create(body.backend, { cwd: body.cwd, model: body.model, tools: body.tools, agent: body.agent });
+                if (typeof body.backend !== "string" || typeof body.cwd !== "string") { return json(res, 400, { error: "backend and cwd are required strings" }); }
+                const options: { cwd: string; model?: string; tools?: string[]; agent?: string } = {
+                    cwd: body.cwd,
+                    model: typeof body.model === "string" ? body.model : undefined,
+                    tools: Array.isArray(body.tools) ? body.tools : undefined,
+                    agent: typeof body.agent === "string" ? body.agent : undefined
+                };
+                const id = await this.api.sessions.create(body.backend, options);
                 return id ? json(res, 200, { id }) : json(res, 400, { error: "unknown backend" });
             }
             // POST /sessions/:id/send  {text, mode?}
             if (method === "POST" && parts[0] === "sessions" && parts[2] === "send") {
                 const body = await readBody(req);
+                if (typeof body.text !== "string") { return json(res, 400, { error: "text must be a string" }); }
                 const ok = this.api.sessions.send(parts[1], body.text, body.mode as SendMode);
                 return json(res, ok ? 200 : 404, { ok });
             }
@@ -146,12 +157,16 @@ export class RemoteBridge {
                     return json(res, 200, { created: this.api.resources.seed() });
                 }
                 const body = await readBody(req);
-                const path = this.api.resources.create(body.kind as ResourceKind, body.name, body.description);
+                if (typeof body.kind !== "string" || typeof body.name !== "string") { return json(res, 400, { error: "kind and name are required strings" }); }
+                const description = typeof body.description === "string" ? body.description : undefined;
+                const path = this.api.resources.create(body.kind as ResourceKind, body.name, description);
                 return json(res, 200, { path });
             }
             // DELETE /resources/:kind/:name
             if (method === "DELETE" && parts[0] === "resources" && parts.length === 3) {
-                this.api.resources.remove(parts[1] as ResourceKind, decodeURIComponent(parts[2]));
+                const name = decodeURIComponent(parts[2]);
+                if (!name) { return json(res, 400, { error: "invalid resource name" }); }
+                this.api.resources.remove(parts[1] as ResourceKind, name);
                 return json(res, 200, { ok: true });
             }
             // GET /backends
@@ -166,13 +181,15 @@ export class RemoteBridge {
             // POST /backends/:backend/model  {value}
             if (method === "POST" && parts[0] === "backends" && parts[2] === "model") {
                 const body = await readBody(req);
-                const ok = await this.api.backends.setModel(parts[1], body.value ?? "");
+                const value = typeof body.value === "string" ? body.value : "";
+                const ok = await this.api.backends.setModel(parts[1], value);
                 return json(res, ok ? 200 : 400, { ok });
             }
             // POST /backends/:backend/executable  {value}
             if (method === "POST" && parts[0] === "backends" && parts[2] === "executable") {
                 const body = await readBody(req);
-                const ok = await this.api.backends.setExecutable(parts[1], body.value ?? "");
+                const value = typeof body.value === "string" ? body.value : "";
+                const ok = await this.api.backends.setExecutable(parts[1], value);
                 return json(res, ok ? 200 : 400, { ok });
             }
             // GET /sync
@@ -230,13 +247,13 @@ function json(res: http.ServerResponse, status: number, body: unknown): void {
     res.end(payload);
 }
 
-function readBody(req: http.IncomingMessage): Promise<any> {
+function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
         let data = "";
         req.on("data", (chunk) => { data += chunk; if (data.length > 1_000_000) { reject(new Error("body too large")); } });
         req.on("end", () => {
             try {
-                resolve(data ? JSON.parse(data) : {});
+                resolve((data ? JSON.parse(data) : {}) as Record<string, unknown>);
             } catch (err) {
                 reject(err);
             }

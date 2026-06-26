@@ -52,7 +52,7 @@ function chatSessionTitle(file: string): string | undefined {
         const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
         for (const line of lines) {
             if (!line.trim()) { continue; }
-            let j: any;
+            let j: { kind: number; v?: { inputText?: string; inputState?: { inputText?: string } }; k?: [string, string] };
             try { j = JSON.parse(line); } catch { continue; }
             // kind 0 = session snapshot: inputState.inputText may or may not be set.
             if (j && j.kind === 0 && j.v) {
@@ -62,10 +62,11 @@ function chatSessionTitle(file: string): string | undefined {
             // kind 1 = incremental delta; text updates via ["inputState","inputText"] key.
             if (j && j.kind === 1 && Array.isArray(j.k)) {
                 if (j.k.length === 2 && j.k[0] === "inputState" && (j.k[1] === "inputText" || j.k[1] === "value")) {
-                    const v = typeof j.v === "string" ? j.v.trim() : "";
+                    const v = typeof j.v === "string" ? j.v : "";
+                    const vTrimmed = v.trim();
                     // Some code-server versions store a placeholder hash instead of real text on empty state.
-                    if (v && v.length < 200 && /^[a-f0-9]+$/i.test(v)) { continue; }
-                    if (v) { inputText = v; }
+                    if (vTrimmed && vTrimmed.length < 200 && /^[a-f0-9]+$/i.test(vTrimmed)) { continue; }
+                    if (vTrimmed) { inputText = vTrimmed; }
                 }
             }
         }
@@ -122,12 +123,13 @@ function transcriptSummary(file: string): SessionInfo | undefined {
         const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
         for (const line of lines) {
             if (!line.trim()) { continue; }
-            let ev: any;
+            let ev: { timestamp?: string; type: string; data?: unknown };
             try { ev = JSON.parse(line); } catch { continue; }
             const ts = parseTimestamp(ev.timestamp);
             if (ts && ts > updated) { updated = ts; }
             if (!firstUser && ev.type === "user.message") {
-                const c = ev.data?.content;
+                const data = typeof ev.data === "object" && ev.data !== null ? ev.data as Record<string, unknown> : {};
+                const c = data.content;
                 if (typeof c !== "string" || !c.trim()) { continue; }
                 const clean = c.trim();
                 // VS Code auto-summaries wrap the real prompt between tags.
@@ -178,7 +180,7 @@ export function transcriptHistory(file: string): HistoryMessage[] {
     try {
         for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
             if (!line.trim()) { continue; }
-            let ev: any;
+            let ev: { timestamp?: string; type: string; data?: { content?: string } };
             try { ev = JSON.parse(line); } catch { continue; }
             const ts = parseTimestamp(ev.timestamp);
             if (ev.type === "user.message") {
@@ -187,12 +189,17 @@ export function transcriptHistory(file: string): HistoryMessage[] {
                 continue;
             }
             if (ev.type === "assistant.message") {
-                const content = ev.data?.content;
+                const data = typeof ev.data === "object" && ev.data !== null ? ev.data as Record<string, unknown> : {};
+                const content = data.content;
                 if (typeof content === "string" && content.trim()) { out.push({ role: "assistant", text: content, ts }); }
-                for (const t of ev.data?.toolRequests ?? []) {
-                    const name = String(t.name || "tool");
-                    const input = parseToolArgs(t.arguments);
-                    out.push({ role: "tool", text: name, toolName: name, detail: toolDetail(name, input), input, ts });
+                const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
+                for (const t of toolRequests) {
+                    if (typeof t === "object" && t !== null) {
+                        const tObj = t as Record<string, unknown>;
+                        const name = String(tObj.name ?? "tool");
+                        const input = parseToolArgs(tObj.arguments);
+                        out.push({ role: "tool", text: name, toolName: name, detail: toolDetail(name, input), input, ts });
+                    }
                 }
                 continue;
             }

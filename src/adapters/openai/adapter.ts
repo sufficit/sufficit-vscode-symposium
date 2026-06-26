@@ -45,7 +45,7 @@ export class OpenAIAdapter implements AgentAdapter {
         return { ok: true, version: cfg.baseUrl };
     }
 
-    async listSessions(): Promise<SessionInfo[]> {
+    listSessions(): Promise<SessionInfo[]> {
         const dir = storeDir(this.backend);
         let files: string[] = [];
         try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { /* store dir may not exist yet */ }
@@ -74,18 +74,18 @@ export class OpenAIAdapter implements AgentAdapter {
                 model: meta.model || "",
             });
         }
-        return out;
+        return Promise.resolve(out);
     }
 
-    async history(info: SessionInfo): Promise<HistoryMessage[]> {
+    history(info: SessionInfo): Promise<HistoryMessage[]> {
         // Compacted sessions: the store holds only the summarized model context.
         // The lossless human transcript lives in the ledger — show that so the
         // chat still mirrors the full conversation (the model sees the summary).
         if (ledger.hasLedger(info.sessionId) && ledgerWasCompacted(info.sessionId)) {
-            return historyFromLedger(info.sessionId);
+            return Promise.resolve(historyFromLedger(info.sessionId));
         }
         const s = readStored(this.backend, info.sessionId);
-        if (!s) { return []; }
+        if (!s) { return Promise.resolve([]); }
         const labels = getDiscoveredLabels(this.getConfig().baseUrl) ?? {};
         // Pair each tool result back to the call that produced it.
         const results = new Map<string, string>();
@@ -123,15 +123,16 @@ export class OpenAIAdapter implements AgentAdapter {
                 }
             }
         }
-        return out;
+        return Promise.resolve(out);
     }
 
-    async deleteSession(info: SessionInfo): Promise<void> {
+    deleteSession(info: SessionInfo): Promise<void> {
         try { fs.rmSync(storePath(this.backend, info.sessionId), { force: true }); } catch { /* ignore */ }
         // Also remove the ledger repo so the session isn't left as an orphan
         // (listSessions only scans the store dir, so a ledger-only session is
         // invisible in the UI but still consumes disk space).
         try { ledger.removeLedger(info.sessionId); } catch { /* ignore */ }
+        return Promise.resolve();
     }
 
     start(options: SessionStartOptions): AgentSession {
@@ -144,8 +145,8 @@ export class OpenAIAdapter implements AgentAdapter {
     /** Slash commands offered for this backend. `/compact` is intercepted locally
      *  (summarize + shrink the model context); it also re-enables the context
      *  popover's "Compact Conversation" button (gated on a `compact` command). */
-    async commands(): Promise<SlashCommand[]> {
-        return [{ name: "compact", description: "Summarize older turns to shrink the model context (full history is preserved)", kind: "builtin" }];
+    commands(): Promise<SlashCommand[]> {
+        return Promise.resolve([{ name: "compact", description: "Summarize older turns to shrink the model context (full history is preserved)", kind: "builtin" }]);
     }
 
     /**
@@ -179,16 +180,24 @@ export class OpenAIAdapter implements AgentAdapter {
         }
         const res = await fetch(url, { headers });
         if (!res.ok) { return; }
-        const json: any = await res.json();
-        const raw: any[] = json?.data ?? json?.models ?? [];
+        const json = await res.json() as { data?: unknown[]; models?: unknown[] };
+        const raw = json?.data ?? json?.models ?? [];
         const list: string[] = [];
         const labels: Record<string, string> = {};
         const context: Record<string, number> = {};
         for (const m of raw) {
-            const id = typeof m === "string" ? m : m?.id ?? m?.name;
-            if (typeof id !== "string") { continue; }
+            let id: string;
+            if (typeof m === "string") {
+                id = m;
+            } else if (typeof m === "object" && m !== null) {
+                const obj = m as Record<string, unknown>;
+                id = typeof obj.id === "string" ? obj.id : (typeof obj.name === "string" ? obj.name : "");
+            } else {
+                continue;
+            }
+            if (!id) { continue; }
             list.push(id);
-            const name = typeof m === "object" ? (m?.name ?? m?.title) : undefined;
+            const name = typeof m === "object" ? (typeof (m as Record<string, unknown>).name === "string" ? (m as Record<string, unknown>).name : typeof (m as Record<string, unknown>).title === "string" ? (m as Record<string, unknown>).title : undefined) : undefined;
             if (typeof name === "string" && name && name !== id) { labels[id] = name; }
             const ctx = modelContextLength(m);
             if (ctx) { context[id] = ctx; }

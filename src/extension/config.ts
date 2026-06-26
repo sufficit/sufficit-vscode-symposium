@@ -6,6 +6,7 @@ import { ClaudeAdapterConfig } from "../adapters/claude";
 import { CodexAdapterConfig } from "../adapters/codex";
 import { CopilotAdapterConfig } from "../adapters/copilot";
 import { OpenAIAdapter, OpenAIAdapterConfig } from "../adapters/openai";
+import type { ShellExecutionMode } from "../adapters/aiTools/types";
 import { symposiumLog } from "./log";
 
 /**
@@ -90,7 +91,7 @@ export function openaiConfig(context: vscode.ExtensionContext): OpenAIAdapterCon
         noProgressStop: config.get<number>("noProgressStop", 0),
         autoCompactAt: config.get<number>("autoCompactAt", 0.8),
         maxHistoryMessages: config.get<number>("maxHistoryMessages", 40),
-        shellExecution: config.get<any>("shellExecution", "silent"),
+        shellExecution: config.get<ShellExecutionMode>("shellExecution", "silent"),
         log: symposiumLog,
     };
 }
@@ -173,7 +174,7 @@ export function buildCustomAdapters(context: vscode.ExtensionContext, defs: Cust
                 noProgressStop: vscode.workspace.getConfiguration("symposium.openai").get<number>("noProgressStop", 0),
                 autoCompactAt: vscode.workspace.getConfiguration("symposium.openai").get<number>("autoCompactAt", 0.8),
                 maxHistoryMessages: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxHistoryMessages", 40),
-                shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<any>("shellExecution", "silent"),
+                shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<ShellExecutionMode>("shellExecution", "silent"),
                 log: symposiumLog,
             };
         }));

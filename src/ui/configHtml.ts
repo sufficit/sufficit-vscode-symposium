@@ -110,6 +110,27 @@ export function renderConfigHtml(lang: string): string {
     .pref-item .desc { opacity: 0.7; font-size: 0.9em; line-height: 1.5; white-space: normal; }
     .pref-item .ctl { justify-self: end; width: 100%; }
     .pref-item select.pref { width: 100%; cursor: pointer; min-height: 28px; }
+    .preset-item {
+        padding: 10px 12px; border-bottom: 1px solid var(--vscode-panel-border);
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .preset-item:hover { background: var(--vscode-list-hoverBackground); }
+    .preset-item.default { background: var(--vscode-list-activeSelectionBackground); }
+    .preset-info { flex: 1; min-width: 0; }
+    .preset-name { font-weight: 600; display: block; margin-bottom: 4px; }
+    .preset-desc { opacity: 0.7; font-size: 0.9em; line-height: 1.4; }
+    .preset-actions { display: flex; gap: 6px; }
+    .badge-default {
+        display: inline-block; padding: 2px 6px; margin-left: 8px;
+        background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+        font-size: 0.75em; border-radius: 3px;
+    }
+    .btn-delete, .btn-edit {
+        padding: 4px 8px; font-size: 1.1em; background: transparent; color: var(--vscode-foreground);
+        border: 1px solid var(--vscode-panel-border);
+    }
+    .btn-delete:hover { background: var(--vscode-errorBackground); color: var(--vscode-errorForeground); border-color: var(--vscode-errorBorder); }
+    .btn-edit:hover { background: var(--vscode-toolbar-hoverBackground); }
     .pref-block { padding: 11px 10px; display: flex; flex-direction: column; gap: 7px; }
     .pref-block .desc { opacity: 0.7; font-size: 0.9em; line-height: 1.5; }
     @media (max-width: 620px) {
@@ -316,6 +337,23 @@ export function renderConfigHtml(lang: string): string {
                     sel("symposium.openai.shellExecution", p.shellExecution || "silent",
                         [{ v: "silent", l: t("config.prefs.shellExecution.silent") }, { v: "inline", l: t("config.prefs.shellExecution.inline") }, { v: "terminal", l: t("config.prefs.shellExecution.terminal") }]))
             ) +
+            section(t("config.prefs.section.voiceInput"),
+                item(t("config.prefs.voiceLanguage.name"), t("config.prefs.voiceLanguage.desc"),
+                    sel("symposium.voice.language", p.voiceLanguage || "pt-BR",
+                        [{ v: "pt-BR", l: "Português (BR)" }, { v: "en-US", l: "English (US)" }, { v: "es-ES", l: "Español (ES)" }, { v: "fr-FR", l: "Français (FR)" }, { v: "de-DE", l: "Deutsch (DE)" }])) +
+                item(t("config.prefs.voiceContinuous.name"), t("config.prefs.voiceContinuous.desc"),
+                    sel("symposium.voice.continuous", (p.voiceContinuous !== false) ? "true" : "false",
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }])) +
+                item(t("config.prefs.voiceInterimResults.name"), t("config.prefs.voiceInterimResults.desc"),
+                    sel("symposium.voice.interimResults", (p.voiceInterimResults !== false) ? "true" : "false",
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }])) +
+                item(t("config.prefs.voiceDotsAnimation.name"), t("config.prefs.voiceDotsAnimation.desc"),
+                    sel("symposium.voice.dotsAnimation", (p.voiceDotsAnimation !== false) ? "true" : "false",
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }])) +
+                item(t("config.prefs.voiceSoundFeedback.name"), t("config.prefs.voiceSoundFeedback.desc"),
+                    sel("symposium.voice.soundFeedback", (p.voiceSoundFeedback !== false) ? "true" : "false",
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }]))
+            ) +
             section(t("config.prefs.section.systemInstruction"),
                 '<div class="pref-block">' +
                     '<div class="desc">' + esc(t("config.prefs.systemInstruction.desc")) + '</div>' +
@@ -325,8 +363,11 @@ export function renderConfigHtml(lang: string): string {
         );
     }
 
-    function compactionView() {
+    function compressionView() {
+        const presets = (state && state.compressionPresets) || [];
+        const defaultPresetId = (state && state.compressionDefaultPresetId) || "none";
         const p = (state && state.prefs) || {};
+
         const sel = (key, value, opts) =>
             '<select class="pref" data-key="' + esc(key) + '">' +
             opts.map(o => '<option value="' + esc(o.v) + '"' + (o.v === value ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") +
@@ -338,11 +379,37 @@ export function renderConfigHtml(lang: string): string {
             '</div><div class="ctl">' + ctl + "</div></div>";
         const section = (title, body) =>
             '<section class="section"><div class="section-title">' + esc(title) + "</div>" + body + "</section>";
-        // autoCompactAt is a 0–1 fraction stored as a number; compare as fixed strings.
+
+        const presetCard = (preset) => {
+            const isDefault = preset.id === defaultPresetId;
+            const isBuiltin = preset.id === "none" || preset.id === "summarize" || preset.id === "aggressive" || preset.id === "token-budget";
+            const defaultBadge = isDefault ? '<span class="badge badge-default">Default</span>' : '';
+
+            return '<div class="card preset-card" data-id="' + esc(preset.id) + '">' +
+                '<div class="card-header">' +
+                    '<span class="preset-name">' + esc(preset.name) + '</span>' +
+                    defaultBadge +
+                '</div>' +
+                '<div class="card-body">' +
+                    '<div class="preset-strategy"><strong>Strategy:</strong> ' + esc(preset.strategy) + '</div>' +
+                    (preset.strategy === "token-budget" ?
+                        '<div class="preset-budget"><strong>Token budget:</strong> ' + esc(preset.tokenBudget || "N/A") + '</div>' :
+                        '<div class="preset-target"><strong>Target ratio:</strong> ' + (preset.targetRatio ? (preset.targetRatio * 100).toFixed(0) + '%' : 'N/A') + '</div>'
+                    ) +
+                '</div>' +
+                '<div class="card-actions">' +
+                    (!isBuiltin ? '<button class="secondary btn-edit-preset" data-id="' + esc(preset.id) + '">Edit</button>' : '') +
+                    (!isBuiltin ? '<button class="btn-delete-preset" data-id="' + esc(preset.id) + '">Delete</button>' : '') +
+                    (!isDefault ? '<button class="btn-set-default-preset" data-id="' + esc(preset.id) + '">Set Default</button>' : '') +
+                '</div>' +
+            '</div>';
+        };
+
+        // Auto-compaction settings (merged from old compaction tab)
         const compactAt = String(p.autoCompactAt != null ? p.autoCompactAt : 0.8);
         const histMsgs = String(p.maxHistoryMessages != null ? p.maxHistoryMessages : 40);
 
-        return (
+        return '<div class="compression-view">' +
             section(t("config.compaction.section.auto"),
                 item(t("config.compaction.autoCompactAt.name"), t("config.compaction.autoCompactAt.desc"),
                     sel("symposium.openai.autoCompactAt", compactAt,
@@ -363,17 +430,31 @@ export function renderConfigHtml(lang: string): string {
                 item(t("config.prefs.noProgressStop.name"), t("config.compaction.noProgressStop.desc"),
                     sel("symposium.openai.noProgressStop", String(p.noProgressStop || 0),
                         [{ v: "0", l: t("config.value.unlimited") }, { v: "8", l: t("config.steps.8") }, { v: "12", l: t("config.steps.12") }, { v: "16", l: t("config.steps.16") }, { v: "24", l: t("config.steps.24") }]))
-            )
-        );
+            ) +
+            '<section class="section"><div class="section-title">' + esc(t("config.compaction.section.presets")) +
+                '<button class="secondary" id="btn-compression-manual" style="float: right; margin-top: -2px;" title="' + esc(t("config.compaction.btn.manual")) + '">📖 Manual</button>' +
+            '</div>' +
+            '<div class="preset-actions">' +
+                '<button class="primary" id="btn-add-preset">' + esc(t("config.compaction.btn.addPreset")) + '</button>' +
+            '</div>' +
+            '<div class="presets-grid">' +
+                presets.map(presetCard).join('') +
+            '</div>' +
+            '</section>' +
+        '</div>';
     }
+
 
     function render() {
         renderTabs();
         const main = document.getElementById("content");
         const page = (h) => '<div class="page">' + h + "</div>";
         if (!state) { main.innerHTML = page('<div class="empty">' + esc(t("config.loading")) + '</div>'); return; }
-        if (active === "prefs" || active === "compaction") {
-            main.innerHTML = page(active === "compaction" ? compactionView() : prefsView());
+        if (active === "prefs" || active === "compression") {
+            main.innerHTML = page(
+                active === "compression" ? compressionView() :
+                prefsView()
+            );
             main.querySelectorAll("select.pref").forEach(el => {
                 el.onchange = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
             });
@@ -383,6 +464,22 @@ export function renderConfigHtml(lang: string): string {
                 el.onblur = save;
                 el.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); save(); } };
             });
+            // Compression presets buttons
+            if (active === "compression") {
+                const addPresetBtn = document.getElementById("btn-add-preset");
+                if (addPresetBtn) {
+                    addPresetBtn.onclick = () => vscode.postMessage({ type: "add-compression-preset" });
+                }
+                main.querySelectorAll(".btn-edit-preset").forEach(el => {
+                    el.onclick = () => vscode.postMessage({ type: "edit-compression-preset", key: el.getAttribute("data-id") });
+                });
+                main.querySelectorAll(".btn-delete-preset").forEach(el => {
+                    el.onclick = () => vscode.postMessage({ type: "remove-compression-preset", key: el.getAttribute("data-id") });
+                });
+                main.querySelectorAll(".btn-set-default-preset").forEach(el => {
+                    el.onclick = () => vscode.postMessage({ type: "set-compression-preset-default", value: el.getAttribute("data-id") });
+                });
+            }
             return;
         }
         if (active === "backends") {
@@ -478,6 +575,38 @@ export function renderConfigHtml(lang: string): string {
     document.getElementById("refresh").onclick = () => vscode.postMessage({ type: "refresh" });
     document.getElementById("open-root").onclick = () => vscode.postMessage({ type: "open-root" });
     document.getElementById("seed").onclick = () => vscode.postMessage({ type: "seed" });
+
+    // Compression preset handlers
+    document.addEventListener("click", (e) => {
+        const manualBtn = e.target.closest("#btn-compression-manual");
+        if (manualBtn) {
+            vscode.postMessage({ type: "show-compression-manual" });
+            return;
+        }
+        const addPresetBtn = e.target.closest("#add-compression-preset");
+        if (addPresetBtn) {
+            vscode.postMessage({ type: "add-compression-preset" });
+            return;
+        }
+        const deleteBtn = e.target.closest(".btn-delete");
+        if (deleteBtn) {
+            const id = deleteBtn.getAttribute("data-id");
+            if (id) vscode.postMessage({ type: "remove-compression-preset", key: id });
+            return;
+        }
+        const editBtn = e.target.closest(".btn-edit");
+        if (editBtn) {
+            const id = editBtn.getAttribute("data-id");
+            if (id) vscode.postMessage({ type: "edit-compression-preset", key: id });
+            return;
+        }
+    });
+
+    document.addEventListener("change", (e) => {
+        if (e.target.id === "per-session-toggle") {
+            vscode.postMessage({ type: "enable-compression-per-session", value: e.target.checked });
+        }
+    });
 
     window.addEventListener("message", (e) => {
         if (e.data?.type === "state") { applyState(e.data.state); }

@@ -1,4 +1,4 @@
-import { HubClient } from "./hubClient";
+import { HubClient, Observation } from "./hubClient";
 
 /**
  * Symposium tasks are Sufficit-memory observations (task-anchor / task-checkpoint)
@@ -36,11 +36,11 @@ export async function fetchSessionTasks(hub: HubClient, sessionId: string): Prom
     // Tag search isn't guaranteed server-side, so pull recent tasks and filter
     // by the session tag locally.
     const recs = await hub.searchMemory({ limit: 100 });
-    return (recs as any[])
+    return (recs as Array<{ type: string; tags?: string | string[]; id: unknown; title?: string; summary?: string; createdAtUtc?: string | number }>)
         .filter((r) => isTask(r.type) && hasTag(r.tags, tag))
-        .sort((a, b) => Date.parse(b.createdAtUtc || 0) - Date.parse(a.createdAtUtc || 0))
+        .sort((a, b) => Date.parse(String(b.createdAtUtc || "0")) - Date.parse(String(a.createdAtUtc || "0")))
         .slice(0, 30)
-        .map((r) => ({ id: r.id, type: r.type, title: r.title, summary: r.summary, ts: r.createdAtUtc, tags: r.tags, done: hasTag(r.tags, DONE_TAG) }));
+        .map((r) => ({ id: String(r.id), type: r.type, title: r.title ?? "", summary: r.summary ?? "", ts: String(r.createdAtUtc || ""), tags: Array.isArray(r.tags) ? r.tags.join(",") : r.tags ?? "", done: hasTag(r.tags, DONE_TAG) }));
 }
 
 /** Sets/clears a task's completed state (DONE_TAG). User- or agent-driven. */
@@ -80,12 +80,12 @@ export async function expireSessionTasks(hub: HubClient, sessionId: string): Pro
     if (!hub.configured() || !sessionId) { return 0; }
     const tag = sessionTag(sessionId);
     const recs = await hub.searchMemory({ limit: 200 });
-    const ids = (recs as any[]).filter((r) => isTask(r.type) && hasTag(r.tags, tag)).map((r) => String(r.id)).filter(Boolean);
+    const ids = (recs as Array<{ type: string; tags?: string | string[]; id: unknown }>).filter((r) => isTask(r.type) && hasTag(r.tags, tag)).map((r) => String(r.id)).filter(Boolean);
     if (!ids.length) { return 0; }
     const full = await hub.getByIds(ids);
     const past = new Date(Date.now() - 1000).toISOString();
     let n = 0;
-    for (const o of full as any[]) {
+    for (const o of full as Array<Observation>) {
         try { await hub.save({ ...o, expiresAtUtc: past }); n++; } catch { /* best-effort */ }
     }
     return n;

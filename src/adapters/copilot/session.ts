@@ -102,7 +102,7 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         if (!line.trim()) {
             return;
         }
-        let event: any;
+        let event: { type: string; [key: string]: unknown };
         try {
             event = JSON.parse(line);
         } catch {
@@ -110,30 +110,40 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         }
         switch (event.type) {
             case "assistant.message": {
-                const content = event.data?.content;
+                const data = typeof event.data === "object" && event.data !== null ? event.data as Record<string, unknown> : {};
+                const content = data.content;
                 if (typeof content === "string" && content) {
                     this.emit("event", { kind: "text", text: content });
                 }
-                for (const tool of event.data?.toolRequests ?? []) {
-                    this.emit("event", { kind: "tool-start", toolName: tool.name ?? "tool" });
+                const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
+                for (const tool of toolRequests) {
+                    if (typeof tool === "object" && tool !== null) {
+                        this.emit("event", { kind: "tool-start", toolName: "name" in tool && typeof tool.name === "string" ? tool.name : "tool" });
+                    }
                 }
                 break;
             }
-            case "tool.execution_start":
+            case "tool.execution_start": {
+                const data = typeof event.data === "object" && event.data !== null ? event.data as Record<string, unknown> : {};
                 this.emit("event", {
                     kind: "tool-start",
-                    toolName: event.data?.toolName ?? "tool",
+                    toolName: "toolName" in data && typeof data.toolName === "string" ? data.toolName : "tool",
                 });
                 break;
-            case "tool.execution_end":
-                this.emit("event", { kind: "tool-end", toolName: event.data?.toolName ?? "tool" });
+            }
+            case "tool.execution_end": {
+                const data = typeof event.data === "object" && event.data !== null ? event.data as Record<string, unknown> : {};
+                this.emit("event", { kind: "tool-end", toolName: "toolName" in data && typeof data.toolName === "string" ? data.toolName : "tool" });
                 break;
-            case "session.error":
+            }
+            case "session.error": {
                 this.reportedError = true;
-                this.emit("event", { kind: "error", message: event.data?.message ?? "unknown copilot error" });
+                const data = typeof event.data === "object" && event.data !== null ? event.data as Record<string, unknown> : {};
+                this.emit("event", { kind: "error", message: "message" in data && typeof data.message === "string" ? data.message : "unknown copilot error" });
                 break;
+            }
             case "result":
-                if (event.sessionId && !this.sessionId) {
+                if (typeof event.sessionId === "string" && !this.sessionId) {
                     this.sessionId = event.sessionId;
                     this.emit("event", { kind: "session", sessionId: event.sessionId });
                 }

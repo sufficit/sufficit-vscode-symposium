@@ -50,7 +50,7 @@ export class BackendHandoff {
     constructor(private readonly d: HandoffDeps) { }
 
     private displayName(backend: string): string {
-        return (this.d.getAdapter(backend) as any)?.displayName ?? backend;
+        return this.d.getAdapter(backend)?.displayName ?? backend;
     }
 
     /** Replays carried-over history + a "continued with" note after a handoff. */

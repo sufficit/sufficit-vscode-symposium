@@ -22,8 +22,9 @@ import * as path from "path";
 function git(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
         execFile("git", args, { cwd, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
+            const nodeError = err as { code?: number } | null;
             resolve({
-                code: err && typeof (err as any).code === "number" ? (err as any).code : err ? 1 : 0,
+                code: nodeError?.code !== undefined ? nodeError.code : err ? 1 : 0,
                 stdout: String(stdout),
                 stderr: String(stderr),
             });

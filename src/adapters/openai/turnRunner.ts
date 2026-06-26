@@ -16,6 +16,7 @@ import { consumeStream } from "./streamConsume";
 import {
     RequestEstimate, windowMessages, isWindowTruncated, estimateRequest, requestEstimateDiagnostic,
 } from "./requestWindow";
+import { compressMessages, CompressionManager } from "../../compression";
 
 /**
  * Strip source prefix from tool name (sym_, local_, agent_, vscode_).
@@ -85,6 +86,23 @@ export class TurnRunner {
         const url = base + (responses ? "/responses" : "/chat/completions");
         const effort = this.d.options.reasoning;
         const loginToken = await this.d.authToken();   // logged-in Bearer, if needed
+        // Apply compression if configured
+        const compressionPresetId = this.d.options.compressionPresetId;
+        let workingMessages = messages;
+        if (compressionPresetId && compressionPresetId !== "none") {
+            try {
+                const preset = CompressionManager.getInstance().getPreset(compressionPresetId);
+                if (preset) {
+                    workingMessages = compressMessages(messages, preset.strategy, preset.params);
+                    this.d.emit({ kind: "info", message: `[Compression: applied preset "${compressionPresetId}" - ${messages.length} → ${workingMessages.length} messages]` });
+                } else {
+                    this.d.emit({ kind: "warn", message: `[Compression: preset "${compressionPresetId}" not found]` });
+                }
+            } catch (err) {
+                this.d.emit({ kind: "error", message: `[Compression: failed to apply preset "${compressionPresetId}": ${err instanceof Error ? err.message : String(err)}` });
+                workingMessages = messages; // fallback to original messages
+            }
+        }
         // Auth guard: when the gateway has no explicit apiKey/Authorization
         // configured, it relies on the logged-in Sufficit token. If that token
         // is missing (not logged in, or the token didn't persist — e.g. a
@@ -132,19 +150,27 @@ export class TurnRunner {
             ...subagentTools.map((t) => ({ tool: t, source: "agent_" })),
             ...vscodeTools.map((t) => ({ tool: t, source: "vscode_" })),
         ];
-        const nameGroups = new Map<string, { tool: any; source: string }[]>();
+        interface ToolDefinition {
+            name?: string;
+            function?: {
+                name: string;
+                description?: string;
+            };
+            description?: string;
+        }
+        const nameGroups = new Map<string, { tool: ToolDefinition; source: string }[]>();
         for (const { tool, source } of allTools) {
-            const t = tool as any;
+            const t = tool as ToolDefinition;
             const name = (t.function?.name ?? t.name) as string;
             if (!nameGroups.has(name)) { nameGroups.set(name, []); }
             nameGroups.get(name)!.push({ tool, source });
         }
-        const finalTools: { tool: any; source: string }[] = [];
+        const finalTools: { tool: ToolDefinition; source: string }[] = [];
         for (const group of nameGroups.values()) {
-            const t0 = group[0].tool as any;
+            const t0 = group[0].tool as ToolDefinition;
             const firstDesc = t0.function?.description ?? t0.description;
             const allSameDesc = group.every((g) => {
-                const tg = g.tool as any;
+                const tg = g.tool as ToolDefinition;
                 return (tg.function?.description ?? tg.description) === firstDesc;
             });
             if (allSameDesc) {
@@ -188,7 +214,7 @@ export class TurnRunner {
             // Tool-call loop: keep round-tripping while the model requests tools.
             for (let hop = 0; hop < maxHops; hop++) {
                 this.abort = new AbortController();
-                const windowed = windowMessages(messages, this.d.cfg.maxHistoryMessages ?? 40);
+                const windowed = windowMessages(workingMessages, this.d.cfg.maxHistoryMessages ?? 40);
                 // Continuous follow-up: once history is being windowed out (or after
                 // a few hops into the tool-loop), append a fresh objective+progress
                 // anchor at the tail so a small-context model keeps the thread.
@@ -376,7 +402,7 @@ export class TurnRunner {
                 this.d.emit({ kind: "text", text: `\n\n_(paused after ${maxHops} tool steps — send "continue" to proceed)_` });
             }
         } catch (error) {
-            if ((error as any)?.name !== "AbortError") {
+            if ((error as { name?: string })?.name !== "AbortError") {
                 const msg = error instanceof Error ? error.message : String(error);
                 // Network/transport failures (DNS, connection reset, timeout,
                 // "fetch failed", "terminated") are transient and safe to retry
