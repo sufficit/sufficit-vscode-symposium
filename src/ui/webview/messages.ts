@@ -26,7 +26,7 @@ export function renderError(message) {
         const bar = document.createElement("div"); bar.className = "errActions";
         const b = document.createElement("button"); b.className = "retryBtn";
         // Detect timeout/inactivity errors: show only "Retry" (no Edit)
-        const isTimeoutError = message.includes("no activity") || message.includes("stalled tool") || message.includes("dropped connection") || message.includes("Turn ended automatically");
+        const isTimeoutError = message.includes("no activity") || message.includes("stalled tool") || message.includes("dropped connection") || message.includes("Turn ended automatically") || message.includes("504") || message.includes("Gateway");
         b.appendChild(svgIcon("history"));
         b.appendChild(document.createTextNode(isTimeoutError ? " Retry" : " Edit & retry"));
         b.addEventListener("click", () => {
