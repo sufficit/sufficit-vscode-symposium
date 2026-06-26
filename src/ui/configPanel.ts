@@ -77,9 +77,20 @@ export class ConfigPanel {
         const api = this.deps.api;
         switch (message.type) {
             case "ready":
-            case "refresh":
                 await this.pushState();
                 return;
+            case "refresh": {
+                // Re-render AND live-probe the hub so the button gives real
+                // feedback (it used to silently re-render with no notification).
+                await this.pushState();
+                let msg = this.tr("msg.config.refreshed");
+                if (api.sync.configured()) {
+                    const ok = await api.sync.health().catch(() => false);
+                    msg = this.tr(ok ? "msg.config.refreshed.hubUp" : "msg.config.refreshed.hubDown");
+                }
+                void vscode.window.showInformationMessage(msg);
+                return;
+            }
             case "open-root":
                 await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(rootDir()));
                 return;
