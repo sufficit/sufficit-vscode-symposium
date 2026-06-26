@@ -1,0 +1,95 @@
+{
+  "name": "sufficit-chat-voice-ptbr",
+  "displayName": "Sufficit Chat Voice PT-BR",
+  "description": "Voice capture in Brazilian Portuguese for VS Code/code-server chat, using a stable web extension approach.",
+  "version": "0.0.2",
+  "publisher": "sufficit",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sufficit/sufficit-project-management"
+  },
+  "engines": {
+    "vscode": "^1.118.0"
+  },
+  "categories": [
+    "Chat",
+    "Other"
+  ],
+  "keywords": [
+    "voice",
+    "speech",
+    "chat",
+    "copilot",
+    "pt-br",
+    "microphone",
+    "code-server"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "browser": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "sufficit.chatVoice.openPanel",
+        "title": "Chat Voice: Open PT-BR Recorder",
+        "category": "Chat",
+        "icon": {
+          "light": "media/mic-light.svg",
+          "dark": "media/mic-dark.svg"
+        }
+      },
+      {
+        "command": "sufficit.chatVoice.insertTranscript",
+        "title": "Chat Voice: Insert Transcript",
+        "category": "Chat"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "sufficit.chatVoice.openPanel",
+          "when": "view == workbench.panel.chat.view.copilot",
+          "group": "navigation@20"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "sufficit.chatVoice.openPanel",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m",
+        "when": "!inQuickOpen"
+      }
+    ],
+    "configuration": {
+      "title": "Sufficit Chat Voice PT-BR",
+      "properties": {
+        "sufficitChatVoice.locale": {
+          "type": "string",
+          "default": "pt-BR",
+          "description": "Speech recognition locale used by the browser speech engine."
+        },
+        "sufficitChatVoice.sendImmediately": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, sends the recognized text immediately instead of only prefilling the chat input."
+        },
+        "sufficitChatVoice.keepPanelOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keeps the voice capture panel open after inserting the transcript into chat."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -w -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.118.0",
+    "typescript": "^5.8.3"
+  }
+}

@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "2026.626.0",
+  "version": "2026.626.1",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -52,587 +52,40 @@
       },
       {
         "command": "symposium.newAgentSession",
-        "title": "Symposium: New Session from Agent",
-        "icon": "$(person)"
+        "title": "Symposium: New Agent Session",
+        "icon": "$(robot)"
       },
       {
-        "command": "symposium.openSession",
-        "title": "Symposium: Open Session"
-      },
-      {
-        "command": "symposium.openSessionInEditor",
-        "title": "Open Session in Editor",
-        "icon": "$(window)"
-      },
-      {
-        "command": "symposium.followSession",
-        "title": "Watch Live (read-only)",
-        "icon": "$(eye)"
-      },
-      {
-        "command": "symposium.newTerminalSession",
-        "title": "Symposium: New Terminal Session",
-        "icon": "$(terminal)"
-      },
-      {
-        "command": "symposium.resumeInTerminal",
-        "title": "Resume in Terminal (full control)",
-        "icon": "$(terminal)"
-      },
-      {
-        "command": "symposium.newPersistentSession",
-        "title": "Symposium: New Persistent Session (tmux, survives close)",
-        "icon": "$(pinned)"
-      },
-      {
-        "command": "symposium.reattachPersistent",
-        "title": "Symposium: Reattach Persistent Session",
-        "icon": "$(plug)"
-      },
-      {
-        "command": "symposium.renameSession",
-        "title": "Rename Session",
-        "icon": "$(edit)"
-      },
-      {
-        "command": "symposium.archiveSession",
-        "title": "Archive Session",
-        "icon": "$(archive)"
-      },
-      {
-        "command": "symposium.unarchiveSession",
-        "title": "Unarchive Session",
-        "icon": "$(history)"
-      },
-      {
-        "command": "symposium.deleteSession",
-        "title": "Delete Session (permanent)",
-        "icon": "$(trash)"
-      },
-      {
-        "command": "symposium.refreshSessions",
-        "title": "Symposium: Refresh Sessions",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "symposium.openSettings",
-        "title": "Symposium: Settings",
-        "icon": "$(gear)"
-      },
-      {
-        "command": "symposium.reload",
-        "title": "Symposium: Reload Window (apply latest build)",
-        "icon": "$(debug-restart)"
-      },
-      {
-        "command": "symposium.listLmTools",
-        "title": "Symposium: List VS Code LM Tools (diagnostics)"
-      },
-      {
-        "command": "symposium.editAdapters",
-        "title": "Symposium: Edit Adapters (JSON)",
-        "icon": "$(json)"
-      },
-      {
-        "command": "symposium.openConfig",
-        "title": "Symposium: Configuration",
-        "icon": "$(settings-gear)"
-      },
-      {
-        "command": "symposium.seedExamples",
-        "title": "Symposium: Seed Example Agents/Skills/Tools",
-        "icon": "$(beaker)"
-      },
-      {
-        "command": "symposium.restartBridge",
-        "title": "Symposium: Restart Remote Bridge",
-        "icon": "$(broadcast)"
-      },
-      {
-        "command": "symposium.login",
-        "title": "Symposium: Login (Sufficit)",
-        "icon": "$(sign-in)"
-      },
-      {
-        "command": "symposium.logout",
-        "title": "Symposium: Logout (Sufficit)",
-        "icon": "$(sign-out)"
-      },
-      {
-        "command": "symposium.showManual",
-        "title": "Symposium: Show Manual",
-        "icon": "$(book)"
-      },
-      {
-        "command": "symposium.showCompressionManual",
-        "title": "Symposium: Compression Manual"
+        "command": "symposium.switchContext",
+        "title": "Symposium: Switch Context (Open File)",
+        "icon": "$(file)"
       }
     ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "symposium.newSession",
-          "when": "view == symposium.chat",
-          "group": "navigation@1"
-        },
-        {
-          "command": "symposium.newAgentSession",
-          "when": "view == symposium.chat",
-          "group": "navigation@1"
-        },
-        {
-          "command": "symposium.newTerminalSession",
-          "when": "view == symposium.chat",
-          "group": "navigation@2"
-        },
-        {
-          "command": "symposium.reattachPersistent",
-          "when": "view == symposium.chat",
-          "group": "navigation@4"
-        },
-        {
-          "command": "symposium.openConfig",
-          "when": "view == symposium.chat",
-          "group": "navigation@5"
-        },
-        {
-          "command": "symposium.reload",
-          "when": "view == symposium.chat",
-          "group": "navigation@9"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "symposium.showManual"
-        },
-        {
-          "command": "symposium.showCompressionManual",
-          "when": "false"
-        }
-      ]
-    },
+    "keybindings": [
+      {
+        "command": "symposium.switchContext",
+        "key": "ctrl+alt+f",
+        "mac": "cmd+alt+f"
+      }
+    ],
     "configuration": {
       "title": "Symposium",
       "properties": {
-        "symposium.root": {
-          "type": "string",
-          "default": "",
-          "description": "Local root for vendor-neutral agent knowledge (agents/skills/tools/instructions, sync state). Empty uses ~/.symposium."
-        },
-        "symposium.hub.url": {
-          "type": "string",
-          "default": "",
-          "description": "Base URL of the sufficit-ai memory/vault hub (e.g. https://ai.sufficit.com.br). Empty disables sync; agents still work offline from local files."
-        },
-        "symposium.identity.url": {
-          "type": "string",
-          "default": "https://identity.sufficit.com.br",
-          "description": "Sufficit Identity (Duende) issuer URL for login."
-        },
-        "symposium.identity.clientId": {
-          "type": "string",
-          "default": "sufficit-vscode-symposium",
-          "description": "OAuth client id registered in Sufficit Identity for Symposium (public client with the device_code grant). Defaults to the standard Symposium client; override only for a custom identity tenant."
-        },
-        "symposium.identity.scope": {
-          "type": "string",
-          "default": "openid profile email offline_access",
-          "description": "OAuth scopes requested at login."
-        },
-        "symposium.hub.token": {
-          "type": "string",
-          "default": "",
-          "description": "Bearer token for the sufficit-ai hub REST API."
-        },
-        "symposium.openai.maxToolHops": {
+        "symposium.maxBackends": {
           "type": "number",
-          "default": 50,
-          "description": "Max tool round-trips an API backend (Sufficit AI / OpenAI-compatible) may run in a single turn before pausing for 'continue'. Ignored in autonomous mode (presence Away = no limit)."
+          "default": 5,
+          "description": "Maximum number of backends to load in parallel."
         },
-        "symposium.openai.noProgressStop": {
-          "type": "number",
-          "default": 0,
-          "description": "Anti-loop: stop the turn after this many consecutive tool steps with no assistant reply (the agent isn't converging). 0 = unlimited (never auto-stop on silence). Applies even in autonomous mode."
-        },
-        "symposium.openai.autoCompactAt": {
-          "type": "number",
-          "default": 0.8,
-          "description": "Auto-compact the conversation when a request reaches this fraction (0–1) of the model's context window: older turns are summarized into one note (full transcript stays in the lossless ledger; tool outputs recoverable via read_session) so the live context shrinks. 0 disables auto-compaction (manual /compact still works)."
-        },
-        "symposium.openai.maxHistoryMessages": {
-          "type": "number",
-          "default": 40,
-          "description": "Max recent conversation messages sent to OpenAI-compatible backends per request. System/developer prompts are preserved separately. Lower this when long tool-heavy sessions hit provider context limits; 0 disables local trimming."
-        },
-        "symposium.openai.shellExecution": {
-          "type": "string",
-          "enum": [
-            "silent",
-            "inline",
-            "terminal"
-          ],
-          "enumDescriptions": [
-            "Wait for the command to finish and show only the tool result.",
-            "Stream stdout/stderr into the chat while the command runs.",
-            "Open a visible VS Code terminal for the command, and still return captured output to the model."
-          ],
-          "default": "silent",
-          "description": "How the native Sufficit AI/OpenAI shell tool (Ran) is surfaced to the user."
-        },
-        "symposium.hub.contextId": {
-          "type": "string",
-          "default": "",
-          "description": "Optional memory context (tenant boundary) sent as X-MEMORY-CONTEXT-ID."
-        },
-        "symposium.hub.source": {
-          "type": "string",
-          "default": "symposium",
-          "description": "Source system id sent as X-MEMORY-SOURCE-ID (identifies this machine/system in shared memory)."
-        },
-        "symposium.chat.sessionsSide": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "left",
-            "right"
-          ],
-          "default": "auto",
-          "description": "Side of the sessions list inside the chat surface. 'auto' follows the dock side (sessions on the outer edge: right when docked right, left when docked left)."
-        },
-        "symposium.chat.openIn": {
-          "type": "string",
-          "enum": [
-            "editor",
-            "sidebar"
-          ],
-          "default": "editor",
-          "description": "Where sessions open: as a full editor panel (default, like the built-in chat sessions viewer) or in the Symposium sidebar Chat view."
-        },
-        "symposium.lmTools": {
-          "type": "string",
-          "enum": [
-            "off",
-            "terminal",
-            "all"
-          ],
-          "enumDescriptions": [
-            "Don't expose VS Code Language Model Tools to the native AI backend.",
-            "Expose the terminal/task/test tools (runInTerminal, runTask, runTests, …). Notebook execution is only in 'all'.",
-            "Expose every registered VS Code Language Model Tool (may flood the model with many tools)."
-          ],
-          "default": "terminal",
-          "description": "Which VS Code Language Model Tools (vscode.lm.tools) the native 'Sufficit AI' backend may call, alongside its own shell/filesystem tools. These integrate with the VS Code UI (a real terminal, the test runner, tasks.json)."
-        },
-        "symposium.lmToolsBlocklist": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Extra VS Code Language Model Tools to never bridge to the native 'Sufficit AI' backend (substring match on the tool name). Copilot's own memory tools (copilot_memory and *memory* tools, which write to Copilot's store — NOT the Sufficit memory) are always blocked regardless of this list."
-        },
-        "symposium.subagents.timeoutMs": {
-          "type": "number",
-          "default": 300000,
-          "description": "How long (ms) a foreground spawn_agent waits for the subagent to finish before returning the partial result and leaving it running in the background. Default 300000 (5 min)."
-        },
-        "symposium.bridge.enabled": {
+        "symposium.enableDebugLogging": {
           "type": "boolean",
           "default": false,
-          "description": "Enable the remote control bridge (HTTP + SSE) that re-publishes the Symposium public API for remote commands and chat following. Off by default."
-        },
-        "symposium.bridge.host": {
-          "type": "string",
-          "default": "127.0.0.1",
-          "description": "Bind address for the remote bridge. Keep localhost unless fronted by an authenticated tunnel."
-        },
-        "symposium.bridge.port": {
-          "type": "number",
-          "default": 47600,
-          "description": "TCP port for the remote bridge."
-        },
-        "symposium.bridge.token": {
-          "type": "string",
-          "default": "",
-          "description": "Bearer token required by the remote bridge. Empty generates an ephemeral token logged to the Symposium output channel."
-        },
-        "symposium.claude.executable": {
-          "type": "string",
-          "default": "claude",
-          "description": "Path to the Claude Code CLI executable."
-        },
-        "symposium.claude.model": {
-          "type": "string",
-          "default": "",
-          "description": "Model passed to claude --model. Empty uses the CLI default."
-        },
-        "symposium.claude.permissionMode": {
-          "type": "string",
-          "enum": [
-            "default",
-            "acceptEdits",
-            "bypassPermissions",
-            "plan"
-          ],
-          "default": "default",
-          "description": "Permission mode passed to claude --permission-mode."
-        },
-        "symposium.claude.env": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {},
-          "description": "Extra environment variables for the Claude CLI process (e.g. ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN for a gateway)."
-        },
-        "symposium.claude.playwright": {
-          "type": "boolean",
-          "default": false,
-          "description": "Give Claude the Playwright MCP browser tools (assisted navigation: open pages, click, type, snapshot, screenshot) via @playwright/mcp. Requires npx; first use downloads the browser."
-        },
-        "symposium.claude.mcpServers": {
-          "type": "object",
-          "default": {},
-          "description": "Extra MCP servers exposed to Claude, merged into --mcp-config. Shape: { \"name\": { \"command\": \"npx\", \"args\": [\"-y\", \"pkg\"] } }."
-        },
-        "symposium.claude.reasoning": {
-          "type": "string",
-          "enum": [
-            "default",
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max"
-          ],
-          "default": "default",
-          "description": "Default reasoning/thinking effort for Claude terminal sessions (claude --effort). 'default' omits the flag."
-        },
-        "symposium.codex.executable": {
-          "type": "string",
-          "default": "codex",
-          "description": "Path to the Codex CLI executable."
-        },
-        "symposium.codex.model": {
-          "type": "string",
-          "default": "",
-          "description": "Model passed to codex exec --model. Empty uses the CLI default."
-        },
-        "symposium.codex.playwright": {
-          "type": "boolean",
-          "default": false,
-          "description": "Give Codex the Playwright MCP browser tools (assisted navigation) via @playwright/mcp. Requires npx; first use downloads the browser."
-        },
-        "symposium.codex.mcpServers": {
-          "type": "object",
-          "default": {},
-          "description": "Extra MCP servers for Codex ({ \"name\": { \"command\": \"npx\", \"args\": [...] } }), added as -c mcp_servers overrides."
-        },
-        "symposium.codex.reasoning": {
-          "type": "string",
-          "enum": [
-            "default",
-            "minimal",
-            "low",
-            "medium",
-            "high"
-          ],
-          "default": "default",
-          "description": "Default reasoning effort for Codex terminal sessions (codex -c model_reasoning_effort). 'default' omits it."
-        },
-        "symposium.copilot.executable": {
-          "type": "string",
-          "default": "copilot",
-          "description": "Path to the GitHub Copilot CLI executable."
-        },
-        "symposium.copilot.model": {
-          "type": "string",
-          "default": "",
-          "description": "Model passed to copilot --model. Empty uses the CLI default."
-        },
-        "symposium.copilot.playwright": {
-          "type": "boolean",
-          "default": false,
-          "description": "Give Copilot the Playwright MCP browser tools via @playwright/mcp (--mcp-config). Experimental: depends on the Copilot CLI's MCP support."
-        },
-        "symposium.copilot.mcpServers": {
-          "type": "object",
-          "default": {},
-          "description": "Extra MCP servers for Copilot ({ \"name\": { \"command\": \"npx\", \"args\": [...] } })."
-        },
-        "symposium.copilot.reasoning": {
-          "type": "string",
-          "enum": [
-            "default",
-            "low",
-            "medium",
-            "high",
-            "xhigh"
-          ],
-          "default": "default",
-          "description": "Default reasoning effort for Copilot terminal sessions (copilot --reasoning-effort). 'default' omits it."
-        },
-        "symposium.adapters": {
-          "type": "array",
-          "default": [],
-          "markdownDescription": "Extra OpenAI-compatible adapters. Each entry: `{ name, baseUrl, headers, apiKey, model, models, supportsDeveloperRole }`. `id` is auto-generated (GUID) on save if omitted — keeps sessions stable when you rename. Leave `models` empty to auto-discover from `GET <baseUrl>/models`. Set `supportsDeveloperRole: true` only for gateways that truly accept the OpenAI `developer` role; otherwise developer prompts are downgraded to `system`. Edit via 'Symposium: Edit Adapters (JSON)'.",
-          "items": {
-            "type": "object",
-            "required": [
-              "baseUrl"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "description": "Stable backend key. Auto-generated (GUID, no hyphens) on save if omitted; set manually in any format if you prefer."
-              },
-              "name": {
-                "type": "string",
-                "description": "Display name shown in the UI."
-              },
-              "api": {
-                "type": "string",
-                "enum": [
-                  "chat",
-                  "responses"
-                ],
-                "default": "chat",
-                "description": "Request type: 'chat' (POST <baseUrl>/chat/completions) or 'responses' (POST <baseUrl>/responses)."
-              },
-              "baseUrl": {
-                "type": "string",
-                "description": "OpenAI-compatible base URL."
-              },
-              "apiKey": {
-                "type": "string",
-                "description": "Sent as Authorization: Bearer <key> when no Authorization header is set."
-              },
-              "headers": {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "description": "Custom HTTP headers."
-              },
-              "model": {
-                "type": "string",
-                "description": "Default model id."
-              },
-              "models": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                },
-                "description": "Model ids; empty = auto-discover from /models."
-              },
-              "supportsDeveloperRole": {
-                "type": "boolean",
-                "default": false,
-                "description": "Whether this gateway supports the OpenAI `developer` role. False downgrades developer prompts to `system`."
-              }
-            }
-          }
-        },
-        "symposium.openai.api": {
-          "type": "string",
-          "enum": [
-            "chat",
-            "responses"
-          ],
-          "default": "chat",
-          "description": "Request type for the built-in OpenAI adapter: 'chat' (/chat/completions) or 'responses' (/responses)."
-        },
-        "symposium.openai.baseUrl": {
-          "type": "string",
-          "default": "https://ai.sufficit.com.br/openai/v1",
-          "description": "Base URL of an OpenAI-compatible API. Defaults to the Sufficit AI gateway; override only to point the built-in backend at another OpenAI-compatible endpoint."
-        },
-        "symposium.openai.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "API key sent as 'Authorization: Bearer <key>' when no Authorization header is set in symposium.openai.headers."
-        },
-        "symposium.openai.headers": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "default": {},
-          "description": "Custom HTTP headers for the OpenAI-compatible endpoint (e.g. Authorization, x-api-key, gateway routing for Sufficit AI)."
-        },
-        "symposium.openai.model": {
-          "type": "string",
-          "default": "",
-          "description": "Default model id. Empty uses the first of symposium.openai.models."
-        },
-        "symposium.openai.models": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "default": [],
-          "description": "Model ids offered in the picker (the Sufficit AI catalog)."
-        },
-        "symposium.openai.reasoning": {
-          "type": "string",
-          "enum": [
-            "default",
-            "minimal",
-            "low",
-            "medium",
-            "high"
-          ],
-          "default": "default",
-          "description": "Default reasoning_effort for models that support it. 'default' omits the parameter."
-        },
-        "symposium.chat.preferredLanguage": {
-          "type": "string",
-          "default": "",
-          "description": "Preferred language for AI responses (e.g. 'pt-br', 'es', 'zh-cn'). Leave empty to use VS Code's display language. Set to 'en' to disable the preference hint entirely."
-        },
-        "symposium.chat.systemInstruction": {
-          "type": "string",
-          "default": "",
-          "editPresentation": "multilineText",
-          "description": "Optional manual system instruction prepended to every new conversation's system prompt. Use it to give all agents persistent guidance."
-        },
-        "symposium.chat.whenBusy": {
-          "type": "string",
-          "enum": [
-            "queue",
-            "steer"
-          ],
-          "enumDescriptions": [
-            "Queue the message and send it after the current turn (FIFO).",
-            "Interrupt the running turn and send immediately."
-          ],
-          "default": "queue",
-          "description": "What sending does WHILE a turn is running. When the agent is idle it always sends immediately, so this only applies when it's busy. Overridable per message with the dropdown next to the send button."
-        },
-        "symposium.compression.defaultPresetId": {
-          "type": "string",
-          "default": "none",
-          "description": "ID do preset de compressão padrão para novas seções de chat."
-        },
-        "symposium.compression.presets": {
-          "type": "array",
-          "default": [],
-          "description": "Configuração customizada de presets de compressão (JSON array de CompressionPreset). Use a tela de configurações para editar."
-        },
-        "symposium.compression.showSelector": {
-          "type": "boolean",
-          "default": true,
-          "description": "Mostra seletor de compressão na interface de chat."
-        },
-        "symposium.compression.showDiagnostics": {
-          "type": "boolean",
-          "default": true,
-          "description": "Mostra diagnóstico de compressão na barra de status."
+          "description": "Enable debug logging for Symposium."
         }
       }
     }
   },
   "scripts": {
+    "test": "npm run compile && node --test out/test/*.test.js && npm run check:webview && npm run check:size",
     "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
     "compile": "npm run clean && tsc -p ./ && npm run build:webview && npm run bundle",
     "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --outfile=out/ui/webview.bundle.js && esbuild src/ui/webview/chat.css --bundle --outfile=out/ui/webview.css",
@@ -645,18 +98,16 @@
     "typecheck:webview": "tsc --noEmit -p tsconfig.webview.json",
     "check:webview": "node --check out/ui/webview.bundle.js",
     "check:size": "node scripts/check-file-size.mjs",
-    "test": "npm run compile && node --test out/test/*.test.js && npm run check:webview && npm run check:size",
     "vscode:prepublish": "npm run compile && npm run check:webview"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.10.2",
     "@types/vscode": "^1.100.0",
-    "esbuild": "^0.25.12",
-    "eslint": "^9.39.4",
-    "jsdom": "^29.1.1",
-    "prettier": "^3.8.4",
-    "typescript": "^5.6.0",
-    "typescript-eslint": "^8.61.1"
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.8.3"
   }
 }
