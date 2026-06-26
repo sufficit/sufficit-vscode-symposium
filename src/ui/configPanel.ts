@@ -252,7 +252,7 @@ export class ConfigPanel {
                 return;
             case "set-pref":
                 if (typeof message.key === "string") {
-                    // Coerce by key: numbers for hops, booleans for autoApprove.
+                    // Coerce by key: numbers for hops, booleans for autoApprove and voice options.
                     let value: unknown = message.value;
                     if (message.key.endsWith("maxToolHops")) { value = Math.max(1, Number(message.value) || 50); }
                     else if (message.key.endsWith("noProgressStop")) { value = Math.max(0, Number(message.value) || 0); }
@@ -262,6 +262,18 @@ export class ConfigPanel {
                         value = message.value === "true";
                         // optIn must be on for the global flag to take effect.
                         await vscode.workspace.getConfiguration().update("chat.tools.global.autoApprove.optIn", true, vscode.ConfigurationTarget.Global);
+                    }
+                    else if (message.key === "symposium.voice.continuous") {
+                        value = message.value === "true";
+                    }
+                    else if (message.key === "symposium.voice.interimResults") {
+                        value = message.value === "true";
+                    }
+                    else if (message.key === "symposium.voice.dotsAnimation") {
+                        value = message.value === "true";
+                    }
+                    else if (message.key === "symposium.voice.soundFeedback") {
+                        value = message.value === "true";
                     }
                     await vscode.workspace.getConfiguration().update(message.key, value, vscode.ConfigurationTarget.Global);
                     await this.pushState();
@@ -580,6 +592,12 @@ export class ConfigPanel {
                 maxHistoryMessages: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxHistoryMessages", 40),
                 shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
                 autoApprove: vscode.workspace.getConfiguration().get<boolean>("chat.tools.global.autoApprove", false),
+                // Voice input preferences
+                voiceLanguage: root.get<string>("voice.language", "pt-BR"),
+                voiceContinuous: root.get<boolean>("voice.continuous", true),
+                voiceInterimResults: root.get<boolean>("voice.interimResults", true),
+                voiceDotsAnimation: root.get<boolean>("voice.dotsAnimation", true),
+                voiceSoundFeedback: root.get<boolean>("voice.soundFeedback", true),
             },
             compression: {
                 presets: compressionManager.getPresets(),

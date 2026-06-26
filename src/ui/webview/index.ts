@@ -116,7 +116,17 @@ import { applyStaticI18n } from "./staticI18n";
     // ICONS is imported (no temporal dead zone), so paint the presence icon now.
     setPresenceLabel();
     // Re-localize the presence control when the host pushes the UI language.
-    window.addEventListener("message", (e) => { if (e && e.data && e.data.type === "setLang") { setPresenceLabel(); } });
+    // Handle voice preferences from host
+    window.addEventListener("message", (e) => {
+        const data = e.data;
+        if (!data) return;
+
+        if (data.type === "setLang") {
+            setPresenceLabel();
+        } else if (data.type === "setVoicePreferences") {
+            (window as any).voicePreferences = data.preferences;
+        }
+    });
 
     // ---- tools & configuration menu (sliders) ----
     // Per-session tool gating (native AI backend). available = all tools the

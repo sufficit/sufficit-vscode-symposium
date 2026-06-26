@@ -180,6 +180,13 @@ export class SurfaceMessages {
                     if (controller && typeof message.model === "string") {
                         // Atualizar o modelo no controller
                         controller.setModel(message.model);
+                        // Forçar persistência imediata do modelo no adapter
+                        const session = controller.getSession();
+                        if (session?.safePersist) {
+                            session.safePersist();
+                        }
+                        // Notificar a webview que o modelo foi atualizado
+                        this.d.post({ type: "session-model-updated", model: message.model });
                     }
                     return;
                 }

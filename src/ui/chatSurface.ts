@@ -149,6 +149,18 @@ export class ChatSurface {
         const langCfg = vscode.workspace.getConfiguration("symposium.chat");
         const lang = langCfg.get<string>("preferredLanguage", "").trim() || vscode.env.language || "en";
         void this.webview.postMessage({ type: "setLang", lang });
+
+        // Send voice preferences to webview
+        const voiceCfg = vscode.workspace.getConfiguration("symposium");
+        const voicePreferences = {
+            language: voiceCfg.get<string>("voice.language", "pt-BR"),
+            continuous: voiceCfg.get<boolean>("voice.continuous", true),
+            interimResults: voiceCfg.get<boolean>("voice.interimResults", true),
+            dotsAnimation: voiceCfg.get<boolean>("voice.dotsAnimation", true),
+            soundFeedback: voiceCfg.get<boolean>("voice.soundFeedback", true),
+        };
+        void this.webview.postMessage({ type: "setVoicePreferences", preferences: voicePreferences });
+
         for (const queued of this.queue) {
             void this.webview.postMessage(queued);
         }

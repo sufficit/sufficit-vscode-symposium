@@ -314,6 +314,23 @@ export function renderConfigHtml(lang: string): string {
                     sel("symposium.openai.shellExecution", p.shellExecution || "silent",
                         [{ v: "silent", l: t("config.prefs.shellExecution.silent") }, { v: "inline", l: t("config.prefs.shellExecution.inline") }, { v: "terminal", l: t("config.prefs.shellExecution.terminal") }]))
             ) +
+            section(t("config.prefs.section.voiceInput"),
+                item(t("config.prefs.voiceLanguage.name"), t("config.prefs.voiceLanguage.desc"),
+                    sel("symposium.voice.language", p.voiceLanguage || "pt-BR",
+                        [{ v: "pt-BR", l: "Português (BR)" }, { v: "en-US", l: "English (US)" }, { v: "es-ES", l: "Español (ES)" }, { v: "fr-FR", l: "Français (FR)" }, { v: "de-DE", l: "Deutsch (DE)" }])) +
+                item(t("config.prefs.voiceContinuous.name"), t("config.prefs.voiceContinuous.desc"),
+                    sel("symposium.voice.continuous", (p.voiceContinuous !== false) ? "true" : "false",
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }])) +
+                item(t("config.prefs.voiceInterimResults.name"), t("config.prefs.voiceInterimResults.desc"),
+                    sel("symposium.voice.interimResults", (p.voiceInterimResults !== false) ? "true" : "false",
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }])) +
+                item(t("config.prefs.voiceDotsAnimation.name"), t("config.prefs.voiceDotsAnimation.desc"),
+                    sel("symposium.voice.dotsAnimation", (p.voiceDotsAnimation !== false) ? "true" : "false",
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }])) +
+                item(t("config.prefs.voiceSoundFeedback.name"), t("config.prefs.voiceSoundFeedback.desc"),
+                    sel("symposium.voice.soundFeedback", (p.voiceSoundFeedback !== false) ? "true" : "false",
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }]))
+            ) +
             section(t("config.prefs.section.systemInstruction"),
                 '<div class="pref-block">' +
                     '<div class="desc">' + esc(t("config.prefs.systemInstruction.desc")) + '</div>' +
