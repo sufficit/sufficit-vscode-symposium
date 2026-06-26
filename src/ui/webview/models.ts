@@ -44,9 +44,14 @@ modelPicker.addEventListener("click", (ev) => {
     if ((modelPicker as HTMLButtonElement).disabled) { return; }
     // Always offer manual entry so the user is never stuck when remote discovery
     // (GET /models) returned nothing — e.g. not logged in, or gateway 401.
-    openChoiceMenu(modelPicker, buildModelMenuOpts(), modelValue, (v: any) => { modelValue = v; setModelLabel(); }, {
+    openChoiceMenu(modelPicker, buildModelMenuOpts(), modelValue, (v: any) => {
+        modelValue = v;
+        setModelLabel();
+        // Persistir modelo selecionado no backend
+        vscode.postMessage({ type: "set-model", model: v });
+    }, {
         refreshAction: { label: "Refresh models", detail: "Re-run GET /models", onClick: () => { showToast("Refreshing models…"); vscode.postMessage({ type: "refresh-models" }); } },
-        manualEntry: { label: "Type a model…", placeholder: "e.g. gpt-4o, claude-3-5-sonnet", onSubmit: (v: any) => { if (v && v.trim()) { modelValue = v.trim(); setModelLabel(); } } },
+        manualEntry: { label: "Type a model…", placeholder: "e.g. gpt-4o, claude-3-5-sonnet", onSubmit: (v: any) => { if (v && v.trim()) { modelValue = v.trim(); setModelLabel(); vscode.postMessage({ type: "set-model", model: v.trim() }); } } },
     });
 });
 reasoningPicker.addEventListener("click", (ev) => {

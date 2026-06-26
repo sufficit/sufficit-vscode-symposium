@@ -174,6 +174,15 @@ export class SurfaceMessages {
                     }
                     return;
                 }
+                case "set-model": {
+                    // Persistir o modelo selecionado no controller atual
+                    const controller = this.d.getController();
+                    if (controller && typeof message.model === "string") {
+                        // Atualizar o modelo no controller
+                        controller.setModel(message.model);
+                    }
+                    return;
+                }
                 case "pin-model": {
                     const pinBackend = this.d.getController()?.backend ?? this.d.getTerminalSession()?.backend;
                     if (pinBackend && typeof message.model === "string") {

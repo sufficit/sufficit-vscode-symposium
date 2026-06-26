@@ -1,6 +1,6 @@
 // Composer: input, send/edit/slash/paste, attachment chips. Listeners run on import.
 import { vscode, saved, saveState } from "./vscode";
-import { log, input, sendMode, sendBtn, sendGroup, sendCaret, stopBtn, chips, addContext, addBrowserPage, slash, composerEl, ctxMenu } from "./dom";
+import { log, input, sendMode, micBtn, sendBtn, sendGroup, sendCaret, stopBtn, chips, addContext, addBrowserPage, slash, composerEl, ctxMenu } from "./dom";
 import { attachments, activeFile, activeFileRange, activeFileDismissed, activeFilePreview, activeFilePinned, busy, currentBackend, conversationRows, commands, setAttachments, setActiveFile, setActiveFileRange, setActiveFileDismissed, setActiveFilePreview, setActiveFilePinned, setBusy, setConversationRows, setCommands, autonomyValue, permissionValue } from "./state";
 import { setStatus, updateSendTitle, MODE_LABELS, MODE_KBD, MODE_ICONS, MODE_DESC, isMac, MOD, ALT } from "./status";
 import { modelValue, reasoningValue } from "./models";
@@ -214,6 +214,78 @@ input.addEventListener("input", () => {
     input.style.height = Math.min(input.scrollHeight, 180) + "px";
     updateSlash();
 });
+
+// Voice input using Web Speech API (SpeechRecognition)
+let recognition: any = null;
+let isRecording = false;
+
+// Check for browser support
+const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = 'pt-BR';
+    recognition.continuous = false;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+        isRecording = true;
+        micBtn.classList.add('recording');
+        setStatus('Listening...');
+    };
+
+    recognition.onend = () => {
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        setStatus('Ready');
+    };
+
+    recognition.onresult = (event: any) => {
+        let interimTranscript = '';
+        let finalTranscript = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript;
+            } else {
+                interimTranscript += event.results[i][0].transcript;
+            }
+        }
+
+        if (finalTranscript) {
+            const currentText = input.value.trim();
+            input.value = currentText ? currentText + ' ' + finalTranscript : finalTranscript;
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 180) + "px";
+            setStatus('Transcribed: ' + finalTranscript);
+        } else if (interimTranscript) {
+            setStatus('Interim: ' + interimTranscript);
+        }
+    };
+
+    recognition.onerror = (event: any) => {
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        setStatus('Error: ' + event.error);
+        console.error('Speech recognition error:', event.error);
+    };
+
+    micBtn.addEventListener('click', () => {
+        if (!recognition) {
+            showToast('Speech recognition not supported in this browser');
+            return;
+        }
+
+        if (isRecording) {
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
+    });
+} else {
+    micBtn.style.display = 'none';
+    console.warn('Web Speech API not supported in this browser');
+}
 input.addEventListener("blur", () => { setTimeout(() => { slash.style.display = "none"; }, 120); });
 export function handlePaste(e) {
     const items = (e.clipboardData && e.clipboardData.items) || [];

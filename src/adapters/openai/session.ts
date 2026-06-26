@@ -154,7 +154,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         });
     }
 
-    private safePersist(): void {
+    public safePersist(): void {
         try {
             this.persist();
         } catch (error) {

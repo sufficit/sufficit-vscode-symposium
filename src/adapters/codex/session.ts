@@ -1,6 +1,9 @@
 import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import * as readline from "readline";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import { resolveExecutable } from "../exec";
 import { contextWindowFor, parseCodexUsage } from "../parse";
 import { parseNativeTodos } from "../todos";
@@ -16,6 +19,123 @@ export interface CodexAdapterConfig {
 }
 
 /**
+ * Reads VSCode's mcp.json (~/.config/Code/User/mcp.json on Linux, appropriate
+ * location on Windows/macOS) and converts MCP servers to CLI-compatible format
+ * for Codex. HTTP servers are converted to a command+args wrapper that uses
+ * curl to communicate with the server via stdin/stdout.
+ */
+function loadVscodeMcpServers(): Record<string, { command: string; args: string[] }> {
+    const result: Record<string, { command: string; args: string[] }> = {};
+    try {
+        let configPath: string;
+        const platform = os.platform();
+        if (platform === "linux" || platform === "darwin") {
+            configPath = path.join(os.homedir(), ".config", "Code", "User", "mcp.json");
+        } else if (platform === "win32") {
+            configPath = path.join(os.homedir(), "AppData", "Roaming", "Code", "User", "mcp.json");
+        } else {
+            return result; // Unsupported platform
+        }
+        
+        if (!fs.existsSync(configPath)) {
+            return result;
+        }
+        
+        const configContent = fs.readFileSync(configPath, "utf8");
+        const config = JSON.parse(configContent);
+        
+        if (!config.servers || typeof config.servers !== "object") {
+            return result;
+        }
+        
+        for (const [name, server] of Object.entries(config.servers)) {
+            const s = server as Record<string, unknown>;
+            if (s.type === "http" && s.url && typeof s.url === "string") {
+                // HTTP MCP servers need to communicate via HTTP POST
+                // We create a wrapper that uses node to handle HTTP MCP protocol
+                const headers: Record<string, string> = {};
+                if (s.headers && typeof s.headers === "object") {
+                    for (const [k, v] of Object.entries(s.headers)) {
+                        headers[k] = String(v);
+                    }
+                }
+                // Create a temporary wrapper script for HTTP MCP servers
+                const wrapperPath = path.join(os.homedir(), ".symposium", `mcp-http-${name}.js`);
+                const wrapperScript = `
+const http = require('http');
+const https = require('https');
+const readline = require('readline');
+
+const URL = '${s.url}';
+const HEADERS = ${JSON.stringify(headers)};
+
+async function makeRequest(data) {
+    const url = new URL(URL);
+    const client = url.protocol === 'https:' ? https : http;
+    
+    return new Promise((resolve, reject) => {
+        const req = client.request(URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...HEADERS
+            }
+        }, (res) => {
+            let body = '';
+            res.on('data', (chunk) => body += chunk);
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(body));
+                } catch {
+                    resolve(body);
+                }
+            });
+        });
+        
+        req.on('error', reject);
+        req.write(JSON.stringify(data));
+        req.end();
+    });
+}
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: false
+});
+
+rl.on('line', async (line) => {
+    try {
+        const data = JSON.parse(line);
+        const response = await makeRequest(data);
+        console.log(JSON.stringify(response));
+    } catch (err) {
+        console.error(JSON.stringify({ error: err.message }));
+    }
+});
+`;
+                const dir = path.dirname(wrapperPath);
+                if (!fs.existsSync(dir)) {
+                    fs.mkdirSync(dir, { recursive: true });
+                }
+                fs.writeFileSync(wrapperPath, wrapperScript, "utf8");
+                result[name] = { command: "node", args: [wrapperPath] };
+            } else if (s.type === "stdio" && s.command && typeof s.command === "string") {
+                const args: string[] = [];
+                if (Array.isArray(s.args)) {
+                    args.push(...s.args);
+                }
+                result[name] = { command: s.command, args };
+            }
+        }
+    } catch (error) {
+        // Silently fail on errors - MCP is optional
+        console.error(`[codex] Failed to load VSCode MCP config: ${error}`);
+    }
+    return result;
+}
+
+/**
  * Drives the Codex CLI through `codex exec --json` (JSONL events), one
  * process per turn. Continuity uses `codex exec resume <session-id>`; the
  * session id arrives in the `thread.started` event. Sessions are stored as
@@ -27,12 +147,14 @@ export class CodexSession extends EventEmitter implements AgentSession {
     private current: ReturnType<typeof spawn> | undefined;
     private disposed = false;
     private reportedError = false;
+    private vscodeMcpServers: Record<string, { command: string; args: string[] }>;
 
     constructor(
         private readonly config: CodexAdapterConfig,
         private readonly options: SessionStartOptions,
     ) {
         super();
+        this.vscodeMcpServers = loadVscodeMcpServers();
         this.sessionId = options.resumeSessionId;
     }
 
@@ -45,10 +167,16 @@ export class CodexSession extends EventEmitter implements AgentSession {
         if (this.options.reasoning && this.options.reasoning !== "default") {
             base.push("-c", `model_reasoning_effort="${this.options.reasoning}"`);
         }
-        // MCP servers (Playwright browser tools + extras) as `-c` TOML overrides.
+        // MCP servers (Playwright browser tools + extras + VSCode MCP servers) as `-c` TOML overrides.
         const servers: Record<string, { command?: string; args?: string[] }> = { ...(this.config.mcpServers ?? {}) };
         if (this.config.playwright && !servers.playwright) {
             servers.playwright = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
+        }
+        // Merge VSCode MCP servers (from mcp.json), letting explicit config override
+        for (const [name, server] of Object.entries(this.vscodeMcpServers)) {
+            if (!servers[name]) {
+                servers[name] = server;
+            }
         }
         for (const [name, s] of Object.entries(servers)) {
             if (s.command) { base.push("-c", `mcp_servers.${name}.command=${JSON.stringify(s.command)}`); }

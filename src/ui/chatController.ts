@@ -107,6 +107,16 @@ export class ChatController {
     /** First user message, used as a title for a not-yet-persisted live session. */
     get title(): string { return this.firstTitle || "New session"; }
 
+    /** Define o modelo para a sessão atual. */
+    setModel(model: string): void {
+        this.options.model = model;
+    }
+
+    /** Retorna o modelo atual da sessão. */
+    getModel(): string {
+        return this.options.model || "";
+    }
+
     /** Plain-text user/assistant exchange, for backend handoff. */
     transcript(): string {
         return transcriptText(this.stream.messages);
@@ -129,6 +139,11 @@ export class ChatController {
 
     get attached(): boolean {
         return this.stream.hasSink;
+    }
+
+    /** Retorna a sessão atual do AgentAdapter para acesso direto. */
+    getSession(): AgentSession | undefined {
+        return this.session;
     }
 
     /** Binds this controller to a webview sink and replays its render log. */
