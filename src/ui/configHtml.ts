@@ -236,13 +236,17 @@ export function renderConfigHtml(lang: string): string {
     function syncView() {
         const s = state?.sync || {};
         const configured = state?.hubConfigured;
+        const health = s.health || "unknown";
+        // Reachable-but-rejected (401) or unreachable → offer a re-login so the
+        // user can get a fresh token without hunting for the logout button.
+        const needsAuth = configured && (health === "unauthorized" || health === "down");
+        const reloginBtn = needsAuth ? '<button id="sync-relogin" class="secondary">' + esc(t("config.btn.relogin")) + '</button>' : "";
         const toolbar = configured
             ? '<div class="toolbar"><button id="sync-pull">' + esc(t("config.btn.syncPull")) + '</button>' +
-              '<button id="sync-push">' + esc(t("config.btn.syncPush")) + '</button></div>'
+              '<button id="sync-push">' + esc(t("config.btn.syncPush")) + '</button>' + reloginBtn + '</div>'
             : '<div class="toolbar"><button id="sync-config">' + esc(t("config.btn.syncConfig")) + '</button></div>';
         const note = configured ? "" :
             '<div class="empty">' + esc(t("config.empty.hub")) + '</div>';
-        const health = s.health || "unknown";
         const color = health === "ok" ? "var(--vscode-charts-green,#89c374)"
             : health === "unauthorized" ? "var(--vscode-charts-orange,#d9a45b)"
             : health === "down" ? "var(--vscode-charts-red,#e26d6d)"
@@ -418,6 +422,8 @@ export function renderConfigHtml(lang: string): string {
             if (pull) { pull.onclick = () => { pull.textContent = t("config.status.pulling"); vscode.postMessage({ type: "sync-pull" }); }; }
             if (push) { push.onclick = () => { push.textContent = t("config.status.pushing"); vscode.postMessage({ type: "sync-push" }); }; }
             if (conf) { conf.onclick = () => vscode.postMessage({ type: "config-hub" }); }
+            const relog = document.getElementById("sync-relogin");
+            if (relog) { relog.onclick = () => vscode.postMessage({ type: "login" }); }
             return;
         }
         main.innerHTML = page(resourceList(active));
