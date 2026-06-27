@@ -369,7 +369,11 @@ if (SpeechRecognition) {
     recognition.onerror = (event: any) => {
         isRecording = false;
         micBtn.classList.remove('recording');
-        setStatus('Error: ' + event.error);
+        setStatus('Ready');
+        const blocked = event.error === 'not-allowed' || event.error === 'service-not-allowed';
+        showToast(blocked
+            ? "Microfone bloqueado no webview do VS Code — captura de voz não disponível aqui."
+            : "Voz: " + event.error);
         if (recordingDotsInterval) {
             clearInterval(recordingDotsInterval);
             recordingDotsInterval = null;
@@ -388,7 +392,7 @@ if (SpeechRecognition) {
             if (prefs.soundFeedback) playStopSound();
             recognition.stop();
         } else {
-            recognition.start();
+            try { recognition.start(); } catch (e) { showToast("Não consegui iniciar o microfone: " + e); }
         }
     });
 } else {
