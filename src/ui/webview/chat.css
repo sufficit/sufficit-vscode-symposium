@@ -6,6 +6,8 @@
            the chat background always matches the native chat in that location. */
         background: transparent;
         height: 100vh; margin: 0; padding: 0; overflow: hidden;
+        width: 100vw;
+        min-width: 0;
     }
     *:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
     /* scrollbars: match the native VS Code overlay slider — thin, no arrow
@@ -24,7 +26,7 @@
     ::-webkit-scrollbar-thumb:active {
         background-color: var(--vscode-scrollbarSlider-activeBackground, rgba(191,191,191,0.4));
     }
-    #root { display: flex; height: 100vh; position: relative; }
+    #root { display: flex; height: 100vh; position: relative; width: 100%; min-width: 0; overflow-x: hidden; }
 
     /* ---- progress + loading indicators ---- */
     #progress {
@@ -426,8 +428,9 @@
     /* Soft separator between the chat transcript and the panels/composer below. */
     #chatCol > #logWrap { border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.18)); }
     #log {
-        flex: 1; overflow-y: auto; padding: 16px 16px 6px 16px; user-select: text; cursor: text;
+        flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px 16px 6px 16px; user-select: text; cursor: text;
         font-size: 13.5px; line-height: 1.65;
+        min-width: 0;
     }
     .msg { margin: 0 0 18px 0; word-break: break-word; line-height: 1.65; user-select: text; -webkit-user-select: text; }
     .msg.plain { white-space: pre-wrap; }
@@ -1161,8 +1164,15 @@
     .iconBtn {
         background: none; border: none; cursor: pointer; padding: 3px 5px;
         color: var(--vscode-icon-foreground, var(--vscode-foreground));
-        border-radius: 4px; display: inline-flex; align-items: center;
+        border-radius: 4px; display: inline-flex; align-items: center; justify-content: center;
         transition: background-color 150ms ease, color 150ms ease;
+        min-width: 24px; min-height: 24px;
+    }
+    .iconBtn svg {
+        display: block;
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
     }
     .iconBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
     /* Send = primary filled split button (send + mode caret) */
