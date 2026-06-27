@@ -89,7 +89,7 @@ export class BackendHandoff {
         return backend;
     }
 
-    private async openDialogueSeeded(backend: string, cwd: string, transcript: string, title: string, fromName: string): Promise<void> {
+    private openDialogueSeeded(backend: string, cwd: string, transcript: string, title: string, fromName: string): void {
         const adapter = this.d.getAdapter(backend);
         if (!adapter) { return; }
         const options: SessionStartOptions = { cwd, model: undefined, permission: undefined, env: {} };

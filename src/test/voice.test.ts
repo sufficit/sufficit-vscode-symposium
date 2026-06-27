@@ -146,7 +146,7 @@ test("voice results: multiple languages", () => {
         const recognition = new MockSpeechRecognition();
         recognition.lang = lang;
         const mockEvent = { results: [{ isFinal: true, transcript: text }] };
-        let capturedText = mockEvent.results[0].transcript;
+        const capturedText = mockEvent.results[0].transcript;
         assert.strictEqual(capturedText, text);
     });
 });
