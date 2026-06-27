@@ -8,6 +8,7 @@ import {
 } from "../config/root";
 import { aiToolsForAgent } from "../adapters/aiTools";
 import { importAgents } from "../config/importAgents";
+import { importTools, importInstructions } from "../config/importResources";
 import { seedExamples } from "../config/seed";
 import { HubClient } from "../sync/hubClient";
 import { SyncEngine, SyncResult } from "../sync/sync";
@@ -115,6 +116,10 @@ export interface SymposiumApi {
         seed(): number;
         /** Imports CLI agents (.claude/agents, ~/.codex/skills) as agent-defs. */
         importAgents(): { created: number; skipped: number };
+        /** Imports MCP servers (Claude ~/.claude.json/.mcp.json, VS Code mcp.json) as tool-defs. */
+        importTools(): { created: number; skipped: number };
+        /** Imports CLAUDE.md / AGENTS.md / copilot-instructions.md as instruction-defs. */
+        importInstructions(): { created: number; skipped: number };
         /** Lists importable skill bundles from Claude/Codex dirs. */
         scanForeignSkills(): { source: string; name: string; description: string; path: string }[];
         /** Copies the given skill bundle dirs into repo/skills/. */
@@ -315,6 +320,8 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
             remove: (kind, name) => deleteResource(kind, name),
             seed: () => seedExamples(),
             importAgents: () => importAgents(),
+            importTools: () => importTools(),
+            importInstructions: () => importInstructions(),
             scanForeignSkills: () => scanForeignSkills(),
             importSkills: (srcDirs, overwrite) => {
                 let imported = 0, skipped = 0;

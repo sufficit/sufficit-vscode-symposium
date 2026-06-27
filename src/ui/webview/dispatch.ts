@@ -206,8 +206,10 @@ window.addEventListener("message", ({ data }) => {
             // Explicit "Refresh models": give feedback and reopen the picker
             // with the fresh list (the refresh button had closed the menu).
             if (data.refreshed) {
-                showToast("Models updated (" + (modelList.length || 0) + ")");
-                if (!modelPicker.disabled && modelPicker.style.display !== "none") {
+                showToast(newList.length
+                    ? "Models updated (" + newList.length + ")"
+                    : "No models returned by this backend — check its endpoint URL and API key.");
+                if (newList.length && !modelPicker.disabled && modelPicker.style.display !== "none") {
                     setTimeout(() => modelPicker.click(), 0);
                 }
             }

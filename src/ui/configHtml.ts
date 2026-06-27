@@ -205,6 +205,8 @@ export function renderConfigHtml(lang: string): string {
         const toolbar = '<div class="toolbar"><button id="new-res">' + esc(t("config.btn.new." + kind)) + "</button>"
             + (kind === "agent" ? '<button class="secondary" id="import-agents">' + esc(t("config.btn.importAgents")) + '</button>' : "")
             + (kind === "skill" ? '<button class="secondary" id="import-skills">' + esc(t("config.btn.importSkills")) + '</button><button class="secondary" id="install-skill-sh">' + esc(t("config.btn.installSkillSh")) + '</button>' : "")
+            + (kind === "tool" ? '<button class="secondary" id="import-tools">' + esc(t("config.btn.importTools")) + '</button>' : "")
+            + (kind === "instruction" ? '<button class="secondary" id="import-instructions">' + esc(t("config.btn.importInstructions")) + '</button>' : "")
             + "</div>";
         if (!items.length) {
             return toolbar + '<div class="empty">' + esc(t("config.empty.resources")) + '</div>';
@@ -255,15 +257,36 @@ export function renderConfigHtml(lang: string): string {
     function syncView() {
         const s = state?.sync || {};
         const configured = state?.hubConfigured;
+        const health = s.health || "unknown";
+        // Reachable-but-rejected (401) or unreachable → offer a re-login so the
+        // user can get a fresh token without hunting for the logout button.
+        const needsAuth = configured && (health === "unauthorized" || health === "down");
+        const reloginBtn = needsAuth ? '<button id="sync-relogin" class="secondary">' + esc(t("config.btn.relogin")) + '</button>' : "";
         const toolbar = configured
             ? '<div class="toolbar"><button id="sync-pull">' + esc(t("config.btn.syncPull")) + '</button>' +
-              '<button id="sync-push">' + esc(t("config.btn.syncPush")) + '</button></div>'
+              '<button id="sync-push">' + esc(t("config.btn.syncPush")) + '</button>' + reloginBtn + '</div>'
             : '<div class="toolbar"><button id="sync-config">' + esc(t("config.btn.syncConfig")) + '</button></div>';
         const note = configured ? "" :
             '<div class="empty">' + esc(t("config.empty.hub")) + '</div>';
-        return toolbar + note +
-            '<div class="row"><span class="name">' + esc(t("config.sync.hub")) + '</span><span class="desc">' + esc(s.health || t("config.value.unknown")) + "</span></div>" +
+        const color = health === "ok" ? "var(--vscode-charts-green,#89c374)"
+            : health === "unauthorized" ? "var(--vscode-charts-orange,#d9a45b)"
+            : health === "down" ? "var(--vscode-charts-red,#e26d6d)"
+            : "var(--vscode-descriptionForeground,#888)";
+        const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:6px;vertical-align:middle"></span>';
+        const statusRow = '<div class="row"><span class="name">' + esc(t("config.sync.hub")) + '</span><span class="desc">' + dot + esc(t("config.sync.status." + health)) + "</span></div>";
+        let resultRow = "";
+        const lr = s.lastResult;
+        if (lr) {
+            if (lr.errors && lr.errors.length) {
+                const hint = lr.errors.some(function (e) { return /\b40[13]\b/.test(e); }) ? " — " + t("config.sync.authHint") : "";
+                resultRow = '<div class="row"><span class="name">' + esc(t("config.sync.lastResult")) + '</span><span class="desc" style="color:' + color + '">' + esc(lr.label + ": " + lr.errors.join(" · ") + hint) + "</span></div>";
+            } else {
+                resultRow = '<div class="row"><span class="name">' + esc(t("config.sync.lastResult")) + '</span><span class="desc">' + esc(t("msg.sync.report.success", { label: lr.label, pulled: lr.pulled, pushed: lr.pushed, skipped: lr.skipped })) + "</span></div>";
+            }
+        }
+        return toolbar + note + statusRow +
             '<div class="row"><span class="name">' + esc(t("config.sync.lastSync")) + '</span><span class="desc">' + esc(s.lastSyncUtc || t("config.sync.never")) + "</span></div>" +
+            resultRow +
             '<div class="row"><span class="name">' + esc(t("config.sync.pendingPush")) + '</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || t("config.value.none")) + "</span></div>";
     }
 
@@ -496,6 +519,8 @@ export function renderConfigHtml(lang: string): string {
             if (pull) { pull.onclick = () => { pull.textContent = t("config.status.pulling"); vscode.postMessage({ type: "sync-pull" }); }; }
             if (push) { push.onclick = () => { push.textContent = t("config.status.pushing"); vscode.postMessage({ type: "sync-push" }); }; }
             if (conf) { conf.onclick = () => vscode.postMessage({ type: "config-hub" }); }
+            const relog = document.getElementById("sync-relogin");
+            if (relog) { relog.onclick = () => vscode.postMessage({ type: "login" }); }
             return;
         }
         main.innerHTML = page(resourceList(active));
@@ -515,6 +540,10 @@ export function renderConfigHtml(lang: string): string {
         if (ia) { ia.onclick = () => vscode.postMessage({ type: "import-agents" }); }
         const isk = document.getElementById("import-skills");
         if (isk) { isk.onclick = () => vscode.postMessage({ type: "import-skills" }); }
+        const itl = document.getElementById("import-tools");
+        if (itl) { itl.onclick = () => vscode.postMessage({ type: "import-tools" }); }
+        const iin = document.getElementById("import-instructions");
+        if (iin) { iin.onclick = () => vscode.postMessage({ type: "import-instructions" }); }
         const ish = document.getElementById("install-skill-sh");
         if (ish) { ish.onclick = () => vscode.postMessage({ type: "install-skill-sh" }); }
     }

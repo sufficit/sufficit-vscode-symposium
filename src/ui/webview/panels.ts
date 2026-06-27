@@ -305,17 +305,13 @@ export function panelDefs() {
         { key: "changed", icon: "diff", el: changedFiles, title: "Edited files", count: changedItems.length, badge: String(changedItems.length), color: "var(--vscode-charts-green, #89c374)" },
     ];
 }
-let prevShownKey = "";   // signature of the previously-shown panel set
 export function refreshPanels() {
     const defs = panelDefs();
     const shown = defs.filter((d) => d.count > 0);
     if (activePanel && !shown.some((d) => d.key === activePanel)) { activePanel = null; }
-    const shownKey = shown.map((d) => d.key).join(",");
-    // Auto-open a lone panel ONLY when the shown set just changed into a single
-    // panel (e.g. it newly appeared) — NOT on every re-render, otherwise a manual
-    // close is undone on the next render and the panel looks stuck open.
-    if (activePanel == null && shown.length === 1 && shownKey !== prevShownKey) { activePanel = shown[0].key; }
-    prevShownKey = shownKey;
+    // Panels always start CLOSED: never auto-open on render or when new content
+    // appears (e.g. edited files after a message). The user opens one by clicking
+    // its tab. Only an explicit click sets activePanel.
     panelTabs.textContent = "";
     for (const d of shown) {
         const b = document.createElement("button");

@@ -49,7 +49,8 @@ export class ConfigPanel {
         );
         this.panel.webview.html = renderConfigHtml(this.resolveLang());
         this.panel.webview.onDidReceiveMessage(
-            (m) => void this.onMessage(m), undefined, this.disposables);
+            (m) => { void this.onMessage(m).catch((e) => void vscode.window.showErrorMessage(this.tr("msg.config.actionFailed", { error: String((e && e.message) || e) }))); },
+            undefined, this.disposables);
 
         // Live refresh when repo files change on disk.
         const watcher = vscode.workspace.createFileSystemWatcher(
@@ -77,9 +78,20 @@ export class ConfigPanel {
         const api = this.deps.api;
         switch (message.type) {
             case "ready":
-            case "refresh":
                 await this.pushState();
                 return;
+            case "refresh": {
+                // Re-render AND live-probe the hub so the button gives real
+                // feedback (it used to silently re-render with no notification).
+                await this.pushState();
+                let msg = this.tr("msg.config.refreshed");
+                if (api.sync.configured()) {
+                    const ok = await api.sync.health().catch(() => false);
+                    msg = this.tr(ok ? "msg.config.refreshed.hubUp" : "msg.config.refreshed.hubDown");
+                }
+                void vscode.window.showInformationMessage(msg);
+                return;
+            }
             case "open-root":
                 await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(rootDir()));
                 return;
@@ -104,6 +116,28 @@ export class ConfigPanel {
                         : (r.skipped > 0
                             ? this.tr("msg.import.agents.allExisted", { n: r.skipped })
                             : this.tr("msg.import.agents.none")));
+                await this.pushState();
+                return;
+            }
+            case "import-tools": {
+                const r = api.resources.importTools();
+                void vscode.window.showInformationMessage(
+                    r.created > 0
+                        ? this.tr("msg.import.tools.done", { n: r.created }) + (r.skipped ? this.tr("msg.import.tools.skippedSuffix", { n: r.skipped }) : "")
+                        : (r.skipped > 0
+                            ? this.tr("msg.import.tools.allExisted", { n: r.skipped })
+                            : this.tr("msg.import.tools.none")));
+                await this.pushState();
+                return;
+            }
+            case "import-instructions": {
+                const r = api.resources.importInstructions();
+                void vscode.window.showInformationMessage(
+                    r.created > 0
+                        ? this.tr("msg.import.instructions.done", { n: r.created }) + (r.skipped ? this.tr("msg.import.instructions.skippedSuffix", { n: r.skipped }) : "")
+                        : (r.skipped > 0
+                            ? this.tr("msg.import.instructions.allExisted", { n: r.skipped })
+                            : this.tr("msg.import.instructions.none")));
                 await this.pushState();
                 return;
             }
@@ -576,7 +610,9 @@ export class ConfigPanel {
         const state = {
             root: api.resources.root(),
             resources: api.resources.scan(),
-            backends: await api.backends.list(),
+            // A failing backends list (e.g. the gateway rejecting a stale token)
+            // must not abort the whole refresh — render the rest of the panel.
+            backends: await api.backends.list().catch(() => []),
             sync: api.sync.status(),
             hubConfigured: api.sync.configured(),
             profile: profile ?? null,

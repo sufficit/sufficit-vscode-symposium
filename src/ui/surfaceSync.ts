@@ -143,10 +143,15 @@ export class SurfaceSync {
         void adapter.refreshModels(force)
             .then(({ models, labels }) => {
                 const current = this.d.getController()?.backend ?? this.d.getTerminalSession()?.backend;
-                if (current !== backend || !models?.length) { return; }
-                this.d.post({ type: "models", models, labels: labels ?? {}, refreshed: force });
+                if (current !== backend) { return; }
+                // Post even on an empty result for an EXPLICIT refresh, so the
+                // picker shows feedback instead of looking dead; a background
+                // (non-forced) refresh stays silent on empty to avoid clobbering.
+                if (models?.length || force) {
+                    this.d.post({ type: "models", models: models ?? [], labels: labels ?? {}, refreshed: force });
+                }
             })
-            .catch(() => undefined);
+            .catch(() => { if (force) { this.d.post({ type: "models", models: [], labels: {}, refreshed: force }); } });
     }
 
     /** Pushes the Sufficit account (or null) for the sessions-pane footer. */

@@ -65,6 +65,15 @@ export function openChoiceMenu(anchorEl, options, current, onPick, opts) {
         rb.addEventListener("click", () => { hideCtx(); opts.refreshAction.onClick(); });
         ctxMenu.appendChild(rb);
     }
+    if (opts.switchAction) {
+        const sb = document.createElement("div"); sb.className = "mi";
+        const tick = document.createElement("span"); tick.className = "tick"; tick.textContent = "⇄";
+        const lbl = document.createElement("span"); lbl.className = "milbl"; lbl.textContent = opts.switchAction.label || "Switch backend";
+        sb.appendChild(tick); sb.appendChild(lbl);
+        if (opts.switchAction.detail) { const d = document.createElement("span"); d.className = "midetail"; d.textContent = opts.switchAction.detail; sb.appendChild(d); }
+        sb.addEventListener("click", () => { hideCtx(); opts.switchAction.onClick(); });
+        ctxMenu.appendChild(sb);
+    }
     renderRows("");
     ctxMenu.appendChild(list);
 
