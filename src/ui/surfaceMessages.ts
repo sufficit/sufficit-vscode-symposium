@@ -13,6 +13,7 @@ import { setTaskDone } from "../sync/tasks";
 import { removeGuardrail, clearSessionGuardrails } from "../sync/guardrails";
 import { probeRtk } from "../adapters/rtk";
 import { writeDroppedFile, writePastedImage, attachmentFromUri } from "./chatSurfaceContext";
+import { transcribeAudio } from "./transcribe";
 import { symposiumLog } from "../extension";
 
 /**
@@ -56,6 +57,17 @@ export class SurfaceMessages {
                     // active session if we have one, else start a fresh dialogue.
                     if (!this.d.getController() && !this.d.getFollowHandle() && !this.d.getTerminalSession()) {
                         void this.d.dialogues.restoreOrStart();
+                    }
+                    return;
+                }
+                case "transcribe-audio": {
+                    try {
+                        const text = await transcribeAudio(message.mime, message.data);
+                        this.d.post({ type: "transcription", text });
+                    } catch (err) {
+                        const msg = err instanceof Error ? err.message : String(err);
+                        symposiumLog(`[surface] transcription error: ${msg}`);
+                        this.d.post({ type: "transcription-error", message: msg });
                     }
                     return;
                 }

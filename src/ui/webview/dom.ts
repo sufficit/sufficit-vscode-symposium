@@ -8,6 +8,7 @@ export const modelPicker = document.getElementById("modelPicker") as HTMLButtonE
 export const reasoningPicker = document.getElementById("reasoningPicker") as HTMLButtonElement;
 export const sendMode = document.getElementById("sendMode") as HTMLSelectElement;
 export const micBtn = document.getElementById("mic") as HTMLButtonElement;
+export const micPauseBtn = document.getElementById("micPause") as HTMLButtonElement;
 export const sendBtn = document.getElementById("send") as HTMLButtonElement;
 export const status = document.getElementById("status") as HTMLElement;
 export const sessionsList = document.getElementById("sessionsList") as HTMLElement;

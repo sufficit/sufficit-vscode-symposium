@@ -90,6 +90,7 @@ export type WebviewToHost =
     | { type: "session-action"; sessionId: string; backend: string; action: SessionActionKind }
     | { type: "session-list-backends"; backend: string }
     | { type: "session-switch-backend"; sessionId: string; backend: string; targetBackend: string }
+    | { type: "transcribe-audio"; mime: string; data: string }
     // --- forwarded to ChatController ---
     | {
           type: "send";

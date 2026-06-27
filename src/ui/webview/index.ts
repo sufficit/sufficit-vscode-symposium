@@ -1,5 +1,5 @@
 import { vscode, saved, saveState } from "./vscode";
-import { activeFileSuffix, makeChip, renderChips, markEditing, lastUserRow, beginEdit, cancelEdit, retryLast, send, slashActive, updateSlash, renderSlash, acceptSlash, setBrowserOpen, handlePaste } from "./composer";
+import { activeFileSuffix, makeChip, renderChips, markEditing, lastUserRow, beginEdit, cancelEdit, retryLast, send, slashActive, updateSlash, renderSlash, acceptSlash, setBrowserOpen, handlePaste, insertTranscription, voiceError } from "./composer";
 import { resetLastMsg, renderError, append, branchBanner, message, streamDelta, endStream, renderThinkBlock, streamThinkingDelta, bumpToolGroup } from "./messages";
 import { renderTool, fillToolResult } from "./tools";
 import { renderStatusbar, openUsagePopover, setLastUsage, setLastTurn, sessionCostUsd, setSessionCostUsd } from "./statusbar";
@@ -125,6 +125,10 @@ import { applyStaticI18n } from "./staticI18n";
             setPresenceLabel();
         } else if (data.type === "setVoicePreferences") {
             (window as any).voicePreferences = data.preferences;
+        } else if (data.type === "transcription") {
+            insertTranscription(String(data.text ?? ""));
+        } else if (data.type === "transcription-error") {
+            voiceError(String(data.message ?? "erro"));
         }
     });
 

@@ -529,6 +529,16 @@
           "default": "https://ai.sufficit.com.br/openai/v1",
           "description": "Base URL of an OpenAI-compatible API. Defaults to the Sufficit AI gateway; override only to point the built-in backend at another OpenAI-compatible endpoint."
         },
+        "symposium.voice.language": {
+          "type": "string",
+          "default": "pt-BR",
+          "description": "Language for microphone transcription (BCP-47, e.g. pt-BR). The region is dropped when sent to the transcription endpoint (pt-BR -> pt)."
+        },
+        "symposium.voice.transcribeModel": {
+          "type": "string",
+          "default": "whisper-1",
+          "description": "Model id used for voice transcription via <baseUrl>/audio/transcriptions on the Sufficit AI gateway."
+        },
         "symposium.openai.apiKey": {
           "type": "string",
           "default": "",

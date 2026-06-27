@@ -1,6 +1,6 @@
 // Composer: input, send/edit/slash/paste, attachment chips. Listeners run on import.
 import { vscode, saved, saveState } from "./vscode";
-import { log, input, sendMode, micBtn, sendBtn, sendGroup, sendCaret, stopBtn, chips, addContext, addBrowserPage, slash, composerEl, ctxMenu } from "./dom";
+import { log, input, sendMode, micBtn, micPauseBtn, sendBtn, sendGroup, sendCaret, stopBtn, chips, addContext, addBrowserPage, slash, composerEl, ctxMenu } from "./dom";
 import { attachments, activeFile, activeFileRange, activeFileDismissed, activeFilePreview, activeFilePinned, busy, currentBackend, conversationRows, commands, setAttachments, setActiveFile, setActiveFileRange, setActiveFileDismissed, setActiveFilePreview, setActiveFilePinned, setBusy, setConversationRows, setCommands, autonomyValue, permissionValue } from "./state";
 import { setStatus, updateSendTitle, MODE_LABELS, MODE_KBD, MODE_ICONS, MODE_DESC, isMac, MOD, ALT } from "./status";
 import { modelValue, reasoningValue } from "./models";
@@ -215,13 +215,140 @@ input.addEventListener("input", () => {
     updateSlash();
 });
 
-// Voice = OS dictation. The VS Code webview sandbox blocks the microphone, so
-// in-webview SpeechRecognition cannot capture. Focus the input and let the user
-// dictate with the OS (Windows: Win+H) straight into the box.
-micBtn.title = "Ditar (Win+H no Windows): foque a caixa e use o ditado do sistema";
+// Voice = record + transcribe. The old Web Speech path was dead in Electron
+// (no SpeechRecognition backend). Instead we capture the mic with MediaRecorder
+// and ship the audio to the host, which calls the gateway's Whisper-compatible
+// /audio/transcriptions (token stays host-side). getUserMedia works in the VS
+// Code webview; a permission prompt appears on first use.
+const MIC_ICON = micBtn.innerHTML;
+const PAUSE_ICON = micPauseBtn.innerHTML;
+const RESUME_ICON = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M5 3.5v9a.5.5 0 0 0 .77.42l7-4.5a.5.5 0 0 0 0-.84l-7-4.5A.5.5 0 0 0 5 3.5Z"/></svg>';
+const STOP_ICON = '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>';
+
+let recorder: MediaRecorder | null = null;
+let micStream: MediaStream | null = null;
+let audioChunks: Blob[] = [];
+let voiceState: "idle" | "recording" | "paused" | "transcribing" = "idle";
+
+micBtn.title = "Gravar voz (clique para transcrever)";
+
+function teardownStream() {
+    if (micStream) { micStream.getTracks().forEach((t) => t.stop()); micStream = null; }
+    recorder = null;
+    audioChunks = [];
+}
+
+/** Restore the composer voice controls to the idle (not-recording) state. */
+export function resetVoiceUI() {
+    voiceState = "idle";
+    micBtn.disabled = false;
+    micBtn.classList.remove("recording");
+    micBtn.innerHTML = MIC_ICON;
+    micBtn.title = "Gravar voz (clique para transcrever)";
+    micPauseBtn.style.display = "none";
+    micPauseBtn.innerHTML = PAUSE_ICON;
+    micPauseBtn.title = "Pausar gravação";
+    teardownStream();
+}
+
+/** Drop transcribed text into the composer at the caret and resize. */
+export function insertTranscription(text: string) {
+    resetVoiceUI();
+    const t = (text || "").trim();
+    if (!t) { showToast("Nada transcrito (áudio vazio?)."); return; }
+    const el = input as HTMLTextAreaElement;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const before = el.value.slice(0, start);
+    const after = el.value.slice(end);
+    const sep = before && !before.endsWith(" ") && !before.endsWith("\n") ? " " : "";
+    el.value = before + sep + t + after;
+    const caret = (before + sep + t).length;
+    el.focus();
+    el.setSelectionRange(caret, caret);
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 180) + "px";
+    updateSlash();
+}
+
+/** Surface a transcription failure and return to idle. */
+export function voiceError(message: string) {
+    resetVoiceUI();
+    showToast("Falha na transcrição: " + message);
+}
+
+function stopAndTranscribe() {
+    if (!recorder || (voiceState !== "recording" && voiceState !== "paused")) { return; }
+    voiceState = "transcribing";
+    micBtn.disabled = true;
+    micBtn.classList.remove("recording");
+    micBtn.title = "Transcrevendo…";
+    micPauseBtn.style.display = "none";
+    try { recorder.stop(); } catch { resetVoiceUI(); }
+}
+
+async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showToast("Microfone indisponível neste ambiente.");
+        return;
+    }
+    try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+        const name = (err as { name?: string })?.name;
+        showToast(name === "NotAllowedError"
+            ? "Permissão de microfone negada. Libere o mic para o VS Code e tente de novo."
+            : "Não consegui acessar o microfone: " + ((err as Error)?.message ?? name ?? "erro"));
+        teardownStream();
+        return;
+    }
+    audioChunks = [];
+    try {
+        recorder = new MediaRecorder(micStream);
+    } catch {
+        recorder = new MediaRecorder(micStream, { mimeType: "audio/webm" });
+    }
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) { audioChunks.push(e.data); } };
+    recorder.onstop = () => {
+        const mime = recorder?.mimeType || "audio/webm";
+        const blob = new Blob(audioChunks, { type: mime });
+        teardownStream();
+        if (blob.size === 0) { resetVoiceUI(); showToast("Gravação vazia."); return; }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const data = String(reader.result).split(",")[1] || "";
+            vscode.postMessage({ type: "transcribe-audio", mime, data });
+        };
+        reader.readAsDataURL(blob);
+    };
+    recorder.start();
+    voiceState = "recording";
+    micBtn.classList.add("recording");
+    micBtn.innerHTML = STOP_ICON;
+    micBtn.title = "Parar e transcrever";
+    micPauseBtn.style.display = "";
+    micPauseBtn.innerHTML = PAUSE_ICON;
+    micPauseBtn.title = "Pausar gravação";
+}
+
 micBtn.addEventListener("click", () => {
-    input.focus();
-    showToast("Ditado por voz: aperte Win+H (Windows) e fale — o texto cai na caixa.");
+    if (voiceState === "idle") { void startRecording(); }
+    else if (voiceState === "recording" || voiceState === "paused") { stopAndTranscribe(); }
+});
+
+micPauseBtn.addEventListener("click", () => {
+    if (!recorder) { return; }
+    if (voiceState === "recording") {
+        try { recorder.pause(); } catch { return; }
+        voiceState = "paused";
+        micPauseBtn.innerHTML = RESUME_ICON;
+        micPauseBtn.title = "Retomar gravação";
+    } else if (voiceState === "paused") {
+        try { recorder.resume(); } catch { return; }
+        voiceState = "recording";
+        micPauseBtn.innerHTML = PAUSE_ICON;
+        micPauseBtn.title = "Pausar gravação";
+    }
 });
 input.addEventListener("blur", () => { setTimeout(() => { slash.style.display = "none"; }, 120); });
 export function handlePaste(e) {
