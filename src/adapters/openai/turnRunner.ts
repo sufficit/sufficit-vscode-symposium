@@ -407,7 +407,7 @@ export class TurnRunner {
                 // Network/transport failures (DNS, connection reset, timeout,
                 // "fetch failed", "terminated") are transient and safe to retry
                 // with the exact same request — unlike a 4xx or a logic error.
-                const retryable = /fetch failed|network|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|terminated|aborted|timeout/i.test(msg);
+                const retryable = /fetch failed|network error|network request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ECONNABORTED|EPROTO|EPIPE|socket hang up|terminated|aborted|timeout|request timed out|connection refused|connection reset|getaddrinfo/i.test(msg);
                 this.d.emit({ kind: "error", message: msg, retryable });
             }
         }
