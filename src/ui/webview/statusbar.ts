@@ -23,7 +23,10 @@ export function renderStatusbar(data) {
     };
     if (data.cwd) {
         const base = String(data.cwd).split("/").filter(Boolean).pop() || data.cwd;
-        statusbar.appendChild(seg("terminal", base, data.cwd));
+        const cwdSeg = seg("terminal", base, data.cwd + " — click to change working directory (new session)");
+        cwdSeg.style.cursor = "pointer";
+        cwdSeg.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "pick-cwd" }); });
+        statusbar.appendChild(cwdSeg);
     }
     statusbar.appendChild(seg(null, data.backend + (data.permission && data.permission !== "default" ? " · " + data.permission : "")));
     if (data.reasoning && data.reasoning !== "default") statusbar.appendChild(seg(null, "effort: " + data.reasoning));

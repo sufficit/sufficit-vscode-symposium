@@ -70,6 +70,7 @@ export type WebviewToHost =
     | { type: "pin-model"; model: string }
     | { type: "set-model-default"; model: string }
     | { type: "new-session"; compressionPresetId?: string }
+    | { type: "pick-cwd" }
     | { type: "set-compression-preset"; compressionPresetId: string }
     | { type: "compression-preset-set"; presetId: string }
     | { type: "list-backends" }

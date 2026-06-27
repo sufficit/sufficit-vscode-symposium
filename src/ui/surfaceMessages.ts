@@ -214,6 +214,18 @@ export class SurfaceMessages {
                     await vscode.commands.executeCommand("symposium.newSession");
                     return;
                 }
+                case "pick-cwd": {
+                    // Sessions are cwd-scoped, so "change directory" = start a new
+                    // dialogue in the chosen folder.
+                    const cur = this.d.getController()?.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                    const picked = await vscode.window.showOpenDialog({
+                        canSelectFolders: true, canSelectFiles: false, canSelectMany: false,
+                        openLabel: "Use as working directory",
+                        defaultUri: cur ? vscode.Uri.file(cur) : undefined,
+                    });
+                    if (picked && picked[0]) { this.d.dialogues.startInDir(picked[0].fsPath); }
+                    return;
+                }
                 case "set-compression-preset": {
                     const controller = this.d.getController();
                     if (controller && typeof message.compressionPresetId === "string") {

@@ -72,6 +72,13 @@ export class SurfaceDialogues {
         this.openDialogue(backend, { cwd }, "New dialogue");
     }
 
+    /** Starts a new dialogue with the first backend in an explicit cwd (dir picker). */
+    startInDir(cwd: string): void {
+        const backend = this.d.deps.adapterByBackend.keys().next().value;
+        if (!backend) { return; }
+        this.openDialogue(backend, { cwd }, "New dialogue");
+    }
+
     /**
      * Starts a fresh session on the SAME backend, seeded only with the visible
      * conversation up to the chosen message. This is the Symposium equivalent
