@@ -2,7 +2,7 @@
 import { vscode, saved } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
 import { renderChips, setBrowserOpen } from "./composer";
-import { append, branchBanner, endStream, message, renderError, renderStatusNotice, renderThinkBlock, streamDelta, streamThinkingDelta, resetLastMsg } from "./messages";
+import { append, branchBanner, endStream, message, renderError, renderStatusNotice, renderThinkBlock, streamDelta, streamThinkingDelta, resetLastMsg, endThinkingStream } from "./messages";
 import { fillToolResult, renderTool } from "./tools";
 import { bindWorkingSet, renderChangedFiles, renderGuardrails, renderQueued, renderTasks, renderPlan, resetWorkingState, startWorkingSet, refreshPanels, changedItems, setChangedItems } from "./panels";
 import { renderAccount, renderSessions } from "./sessions";
@@ -174,6 +174,11 @@ window.addEventListener("message", ({ data }) => {
         case "sessions": {
             setSessions(data.items);
             renderSessions();
+            break;
+        }
+        case "set-input": {
+            input.value = data.text || "";
+            input.focus();
             break;
         }
         case "account": {
@@ -349,7 +354,13 @@ window.addEventListener("message", ({ data }) => {
         }
         case "event": {
             const ev = data.event;
-            if (ev.kind === "thinking") streamThinkingDelta(ev.text);
+            if (ev.kind === "thinking") {
+                // Se estamos indo de thinking → thinking consecutivo sem texto no meio,
+                // isso pode indicar múltiplos thinking blocks separados
+                // Finaliza o thinking atual antes de começar um novo
+                endThinkingStream();
+                streamThinkingDelta(ev.text);
+            }
             else if (ev.kind === "text") streamDelta(ev.text);
             else if (ev.kind === "status-notice") renderStatusNotice(ev.text);
             else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }

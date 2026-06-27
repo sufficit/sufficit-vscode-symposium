@@ -69,6 +69,7 @@ export type WebviewToHost =
     | { type: "clear-guardrails" }
     | { type: "pin-model"; model: string }
     | { type: "set-model-default"; model: string }
+    | { type: "set-input"; text: string }
     | { type: "new-session"; compressionPresetId?: string }
     | { type: "set-compression-preset"; compressionPresetId: string }
     | { type: "compression-preset-set"; presetId: string }

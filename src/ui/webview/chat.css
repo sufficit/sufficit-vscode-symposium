@@ -1176,7 +1176,7 @@
     }
     .iconBtn:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
     /* Send = primary filled split button (send + mode caret) */
-    #sendGroup { display: inline-flex; height: 26px; border-radius: 5px; overflow: hidden; }
+    #sendGroup { display: inline-flex; height: 26px; border-radius: 5px; overflow: hidden; flex-shrink: 0; }
     /* Stop sits attached as the first segment of the send pill while busy. */
     #stopBtn {
         padding: 0 8px; flex: 0 0 auto;

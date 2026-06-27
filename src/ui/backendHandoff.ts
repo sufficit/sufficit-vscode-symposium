@@ -95,12 +95,14 @@ export class BackendHandoff {
         const options: SessionStartOptions = { cwd, model: undefined, permission: undefined, env: {} };
         // If fromName is provided, include it in the transcript context.
         if (fromName) {
-            const header = `\n\n[Conversation continued from ${fromName}]\n\n${transcript}\n\n`;
+            const header = `[Conversation continued from ${fromName}]\n\n${transcript}`;
             this.d.openDialogue(backend, options, title);
-            this.d.post({ type: "user", text: header.trim() });
+            // Set the text in the textarea for user review, don't auto-send
+            this.d.post({ type: "set-input", text: header });
         } else {
             this.d.openDialogue(backend, options, title);
-            this.d.post({ type: "user", text: transcript });
+            // Set the text in the textarea for user review, don't auto-send
+            this.d.post({ type: "set-input", text: transcript });
         }
     }
 
@@ -124,7 +126,8 @@ export class BackendHandoff {
         const fromName = this.displayName(from.backend);
         const transcript = from.transcript();
         this.openDialogueSeeded(backend, from.cwd, transcript, from.title, fromName);
-        this.carry(from.transcriptMessages(), transcript, fromName, backend);
+        // Don't auto-carry history - let user review and send manually
+        // this.carry(from.transcriptMessages(), transcript, fromName, backend);
     }
 
     /** Hand a live TERMINAL session off (history read from the CLI transcript). */
