@@ -303,6 +303,11 @@ window.addEventListener('message', (e) => {
 // Check for browser support
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
+// Ensure mic button is always visible
+if (micBtn) {
+    micBtn.style.display = 'inline-flex';
+}
+
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
     const prefs = getVoicePreferences();
