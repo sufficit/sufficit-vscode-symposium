@@ -394,8 +394,8 @@ export function renderConfigHtml(lang: string): string {
     }
 
     function compressionView() {
-        const presets = (state && state.compressionPresets) || [];
-        const defaultPresetId = (state && state.compressionDefaultPresetId) || "none";
+        const presets = (state && state.compression && state.compression.presets) || [];
+        const defaultPresetId = (state && state.compression && state.compression.defaultPresetId) || "builtin-standard";
         const p = (state && state.prefs) || {};
 
         const sel = (key, value, opts) =>
@@ -412,7 +412,7 @@ export function renderConfigHtml(lang: string): string {
 
         const presetCard = (preset) => {
             const isDefault = preset.id === defaultPresetId;
-            const isBuiltin = preset.id === "none" || preset.id === "summarize" || preset.id === "aggressive" || preset.id === "token-budget";
+            const isBuiltin = preset.id.startsWith("builtin-") || preset.id === "none" || preset.id === "summarize" || preset.id === "aggressive" || preset.id === "token-budget";
             const defaultBadge = isDefault ? '<span class="badge badge-default">Default</span>' : '';
 
             return '<div class="card preset-card" data-id="' + esc(preset.id) + '">' +
@@ -421,16 +421,18 @@ export function renderConfigHtml(lang: string): string {
                     defaultBadge +
                 '</div>' +
                 '<div class="card-body">' +
-                    '<div class="preset-strategy"><strong>Strategy:</strong> ' + esc(preset.strategy) + '</div>' +
-                    (preset.strategy === "token-budget" ?
-                        '<div class="preset-budget"><strong>Token budget:</strong> ' + esc(preset.tokenBudget || "N/A") + '</div>' :
-                        '<div class="preset-target"><strong>Target ratio:</strong> ' + (preset.targetRatio ? (preset.targetRatio * 100).toFixed(0) + '%' : 'N/A') + '</div>'
-                    ) +
+                    '<div class="preset-strategy"><strong>Strategy:</strong> ' + esc(preset.strategy || 'N/A') + '</div>' +
+                    (preset.params && preset.params.keepRecent ? '<div class="preset-param"><strong>Keep recent:</strong> ' + preset.params.keepRecent + ' messages</div>' : '') +
+                    (preset.params && preset.params.maxTokens ? '<div class="preset-param"><strong>Max tokens:</strong> ' + preset.params.maxTokens + '</div>' : '') +
+                    (preset.strategy === "token-budget" && preset.tokenBudget ?
+                        '<div class="preset-budget"><strong>Token budget:</strong> ' + esc(preset.tokenBudget) + '</div>' : '') +
+                    (preset.targetRatio ?
+                        '<div class="preset-target"><strong>Target ratio:</strong> ' + (preset.targetRatio * 100).toFixed(0) + '%' + '</div>' : '') +
                 '</div>' +
                 '<div class="card-actions">' +
                     (!isBuiltin ? '<button class="secondary btn-edit-preset" data-id="' + esc(preset.id) + '">Edit</button>' : '') +
-                    (!isBuiltin ? '<button class="btn-delete-preset" data-id="' + esc(preset.id) + '">Delete</button>' : '') +
-                    (!isDefault ? '<button class="btn-set-default-preset" data-id="' + esc(preset.id) + '">Set Default</button>' : '') +
+                    (!isBuiltin ? '<button class="danger btn-delete-preset" data-id="' + esc(preset.id) + '">Delete</button>' : '') +
+                    (!isDefault ? '<button class="secondary btn-set-default-preset" data-id="' + esc(preset.id) + '">Set Default</button>' : '') +
                 '</div>' +
             '</div>';
         };
@@ -512,14 +514,19 @@ export function renderConfigHtml(lang: string): string {
                 if (addPresetBtn) {
                     addPresetBtn.onclick = () => vscode.postMessage({ type: "add-compression-preset" });
                 }
-                main.querySelectorAll(".btn-edit-preset").forEach(el => {
-                    el.onclick = () => vscode.postMessage({ type: "edit-compression-preset", key: el.getAttribute("data-id") });
-                });
-                main.querySelectorAll(".btn-delete-preset").forEach(el => {
-                    el.onclick = () => vscode.postMessage({ type: "remove-compression-preset", key: el.getAttribute("data-id") });
-                });
-                main.querySelectorAll(".btn-set-default-preset").forEach(el => {
-                    el.onclick = () => vscode.postMessage({ type: "set-compression-preset-default", value: el.getAttribute("data-id") });
+                // Event listeners para botões de preset usando event delegation
+                main.addEventListener("click", (e) => {
+                    const target = e.target;
+                    if (target.classList.contains("btn-edit-preset")) {
+                        const id = target.getAttribute("data-id");
+                        if (id) vscode.postMessage({ type: "edit-compression-preset", key: id });
+                    } else if (target.classList.contains("btn-delete-preset")) {
+                        const id = target.getAttribute("data-id");
+                        if (id) vscode.postMessage({ type: "remove-compression-preset", key: id });
+                    } else if (target.classList.contains("btn-set-default-preset")) {
+                        const id = target.getAttribute("data-id");
+                        if (id) vscode.postMessage({ type: "set-compression-preset-default", value: id });
+                    }
                 });
             }
             return;
