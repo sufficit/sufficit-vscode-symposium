@@ -303,6 +303,11 @@ window.addEventListener('message', (e) => {
 // Check for browser support
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
+// Voice init must never abort the webview bundle: it runs at module load, before
+// the global error handler is registered, so an unguarded throw here (e.g. the
+// Electron webview sandbox rejecting SpeechRecognition) would silently take down
+// every icon/picker that later JS wires. Keep it strictly non-fatal.
+try {
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
     const prefs = getVoicePreferences();
@@ -390,6 +395,7 @@ if (SpeechRecognition) {
     micBtn.style.display = 'none';
     console.warn('Web Speech API not supported in this browser');
 }
+} catch (_voiceErr) { try { micBtn.style.display = 'none'; } catch (_) {} console.warn('Symposium: voice init failed (non-fatal):', _voiceErr); }
 input.addEventListener("blur", () => { setTimeout(() => { slash.style.display = "none"; }, 120); });
 export function handlePaste(e) {
     const items = (e.clipboardData && e.clipboardData.items) || [];
