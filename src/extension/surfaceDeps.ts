@@ -97,5 +97,8 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                     "model", model || undefined, target);
             },
         },
+        store: {
+            setParent: (sessionId: string, parentId: string | undefined) => store.setParent(sessionId, parentId),
+        },
     };
 }

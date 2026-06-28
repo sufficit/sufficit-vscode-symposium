@@ -35,6 +35,10 @@ export interface ChatSurfaceDeps {
         setPinned(backend: string, models: string[]): void;
         setDefault(backend: string, model: string | undefined): Thenable<void>;
     };
+    /** Session metadata store (titles, archive, pin, parent relationships). */
+    store: {
+        setParent(sessionId: string, parentId: string | undefined): void;
+    };
 }
 
 /**
@@ -55,7 +59,7 @@ export class ChatSurface {
 
     private readonly disposables: vscode.Disposable[] = [];
     private readonly changedFiles = new ChangedFilesManager({ post: (m) => this.post(m), getCwd: () => this.cwd(), getSid: () => this.sid(), resolveChanged: (p) => this.controller?.resolveChanged(p), getRawItems: () => this.controller?.changedItemsRaw() ?? [] }, this.disposables);
-    private readonly handoff = new BackendHandoff({ getAdapter: (b) => this.deps.adapterByBackend.get(b), listSessions: () => this.deps.listSessions(), cwdFor: (i) => this.deps.cwdFor(i), openDialogue: (b, o, t) => this.openDialogue(b, o, t), post: (m) => this.post(m), getController: () => this.controller, getTerminalSession: () => this.terminalSession });
+    private readonly handoff = new BackendHandoff({ getAdapter: (b) => this.deps.adapterByBackend.get(b), listSessions: () => this.deps.listSessions(), cwdFor: (i) => this.deps.cwdFor(i), openDialogue: (b, o, t) => this.openDialogue(b, o, t), post: (m) => this.post(m), getController: () => this.controller, getTerminalSession: () => this.terminalSession, getStore: () => this.deps.store });
     private readonly sync = new SurfaceSync({ post: (m) => this.post(m), getController: () => this.controller, getTerminalSession: () => this.terminalSession, getAccount: () => this.deps.account, setLoggedIn: (v) => { this.loggedIn = v; }, getCommands: () => this.symposiumCommands });
     // Constructor-initialized (not field initializers): they eagerly read
     // parameter properties (deps/webview/chatOnly/onTitleChange) and the

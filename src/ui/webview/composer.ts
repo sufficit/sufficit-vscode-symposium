@@ -147,9 +147,10 @@ export function send(modeOverride) {
     lastSendPayload = { ...payload, editFrom: null };   // remember for Retry
     vscode.postMessage(payload);
     if (editAnchor != null) { editAnchor = null; markEditing(); }
-    if (!busy && editFrom == null) { setBusy(true); setStatus(); }
+    if (!busy && editFrom == null) { setBusy(true); }
     setAttachments([]);
     renderChips();
+    setStatus();
 }
 let slashMatches = [];
 let slashSel = 0;
@@ -213,7 +214,9 @@ input.addEventListener("input", () => {
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 180) + "px";
     updateSlash();
+    setStatus();
 });
+setStatus();
 
 // Voice input using Web Speech API (SpeechRecognition)
 let recognition: any = null;
@@ -266,6 +269,7 @@ function updateRecordingDots() {
         input.value = recordingTextBase + dots[index];
         input.style.height = 'auto';
         input.style.height = Math.min(input.scrollHeight, 180) + "px";
+        setStatus();
     }, 400);
 }
 

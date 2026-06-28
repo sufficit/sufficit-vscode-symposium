@@ -1,7 +1,7 @@
 // Status text, composer "working" indicator, loading state, the send-button
 // title, and the send-mode constants (shared with the composer's send-mode menu).
-import { sendMode, sendGroup, sendIcon, sendBtn, sendCaret, stopBtn, status, modelPicker, reasoningPicker, progress, composerEl, root } from "./dom";
-import { busy, queued, activeModel, loading, setLoadingFlag } from "./state";
+import { sendMode, sendGroup, sendIcon, sendBtn, sendCaret, stopBtn, status, modelPicker, reasoningPicker, progress, composerEl, root, input } from "./dom";
+import { attachments, activeFile, activeFileDismissed, activeFilePinned, activeFilePreview, busy, queued, activeModel, loading, setLoadingFlag } from "./state";
 import { modelLabel, modelList, reasoningList } from "./models";
 
 export const isMac = navigator.platform.indexOf("Mac") === 0;
@@ -24,25 +24,37 @@ export const MODE_DESC: any = {
 };
 export const STOP_ICON = '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>';
 
+export function hasSendableInput() {
+    const hasText = !!input.value.trim();
+    const hasAttachments = attachments.length > 0;
+    const hasPinnedActiveFile = !!activeFile && !activeFileDismissed && (!activeFilePreview || activeFilePinned);
+    return hasText || hasAttachments || hasPinnedActiveFile;
+}
+
 export function updateSendTitle() {
     // Idle: plain Send (paper plane). While a turn runs, the button reflects what
     // the NEXT message will do — queue (clock) or steer (lightning) — per the
     // selected mode. Clicking sends in that mode; Stop the running turn with Esc.
+    const canSend = hasSendableInput();
     if (busy) {
         const mode = ((sendMode as HTMLSelectElement).value === "steer") ? "steer" : "queue";
         sendGroup.classList.add("busy");
         sendGroup.classList.toggle("steer", mode === "steer");
         sendIcon.innerHTML = MODE_ICONS[mode];
-        (sendBtn as HTMLButtonElement).title = (mode === "steer")
-            ? "Steer: interrupt the running turn and send now (Ctrl/Cmd+Enter) · Esc to stop"
-            : "Queue: send after the current turn finishes (Alt+Enter) · Esc to stop";
+        (sendBtn as HTMLButtonElement).disabled = !canSend;
+        (sendBtn as HTMLButtonElement).title = canSend
+            ? ((mode === "steer")
+                ? "Steer: interrupt the running turn and send now (Ctrl/Cmd+Enter) · Esc to stop"
+                : "Queue: send after the current turn finishes (Alt+Enter) · Esc to stop")
+            : "Type a message to send · Esc to stop";
         sendCaret.style.display = "";
         stopBtn.style.display = "";
         return;
     }
     sendGroup.classList.remove("busy", "steer", "stopping");
     sendIcon.innerHTML = MODE_ICONS.send;
-    (sendBtn as HTMLButtonElement).title = "Send (Enter)";
+    (sendBtn as HTMLButtonElement).disabled = !canSend;
+    (sendBtn as HTMLButtonElement).title = canSend ? "Send (Enter)" : "Type a message to send";
     sendCaret.style.display = "none";
     stopBtn.style.display = "none";
 }
