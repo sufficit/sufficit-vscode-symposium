@@ -28,6 +28,8 @@ export interface ResourceEntry {
     path: string;
     /** True for multi-file skill bundles. */
     bundle: boolean;
+    /** Optional `version` from frontmatter (skills/agents/etc.), if declared. */
+    version?: string;
 }
 
 export interface SyncState {
@@ -100,8 +102,8 @@ export function ensureScaffold(): void {
     }
 }
 
-/** Reads `name`/`description` from a leading YAML-ish frontmatter block. */
-function parseFrontmatter(text: string): { name?: string; description?: string } {
+/** Reads `name`/`description`/`version` from a leading YAML-ish frontmatter block. */
+function parseFrontmatter(text: string): { name?: string; description?: string; version?: string } {
     if (!text.startsWith("---")) {
         return {};
     }
@@ -109,9 +111,9 @@ function parseFrontmatter(text: string): { name?: string; description?: string }
     if (end === -1) {
         return {};
     }
-    const out: { name?: string; description?: string } = {};
+    const out: { name?: string; description?: string; version?: string } = {};
     for (const line of text.slice(3, end).split("\n")) {
-        const m = /^(name|description)\s*:\s*(.*)$/.exec(line);
+        const m = /^(name|description|version)\s*:\s*(.*)$/.exec(line);
         if (m) {
             (out as Record<string, string>)[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
         }
@@ -122,7 +124,7 @@ function parseFrontmatter(text: string): { name?: string; description?: string }
 /** Reads name/description for a single-file resource, falling back to the filename. */
 function readFileResource(kind: ResourceKind, file: string): ResourceEntry {
     const fallback = path.basename(file).replace(/\.(md|json)$/i, "");
-    let meta: { name?: string; description?: string } = {};
+    let meta: { name?: string; description?: string; version?: string } = {};
     try {
         meta = parseFrontmatter(fs.readFileSync(file, "utf8"));
     } catch {
@@ -134,6 +136,7 @@ function readFileResource(kind: ResourceKind, file: string): ResourceEntry {
         description: meta.description ?? "",
         path: file,
         bundle: false,
+        version: meta.version,
     };
 }
 
@@ -141,7 +144,7 @@ function readFileResource(kind: ResourceKind, file: string): ResourceEntry {
 function readSkillBundle(dir: string): ResourceEntry {
     const manifest = path.join(dir, "SKILL.md");
     const fallback = path.basename(dir);
-    let meta: { name?: string; description?: string } = {};
+    let meta: { name?: string; description?: string; version?: string } = {};
     try {
         meta = parseFrontmatter(fs.readFileSync(manifest, "utf8"));
     } catch {
@@ -153,6 +156,7 @@ function readSkillBundle(dir: string): ResourceEntry {
         description: meta.description ?? "",
         path: manifest,
         bundle: true,
+        version: meta.version,
     };
 }
 

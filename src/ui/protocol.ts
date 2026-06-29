@@ -55,6 +55,7 @@ export type WebviewToHost =
     | { type: "account-logout" }
     | { type: "open-session"; sessionId: string; backend: string }
     | { type: "paste-image"; mime: string; data: string }
+    | { type: "stt-transcribe"; data: string; mime: string }
     | { type: "drop-file"; name?: string; mime?: string; data?: string }
     | { type: "drop-files"; files: DroppedFilePayload[] }
     | { type: "drop-uris"; uris: string[] }

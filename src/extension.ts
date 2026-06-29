@@ -20,6 +20,7 @@ import { symposiumLog, setSymposiumOutput } from "./extension/log";
 import { claudeConfig, codexConfig, copilotConfig, openaiConfig, normalizeAdapterDefs, buildCustomAdapters } from "./extension/config";
 import { buildChatSurfaceDeps } from "./extension/surfaceDeps";
 import { registerCommands } from "./extension/commands";
+import { initSttStorage } from "./voice/sttService";
 
 // Re-exported so consumers (e.g. ui/chatSurface) can keep importing from here.
 export { symposiumLog } from "./extension/log";
@@ -28,6 +29,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const output = vscode.window.createOutputChannel("Symposium");
     setSymposiumOutput(output);
     context.subscriptions.push(output);
+
+    // Local speech-to-text model storage (downloaded on demand under global storage).
+    initSttStorage(context);
 
     const sufficitAdapter = new OpenAIAdapter("openai", "Sufficit AI", () => openaiConfig(context));
     const adapters: AgentAdapter[] = [

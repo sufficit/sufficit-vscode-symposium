@@ -96,6 +96,18 @@ export class SurfaceMessages {
                     }
                     return;
                 }
+                case "stt-transcribe": {
+                    // Local hybrid path: the webview captured audio; transcribe it
+                    // offline with the configured engine and return the text.
+                    try {
+                        const { transcribeAudio } = await import("../voice/sttService");
+                        const text = await transcribeAudio(message.data, message.mime);
+                        this.d.post({ type: "stt-result", text });
+                    } catch (e) {
+                        this.d.post({ type: "stt-error", error: String((e && (e as Error).message) || e) });
+                    }
+                    return;
+                }
                 case "drop-file": {
                     const file = await writeDroppedFile(message.name, message.mime, message.data ?? "");
                     if (file) {

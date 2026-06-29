@@ -1,11 +1,28 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
 import { ensureScaffold, ResourceKind, rootDir } from "../config/root";
 import { AdapterPatch, SymposiumApi } from "../api/symposiumApi";
 import { SufficitAuth } from "../auth/identity";
 import { renderConfigHtml } from "./configHtml";
 import { tr } from "./configI18n";
 import type { CompressionPreset, CompressionStrategyType } from "../compression/types";
-import { listServers, ensureSufficitNativeServer, deleteServer, importServersFromConfig } from "../config/servers";
+import { listServers, ensureSufficitNativeServer, deleteServer, importServersFromConfig, writeManifest, serverSubdir, readManifest, ServerManifest } from "../config/servers";
+import { getSttState, downloadSttModel, deleteSttModel } from "../voice/sttService";
+
+/** Payload from the in-panel MCP add/edit form (configViews mcpFormModal). */
+interface McpFormPayload {
+    mode?: "add" | "edit";
+    originalName?: string;
+    name?: string;
+    transport?: string;
+    description?: string;
+    command?: string;
+    args?: string;
+    url?: string;
+    headers?: string;
+    env?: string;
+}
 
 export interface ConfigPanelDeps {
     api: SymposiumApi;
@@ -74,7 +91,7 @@ export class ConfigPanel {
     }
 
     private async onMessage(message: {
-        type: string; path?: string; kind?: ResourceKind; name?: string; backend?: string; value?: string; key?: string; payload?: { name?: string };
+        type: string; path?: string; kind?: ResourceKind; name?: string; backend?: string; value?: string; key?: string; modelId?: string; payload?: McpFormPayload & { name?: string; server?: string; itemType?: string };
     }): Promise<void> {
         const api = this.deps.api;
         switch (message.type) {
@@ -188,6 +205,22 @@ export class ConfigPanel {
                     void vscode.window.showInformationMessage(`MCP server "${serverName}" deleted`);
                 }
                 await this.pushState();
+                return;
+            }
+            case "save-mcp-server": {
+                await this.saveMcpServer(message.payload);
+                return;
+            }
+            case "open-mcp-item": {
+                const { server, itemType, name } = message.payload ?? {};
+                if (!server || !itemType || !name) { return; }
+                if (itemType !== "tools" && itemType !== "prompts" && itemType !== "resources") { return; }
+                const ext = itemType === "resources" ? ".json" : ".md";
+                const file = path.join(serverSubdir(server, itemType), name + ext);
+                if (fs.existsSync(file)) {
+                    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+                    await vscode.window.showTextDocument(doc, { preview: true });
+                }
                 return;
             }
             case "install-skill-sh": {
@@ -337,6 +370,12 @@ export class ConfigPanel {
                     else if (message.key === "symposium.voice.soundFeedback") {
                         value = message.value === "true";
                     }
+                    else if (message.key === "symposium.voice.whisper.translate" || message.key === "symposium.voice.fasterWhisper.vad") {
+                        value = message.value === "true";
+                    }
+                    else if (message.key === "symposium.voice.whisper.threads") { value = Math.max(1, Number(message.value) || 4); }
+                    else if (message.key === "symposium.voice.whisper.beamSize" || message.key === "symposium.voice.fasterWhisper.beamSize") { value = Math.max(1, Number(message.value) || 5); }
+                    else if (message.key === "symposium.voice.whisper.temperature") { value = Math.min(1, Math.max(0, Number(message.value) || 0)); }
                     await vscode.workspace.getConfiguration().update(message.key, value, vscode.ConfigurationTarget.Global);
                     await this.pushState();
                 }
@@ -556,6 +595,31 @@ export class ConfigPanel {
                 await vscode.commands.executeCommand("symposium.showCompressionManual");
                 return;
             }
+            case "stt-download-model": {
+                const id = message.modelId;
+                if (!id) { return; }
+                this.panel.webview.postMessage({ type: "stt-progress", modelId: id, ratio: 0, phase: "start" });
+                try {
+                    await downloadSttModel(id, (p) => {
+                        void this.panel.webview.postMessage({ type: "stt-progress", modelId: id, ratio: p.ratio, received: p.received, total: p.total, phase: "downloading" });
+                    });
+                    void vscode.window.showInformationMessage(this.tr("msg.stt.downloaded", { model: id }));
+                } catch (e) {
+                    void vscode.window.showErrorMessage(this.tr("msg.stt.downloadFailed", { model: id, error: String((e && (e as Error).message) || e) }));
+                } finally {
+                    this.panel.webview.postMessage({ type: "stt-progress", modelId: id, ratio: 1, phase: "done" });
+                    await this.pushState();
+                }
+                return;
+            }
+            case "stt-delete-model": {
+                const id = message.modelId;
+                if (!id) { return; }
+                const removed = deleteSttModel(id);
+                if (removed) { void vscode.window.showInformationMessage(this.tr("msg.stt.deleted", { model: id })); }
+                await this.pushState();
+                return;
+            }
         }
     }
 
@@ -607,6 +671,70 @@ export class ConfigPanel {
         });
         if (model === undefined) { return undefined; }
         return { baseUrl: baseUrl.trim(), name: name.trim(), apiKey: apiKey.trim(), model: model.trim() };
+    }
+
+    /** Parses "KEY=VALUE" pairs separated by newlines or commas (env + headers). */
+    private parsePairs(raw: string): Record<string, string> {
+        const out: Record<string, string> = {};
+        for (const pair of (raw || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean)) {
+            const eq = pair.indexOf("=");
+            if (eq > 0) { out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim(); }
+        }
+        return out;
+    }
+
+    /**
+     * Persists an MCP server from the in-panel add/edit form (no native prompts).
+     * Validates host-side too (the webview already pre-validates), then writes the
+     * manifest and refreshes. On edit, name/transport are authoritative from the
+     * form; unedited manifest fields (version/source/builtin) are preserved.
+     */
+    private async saveMcpServer(p?: McpFormPayload): Promise<void> {
+        if (!p) { return; }
+        const editing = p.mode === "edit";
+        const name = (editing ? (p.originalName ?? "") : (p.name ?? "")).trim();
+        if (!name) { void vscode.window.showWarningMessage(this.tr("msg.addMcp.nameRequired")); return; }
+        if (!editing) {
+            if (!/^[\w.-]+$/.test(name)) { void vscode.window.showWarningMessage(this.tr("msg.addMcp.nameInvalid")); return; }
+            if (listServers().some((s) => s.name.toLowerCase() === name.toLowerCase())) {
+                void vscode.window.showWarningMessage(this.tr("msg.addMcp.nameExists")); return;
+            }
+        }
+        const transport: "stdio" | "sse" = p.transport === "sse" ? "sse" : "stdio";
+        const cur = editing ? (readManifest(name) ?? {}) : {};
+        const manifest: ServerManifest = {
+            ...cur,
+            name,
+            transport,
+            description: (p.description ?? "").trim() || undefined,
+        };
+
+        if (transport === "stdio") {
+            const command = (p.command ?? "").trim();
+            if (!command) { void vscode.window.showWarningMessage(this.tr("msg.addMcp.commandRequired")); return; }
+            manifest.command = command;
+            const args = (p.args ?? "").trim() ? (p.args as string).trim().split(/\s+/) : [];
+            if (args.length) { manifest.args = args; } else { delete manifest.args; }
+            const env = this.parsePairs(p.env ?? "");
+            if (Object.keys(env).length) { manifest.env = env; } else { delete manifest.env; }
+            delete manifest.url;
+            delete manifest.headers;
+        } else {
+            const url = (p.url ?? "").trim();
+            if (!url) { void vscode.window.showWarningMessage(this.tr("msg.addMcp.urlRequired")); return; }
+            try { new URL(url); } catch { void vscode.window.showWarningMessage(this.tr("msg.addMcp.urlInvalid")); return; }
+            manifest.url = url;
+            const headers = this.parsePairs(p.headers ?? "");
+            if (Object.keys(headers).length) { manifest.headers = headers; } else { delete manifest.headers; }
+            delete manifest.command;
+            delete manifest.args;
+            delete manifest.env;
+        }
+
+        writeManifest(name, manifest);
+        await this.pushState();
+        void vscode.window.showInformationMessage(
+            this.tr(editing ? "msg.editMcp.updated" : "msg.addMcp.created", { name }));
     }
 
     /** Confirms a CRUD change and offers a reload (added/removed endpoints register on reload). */
@@ -679,6 +807,8 @@ export class ConfigPanel {
                 defaultPresetId: compressionManager.getDefaultPresetId(),
                 perSessionEnabled: compressionManager.isPerSessionEnabled(),
             },
+            // Local speech-to-text engines, models (with installed flag) and tool availability.
+            stt: await getSttState().catch(() => null),
         };
         await this.panel.webview.postMessage({ type: "state", state });
     }

@@ -242,13 +242,6 @@ export function renderThinkBlock(text) {
 }
 export function streamThinkingDelta(text) {
     const stick = nearBottom();
-    // Se estamos continuando um thinking block existente e recebemos texto vazio, 
-    // isso pode indicar o início de um novo thinking block separado
-    if (streamThink && text.trim() === "" && streamThinkText.length > 0) {
-        // Finaliza o thinking block atual
-        streamThink = null; streamThinkBody = null; streamThinkLen = null; streamThinkText = "";
-    }
-    
     if (!streamThink) {
         const { wrap, body, len } = renderThinkBlock("");
         streamThink = wrap; streamThinkBody = body; streamThinkLen = len; streamThinkText = "";

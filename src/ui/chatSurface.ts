@@ -154,14 +154,19 @@ export class ChatSurface {
         const lang = langCfg.get<string>("preferredLanguage", "").trim() || vscode.env.language || "en";
         void this.webview.postMessage({ type: "setLang", lang });
 
-        // Send voice preferences to webview
+        // Send voice preferences to webview. `engine` + `localStt` drive the
+        // hybrid mic: Web Speech in the browser, local host transcription on desktop.
         const voiceCfg = vscode.workspace.getConfiguration("symposium");
+        const voiceEngine = voiceCfg.get<string>("voice.engine", "auto");
         const voicePreferences = {
             language: voiceCfg.get<string>("voice.language", "pt-BR"),
             continuous: voiceCfg.get<boolean>("voice.continuous", true),
             interimResults: voiceCfg.get<boolean>("voice.interimResults", true),
             dotsAnimation: voiceCfg.get<boolean>("voice.dotsAnimation", true),
             soundFeedback: voiceCfg.get<boolean>("voice.soundFeedback", true),
+            engine: voiceEngine,
+            // Any engine other than the browser-only one can transcribe locally on the host.
+            localStt: voiceEngine !== "webspeech",
         };
         void this.webview.postMessage({ type: "setVoicePreferences", preferences: voicePreferences });
 

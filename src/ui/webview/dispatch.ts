@@ -355,10 +355,7 @@ window.addEventListener("message", ({ data }) => {
         case "event": {
             const ev = data.event;
             if (ev.kind === "thinking") {
-                // Se estamos indo de thinking → thinking consecutivo sem texto no meio,
-                // isso pode indicar múltiplos thinking blocks separados
-                // Finaliza o thinking atual antes de começar um novo
-                endThinkingStream();
+                // Thinkings consecutivos devem ser agrupados no mesmo bloco
                 streamThinkingDelta(ev.text);
             }
             else if (ev.kind === "text") streamDelta(ev.text);

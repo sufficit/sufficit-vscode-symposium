@@ -10,6 +10,27 @@ import * as os from "os";
 import * as path from "path";
 import { repoDir, sanitize } from "./root";
 
+/**
+ * Writes `content` to `file` only when it differs from what is already on disk.
+ *
+ * The config panel watches `repo/**` and re-pushes state on every change, while
+ * `pushState` re-asserts the built-in server (manifest + tool files). Writing
+ * identical bytes still emits a watcher event, so an unconditional write creates
+ * a write → watch → push → write loop (100% CPU, flickering panel). Skipping
+ * no-op writes breaks that loop after it settles. Returns true if it wrote.
+ */
+function writeIfChanged(file: string, content: string): boolean {
+    try {
+        if (fs.existsSync(file) && fs.readFileSync(file, "utf8") === content) {
+            return false;
+        }
+    } catch {
+        // unreadable: fall through and (re)write
+    }
+    fs.writeFileSync(file, content, "utf8");
+    return true;
+}
+
 /** Location of servers repository */
 export function serversDir(): string {
     return path.join(repoDir(), "servers");
@@ -39,6 +60,10 @@ export interface ServerManifest {
     command?: string;
     args?: string[];
     env?: Record<string, string>;
+    /** Endpoint URL for SSE/remote transports. */
+    url?: string;
+    /** HTTP headers for SSE/remote transports (auth tokens, etc.). */
+    headers?: Record<string, string>;
     builtin?: boolean;  // true for native Sufficit MCP
 }
 
@@ -143,7 +168,7 @@ export function writeManifest(serverName: string, manifest: ServerManifest): voi
     });
 
     const manifestPath = serverManifestPath(serverName);
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+    writeIfChanged(manifestPath, JSON.stringify(manifest, null, 2));
 }
 
 /**
@@ -162,7 +187,7 @@ export function writeServerItem(
 
     const ext = type === "resources" ? ".json" : ".md";
     const filePath = path.join(dir, `${sanitize(name)}${ext}`);
-    fs.writeFileSync(filePath, content, "utf8");
+    writeIfChanged(filePath, content);
 }
 
 /**

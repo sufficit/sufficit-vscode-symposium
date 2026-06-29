@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "2026.627.9",
+  "version": "2026.628.7",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -317,6 +317,131 @@
           "type": "number",
           "default": 300000,
           "description": "How long (ms) a foreground spawn_agent waits for the subagent to finish before returning the partial result and leaving it running in the background. Default 300000 (5 min)."
+        },
+        "symposium.voice.engine": {
+          "type": "string",
+          "enum": ["auto", "webspeech", "whisper-cpp", "faster-whisper", "vosk"],
+          "enumDescriptions": [
+            "Web Speech in the browser (code-server); local whisper.cpp on desktop.",
+            "Browser Web Speech API only (works in code-server, not VS Code desktop).",
+            "whisper.cpp via the whisper-cli binary (offline, CPU, multilingual).",
+            "faster-whisper via whisper-ctranslate2 (the tool downloads its own models).",
+            "Vosk via vosk-transcriber (pip install vosk; lightweight, streaming)."
+          ],
+          "default": "auto",
+          "description": "Speech-to-text engine for voice input. 'auto' uses the browser engine where available and falls back to whisper.cpp locally."
+        },
+        "symposium.voice.language": {
+          "type": "string",
+          "default": "pt-BR",
+          "description": "Recognition language (BCP-47, e.g. pt-BR, en-US). Local engines use the language part (pt, en)."
+        },
+        "symposium.voice.modelsDir": {
+          "type": "string",
+          "default": "",
+          "description": "Directory for downloaded STT models. Empty uses the extension global storage."
+        },
+        "symposium.voice.ffmpegPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to ffmpeg, used to convert captured audio to 16 kHz mono WAV. Empty uses 'ffmpeg' on PATH."
+        },
+        "symposium.voice.continuous": {
+          "type": "boolean",
+          "default": true,
+          "description": "Web Speech: keep listening across pauses instead of stopping after one phrase."
+        },
+        "symposium.voice.interimResults": {
+          "type": "boolean",
+          "default": true,
+          "description": "Web Speech: show interim (non-final) transcription while speaking."
+        },
+        "symposium.voice.dotsAnimation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show an animated dots indicator in the input while recording."
+        },
+        "symposium.voice.soundFeedback": {
+          "type": "boolean",
+          "default": true,
+          "description": "Play short start/stop tones when recording begins and ends."
+        },
+        "symposium.voice.whisper.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the whisper.cpp 'whisper-cli' binary. Empty uses 'whisper-cli' on PATH."
+        },
+        "symposium.voice.whisper.model": {
+          "type": "string",
+          "default": "base",
+          "description": "whisper.cpp model id (tiny, base, small, medium, large-v3-turbo, ...). Download it from Settings → Voice."
+        },
+        "symposium.voice.whisper.threads": {
+          "type": "number",
+          "default": 4,
+          "description": "whisper.cpp: number of CPU threads."
+        },
+        "symposium.voice.whisper.translate": {
+          "type": "boolean",
+          "default": false,
+          "description": "whisper.cpp: translate the speech to English instead of transcribing in the source language."
+        },
+        "symposium.voice.whisper.beamSize": {
+          "type": "number",
+          "default": 5,
+          "description": "whisper.cpp: beam search size (higher = more accurate, slower)."
+        },
+        "symposium.voice.whisper.temperature": {
+          "type": "number",
+          "default": 0,
+          "description": "whisper.cpp: sampling temperature (0 = greedy/deterministic)."
+        },
+        "symposium.voice.whisper.initialPrompt": {
+          "type": "string",
+          "default": "",
+          "description": "whisper.cpp: optional initial prompt to bias vocabulary/spelling."
+        },
+        "symposium.voice.fasterWhisper.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the 'whisper-ctranslate2' binary (faster-whisper). Empty uses it from PATH."
+        },
+        "symposium.voice.fasterWhisper.model": {
+          "type": "string",
+          "default": "base",
+          "description": "faster-whisper model name (tiny, base, small, medium, large-v3). The tool downloads it on first use."
+        },
+        "symposium.voice.fasterWhisper.device": {
+          "type": "string",
+          "enum": ["cpu", "cuda"],
+          "default": "cpu",
+          "description": "faster-whisper compute device."
+        },
+        "symposium.voice.fasterWhisper.computeType": {
+          "type": "string",
+          "enum": ["int8", "int8_float16", "float16", "float32"],
+          "default": "int8",
+          "description": "faster-whisper compute precision (int8 = fastest/CPU, float16 = GPU)."
+        },
+        "symposium.voice.fasterWhisper.beamSize": {
+          "type": "number",
+          "default": 5,
+          "description": "faster-whisper: beam search size."
+        },
+        "symposium.voice.fasterWhisper.vad": {
+          "type": "boolean",
+          "default": true,
+          "description": "faster-whisper: enable voice-activity-detection filtering of silence."
+        },
+        "symposium.voice.vosk.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the 'vosk-transcriber' binary. Empty uses it from PATH."
+        },
+        "symposium.voice.vosk.model": {
+          "type": "string",
+          "default": "vosk-model-small-pt-0.3",
+          "description": "Vosk model id. Download it from Settings → Voice."
         },
         "symposium.bridge.enabled": {
           "type": "boolean",

@@ -280,6 +280,10 @@ let voicePreferences = {
     interimResults: true,
     dotsAnimation: true,
     soundFeedback: true,
+    // engine: which STT engine the host is configured for ("auto" | "webspeech" | local engines).
+    engine: 'auto',
+    // localStt: host can transcribe captured audio locally (whisper.cpp/faster-whisper/vosk).
+    localStt: true,
 };
 
 // Get voice preferences from host or use defaults
@@ -292,6 +296,8 @@ function getVoicePreferences() {
             interimResults: prefs.interimResults !== false,
             dotsAnimation: prefs.dotsAnimation !== false,
             soundFeedback: prefs.soundFeedback !== false,
+            engine: prefs.engine || 'auto',
+            localStt: prefs.localStt !== false,
         };
     }
     return voicePreferences;
@@ -301,15 +307,46 @@ function getVoicePreferences() {
 window.addEventListener('message', (e) => {
     if (e.data && e.data.type === 'setVoicePreferences') {
         getVoicePreferences();
+        updateMicVisibility();
     }
 });
 
-// Check for browser support
+// Hybrid voice input.
+//
+// Two paths share the one mic button:
+//  1. Web Speech API — runs on Google's cloud engine, only present in real
+//     Chrome/Chromium (code-server in a browser). Preferred when available.
+//  2. Local capture — getUserMedia + MediaRecorder grabs audio in the webview
+//     and ships it to the extension host, which transcribes offline with the
+//     configured engine (whisper.cpp / faster-whisper / vosk). This is the
+//     desktop/Electron path where Web Speech is absent.
+//
+// The host tells us via voicePreferences whether local transcription is
+// available (localStt) and which engine is selected (engine).
 const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+const webSpeechSupported = !!SpeechRecognition;
 
-// Ensure mic button is always visible
-if (micBtn) {
-    micBtn.style.display = 'inline-flex';
+let mediaRecorder: any = null;
+let mediaStream: any = null;
+let audioChunks: Blob[] = [];
+
+// Whether the mic button should be visible at all, given current prefs.
+function updateMicVisibility() {
+    if (!micBtn) { return; }
+    const prefs = getVoicePreferences();
+    // Web Speech only mode and no Web Speech here → nothing we can do.
+    const canWebSpeech = webSpeechSupported && (prefs.engine === 'webspeech' || prefs.engine === 'auto');
+    const canLocal = prefs.localStt && prefs.engine !== 'webspeech';
+    micBtn.style.display = (canWebSpeech || canLocal) ? 'inline-flex' : 'none';
+}
+
+// Decide which path a click should use. Web Speech wins when usable; otherwise
+// fall back to local host transcription.
+function chooseVoicePath(): 'webspeech' | 'local' | 'none' {
+    const prefs = getVoicePreferences();
+    if (webSpeechSupported && (prefs.engine === 'webspeech' || prefs.engine === 'auto')) { return 'webspeech'; }
+    if (prefs.localStt && prefs.engine !== 'webspeech') { return 'local'; }
+    return 'none';
 }
 
 if (SpeechRecognition) {
@@ -381,25 +418,103 @@ if (SpeechRecognition) {
         if (prefs.soundFeedback) playStopSound();
         console.error('Speech recognition error:', event.error);
     };
+}
 
+// --- Local capture path (MediaRecorder → host transcription) ---
+
+async function startLocalCapture() {
+    const prefs = getVoicePreferences();
+    try {
+        mediaStream = await (navigator as any).mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+        showToast('Microphone unavailable: ' + ((err as Error).message || err));
+        return;
+    }
+    audioChunks = [];
+    try {
+        mediaRecorder = new (window as any).MediaRecorder(mediaStream);
+    } catch (err) {
+        showToast('Recording not supported here: ' + ((err as Error).message || err));
+        stopMediaStream();
+        return;
+    }
+    mediaRecorder.ondataavailable = (e: any) => { if (e.data && e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+        stopMediaStream();
+        if (!blob.size) { setStatus('Ready'); return; }
+        setStatus('Transcribing...');
+        const buf = await blob.arrayBuffer();
+        let binary = '';
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i++) { binary += String.fromCharCode(bytes[i]); }
+        const base64 = btoa(binary);
+        vscode.postMessage({ type: 'stt-transcribe', data: base64, mime: blob.type });
+    };
+    mediaRecorder.start();
+    isRecording = true;
+    micBtn.classList.add('recording');
+    setStatus('Listening...');
+    if (prefs.soundFeedback) playStartSound();
+    recordingTextBase = input.value;
+    if (prefs.dotsAnimation) updateRecordingDots();
+}
+
+function stopLocalCapture() {
+    const prefs = getVoicePreferences();
+    if (prefs.soundFeedback) playStopSound();
+    isRecording = false;
+    micBtn.classList.remove('recording');
+    if (recordingDotsInterval) { clearInterval(recordingDotsInterval); recordingDotsInterval = null; }
+    try { if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop(); } catch { /* ignore */ }
+}
+
+function stopMediaStream() {
+    try { if (mediaStream) { for (const t of mediaStream.getTracks()) t.stop(); } } catch { /* ignore */ }
+    mediaStream = null;
+}
+
+// Host returns the transcript (or an error) for the local path.
+window.addEventListener('message', (e) => {
+    if (!e.data) { return; }
+    if (e.data.type === 'stt-result') {
+        const text = (e.data.text || '').trim();
+        if (recordingDotsInterval) { clearInterval(recordingDotsInterval); recordingDotsInterval = null; }
+        input.value = (recordingTextBase ? recordingTextBase.replace(/[.\s]*$/, ' ') : '') + text;
+        input.style.height = 'auto';
+        input.style.height = Math.min(input.scrollHeight, 180) + "px";
+        input.focus();
+        setStatus('Ready');
+    } else if (e.data.type === 'stt-error') {
+        if (recordingDotsInterval) { clearInterval(recordingDotsInterval); recordingDotsInterval = null; }
+        if (recordingTextBase) { input.value = recordingTextBase; }
+        setStatus('Ready');
+        showToast('Transcription failed: ' + (e.data.error || 'unknown error'));
+    }
+});
+
+// Unified mic button: route to whichever path is currently usable.
+if (micBtn) {
     micBtn.addEventListener('click', () => {
-        if (!recognition) {
-            showToast('Speech recognition not supported in this browser');
+        const prefs = getVoicePreferences();
+        const path = chooseVoicePath();
+        if (path === 'none') { showToast('Voice input is not available with the current configuration.'); return; }
+        if (path === 'webspeech') {
+            if (!recognition) { showToast('Speech recognition not supported in this browser'); return; }
+            recognition.lang = prefs.language;
+            recognition.continuous = prefs.continuous;
+            recognition.interimResults = prefs.interimResults;
+            if (isRecording) { if (prefs.soundFeedback) playStopSound(); recognition.stop(); }
+            else { recognition.start(); }
             return;
         }
-
-        if (isRecording) {
-            if (prefs.soundFeedback) playStopSound();
-            recognition.stop();
-        } else {
-            recognition.start();
-        }
+        // local path
+        if (isRecording) { stopLocalCapture(); }
+        else { void startLocalCapture(); }
     });
-} else {
-    micBtn.disabled = true;
-    micBtn.title = 'Voice input not supported in this browser';
-    console.warn('Web Speech API not supported in this browser');
 }
+
+updateMicVisibility();
 input.addEventListener("blur", () => { setTimeout(() => { slash.style.display = "none"; }, 120); });
 export function handlePaste(e) {
     const items = (e.clipboardData && e.clipboardData.items) || [];
