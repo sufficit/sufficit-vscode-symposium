@@ -127,6 +127,7 @@ export function openSessionsFilterMenu(anchorEl: HTMLElement) {
     ctxMenu.appendChild(head);
 
     appendFilterSection(t("sessions.group.label"), [
+        { label: t("sessions.group.none"), active: sessionGroupBy === "none", onToggle: () => { setSessionGroupBy("none"); persistSessionFilters(); renderSessions(); } },
         { label: t("sessions.group.projectConversation"), active: sessionGroupBy === "project-conversation", onToggle: () => { setSessionGroupBy("project-conversation"); persistSessionFilters(); renderSessions(); } },
         { label: t("sessions.group.conversation"), active: sessionGroupBy === "conversation", onToggle: () => { setSessionGroupBy("conversation"); persistSessionFilters(); renderSessions(); } },
         { label: t("sessions.group.time"), active: sessionGroupBy === "time", onToggle: () => { setSessionGroupBy("time"); persistSessionFilters(); renderSessions(); } },
@@ -284,10 +285,11 @@ export function renderSessions() {
     // order (accordion, collapsed by default). Reused by "Conversation" and the
     // inner level of "Project + Conversation".
     const byRecent = (a, b) => (b.updatedAt ? new Date(b.updatedAt).getTime() : 0) - (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
+    const conversationKeyOf = (s) => `${String(s.backend || "")}:${String(s.lineageId || s.sessionId)}`;
     const appendLineages = (items) => {
         const lin = new Map();
         for (const s of items) {
-            const k = s.lineageId || s.sessionId;
+            const k = conversationKeyOf(s);
             if (!lin.has(k)) { lin.set(k, []); }
             lin.get(k).push(s);
         }
@@ -308,7 +310,9 @@ export function renderSessions() {
         sessionsList.appendChild(groupHeader("Pinned", pinned.length));
         for (const s of pinned) { appendTree(s, 0); }
     }
-    if (sessionGroupBy === "time") {
+    if (sessionGroupBy === "none") {
+        for (const s of rest) { appendTree(s, 0); }
+    } else if (sessionGroupBy === "time") {
         let lastBucket = null;
         for (const s of rest) {
             const bk = bucket(s.updatedAt);
@@ -344,7 +348,7 @@ export function renderSessions() {
             const g = groups.get(k);
             const expanded = expandedGroups.has(k);
             // In the combined mode the count is the number of CONVERSATIONS, not sessions.
-            const count = useLineages ? new Set(g.items.map((s) => s.lineageId || s.sessionId)).size : g.items.length;
+            const count = useLineages ? new Set(g.items.map((s) => conversationKeyOf(s))).size : g.items.length;
             sessionsList.appendChild(collapsibleGroupHeader(k, g.label, count, expanded));
             if (expanded) {
                 if (useLineages) { appendLineages(g.items); }

@@ -539,6 +539,28 @@
           "default": "",
           "description": "Model passed to codex exec --model. Empty uses the CLI default."
         },
+        "symposium.codex.approvalPolicy": {
+          "type": "string",
+          "enum": [
+            "default",
+            "untrusted",
+            "on-failure",
+            "on-request",
+            "never"
+          ],
+          "default": "default",
+          "description": "Default approval policy for Codex terminal sessions (codex exec --approval-policy). 'default' omits it."
+        },
+        "symposium.codex.sandboxMode": {
+          "type": "string",
+          "enum": [
+            "read-only",
+            "workspace-write",
+            "danger-full-access"
+          ],
+          "default": "workspace-write",
+          "description": "Default sandbox mode for Codex terminal sessions (codex exec --sandbox-mode)."
+        },
         "symposium.codex.playwright": {
           "type": "boolean",
           "default": false,
