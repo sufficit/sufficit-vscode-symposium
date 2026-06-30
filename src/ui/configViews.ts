@@ -30,9 +30,7 @@ export const configViews = `    function resourceList(kind) {
         const list = (state?.backends) || [];
         const toolbar = '<div class="toolbar"><button id="add-endpoint">' + esc(t("config.btn.addEndpoint")) + '</button>'
             + '<button class="secondary" id="import-backends">' + esc(t("config.btn.importBackends")) + '</button>'
-            + '<button class="secondary" id="export-backends">' + esc(t("config.btn.exportBackends")) + '</button>'
-            + '<button class="secondary" id="backup-backends">' + esc(t("config.btn.backupBackends")) + '</button>'
-            + '<button class="secondary" id="restore-backends">' + esc(t("config.btn.restoreBackends")) + '</button></div>';
+            + '<button class="secondary" id="export-backends">' + esc(t("config.btn.exportBackends")) + '</button></div>';
         if (!list.length) { return toolbar + '<div class="empty">' + esc(t("config.empty.backends")) + '</div>'; }
         return toolbar + list.map(b => {
             const opts = (b.models || []);
@@ -175,9 +173,13 @@ export const configViews = `    function resourceList(kind) {
         // user can get a fresh token without hunting for the logout button.
         const needsAuth = configured && (health === "unauthorized" || health === "down");
         const reloginBtn = needsAuth ? '<button id="sync-relogin" class="secondary">' + esc(t("config.btn.relogin")) + '</button>' : "";
+        const backupBtns = configured
+            ? '<button class="secondary" id="backup-backends">' + esc(t("config.btn.backupBackends")) + '</button>'
+              + '<button class="secondary" id="restore-backends">' + esc(t("config.btn.restoreBackends")) + '</button>'
+            : "";
         const toolbar = configured
             ? '<div class="toolbar"><button id="sync-pull">' + esc(t("config.btn.syncPull")) + '</button>' +
-              '<button id="sync-push">' + esc(t("config.btn.syncPush")) + '</button>' + reloginBtn + '</div>'
+              '<button id="sync-push">' + esc(t("config.btn.syncPush")) + '</button>' + backupBtns + reloginBtn + '</div>'
             : '<div class="toolbar"><button id="sync-config">' + esc(t("config.btn.syncConfig")) + '</button></div>';
         const note = configured ? "" :
             '<div class="empty">' + esc(t("config.empty.hub")) + '</div>';
