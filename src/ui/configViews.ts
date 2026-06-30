@@ -205,6 +205,61 @@ export const configViews = `    function resourceList(kind) {
             '<div class="row"><span class="name">' + esc(t("config.sync.pendingPush")) + '</span><span class="desc">' + esc((s.pendingPush || []).join(", ") || t("config.value.none")) + "</span></div>";
     }
 
+    function sufficitView() {
+        const p = (state && state.prefs) || {};
+        const profile = state?.profile || null;
+        const vaultBindings = state?.vaultBindings || [];
+        const section = (title, body) =>
+            '<section class="section"><div class="section-title">' + esc(title) + "</div>" + body + "</section>";
+        const row = (name, descHtml) =>
+            '<div class="row"><span class="name">' + esc(name) + '</span><span class="desc">' + descHtml + "</span></div>";
+
+        // --- Authentication section ---
+        let authBody;
+        if (profile && (profile.name || profile.email)) {
+            const av = profile.picture ? '<img class="avatar" src="' + esc(profile.picture) + '" alt="" style="width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-right:6px" />' : "";
+            authBody = '<div class="pref-block">' +
+                '<div class="row"><span class="name">' + esc(t("config.sufficit.auth.signedIn")) + '</span><span class="desc">' + av + esc(profile.name || profile.email || "") + '</span></div>' +
+                (profile.email && profile.name ? '<div class="row"><span class="name">Email</span><span class="desc">' + esc(profile.email) + '</span></div>' : "") +
+                '<div class="toolbar"><button class="secondary" id="sufficit-logout">' + esc(t("config.btn.signOut")) + '</button></div>' +
+                '</div>';
+        } else {
+            authBody = '<div class="pref-block">' +
+                '<div class="desc">' + esc(t("config.sufficit.auth.notSignedIn")) + '</div>' +
+                '<div class="toolbar"><button id="sufficit-login">' + esc(t("config.btn.signIn")) + '</button></div>' +
+                '</div>';
+        }
+
+        // --- Memory section ---
+        const memBody = '<div class="pref-block">' +
+            '<div class="desc">' + esc(t("config.sufficit.memory.desc")) + '</div>' +
+            '<textarea class="pref-text" data-key="symposium.chat.memoryInstruction" rows="5" placeholder="' + esc(t("config.prefs.memoryInstruction.placeholder")) + '">' + esc(p.memoryInstruction || "") + '</textarea>' +
+            '</div>';
+
+        // --- Vault section (real Sufficit vault: tools bound to secrets via credentialRef) ---
+        let vaultBody;
+        if (vaultBindings.length > 0) {
+            const rows = vaultBindings.map(vb =>
+                '<div class="row"><span class="name">' + esc(vb.tool) + '</span><span class="desc">' +
+                esc(vb.ref) + (vb.env ? ' → ' + esc(vb.env) : '') +
+                '</span></div>'
+            ).join('');
+            vaultBody = '<div class="pref-block">' +
+                '<div class="desc">' + esc(t("config.sufficit.vault.desc")) + '</div>' +
+                rows +
+                '</div>';
+        } else {
+            vaultBody = '<div class="pref-block">' +
+                '<div class="empty">' + esc(t("config.sufficit.vault.empty")) + '</div>' +
+                '</div>';
+        }
+
+        return '<h2>' + esc(t("config.tab.sufficit")) + '</h2>' +
+            section(t("config.sufficit.section.auth"), authBody) +
+            section(t("config.sufficit.section.memory"), memBody) +
+            section(t("config.sufficit.section.vault"), vaultBody);
+    }
+
     function prefsView() {
         const p = (state && state.prefs) || {};
         const sel = (key, value, opts) =>

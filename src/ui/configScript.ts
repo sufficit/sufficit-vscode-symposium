@@ -76,6 +76,7 @@ export function renderConfigScript(dict: Record<string, string>): string {
         { id: "voice", label: t("config.tab.voice") },
         { id: "compaction", label: t("config.tab.compaction") },
         { id: "sync", label: t("config.tab.sync") },
+        { id: "sufficit", label: t("config.tab.sufficit") },
     ];
 
     function esc(s) {
@@ -250,6 +251,19 @@ export function renderConfigScript(dict: Record<string, string>): string {
             if (conf) { conf.onclick = () => vscode.postMessage({ type: "config-hub" }); }
             const relog = document.getElementById("sync-relogin");
             if (relog) { relog.onclick = () => vscode.postMessage({ type: "login" }); }
+            return;
+        }
+        if (active === "sufficit") {
+            main.innerHTML = page(sufficitView());
+            main.querySelectorAll("textarea.pref-text").forEach(el => {
+                const save = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
+                el.onblur = save;
+                el.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); save(); } };
+            });
+            const login = document.getElementById("sufficit-login");
+            if (login) { login.onclick = () => vscode.postMessage({ type: "login" }); }
+            const logout = document.getElementById("sufficit-logout");
+            if (logout) { logout.onclick = () => vscode.postMessage({ type: "logout" }); }
             return;
         }
         main.innerHTML = page(resourceList(active));

@@ -226,12 +226,10 @@ export class ChatSurface {
             hints.push(custom);
         }
 
-        // 3) Logged-in users: never claim ignorance before consulting memory.
+        // 3) Logged-in users: search Sufficit memory before asking the user.
         if (this.loggedIn) {
-            hints.push(
-                "Before telling the user you don't know or lack enough information, you MUST first search the Sufficit shared memory " +
-                "(use the memory_search tool, then memory_get_observations for promising hits). Only after that search comes up empty " +
-                "may you say you don't know — and mention that you checked the Sufficit memory.");
+            const memoryHint = vscode.workspace.getConfiguration("symposium.chat").get<string>("memoryInstruction", "").trim();
+            if (memoryHint) { hints.push(memoryHint); }
         }
 
         return hints.join("\n\n");

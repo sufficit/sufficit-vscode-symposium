@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "2026.628.9",
+  "version": "2026.628.14",
   "publisher": "sufficit",
   "license": "MIT",
   "repository": {
@@ -738,6 +738,12 @@
           "default": "",
           "editPresentation": "multilineText",
           "description": "Optional manual system instruction prepended to every new conversation's system prompt. Use it to give all agents persistent guidance."
+        },
+        "symposium.chat.memoryInstruction": {
+          "type": "string",
+          "default": "Before asking the user for context you lack (infrastructure, servers, credentials, config, prior decisions) or saying you don't know, search Sufficit shared memory first: memory_search → memory_get_observations. Only ask the user if that comes up empty.",
+          "editPresentation": "multilineText",
+          "description": "Sufficit memory search hint injected into the system prompt for logged-in users. Clear the field to disable injection entirely."
         },
         "symposium.chat.whenBusy": {
           "type": "string",

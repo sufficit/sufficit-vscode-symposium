@@ -132,9 +132,10 @@ export class ChatController {
         return transcriptMessagesUpTo(this.stream.messages, index);
     }
 
-    /** Plain-text transcript up to and including `index` (0-based). */
+    /** Plain-text transcript up to and including `index` (0-based conversation-row index). */
     transcriptUpTo(index: number): string {
-        return transcriptText(this.stream.messages.slice(0, index));
+        const rows = transcriptMessagesUpTo(this.stream.messages, index);
+        return rows.map((r) => `${r.role === "user" ? "user" : "assistant"}: ${r.text}`).join("\n\n");
     }
 
     get attached(): boolean {

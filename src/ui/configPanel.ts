@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import { ensureScaffold, ResourceKind, rootDir } from "../config/root";
+import { ensureScaffold, ResourceKind, rootDir, readToolCredential } from "../config/root";
 import { AdapterPatch, SymposiumApi } from "../api/symposiumApi";
 import { HubClient } from "../sync/hubClient";
 import { SufficitAuth } from "../auth/identity";
@@ -886,6 +886,11 @@ export class ConfigPanel {
         const state = {
             root: api.resources.root(),
             resources: api.resources.scan(),
+            // Vault bindings: tools that declare a credentialRef (secret resolved
+            // at runtime via the Sufficit vault / hub API).
+            vaultBindings: (api.resources.scan()["tool"] || [])
+                .map(t => ({ tool: t.name, ...readToolCredential(t.name) }))
+                .filter(vb => vb.ref),
             // MCP servers (Model Context Protocol)
             mcpServers: listServers(),
             // A failing backends list (e.g. the gateway rejecting a stale token)
@@ -899,6 +904,16 @@ export class ConfigPanel {
                 openIn: chat.get<string>("openIn", "editor"),
                 preferredLanguage: chat.get<string>("preferredLanguage", ""),
                 systemInstruction: chat.get<string>("systemInstruction", ""),
+                memoryInstruction: (() => {
+                    const insp = chat.inspect<string>("memoryInstruction");
+                    if (!insp) { return ""; }
+                    // Use the default from package.json when the user hasn't set
+                    // an explicit value (globalValue/workspaceValue). This makes
+                    // the default visible in the textarea.
+                    if (insp.globalValue !== undefined) { return insp.globalValue; }
+                    if (insp.workspaceValue !== undefined) { return insp.workspaceValue; }
+                    return insp.defaultValue ?? "";
+                })(),
                 lmTools: root.get<string>("lmTools", "terminal"),
                 maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
                 noProgressStop: vscode.workspace.getConfiguration("symposium.openai").get<number>("noProgressStop", 0),

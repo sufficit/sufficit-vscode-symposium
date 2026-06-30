@@ -57,9 +57,14 @@ export function transcriptMessages(log: unknown[]): TranscriptRow[] {
     return rows;
 }
 
-/** Transcript up to a given index (exclusive). */
+/**
+ * Visible user/assistant rows up to and including the given conversation-row
+ * index (0-based, inclusive). The index is a CONVERSATION-ROW index (i.e. the
+ * position in the array returned by transcriptMessages), NOT a raw render-log
+ * position — this matches what the webview sends (conversationRows indexes).
+ */
 export function transcriptMessagesUpTo(log: unknown[], index: number): TranscriptRow[] {
-    return transcriptMessages(log.slice(0, index));
+    return transcriptMessages(log).slice(0, index + 1);
 }
 
 /** Plain text representation (user/assistant only, no thinking). */
