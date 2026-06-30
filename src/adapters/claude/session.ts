@@ -42,6 +42,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     private streamedThinking = false; // got thinking_delta this turn (skip full block)
     private warnedRootBypass = false; // emitted the root+bypassPermissions notice once
     private cancelled = false;        // cancel() was called (steer) — suppress exit error
+    private spawnedPermission = "";   // permission mode the live child was spawned with
 
     constructor(
         private readonly config: ClaudeAdapterConfig,
@@ -94,6 +95,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             args.push("--effort", this.options.reasoning);
         }
         let permission = this.options.permission || this.config.permissionMode;
+        this.spawnedPermission = permission;   // remember so send() can detect a live picker change
         // Claude refuses bypassPermissions (= --dangerously-skip-permissions) when
         // the process runs as root (e.g. code-server@root) and exits with an error.
         // Downgrade to acceptEdits so the picker never dead-ends; for full root
@@ -273,6 +275,17 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     }
 
     send(text: string, images?: string[]): void {
+        // Permission mode is pinned at spawn (a CLI flag), so a mid-conversation
+        // change in the picker would otherwise only apply to a brand-new session.
+        // When it changes, kill the live child and let ensureStarted() respawn with
+        // --resume (the session id) so the new mode takes effect on THIS next message
+        // while the conversation context is preserved.
+        const desired = this.options.permission || this.config.permissionMode;
+        if (this.child && desired !== this.spawnedPermission) {
+            this.config.log?.(`[claude] permission ${this.spawnedPermission} -> ${desired}; respawning with --resume`);
+            this.child.kill();
+            this.child = undefined;
+        }
         this.turnActive = true;
         const child = this.ensureStarted();
         const content: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = [];

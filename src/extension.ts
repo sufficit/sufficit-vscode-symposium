@@ -44,6 +44,31 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const adapterByBackend = new Map<string, AgentAdapter>(
         adapters.map((adapter) => [adapter.backend, adapter]));
 
+    // Live backend registry: when the user adds/imports/removes a custom backend
+    // (symposium.adapters), rebuild the custom adapters IN PLACE so they're usable
+    // immediately — no window reload. Built-ins (claude/codex/copilot/openai) stay.
+    const BUILTIN_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
+        if (!e.affectsConfiguration("symposium.adapters")) { return; }
+        const defs = normalizeAdapterDefs();
+        const wantIds = new Set(defs.map((d) => d.id));
+        for (let i = adapters.length - 1; i >= 0; i--) {
+            const id = adapters[i].backend;
+            if (!BUILTIN_BACKENDS.has(id) && !wantIds.has(id)) {
+                adapters.splice(i, 1);
+                adapterByBackend.delete(id);
+            }
+        }
+        const have = new Set(adapters.map((a) => a.backend));
+        for (const ad of buildCustomAdapters(context, defs)) {
+            if (!have.has(ad.backend)) {
+                adapters.push(ad);
+                adapterByBackend.set(ad.backend, ad);
+            }
+        }
+        symposiumLog(`[adapters] rebuilt custom backends live (${adapters.length} total)`);
+    }));
+
     const store = new SessionStore(context.globalState);
     // Forward-declared so the runtime can trigger a (debounced) sessions
     // refresh whenever an agent starts/stops working.

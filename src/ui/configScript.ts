@@ -218,6 +218,14 @@ export function renderConfigScript(dict: Record<string, string>): string {
             });
             const addEp = document.getElementById("add-endpoint");
             if (addEp) { addEp.onclick = () => vscode.postMessage({ type: "add-endpoint" }); }
+            const impBk = document.getElementById("import-backends");
+            if (impBk) { impBk.onclick = () => vscode.postMessage({ type: "import-backends" }); }
+            const expBk = document.getElementById("export-backends");
+            if (expBk) { expBk.onclick = () => vscode.postMessage({ type: "export-backends" }); }
+            const bkBk = document.getElementById("backup-backends");
+            if (bkBk) { bkBk.onclick = () => vscode.postMessage({ type: "backup-backends" }); }
+            const rsBk = document.getElementById("restore-backends");
+            if (rsBk) { rsBk.onclick = () => vscode.postMessage({ type: "restore-backends" }); }
             main.querySelectorAll("button.edit-ep").forEach(el => {
                 el.onclick = () => vscode.postMessage({ type: "edit-endpoint", backend: el.getAttribute("data-backend") });
             });

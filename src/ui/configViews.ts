@@ -28,7 +28,11 @@ export const configViews = `    function resourceList(kind) {
 
     function backendsView() {
         const list = (state?.backends) || [];
-        const toolbar = '<div class="toolbar"><button id="add-endpoint">' + esc(t("config.btn.addEndpoint")) + '</button></div>';
+        const toolbar = '<div class="toolbar"><button id="add-endpoint">' + esc(t("config.btn.addEndpoint")) + '</button>'
+            + '<button class="secondary" id="import-backends">' + esc(t("config.btn.importBackends")) + '</button>'
+            + '<button class="secondary" id="export-backends">' + esc(t("config.btn.exportBackends")) + '</button>'
+            + '<button class="secondary" id="backup-backends">' + esc(t("config.btn.backupBackends")) + '</button>'
+            + '<button class="secondary" id="restore-backends">' + esc(t("config.btn.restoreBackends")) + '</button></div>';
         if (!list.length) { return toolbar + '<div class="empty">' + esc(t("config.empty.backends")) + '</div>'; }
         return toolbar + list.map(b => {
             const opts = (b.models || []);

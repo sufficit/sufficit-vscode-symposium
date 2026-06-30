@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { ensureScaffold, ResourceKind, rootDir } from "../config/root";
 import { AdapterPatch, SymposiumApi } from "../api/symposiumApi";
+import { HubClient } from "../sync/hubClient";
 import { SufficitAuth } from "../auth/identity";
 import { renderConfigHtml } from "./configHtml";
 import { tr } from "./configI18n";
@@ -301,7 +302,8 @@ export class ConfigPanel {
                 if (!patch) { return; }
                 await api.backends.addAdapter(patch);
                 await this.pushState();
-                await this.offerReload(this.tr("msg.endpoint.added", { name: patch.name || patch.baseUrl || "" }));
+                // No reload: the extension's config listener rebuilds the adapter live.
+                void vscode.window.showInformationMessage(this.tr("msg.endpoint.added", { name: patch.name || patch.baseUrl || "" }));
                 return;
             }
             case "edit-endpoint": {
@@ -328,6 +330,115 @@ export class ConfigPanel {
                 await api.backends.removeAdapter(id);
                 await this.pushState();
                 await this.offerReload(this.tr("msg.endpoint.removed", { label }));
+                return;
+            }
+            case "import-backends": {
+                // Remote-WSL can't browse the local OS filesystem, so offer a paste
+                // path (works anywhere) alongside the file picker.
+                const pasteLbl = this.tr("config.import.paste");
+                const fileLbl = this.tr("config.import.file");
+                const mode = await vscode.window.showQuickPick([pasteLbl, fileLbl], { title: this.tr("config.btn.importBackends") });
+                if (!mode) { return; }
+                let raw: string | undefined;
+                if (mode === pasteLbl) {
+                    raw = await vscode.window.showInputBox({
+                        title: this.tr("config.btn.importBackends"),
+                        prompt: this.tr("config.import.pastePrompt"),
+                        ignoreFocusOut: true,
+                    });
+                } else {
+                    const picked = await vscode.window.showOpenDialog({
+                        canSelectMany: false, openLabel: "Import",
+                        filters: { JSON: ["json"] }, title: this.tr("config.btn.importBackends"),
+                    });
+                    if (picked && picked.length) { raw = fs.readFileSync(picked[0].fsPath, "utf8"); }
+                }
+                if (!raw || !raw.trim()) { return; }
+                let data: unknown;
+                try { data = JSON.parse(raw); }
+                catch (e) { void vscode.window.showErrorMessage(this.tr("msg.backends.importErr", { err: String(e) })); return; }
+                // Accept a raw array, or a { "symposium.adapters": [...] } / { adapters: [...] } wrapper
+                // (so a settings.json snippet pasted into a file imports cleanly too).
+                const d = data as Record<string, unknown>;
+                const incoming: any[] = Array.isArray(data) ? data
+                    : Array.isArray(d?.["symposium.adapters"]) ? d["symposium.adapters"] as any[]
+                    : Array.isArray(d?.adapters) ? d.adapters as any[] : [];
+                const cfg = vscode.workspace.getConfiguration("symposium");
+                const cur = cfg.get<any[]>("adapters", []) || [];
+                const keyOf = (a: any) => a.id || (a.baseUrl + "|" + (a.name || ""));
+                const byKey = new Map<string, any>(cur.map((a) => [keyOf(a), a]));
+                let n = 0;
+                for (const b of incoming) {
+                    if (!b || !b.baseUrl) { continue; }
+                    const k = keyOf(b);
+                    byKey.set(k, { ...(byKey.get(k) || {}), ...b }); // merge: imported fields win
+                    n++;
+                }
+                await cfg.update("adapters", Array.from(byKey.values()), vscode.ConfigurationTarget.Global);
+                await this.pushState();
+                void vscode.window.showInformationMessage(this.tr("msg.backends.imported", { n: String(n) }));
+                return;
+            }
+            case "export-backends": {
+                const defs = vscode.workspace.getConfiguration("symposium").get<any[]>("adapters", []) || [];
+                if (!defs.length) { void vscode.window.showInformationMessage(this.tr("msg.backends.none")); return; }
+                const save = await vscode.window.showSaveDialog({
+                    filters: { JSON: ["json"] },
+                    defaultUri: vscode.Uri.file(path.join(rootDir(), "symposium-backends.json")),
+                    title: this.tr("config.btn.exportBackends"),
+                });
+                if (!save) { return; }
+                fs.writeFileSync(save.fsPath, JSON.stringify(defs, null, 2), "utf8");
+                void vscode.window.showInformationMessage(this.tr("msg.backends.exported", { path: save.fsPath }));
+                return;
+            }
+            case "backup-backends": {
+                const defs = vscode.workspace.getConfiguration("symposium").get<any[]>("adapters", []) || [];
+                if (!defs.length) { void vscode.window.showInformationMessage(this.tr("msg.backends.none")); return; }
+                const hub = new HubClient();
+                if (!hub.configured()) { void vscode.window.showErrorMessage(this.tr("msg.backends.hubOff")); return; }
+                try {
+                    // Upsert a single backup observation (reuse the existing id so we
+                    // overwrite the last backup instead of piling up duplicates).
+                    const existing = await hub.searchByType("symposium-backends", 1).catch(() => []);
+                    await hub.save({
+                        id: existing[0]?.id,
+                        type: "symposium-backends",
+                        title: "Symposium backends",
+                        summary: this.tr("msg.backends.backedUp", { n: String(defs.length) }),
+                        payload: JSON.stringify(defs),
+                        tags: "scope:symposium,kind:backends",
+                    });
+                    void vscode.window.showInformationMessage(this.tr("msg.backends.backedUp", { n: String(defs.length) }));
+                } catch (e) { void vscode.window.showErrorMessage(this.tr("msg.backends.hubErr", { err: String(e) })); }
+                return;
+            }
+            case "restore-backends": {
+                const hub = new HubClient();
+                if (!hub.configured()) { void vscode.window.showErrorMessage(this.tr("msg.backends.hubOff")); return; }
+                try {
+                    const recs = await hub.searchByType("symposium-backends", 5);
+                    if (!recs.length) { void vscode.window.showInformationMessage(this.tr("msg.backends.hubEmpty")); return; }
+                    const docs = await hub.getByIds(recs.map((r) => r.id));
+                    const incoming: any[] = [];
+                    for (const doc of docs) {
+                        try { const arr = JSON.parse(doc.payload || "[]"); if (Array.isArray(arr)) { incoming.push(...arr); } } catch { /* skip bad payload */ }
+                    }
+                    const cfg = vscode.workspace.getConfiguration("symposium");
+                    const cur = cfg.get<any[]>("adapters", []) || [];
+                    const keyOf = (a: any) => a.id || (a.baseUrl + "|" + (a.name || ""));
+                    const byKey = new Map<string, any>(cur.map((a) => [keyOf(a), a]));
+                    let n = 0;
+                    for (const b of incoming) {
+                        if (!b || !b.baseUrl) { continue; }
+                        const k = keyOf(b);
+                        byKey.set(k, { ...(byKey.get(k) || {}), ...b });
+                        n++;
+                    }
+                    await cfg.update("adapters", Array.from(byKey.values()), vscode.ConfigurationTarget.Global);
+                    await this.pushState();
+                    void vscode.window.showInformationMessage(this.tr("msg.backends.restored", { n: String(n) }));
+                } catch (e) { void vscode.window.showErrorMessage(this.tr("msg.backends.hubErr", { err: String(e) })); }
                 return;
             }
             case "set-model":

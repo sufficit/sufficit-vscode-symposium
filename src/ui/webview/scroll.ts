@@ -81,14 +81,11 @@ function updateStickyState(): void {
         return;
     }
 
-    const rect = stickyUserMessage.getBoundingClientRect();
-    const logRect = log.getBoundingClientRect();
-    // Message scrolled above viewport top -> sticky
-    if (rect.top < logRect.top) {
-        stickyUserMessage.classList.add("stickyUser");
-    } else {
-        stickyUserMessage.classList.remove("stickyUser");
-    }
+    // Use the in-flow offsetTop (stable; position:sticky keeps the element in flow)
+    // instead of getBoundingClientRect — whose top snaps to logRect.top the instant
+    // we pin, flipping the predicate every scroll event and making the header blink.
+    const shouldStick = log.scrollTop >= stickyUserMessage.offsetTop;
+    stickyUserMessage.classList.toggle("stickyUser", shouldStick);
 }
 
 log.addEventListener("scroll", updateStickyState, { passive: true });

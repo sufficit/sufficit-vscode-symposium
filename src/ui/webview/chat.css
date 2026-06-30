@@ -428,6 +428,7 @@
     /* Soft separator between the chat transcript and the panels/composer below. */
     #chatCol > #logWrap { border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.18)); }
     #log {
+        position: relative; /* offsetParent for .stickyUser offsetTop math (sticky flicker fix) */
         flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px 16px 6px 16px; user-select: text; cursor: text;
         font-size: 13.5px; line-height: 1.65;
         min-width: 0;
@@ -467,9 +468,21 @@
     #composer.editing #input::placeholder { color: var(--vscode-focusBorder); }
     .msg:hover .role .msgTime { opacity: 0.75; }
     /* Role label hidden when same backend+model as prev assistant message; revealed on hover */
-    .role.rolePassive { max-height: 0; margin-bottom: 0; overflow: hidden; opacity: 0; pointer-events: none; transition: max-height 180ms ease, margin-bottom 180ms ease, opacity 180ms ease; }
-    .msg:hover .role.rolePassive { max-height: 28px; margin-bottom: 7px; opacity: 1; pointer-events: auto; }
-    @media (prefers-reduced-motion: reduce) { .role.rolePassive, .msg:hover .role.rolePassive { transition: none; } }
+    /* Passive role header (same backend+model as prev turn), revealed on hover.
+       Absolute + placed in the inter-turn GAP above this message (margin-top is 20px)
+       so it never reflows the body AND never covers the start of the message the mouse
+       is on. Solid background band so text behind never bleeds through. */
+    .role.rolePassive {
+        position: absolute; top: -18px; left: 10px; z-index: 6;
+        margin-bottom: 0; opacity: 0; pointer-events: none;
+        padding: 1px 6px; border-radius: 5px;
+        background: var(--vscode-editor-background, #1f1f1f);
+        box-shadow: 0 0 0 4px var(--vscode-editor-background, #1f1f1f);
+        transition: opacity 150ms ease;
+    }
+    .msg.user .role.rolePassive { left: auto; right: 10px; }
+    .msg:hover .role.rolePassive { opacity: 1; pointer-events: auto; }
+    @media (prefers-reduced-motion: reduce) { .role.rolePassive { transition: none; } }
     .role .avatar {
         width: 19px; height: 19px; border-radius: 5px; flex-shrink: 0;
         display: inline-flex; align-items: center; justify-content: center;
