@@ -198,6 +198,14 @@ export class CodexAdapter implements AgentAdapter {
         return ["default", "minimal", "low", "medium", "high"];
     }
 
+    permissionModes(): string[] {
+        return ["default", "untrusted", "on-failure", "on-request", "never"];
+    }
+
+    defaultPermission(): string {
+        return this.getConfig().approvalPolicy || "default";
+    }
+
     async commands(): Promise<SlashCommand[]> {
         const root = path.join(os.homedir(), ".codex");
         const pluginSkills = await findNamedDirs(path.join(root, "plugins"), "skills");

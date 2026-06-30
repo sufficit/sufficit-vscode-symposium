@@ -12,6 +12,9 @@ import { AgentSession, SessionStartOptions } from "../types";
 export interface CodexAdapterConfig {
     executable: string;
     model: string;
+    reasoning: string;
+    approvalPolicy: string;
+    sandboxMode: string;
     /** Add the Playwright MCP server (browser navigation tools). */
     playwright?: boolean;
     /** Extra MCP servers ({ name: { command, args } }). */
@@ -164,8 +167,17 @@ export class CodexSession extends EventEmitter implements AgentSession {
         if (model) {
             base.push("--model", model);
         }
-        if (this.options.reasoning && this.options.reasoning !== "default") {
-            base.push("-c", `model_reasoning_effort="${this.options.reasoning}"`);
+        const approvalPolicy = this.options.permission || this.config.approvalPolicy;
+        if (approvalPolicy && approvalPolicy !== "default") {
+            base.push("--approval-policy", approvalPolicy);
+        }
+        const sandboxMode = this.config.sandboxMode;
+        if (sandboxMode && sandboxMode !== "default") {
+            base.push("--sandbox-mode", sandboxMode);
+        }
+        const reasoning = this.options.reasoning || this.config.reasoning;
+        if (reasoning && reasoning !== "default") {
+            base.push("-c", `model_reasoning_effort="${reasoning}"`);
         }
         // MCP servers (Playwright browser tools + extras + VSCode MCP servers) as `-c` TOML overrides.
         const servers: Record<string, { command?: string; args?: string[] }> = { ...(this.config.mcpServers ?? {}) };

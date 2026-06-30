@@ -53,6 +53,9 @@ export function codexConfig(): CodexAdapterConfig {
     return {
         executable: config.get<string>("executable", "codex"),
         model: config.get<string>("model", ""),
+        reasoning: config.get<string>("reasoning", "default"),
+        approvalPolicy: config.get<string>("approvalPolicy", "default"),
+        sandboxMode: config.get<string>("sandboxMode", "workspace-write"),
         playwright: config.get<boolean>("playwright", false),
         mcpServers: config.get<Record<string, { command?: string; args?: string[] }>>("mcpServers", {}),
     };
