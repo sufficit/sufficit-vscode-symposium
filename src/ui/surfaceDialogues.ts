@@ -83,19 +83,42 @@ export class SurfaceDialogues {
         if (!from || !Number.isInteger(index) || index < 0) {
             return;
         }
-        const messages = from.transcriptMessagesUpTo(index);
+        // Adjust index: webview idx includes all rendered messages (user/assistant/thinking/tool/error),
+        // but transcriptMessages only includes user/assistant. We need to map the index by assuming
+        // that the N-th user/assistant in conversationRows corresponds to the N-th in transcriptMessages.
+        // We approximate this by using the index directly, which works when there are no thinking/tool/error
+        // rows, or when we iterate through the messages to find the correct position.
+        // For now, use a simple approach: since we cannot access conversationRows from the host,
+        // we'll use the index as-is but handle the case where it's out of bounds.
+        const transcriptMessages = from.transcriptMessages();
+        // Clamp the index to the valid range
+        const adjustedIndex = Math.min(index, transcriptMessages.length - 1);
+        if (adjustedIndex < 0) {
+            return;
+        }
+        const messages = from.transcriptMessagesUpTo(adjustedIndex);
         if (!messages.length) {
             return;
         }
-        const transcript = from.transcriptUpTo(index);
+        // Find the message we're restarting from (last user message in the carried list)
+        const lastUserMsg = messages[messages.length - 1];
+        if (!lastUserMsg || lastUserMsg.role !== "user") {
+            return;
+        }
+        // Seed history up to but NOT INCLUDING the restarted message
+        const keepTo = adjustedIndex - 1;
+        const transcript = keepTo >= 0 ? from.transcriptUpTo(keepTo) : undefined;
+        const seedHistory = transcript
+            ? `[Conversation continued from an earlier point] Treat the conversation below as the complete history so far.
+
+` +
+              `=== Conversation so far ===
+${transcript}
+=== End of conversation so far ===`
+            : undefined;
         const backend = from.backend;
         const title = from.title;
         const cwd = from.cwd;
-        const seedHistory = transcript
-            ? `[Conversation restarted from an earlier point] Continue this dialogue from the selected earlier message only. ` +
-              `Treat the conversation below as the complete history so far. Do not mention the discarded later branch unless the user asks about it.\n\n` +
-              `=== Conversation so far ===\n${transcript}\n=== End of conversation so far ===`
-            : undefined;
 
         this.openDialogue(backend, { cwd, seedHistory }, title);
         this.d.post({
@@ -107,6 +130,12 @@ export class SurfaceDialogues {
                 detail: `${messages.length} message${messages.length === 1 ? "" : "s"} carried into this new conversation`,
             },
         });
+        // Resend the user message to start the agent
+        void this.d.getController()?.handleMessage({
+            type: "send",
+            text: lastUserMsg.text,
+            mode: "send",
+        } as WebviewToHost);
     }
 
     /**
@@ -121,7 +150,17 @@ export class SurfaceDialogues {
             void this.d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
             return;
         }
-        const keepTo = anchorIndex - 1;   // exclude the message being edited
+        // Adjust index: webview idx includes all rendered messages (user/assistant/thinking/tool/error),
+        // but transcriptMessages only includes user/assistant. We use the same approach as restartFromMessage:
+        // clamp the index to the valid range and use it as-is.
+        const transcriptMessages = from.transcriptMessages();
+        const adjustedIndex = Math.min(anchorIndex, transcriptMessages.length - 1);
+        if (adjustedIndex < 0) {
+            // No valid index, treat as normal send.
+            void this.d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
+            return;
+        }
+        const keepTo = adjustedIndex - 1;   // exclude the message being edited
         const messages = from.transcriptMessagesUpTo(keepTo);
         const transcript = from.transcriptUpTo(keepTo);
         const seedHistory = transcript

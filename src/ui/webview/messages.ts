@@ -169,7 +169,40 @@ export function message(role, text, ts, model) {
     wrap.appendChild(label);
     const body = document.createElement("div");
     if (role === "assistant") { body.className = "md"; renderMarkdown(body, text); }
-    else { body.className = "ubody"; body.textContent = text; }
+    else {
+        body.className = "ubody";
+        body.textContent = text;
+        // For long user messages, add expandable behavior (max 2 lines, click to expand)
+        const lines = text.split('\n').length;
+        const isLong = lines > 2 || text.length > 300;
+        if (isLong) {
+            body.classList.add("user-expandable");
+            body.classList.add("collapsed");
+            // Add chevron indicator
+            const chev = document.createElement("span");
+            chev.className = "userChev";
+            chev.appendChild(svgIcon("chevron"));
+            body.appendChild(chev);
+            // Truncate to 2 lines visually
+            body.style.maxHeight = "3em";
+            body.style.overflow = "hidden";
+            body.style.display = "-webkit-box";
+            body.style.webkitLineClamp = "2";
+            body.style.webkitBoxOrient = "vertical";
+            body.style.cursor = "pointer";
+            // Toggle expansion on click
+            body.addEventListener("click", () => {
+                body.classList.toggle("collapsed");
+                if (body.classList.contains("collapsed")) {
+                    body.style.maxHeight = "3em";
+                    body.style.webkitLineClamp = "2";
+                } else {
+                    body.style.maxHeight = "";
+                    body.style.webkitLineClamp = "";
+                }
+            });
+        }
+    }
     wrap.appendChild(body);
     const tools = document.createElement("div"); tools.className = "msgTools";
     if (role === "user") {
