@@ -528,5 +528,52 @@ export const configViews = `    function resourceList(kind) {
         return html;
     }
 
+    function vscodeView() {
+        const s = state?.vscode || {};
+        const vsccfg = state?.vscodeConfig || {};
+        const input = (key, value, placeholder) => '<input class="vscode-input" type="text" data-key="' + esc(key) + '" value="' + esc(value) + '" placeholder="' + esc(placeholder) + '" />';
+        const sel = (key, value, opts) => {
+            return '<select class="vscode-select" data-key="' + esc(key) + '">'
+                + opts.map(o => '<option value="' + esc(o.v) + '"' + (String(value) === o.v ? ' selected' : '') + '>' + esc(o.l) + '</option>').join('')
+                + '</select>';
+        };
+        const item = (name, desc, ctl) =>
+            '<div class="pref-item"><div class="pref-name">' + esc(name) + '</div>'
+            + '<div class="pref-desc">' + esc(desc) + '</div><div class="pref-ctl">' + ctl + '</div></div>';
+        const section = (title, body) =>
+            '<div class="pref-section"><div class="pref-section-title">' + esc(title) + '</div>' + body + '</div>';
+
+        let html = '';
+
+        html += section(t("config.vscode.section.gitlens"),
+            item(t("config.vscode.gitlensModel.name"), t("config.vscode.gitlensModel.desc"),
+                input("gitlens.ai.model", vsccfg["gitlens.ai.model"] || "", t("config.vscode.gitlensModel.placeholder"))) +
+            item(t("config.vscode.gitlensVscodeModel.name"), t("config.vscode.gitlensVscodeModel.desc"),
+                input("gitlens.ai.vscode.model", vsccfg["gitlens.ai.vscode.model"] || "", t("config.vscode.gitlensVscodeModel.placeholder"))) +
+            item(t("config.vscode.gitlensOllamaUrl.name"), t("config.vscode.gitlensOllamaUrl.desc"),
+                input("gitlens.ai.ollama.url", vsccfg["gitlens.ai.ollama.url"] || "", t("config.vscode.gitlensOllamaUrl.placeholder")))
+        );
+
+        html += section(t("config.vscode.section.copilot"),
+            item(t("config.vscode.copilotAskAgentModel.name"), t("config.vscode.copilotAskAgentModel.desc"),
+                input("github.copilot.chat.askAgent.model", vsccfg["github.copilot.chat.askAgent.model"] || "", "")) +
+            item(t("config.vscode.copilotImplementAgentModel.name"), t("config.vscode.copilotImplementAgentModel.desc"),
+                input("github.copilot.chat.implementAgent.model", vsccfg["github.copilot.chat.implementAgent.model"] || "", ""))
+        );
+
+        html += section(t("config.vscode.section.misc"),
+            item(t("config.vscode.enableSmartCommit.name"), t("config.vscode.enableSmartCommit.desc"),
+                sel("git.enableSmartCommit", vsccfg["git.enableSmartCommit"] !== false, [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }])) +
+            item(t("config.vscode.magicMouseTrackingSpeed.name"), t("config.vscode.magicMouseTrackingSpeed.desc"),
+                input("macos.mouse.trackingSpeed", vsccfg["macos.mouse.trackingSpeed"] || "", "")) +
+            item(t("config.vscode.magicMouseScrollingSpeed.name"), t("config.vscode.magicMouseScrollingSpeed.desc"),
+                input("macos.mouse.scrollingSpeed", vsccfg["macos.mouse.scrollingSpeed"] || "", "")) +
+            item(t("config.vscode.magicMouseDoubleClickSpeed.name"), t("config.vscode.magicMouseDoubleClickSpeed.desc"),
+                input("macos.mouse.doubleClickSpeed", vsccfg["macos.mouse.doubleClickSpeed"] || "", ""))
+        );
+
+        return html;
+    }
+
 
 `;

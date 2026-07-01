@@ -74,6 +74,7 @@ export function renderConfigScript(dict: Record<string, string>): string {
         { id: "backends", label: t("config.tab.backends") },
         { id: "prefs", label: t("config.tab.preferences") },
         { id: "voice", label: t("config.tab.voice") },
+        { id: "vscode", label: t("config.tab.vscode") },
         { id: "compaction", label: t("config.tab.compaction") },
         { id: "sync", label: t("config.tab.sync") },
         { id: "sufficit", label: t("config.tab.sufficit") },
@@ -201,6 +202,24 @@ export function renderConfigScript(dict: Record<string, string>): string {
             });
             main.querySelectorAll("button.stt-delete").forEach(el => {
                 el.onclick = () => vscode.postMessage({ type: "stt-delete-model", modelId: el.getAttribute("data-model") });
+            });
+            return;
+        }
+        if (active === "vscode") {
+            main.innerHTML = page(vscodeView());
+            main.querySelectorAll("input.vscode-input").forEach(el => {
+                el.onchange = () => {
+                    const key = el.getAttribute("data-key");
+                    const value = el.value;
+                    vscode.postMessage({ type: "set-vscode-config", key, value });
+                };
+            });
+            main.querySelectorAll("select.vscode-select").forEach(el => {
+                el.onchange = () => {
+                    const key = el.getAttribute("data-key");
+                    const value = el.value === "true";
+                    vscode.postMessage({ type: "set-vscode-config", key, value });
+                };
             });
             return;
         }

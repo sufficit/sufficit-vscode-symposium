@@ -731,6 +731,20 @@ export class ConfigPanel {
                 await this.pushState();
                 return;
             }
+            case "set-vscode-config": {
+                if (typeof message.key === "string") {
+                    let value: unknown = message.value;
+                    // Handle boolean values for checkboxes
+                    if (value === "true") { value = true; }
+                    else if (value === "false") { value = false; }
+                    // Handle numeric values for macOS mouse settings
+                    else if (message.key.startsWith("macos.mouse.")) {
+                        value = Number(message.value) || 0;
+                    }
+                    await vscode.workspace.getConfiguration().update(message.key, value, vscode.ConfigurationTarget.Global);
+                }
+                return;
+            }
         }
     }
 
@@ -927,6 +941,19 @@ export class ConfigPanel {
                 voiceInterimResults: root.get<boolean>("voice.interimResults", true),
                 voiceDotsAnimation: root.get<boolean>("voice.dotsAnimation", true),
                 voiceSoundFeedback: root.get<boolean>("voice.soundFeedback", true),
+            },
+            // VS Code global settings (safeguarded for when extensions aren't installed)
+            vscodeConfig: {
+                "gitlens.ai.model": vscode.workspace.getConfiguration("gitlens.ai").get<string>("model", ""),
+                "gitlens.ai.vscode.model": vscode.workspace.getConfiguration("gitlens.ai.vscode").get<string>("model", ""),
+                "gitlens.ai.ollama.url": vscode.workspace.getConfiguration("gitlens.ai.ollama").get<string>("url", ""),
+                "github.copilot.chat.askAgent.model": vscode.workspace.getConfiguration("github.copilot.chat").get<string>("askAgent.model", ""),
+                "github.copilot.chat.implementAgent.model": vscode.workspace.getConfiguration("github.copilot.chat").get<string>("implementAgent.model", ""),
+                "git.enableSmartCommit": vscode.workspace.getConfiguration("git").get<boolean>("enableSmartCommit", true),
+                // macOS-specific settings (safe to read even if not on macOS)
+                "macos.mouse.trackingSpeed": vscode.workspace.getConfiguration("macos.mouse").get<number>("trackingSpeed", 0)?.toString() || "",
+                "macos.mouse.scrollingSpeed": vscode.workspace.getConfiguration("macos.mouse").get<number>("scrollingSpeed", 0)?.toString() || "",
+                "macos.mouse.doubleClickSpeed": vscode.workspace.getConfiguration("macos.mouse").get<number>("doubleClickSpeed", 0)?.toString() || "",
             },
             compression: {
                 presets: compressionManager.getPresets(),
