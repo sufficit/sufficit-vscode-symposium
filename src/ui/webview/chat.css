@@ -55,7 +55,10 @@
         gap: 16px; flex: 1;
     }
     #root.loading #loadingState { display: flex; animation: ldFadeIn 0.22s ease; }
-    #root.loading #log { display: none; }
+    /* visibility (not display): layout stays live while hidden, so the restored
+       history has a real scrollHeight and the pin lands at the bottom BEFORE the
+       log is revealed — no visible jump on open. */
+    #root.loading #log { visibility: hidden; }
     #loadingState .ldLogo {
         width: 56px; height: 56px; border-radius: 16px; display: inline-flex;
         align-items: center; justify-content: center; position: relative;
@@ -432,15 +435,13 @@
         flex: 1; overflow-y: auto; overflow-x: hidden; padding: 16px 16px 6px 16px; user-select: text; cursor: text;
         font-size: 13.5px; line-height: 1.65;
         min-width: 0;
-        /* column-reverse scroller: the view opens pinned to the LAST message and
-           stays there while restored history / images grow the content — the
-           scrollbar extends upward instead of the view jumping. Browser scroll
-           anchoring keeps the reading position stable when scrolled up. */
-        display: flex; flex-direction: column-reverse;
+        /* NOTE: no column-reverse here — Chromium can't scroll overflow in
+           reverse flex flows (content above the fold becomes unreachable).
+           Bottom-pinning is done in scroll.ts via a ResizeObserver instead. */
     }
-    /* All messages live here, in normal chronological flow. min-height fills the
-       viewport so short conversations still start at the top. */
-    #logBody { min-height: 100%; }
+    /* All messages live here, in normal chronological flow; the wrapper lets the
+       pin logic observe content growth separately from the scrollport. */
+    #logBody { min-height: 0; }
     .msg { margin: 0 0 18px 0; word-break: break-word; line-height: 1.65; user-select: text; -webkit-user-select: text; }
     .msg.plain { white-space: pre-wrap; }
     /* Transient status annotation (e.g. "image transcribed"): quiet, non-content. */
