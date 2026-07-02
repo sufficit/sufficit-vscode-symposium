@@ -301,15 +301,25 @@ function getVoicePreferences() {
             soundFeedback: prefs.soundFeedback !== false,
             engine: prefs.engine || 'auto',
             localStt: prefs.localStt !== false,
+            hostCapture: prefs.hostCapture === true,
         };
     }
     return voicePreferences;
+}
+
+function applyRecognitionPreferences() {
+    if (!recognition) { return; }
+    const prefs = getVoicePreferences();
+    recognition.lang = prefs.language;
+    recognition.continuous = prefs.continuous;
+    recognition.interimResults = prefs.interimResults;
 }
 
 // Listen for voice preference updates
 window.addEventListener('message', (e) => {
     if (e.data && e.data.type === 'setVoicePreferences') {
         getVoicePreferences();
+        applyRecognitionPreferences();
         updateMicVisibility();
     }
 });
@@ -337,27 +347,27 @@ let audioChunks: Blob[] = [];
 function updateMicVisibility() {
     if (!micBtn) { return; }
     const prefs = getVoicePreferences();
-    // Web Speech only mode and no Web Speech here → nothing we can do.
-    const canWebSpeech = webSpeechSupported && (prefs.engine === 'webspeech' || prefs.engine === 'auto');
+    const canWebSpeech = webSpeechSupported && (prefs.engine === 'webspeech' || (prefs.engine === 'auto' && !prefs.localStt));
     const canLocal = prefs.localStt && prefs.engine !== 'webspeech';
     micBtn.style.display = (canWebSpeech || canLocal) ? 'inline-flex' : 'none';
 }
 
-// Decide which path a click should use. Web Speech wins when usable; otherwise
-// fall back to local host transcription.
+// Decide which path a click should use.
+//
+// Explicit `webspeech` keeps the browser recognizer. In `auto`, prefer the
+// host/local STT path when available so the Electron desktop build does not get
+// stuck on partial Web Speech support.
 function chooseVoicePath(): 'webspeech' | 'local' | 'none' {
     const prefs = getVoicePreferences();
-    if (webSpeechSupported && (prefs.engine === 'webspeech' || prefs.engine === 'auto')) { return 'webspeech'; }
     if (prefs.localStt && prefs.engine !== 'webspeech') { return 'local'; }
+    if (webSpeechSupported && (prefs.engine === 'webspeech' || prefs.engine === 'auto')) { return 'webspeech'; }
     return 'none';
 }
 
 if (SpeechRecognition) {
     recognition = new SpeechRecognition();
+    applyRecognitionPreferences();
     const prefs = getVoicePreferences();
-    recognition.lang = prefs.language;
-    recognition.continuous = prefs.continuous;
-    recognition.interimResults = prefs.interimResults;
 
     recognition.onstart = () => {
         isRecording = true;
@@ -421,6 +431,34 @@ if (SpeechRecognition) {
         if (prefs.soundFeedback) playStopSound();
         console.error('Speech recognition error:', event.error);
     };
+}
+
+// --- Native capture path (host records via ffmpeg; no webview permission) ---
+
+let hostRecording = false;
+
+function startHostCapture() {
+    const prefs = getVoicePreferences();
+    vscode.postMessage({ type: 'voice-start' });
+    hostRecording = true;
+    isRecording = true;
+    micBtn.classList.add('recording');
+    setStatus('Listening...');
+    if (prefs.soundFeedback) playStartSound();
+    recordingTextBase = input.value;
+    if (prefs.dotsAnimation) updateRecordingDots();
+}
+
+function stopHostCapture() {
+    const prefs = getVoicePreferences();
+    if (prefs.soundFeedback) playStopSound();
+    isRecording = false;
+    hostRecording = false;
+    micBtn.classList.remove('recording');
+    if (recordingDotsInterval) { clearInterval(recordingDotsInterval); recordingDotsInterval = null; }
+    input.value = recordingTextBase;   // drop the dots animation text
+    setStatus('Transcribing...');
+    vscode.postMessage({ type: 'voice-stop' });
 }
 
 // --- Local capture path (MediaRecorder → host transcription) ---
@@ -493,6 +531,18 @@ window.addEventListener('message', (e) => {
         if (recordingTextBase) { input.value = recordingTextBase; }
         setStatus('Ready');
         showToast('Transcription failed: ' + (e.data.error || 'unknown error'));
+    } else if (e.data.type === 'voice-recording') {
+        // Host couldn't open the native mic → reset the UI and fall back to
+        // the webview MediaRecorder path (may still hit the permission bug).
+        if (!e.data.ok && hostRecording) {
+            hostRecording = false;
+            isRecording = false;
+            micBtn.classList.remove('recording');
+            if (recordingDotsInterval) { clearInterval(recordingDotsInterval); recordingDotsInterval = null; }
+            input.value = recordingTextBase;
+            showToast('Native mic capture failed (' + (e.data.error || 'unknown') + ') — falling back to webview mic');
+            void startLocalCapture();
+        }
     }
 });
 
@@ -511,9 +561,14 @@ if (micBtn) {
             else { recognition.start(); }
             return;
         }
-        // local path
-        if (isRecording) { stopLocalCapture(); }
-        else { void startLocalCapture(); }
+        // local path: prefer native host capture, webview MediaRecorder as fallback
+        if (isRecording) {
+            if (hostRecording) { stopHostCapture(); } else { stopLocalCapture(); }
+        } else if (prefs.hostCapture) {
+            startHostCapture();
+        } else {
+            void startLocalCapture();
+        }
     });
 }
 

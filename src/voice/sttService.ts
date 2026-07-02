@@ -116,21 +116,14 @@ function specPath(spec: SttModelSpec, s: SttSettings): string {
 }
 
 /**
- * Transcribes a base64 audio payload (whatever the webview captured) with the
- * configured local engine. Converts to 16 kHz mono WAV first. Cleans up temps.
+ * Transcribes a 16 kHz mono WAV file with the configured local engine.
+ * Deletes the wav when done.
  */
-export async function transcribeAudio(base64: string, mime: string): Promise<string> {
+export async function transcribeWav(wav: string): Promise<string> {
     const s = readSettings();
     const engine = resolveLocalEngine(s);
     const lang = toShortLang(s.language);
-
-    const ext = mime.includes("ogg") ? "ogg" : mime.includes("wav") ? "wav" : "webm";
-    const input = path.join(os.tmpdir(), `symposium-stt-in-${Date.now()}.${ext}`);
-    fs.writeFileSync(input, Buffer.from(base64, "base64"));
-
-    let wav = "";
     try {
-        wav = await toWav16k(input, s.ffmpegPath);
         if (engine === "whisper-cpp") {
             const spec = findModel(s.whisper.model);
             return await transcribeWhisperCpp(wav, {
@@ -162,7 +155,23 @@ export async function transcribeAudio(base64: string, mime: string): Promise<str
             modelPath: spec ? specPath(spec, s) : "",
         });
     } finally {
+        try { fs.unlinkSync(wav); } catch { /* ignore */ }
+    }
+}
+
+/**
+ * Transcribes a base64 audio payload (whatever the webview captured) with the
+ * configured local engine. Converts to 16 kHz mono WAV first. Cleans up temps.
+ */
+export async function transcribeAudio(base64: string, mime: string): Promise<string> {
+    const s = readSettings();
+    const ext = mime.includes("ogg") ? "ogg" : mime.includes("wav") ? "wav" : "webm";
+    const input = path.join(os.tmpdir(), `symposium-stt-in-${Date.now()}.${ext}`);
+    fs.writeFileSync(input, Buffer.from(base64, "base64"));
+    try {
+        const wav = await toWav16k(input, s.ffmpegPath);
+        return await transcribeWav(wav);   // deletes the wav
+    } finally {
         try { fs.unlinkSync(input); } catch { /* ignore */ }
-        if (wav) { try { fs.unlinkSync(wav); } catch { /* ignore */ } }
     }
 }

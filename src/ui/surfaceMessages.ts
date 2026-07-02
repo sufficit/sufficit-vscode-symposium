@@ -96,6 +96,36 @@ export class SurfaceMessages {
                     }
                     return;
                 }
+                case "voice-start": {
+                    // Native mic capture in the extension host (no webview
+                    // getUserMedia — VS Code drops that permission on reload).
+                    try {
+                        const { startCapture } = await import("../voice/recorder");
+                        const { readSettings } = await import("../voice/sttService");
+                        await startCapture(readSettings().ffmpegPath);
+                        this.d.post({ type: "voice-recording", ok: true });
+                    } catch (e) {
+                        this.d.post({ type: "voice-recording", ok: false, error: String((e && (e as Error).message) || e) });
+                    }
+                    return;
+                }
+                case "voice-stop": {
+                    try {
+                        const { stopCapture } = await import("../voice/recorder");
+                        const wav = await stopCapture();
+                        const { transcribeWav } = await import("../voice/sttService");
+                        const text = await transcribeWav(wav);
+                        this.d.post({ type: "stt-result", text });
+                    } catch (e) {
+                        this.d.post({ type: "stt-error", error: String((e && (e as Error).message) || e) });
+                    }
+                    return;
+                }
+                case "voice-cancel": {
+                    const { cancelCapture } = await import("../voice/recorder");
+                    cancelCapture();
+                    return;
+                }
                 case "stt-transcribe": {
                     // Local hybrid path: the webview captured audio; transcribe it
                     // offline with the configured engine and return the text.

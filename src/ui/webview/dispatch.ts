@@ -110,7 +110,7 @@ window.addEventListener("message", ({ data }) => {
             setActiveFilePreview(!!data.activeFilePreview); setActiveFilePinned(false);
             setActiveFileDismissed(false); renderChips();
             setLoading(false);   // session resolved — reveal the conversation
-            scrollToBottom();    // start at the latest message
+            scrollToBottom();
             break;
         }
         case "browser-state": {
@@ -250,7 +250,7 @@ window.addEventListener("message", ({ data }) => {
             if (!data.carried) {
                 append("meta", data.messages.length ? "— end of stored transcript —" : "(empty transcript)");
             }
-            scrollToBottom();   // land at the latest message when a session opens
+            scrollToBottom();
             break;
         }
         case "backends": {

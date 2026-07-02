@@ -34,185 +34,64 @@ function firstDshowAudioDevice(bin: string): Promise<string> {
     });
 }
 
-/** First avfoundation audio device name (macOS). */
-function firstAvfoundationAudioDevice(bin: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const p = spawn(bin, ["-hide_banner", "-list_devices", "true", "-f", "avfoundation", "-i", ""]);
-        let err = "";
-        p.stderr.on("data", (d) => { err += d.toString(); });
-        p.on("error", (e) => reject(e));
-        p.on("close", () => {
-            // [1] Built-in Microphone
-            const m = err.match(/\[(\d+)\]\s+([^:\n]+)(?=\s*\[|\s*$)/);
-            if (m) {
-                // Find first audio device (pattern: [N] Name)
-                const lines = err.split("\n");
-                for (const line of lines) {
-                    const match = line.match(/^\[(\d+)\]\s+([^:\n]+?)(?:\s*\[|$)/);
-                    if (match) {
-                        // Usually audio devices are listed first
-                        if (line.includes("Microphone") || line.includes("Audio")) {
-                            resolve(match[1]);
-                            return;
-                        }
-                    }
-                }
-            }
-            reject(new Error("no audio input device found (avfoundation)"));
-        });
-    });
-}
-
-/** First pulse audio device name (Linux). */
-function firstPulseAudioDevice(bin: string): Promise<string> {
-    return Promise.resolve("default"); // PulseAudio handles 'default' as system default
-}
-
-/**
- * Start recording microphone via ffmpeg.
- * @returns Promise resolving to the output WAV file path.
- */
-export async function start(ffmpegPath: string): Promise<string> {
-    if (proc) {
-        throw new Error("recording already in progress");
+async function inputArgs(bin: string): Promise<string[]> {
+    if (process.platform === "win32") {
+        const dev = await firstDshowAudioDevice(bin);
+        return ["-f", "dshow", "-i", `audio=${dev}`];
     }
+    if (process.platform === "darwin") { return ["-f", "avfoundation", "-i", ":0"]; }
+    // Linux and WSLg (PulseAudio socket is exported by WSLg).
+    return ["-f", "pulse", "-i", "default"];
+}
 
-    const platform = os.platform();
+export function isCapturing(): boolean { return !!proc; }
+
+/** Starts recording. Rejects fast when ffmpeg dies immediately (no device/permission). */
+export async function startCapture(ffmpegPath: string): Promise<void> {
+    if (proc) { throw new Error("already recording"); }
     const bin = ff(ffmpegPath);
-    let inputArgs: string[] = [];
-    let outputArgs = [
-        "-f", "wav",
-        "-acodec", "pcm_s16le",
-        "-ar", "16000",
-        "-ac", "1",
-        "-"
-    ];
-
-    // Create temp file for output
-    const tmpDir = os.tmpdir();
-    const timestamp = Date.now();
-    outPath = path.join(tmpDir, `symposium_rec_${timestamp}.wav`);
-
-    // Build input args based on platform
-    switch (platform) {
-        case "win32":
-            // Windows: use dshow (DirectShow)
-            try {
-                const device = await firstDshowAudioDevice(bin);
-                inputArgs = ["-f", "dshow", "-i", `audio=${device}`];
-            } catch (e) {
-                throw new Error(`failed to enumerate dshow devices: ${e}`);
-            }
-            break;
-
-        case "darwin":
-            // macOS: use avfoundation
-            try {
-                const device = await firstAvfoundationAudioDevice(bin);
-                inputArgs = ["-f", "avfoundation", "-i", `${device}:0`];
-            } catch (e) {
-                throw new Error(`failed to enumerate avfoundation devices: ${e}`);
-            }
-            break;
-
-        case "linux":
-            // Linux: use pulseaudio
-            inputArgs = ["-f", "pulse", "-i", "default"];
-            break;
-
-        default:
-            throw new Error(`unsupported platform: ${platform}`);
-    }
-
-    // Spawn ffmpeg
-    proc = spawn(bin, [...inputArgs, ...outputArgs], {
-        stdio: ["ignore", "pipe", "pipe"]
-    });
-
-    // Create write stream for output
-    const writeStream = fs.createWriteStream(outPath);
-
-    // Pipe stdout to file
-    if (proc.stdout) {
-        proc.stdout.pipe(writeStream);
-    }
-
-    // Handle errors
-    if (proc.stderr) {
-        proc.stderr.on("data", (data) => {
-            // Log ffmpeg stderr (may contain useful info)
-            // console.debug("[recorder] ffmpeg:", data.toString());
-        });
-    }
-
-    proc.on("error", (err) => {
-        console.error("[recorder] ffmpeg error:", err);
-        proc = null;
-    });
-
-    proc.on("close", (code) => {
-        if (code !== 0 && code !== null) {
-            console.error(`[recorder] ffmpeg exited with code ${code}`);
-        }
-        proc = null;
-    });
-
-    return outPath;
-}
-
-/**
- * Stop recording and return the output WAV file path.
- * @returns Promise resolving to the WAV file path, or null if no recording was in progress.
- */
-export async function stop(): Promise<string | null> {
-    if (!proc) {
-        return null;
-    }
-
-    // Send SIGTERM to ffmpeg
-    proc.kill("SIGTERM");
-
-    // Wait for process to exit (with timeout)
-    await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-            if (proc) {
-                proc.kill("SIGKILL");
+    const args = await inputArgs(bin);
+    outPath = path.join(os.tmpdir(), `symposium-rec-${Date.now()}.wav`);
+    const p = spawn(bin, ["-hide_banner", "-y", ...args, "-ac", "1", "-ar", "16000", outPath], { stdio: ["pipe", "ignore", "pipe"] });
+    proc = p;
+    let err = "";
+    p.stderr.on("data", (d) => { err += d.toString(); });
+    await new Promise<void>((resolve, reject) => {
+        const ok = setTimeout(resolve, 700);   // still alive after 700ms → capturing
+        p.on("error", (e) => { clearTimeout(ok); if (proc === p) { proc = null; } reject(e); });
+        p.on("close", (code) => {
+            clearTimeout(ok);
+            if (proc === p) {
                 proc = null;
-                resolve();
+                reject(new Error(`audio capture failed (ffmpeg code ${code}). ${err.split("\n").filter(Boolean).slice(-2).join(" ").trim()}`));
             }
-        }, 5000);
-
-        const checkExit = () => {
-            if (!proc) {
-                clearTimeout(timeout);
-                resolve();
-            } else {
-                setTimeout(checkExit, 100);
-            }
-        };
-
-        checkExit();
+        });
     });
+}
 
+/** Stops recording and returns the captured WAV path. */
+export async function stopCapture(): Promise<string> {
+    const p = proc;
+    if (!p) { throw new Error("not recording"); }
+    proc = null;
+    await new Promise<void>((resolve) => {
+        const done = setTimeout(resolve, 3000);          // hard cap
+        p.on("close", () => { clearTimeout(done); resolve(); });
+        try { p.stdin?.write("q"); } catch { /* fall through to kill */ }
+        setTimeout(() => { try { p.kill(); } catch { /* gone */ } }, 1500);
+    });
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 128) {
+        throw new Error("no audio captured");
+    }
     return outPath;
 }
 
-/**
- * Cancel recording and clean up the temporary file.
- */
-export async function cancel(): Promise<void> {
-    const wasRecording = proc !== null;
-    const filePath = outPath;
-
-    await stop();
-
-    if (wasRecording && filePath) {
-        try {
-            fs.unlinkSync(filePath);
-        } catch (e) {
-            // Ignore cleanup errors
-        }
+/** Aborts recording and discards the file. */
+export function cancelCapture(): void {
+    const p = proc;
+    proc = null;
+    if (p) {
+        try { p.stdin?.write("q"); } catch { try { p.kill(); } catch { /* gone */ } }
     }
-
-    outPath = "";
+    setTimeout(() => { try { fs.unlinkSync(outPath); } catch { /* ignore */ } }, 500);
 }

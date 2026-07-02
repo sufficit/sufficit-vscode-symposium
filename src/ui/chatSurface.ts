@@ -13,6 +13,7 @@ import { SurfaceDialogues } from "./surfaceDialogues";
 import { SurfaceMessages } from "./surfaceMessages";
 import { HubClient } from "../sync/hubClient";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
+import { canUseLocalStt } from "../voice/sttRouting";
 
 export interface ChatSurfaceDeps {
     adapterByBackend: Map<string, AgentAdapter>;
@@ -165,8 +166,11 @@ export class ChatSurface {
             dotsAnimation: voiceCfg.get<boolean>("voice.dotsAnimation", true),
             soundFeedback: voiceCfg.get<boolean>("voice.soundFeedback", true),
             engine: voiceEngine,
-            // Any engine other than the browser-only one can transcribe locally on the host.
-            localStt: voiceEngine !== "webspeech",
+            // `auto` uses browser speech in web/code-server UI and local STT on desktop.
+            localStt: canUseLocalStt(voiceEngine, vscode.env.uiKind === vscode.UIKind.Web),
+            // Desktop: the host records the mic natively (ffmpeg) — webview
+            // getUserMedia is unreliable in VS Code (permission lost on reload).
+            hostCapture: vscode.env.uiKind !== vscode.UIKind.Web,
         };
         void this.webview.postMessage({ type: "setVoicePreferences", preferences: voicePreferences });
 
