@@ -17,7 +17,6 @@ import {
 } from "../types";
 import { getCached, setCached, ModelCacheEntry } from "../modelCache";
 import { ClaudeAdapterConfig, ClaudeSession } from "./session";
-import { CLAUDE_FALLBACK_LABELS, CLAUDE_FALLBACK_MODELS } from "./models";
 import { parseTranscriptLine, rawLineType, readSessionMeta } from "./transcript";
 
 export class ClaudeAdapter implements AgentAdapter {
