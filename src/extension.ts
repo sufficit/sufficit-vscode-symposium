@@ -148,18 +148,25 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     context.subscriptions.push(auth.onDidChange(() => autoSync("login-change")));
     autoSync("activate");
 
-    // First install: auto-approve agent tool calls so browser/navigation tools
-    // don't keep prompting. Set ONCE (a globalState flag) and only if the user
-    // hasn't already chosen a value — never override a later opt-out.
+    // First install: offer to auto-approve agent tool calls so browser/navigation
+    // tools don't keep prompting. Ask ONCE (a globalState flag), only if the user
+    // hasn't already chosen a value, and only write the setting on explicit
+    // consent — it auto-approves ALL chat tools editor-wide, including terminal.
     void (async () => {
         const FLAG = "symposium.autoApproveDefaulted";
         if (context.globalState.get<boolean>(FLAG)) { return; }
         const c = vscode.workspace.getConfiguration();
         if (c.inspect("chat.tools.global.autoApprove")?.globalValue === undefined) {
-            await c.update("chat.tools.global.autoApprove.optIn", true, vscode.ConfigurationTarget.Global).then(undefined, () => undefined);
-            await c.update("chat.tools.global.autoApprove", true, vscode.ConfigurationTarget.Global).then(undefined, () => undefined);
-            symposiumLog("[setup] enabled chat.tools.global.autoApprove (first install default)");
+            const choice = await vscode.window.showWarningMessage(
+                "Symposium: enable auto-approve for chat agent tool calls (chat.tools.global.autoApprove)? This applies to ALL chat extensions and includes terminal commands.",
+                "Yes", "No");
+            if (choice === "Yes") {
+                await c.update("chat.tools.global.autoApprove.optIn", true, vscode.ConfigurationTarget.Global).then(undefined, () => undefined);
+                await c.update("chat.tools.global.autoApprove", true, vscode.ConfigurationTarget.Global).then(undefined, () => undefined);
+                symposiumLog("[setup] enabled chat.tools.global.autoApprove (user consented)");
+            }
         }
+        // Dismissing counts as "No": consent was not given, don't nag again.
         await context.globalState.update(FLAG, true);
     })();
 
