@@ -14,7 +14,11 @@ export function transcriptMessages(log: unknown[]): TranscriptRow[] {
     const flushAssistant = () => {
         const text = assistantBuf.trim();
         const thinking = thinkingBuf.trim();
-        if (text || thinking) {
+        // Mirror the webview: an assistant conversation row exists only when
+        // TEXT streamed (streamDelta creates the bubble); a thinking block is
+        // scaffolding rendered without a row index, so thinking-only turns
+        // must not produce a row here or indexes drift.
+        if (text) {
             rows.push({ role: "assistant", text, thinking: thinking || undefined });
         }
         assistantBuf = "";
@@ -49,6 +53,14 @@ export function transcriptMessages(log: unknown[]): TranscriptRow[] {
             thinkingBuf += message.event.text || "";
         } else if (message?.type === "event" && message.event?.kind === "turn-end") {
             flushAssistant();
+        } else if (message?.type === "event"
+            && (message.event?.kind === "tool-start" || message.event?.kind === "error"
+                || message.event?.kind === "status-notice" || message.event?.kind === "session")) {
+            // The webview ends the streaming bubble on these events (endStream
+            // before tool/error/notice/meta rows), so text after them starts a
+            // NEW conversation row. Flush here too, or the row indexes the
+            // webview sends (restart/edit-resend) drift on text→tool→text turns.
+            flushAssistant();
         } else if (message?.type === "event" && message.event?.kind === "turn-start") {
             // No-op: just a delimiter, handled by flush on turn-end.
         }
@@ -71,9 +83,4 @@ export function transcriptMessagesUpTo(log: unknown[], index: number): Transcrip
 export function transcriptText(log: unknown[]): string {
     const rows = transcriptMessages(log);
     return rows.map((r) => `${r.role === "user" ? "user" : "assistant"}: ${r.text}`).join("\n\n");
-}
-
-/** Raw log slice up to a given index (for replay). */
-export function transcriptUpTo(log: unknown[], index: number): unknown[] {
-    return log.slice(0, index);
 }
