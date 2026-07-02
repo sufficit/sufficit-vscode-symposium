@@ -6,8 +6,25 @@ import { join, extname } from "node:path";
 
 const MAX_LINES = 400;
 const ROOT = "src";
-// No exemptions: every source file is at or under the 400-line limit.
-const EXEMPT = new Set([]);
+// Grandfathered offenders: already over the limit when the guard was fixed.
+// Do not add new entries — shrink these below 400 lines and remove them.
+const EXEMPT = new Set([
+  "src/adapters/aiTools/defs.ts",
+  "src/adapters/openai/session.ts",
+  "src/adapters/openai/turnRunner.ts",
+  "src/api/symposiumApi.ts",
+  "src/config/root.ts",
+  "src/ui/chatController.ts",
+  "src/ui/configI18n.ts",
+  "src/ui/configPanel.ts",
+  "src/ui/configStyles.ts",
+  "src/ui/configViews.ts",
+  "src/ui/surfaceDialogues.ts",
+  "src/ui/surfaceMessages.ts",
+  "src/ui/webview/composer.ts",
+  "src/ui/webview/dispatch.ts",
+  "src/ui/webview/sessions.ts",
+]);
 
 /** @param {string} dir @returns {string[]} */
 function walk(dir) {

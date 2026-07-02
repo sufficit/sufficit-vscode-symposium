@@ -782,7 +782,7 @@
     }
   },
   "scripts": {
-    "test": "npm run compile && node --test out/test/*.test.js && npm run check:webview && npm run check:size",
+    "test": "npm run clean && tsc -p ./ && node --test out/test/*.test.js && npm run build:webview && npm run bundle && npm run check:webview && npm run check:size",
     "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
     "compile": "npm run clean && tsc -p ./ && npm run build:webview && npm run bundle",
     "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --outfile=out/ui/webview.bundle.js && esbuild src/ui/webview/chat.css --bundle --outfile=out/ui/webview.css",
