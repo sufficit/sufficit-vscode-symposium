@@ -61,7 +61,11 @@ async function build() {
 
   // Remove compiled TypeScript files (we only need the bundle)
   console.log('🧹 Cleaning up compiled files...');
-  const dirsToRemove = ['adapters', 'api', 'auth', 'chat', 'commands', 'compression', 'config', 'extension', 'sessions', 'sync', 'test'];
+  // NOTE: 'test' is intentionally NOT removed here — tests are compiled into
+  // out/test/ by tsc and consumed by `node --test out/test/*.test.js` in the
+  // `test` script. Removing them broke npm test (it reported 0 tests because
+  // the files were deleted before node --test ran).
+  const dirsToRemove = ['adapters', 'api', 'auth', 'chat', 'commands', 'compression', 'config', 'extension', 'sessions', 'sync'];
   dirsToRemove.forEach(dir => {
     const dirPath = path.join(outDir, dir);
     if (fs.existsSync(dirPath)) {

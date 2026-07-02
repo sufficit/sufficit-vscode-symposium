@@ -9,6 +9,7 @@ import { readWorkspaceBootstrap } from "../config/root";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
 import { symposiumLog } from "../extension";
 import type { WebviewToHost } from "./protocol";
+import { restartFromMessage, editResend } from "./surfaceBranching";
 
 /**
  * Dialogue lifecycle for a chat surface: opening a dialogue (new / resumed /
@@ -77,114 +78,20 @@ export class SurfaceDialogues {
      * conversation up to the chosen message. This is the Symposium equivalent
      * of VS Code chat's "restart from here": the old dialogue remains intact,
      * while the current surface branches into a new one from that point.
+     * Implemented in surfaceBranching.ts.
      */
     restartFromMessage(index: number): void {
-        const from = this.d.getController();
-        if (!from || !Number.isInteger(index) || index < 0) {
-            return;
-        }
-        // Adjust index: webview idx includes all rendered messages (user/assistant/thinking/tool/error),
-        // but transcriptMessages only includes user/assistant. We need to map the index by assuming
-        // that the N-th user/assistant in conversationRows corresponds to the N-th in transcriptMessages.
-        // We approximate this by using the index directly, which works when there are no thinking/tool/error
-        // rows, or when we iterate through the messages to find the correct position.
-        // For now, use a simple approach: since we cannot access conversationRows from the host,
-        // we'll use the index as-is but handle the case where it's out of bounds.
-        const transcriptMessages = from.transcriptMessages();
-        // Clamp the index to the valid range
-        const adjustedIndex = Math.min(index, transcriptMessages.length - 1);
-        if (adjustedIndex < 0) {
-            return;
-        }
-        const messages = from.transcriptMessagesUpTo(adjustedIndex);
-        if (!messages.length) {
-            return;
-        }
-        // Find the message we're restarting from (last user message in the carried list)
-        const lastUserMsg = messages[messages.length - 1];
-        if (!lastUserMsg || lastUserMsg.role !== "user") {
-            return;
-        }
-        // Seed history up to but NOT INCLUDING the restarted message
-        const keepTo = adjustedIndex - 1;
-        const transcript = keepTo >= 0 ? from.transcriptUpTo(keepTo) : undefined;
-        const seedHistory = transcript
-            ? `[Conversation continued from an earlier point] Treat the conversation below as the complete history so far.
-
-` +
-              `=== Conversation so far ===
-${transcript}
-=== End of conversation so far ===`
-            : undefined;
-        const backend = from.backend;
-        const title = from.title;
-        const cwd = from.cwd;
-
-        this.openDialogue(backend, { cwd, seedHistory }, title);
-        this.d.post({
-            type: "history",
-            messages,
-            carried: true,
-            branchLabel: {
-                title: "Branched from earlier message",
-                detail: `${messages.length} message${messages.length === 1 ? "" : "s"} carried into this new conversation`,
-            },
-        });
-        // Resend the user message to start the agent
-        void this.d.getController()?.handleMessage({
-            type: "send",
-            text: lastUserMsg.text,
-            mode: "send",
-        } as WebviewToHost);
+        return restartFromMessage(this.d, (b, o, t, i) => this.openDialogue(b, o, t, i), index);
     }
 
     /**
      * Edit & resend: branch a fresh session seeded with the conversation BEFORE
      * the edited message (anchorIndex excluded), then deliver the edited text as
      * the new message — so we genuinely "restart from this point".
+     * Implemented in surfaceBranching.ts.
      */
     editResend(anchorIndex: number, sendMsg: WebviewToHost): void {
-        const from = this.d.getController();
-        if (!from || !Number.isInteger(anchorIndex) || anchorIndex < 0) {
-            // Nothing to rewind to — treat as a normal send.
-            void this.d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
-            return;
-        }
-        // Adjust index: webview idx includes all rendered messages (user/assistant/thinking/tool/error),
-        // but transcriptMessages only includes user/assistant. We use the same approach as restartFromMessage:
-        // clamp the index to the valid range and use it as-is.
-        const transcriptMessages = from.transcriptMessages();
-        const adjustedIndex = Math.min(anchorIndex, transcriptMessages.length - 1);
-        if (adjustedIndex < 0) {
-            // No valid index, treat as normal send.
-            void this.d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
-            return;
-        }
-        const keepTo = adjustedIndex - 1;   // exclude the message being edited
-        const messages = from.transcriptMessagesUpTo(keepTo);
-        const transcript = from.transcriptUpTo(keepTo);
-        const seedHistory = transcript
-            ? `[Conversation continued from an earlier point] Treat the conversation below as the complete history so far.\n\n` +
-              `=== Conversation so far ===\n${transcript}\n=== End of conversation so far ===`
-            : undefined;
-        this.openDialogue(from.backend, { cwd: from.cwd, seedHistory }, from.title);
-        if (messages.length) {
-            this.d.post({ type: "history", messages, carried: true });
-        }
-        // Type guard: ensure sendMsg has the required "send" properties
-        if (!("text" in sendMsg) || typeof sendMsg.text !== "string") {
-            return;
-        }
-        void this.d.getController()?.handleMessage({
-            type: "send",
-            text: sendMsg.text,
-            attachments: "attachments" in sendMsg && Array.isArray(sendMsg.attachments) ? sendMsg.attachments : [],
-            model: "model" in sendMsg && typeof sendMsg.model === "string" ? sendMsg.model : undefined,
-            reasoning: "reasoning" in sendMsg && typeof sendMsg.reasoning === "string" ? sendMsg.reasoning : undefined,
-            permission: "permission" in sendMsg && typeof sendMsg.permission === "string" ? sendMsg.permission : undefined,
-            autonomy: "autonomy" in sendMsg && typeof sendMsg.autonomy === "string" ? sendMsg.autonomy : undefined,
-            mode: "send",
-        });
+        return editResend(this.d, (b, o, t, i) => this.openDialogue(b, o, t, i), anchorIndex, sendMsg);
     }
 
     /** Opens a stored session (resume) in this surface. */

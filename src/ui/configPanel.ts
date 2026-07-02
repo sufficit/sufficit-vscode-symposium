@@ -1,33 +1,49 @@
 import * as vscode from "vscode";
-import * as fs from "fs";
-import * as path from "path";
 import { ensureScaffold, ResourceKind, rootDir, readToolCredential } from "../config/root";
-import { AdapterPatch, SymposiumApi } from "../api/symposiumApi";
-import { HubClient } from "../sync/hubClient";
+import { SymposiumApi } from "../api/symposiumApi";
 import { SufficitAuth } from "../auth/identity";
 import { renderConfigHtml } from "./configHtml";
 import { tr } from "./configI18n";
-import type { CompressionPreset, CompressionStrategyType } from "../compression/types";
-import { listServers, ensureSufficitNativeServer, deleteServer, importServersFromConfig, writeManifest, serverSubdir, readManifest, ServerManifest } from "../config/servers";
+import { listServers, ensureSufficitNativeServer } from "../config/servers";
 import { getSttState, downloadSttModel, deleteSttModel } from "../voice/sttService";
-
-/** Payload from the in-panel MCP add/edit form (configViews mcpFormModal). */
-interface McpFormPayload {
-    mode?: "add" | "edit";
-    originalName?: string;
-    name?: string;
-    transport?: string;
-    description?: string;
-    command?: string;
-    args?: string;
-    url?: string;
-    headers?: string;
-    env?: string;
-}
+import { handleCompressionMessage } from "./configCompressionHandler";
+import { handleBackendsMessage } from "./configBackendsHandler";
+import { handleMcpMessage, McpFormPayload } from "./configMcpHandler";
+import { handleResourcesMessage } from "./configResourcesHandler";
 
 export interface ConfigPanelDeps {
     api: SymposiumApi;
     auth?: SufficitAuth;
+}
+
+/** Shape of the messages dispatched from the config webview to the host. */
+export interface ConfigMessage {
+    type: string;
+    path?: string;
+    kind?: ResourceKind;
+    name?: string;
+    backend?: string;
+    value?: string;
+    key?: string;
+    modelId?: string;
+    payload?: McpFormPayload & { name?: string; server?: string; itemType?: string };
+}
+
+/**
+ * Context surface handed to the extracted config*Handler modules. Each handler
+ * is a free function over this interface (mirroring controllerMessageHandler),
+ * so the case bodies move verbatim with only `this.X` → `ctx.X` rewrites.
+ */
+export interface ConfigHandlerCtx {
+    api: SymposiumApi;
+    /** Resolve a localized string. */
+    tr(key: string, vars?: Record<string, string | number>): string;
+    /** Re-push the full panel state to the webview. */
+    pushState(): Promise<void>;
+    /** Post a raw message to the webview (used for back-compression presets, ollama list, stt progress). */
+    post(message: object): void;
+    /** Confirms a CRUD change and offers a reload. */
+    offerReload(message: string): Promise<void>;
 }
 
 /**
@@ -38,6 +54,10 @@ export interface ConfigPanelDeps {
  *
  * All reads/writes go through the SymposiumApi facade, so the panel and the
  * remote bridge stay in lock-step.
+ *
+ * The giant `onMessage` switch is split across three sibling handler modules
+ * (compression / backends / mcp); this class keeps the small/frequent cases and
+ * the shared state machinery.
  */
 export class ConfigPanel {
     private static current: ConfigPanel | undefined;
@@ -91,10 +111,23 @@ export class ConfigPanel {
         return tr(this.resolveLang(), key, vars);
     }
 
-    private async onMessage(message: {
-        type: string; path?: string; kind?: ResourceKind; name?: string; backend?: string; value?: string; key?: string; modelId?: string; payload?: McpFormPayload & { name?: string; server?: string; itemType?: string };
-    }): Promise<void> {
+    private async onMessage(message: ConfigMessage): Promise<void> {
         const api = this.deps.api;
+        // Delegate the big cohesive case groups to sibling handlers (each
+        // returns true when it handled the message). Order doesn't matter — the
+        // case sets are disjoint.
+        const ctx: ConfigHandlerCtx = {
+            api,
+            tr: (k, v) => this.tr(k, v),
+            pushState: () => this.pushState(),
+            post: (m) => { void this.panel.webview.postMessage(m); },
+            offerReload: (m) => this.offerReload(m),
+        };
+        if (await handleCompressionMessage(message, ctx)) { return; }
+        if (await handleBackendsMessage(message, ctx)) { return; }
+        if (await handleMcpMessage(message, ctx)) { return; }
+        if (await handleResourcesMessage(message, ctx)) { return; }
+
         switch (message.type) {
             case "ready":
                 await this.pushState();
@@ -109,166 +142,6 @@ export class ConfigPanel {
                     msg = this.tr(ok ? "msg.config.refreshed.hubUp" : "msg.config.refreshed.hubDown");
                 }
                 void vscode.window.showInformationMessage(msg);
-                return;
-            }
-            case "open-root":
-                await vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(rootDir()));
-                return;
-            case "open-file":
-                if (message.path) {
-                    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(message.path));
-                    await vscode.window.showTextDocument(doc, { preview: true });
-                }
-                return;
-            case "seed": {
-                const created = api.resources.seed();
-                void vscode.window.showInformationMessage(
-                    created > 0 ? this.tr("msg.seed.created", { n: created }) : this.tr("msg.seed.existed"));
-                await this.pushState();
-                return;
-            }
-            case "import-agents": {
-                const r = api.resources.importAgents();
-                void vscode.window.showInformationMessage(
-                    r.created > 0
-                        ? this.tr("msg.import.agents.done", { n: r.created }) + (r.skipped ? this.tr("msg.import.agents.skippedSuffix", { n: r.skipped }) : "")
-                        : (r.skipped > 0
-                            ? this.tr("msg.import.agents.allExisted", { n: r.skipped })
-                            : this.tr("msg.import.agents.none")));
-                await this.pushState();
-                return;
-            }
-            case "import-tools": {
-                const r = api.resources.importTools();
-                void vscode.window.showInformationMessage(
-                    r.created > 0
-                        ? this.tr("msg.import.tools.done", { n: r.created }) + (r.skipped ? this.tr("msg.import.tools.skippedSuffix", { n: r.skipped }) : "")
-                        : (r.skipped > 0
-                            ? this.tr("msg.import.tools.allExisted", { n: r.skipped })
-                            : this.tr("msg.import.tools.none")));
-                await this.pushState();
-                return;
-            }
-            case "import-instructions": {
-                const r = api.resources.importInstructions();
-                void vscode.window.showInformationMessage(
-                    r.created > 0
-                        ? this.tr("msg.import.instructions.done", { n: r.created }) + (r.skipped ? this.tr("msg.import.instructions.skippedSuffix", { n: r.skipped }) : "")
-                        : (r.skipped > 0
-                            ? this.tr("msg.import.instructions.allExisted", { n: r.skipped })
-                            : this.tr("msg.import.instructions.none")));
-                await this.pushState();
-                return;
-            }
-            case "import-skills": {
-                const found = api.resources.scanForeignSkills();
-                if (!found.length) {
-                    void vscode.window.showInformationMessage(
-                        this.tr("msg.import.skills.none"));
-                    return;
-                }
-                const picked = await vscode.window.showQuickPick(
-                    found.map((s) => ({ label: s.name, description: s.source, detail: s.description, srcPath: s.path })),
-                    { canPickMany: true, placeHolder: this.tr("msg.import.skills.pickPlaceholder") });
-                if (!picked || !picked.length) {
-                    return;
-                }
-                const r = api.resources.importSkills(picked.map((p) => p.srcPath));
-                void vscode.window.showInformationMessage(
-                    this.tr("msg.import.skills.done", { n: r.imported }) +
-                    (r.skipped ? this.tr("msg.import.skills.skippedSuffix", { n: r.skipped }) : "") +
-                    (r.errors.length ? this.tr("msg.import.skills.failedSuffix", { n: r.errors.length, errors: r.errors.join(", ") }) : "") + ".");
-                await this.pushState();
-                return;
-            }
-            case "import-mcp-servers": {
-                const r = importServersFromConfig();
-                void vscode.window.showInformationMessage(
-                    r.serversCreated > 0
-                        ? `${r.serversCreated} ${r.serversCreated === 1 ? "MCP server" : "MCP servers"} imported`
-                        : (r.serversSkipped > 0
-                            ? `${r.serversSkipped} ${r.serversSkipped === 1 ? "server" : "servers"} already exist`
-                            : "No MCP servers found in config files"));
-                await this.pushState();
-                return;
-            }
-            case "delete-mcp-server": {
-                const serverName = message.payload?.name;
-                if (!serverName) { return; }
-                const confirmed = await vscode.window.showWarningMessage(
-                    `Are you sure you want to remove MCP server "${serverName}"?`,
-                    "Delete",
-                    "Cancel"
-                );
-                if (confirmed !== "Delete") { return; }
-                const deleted = deleteServer(serverName);
-                if (deleted) {
-                    void vscode.window.showInformationMessage(`MCP server "${serverName}" deleted`);
-                }
-                await this.pushState();
-                return;
-            }
-            case "save-mcp-server": {
-                await this.saveMcpServer(message.payload);
-                return;
-            }
-            case "open-mcp-item": {
-                const { server, itemType, name } = message.payload ?? {};
-                if (!server || !itemType || !name) { return; }
-                if (itemType !== "tools" && itemType !== "prompts" && itemType !== "resources") { return; }
-                const ext = itemType === "resources" ? ".json" : ".md";
-                const file = path.join(serverSubdir(server, itemType), name + ext);
-                if (fs.existsSync(file)) {
-                    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
-                    await vscode.window.showTextDocument(doc, { preview: true });
-                }
-                return;
-            }
-            case "install-skill-sh": {
-                const pkg = await vscode.window.showInputBox({
-                    prompt: this.tr("msg.installSkillSh.prompt"),
-                    placeHolder: "vercel-labs/agent-skills",
-                    validateInput: (v) => /^[\w.-]+\/[\w.-]+$/.test(v.trim()) ? undefined : this.tr("msg.installSkillSh.invalid"),
-                });
-                if (!pkg) {
-                    return;
-                }
-                const term = vscode.window.createTerminal({ name: "skills.sh", env: { DISABLE_TELEMETRY: "1" } });
-                term.show();
-                term.sendText(`npx --yes skills add ${pkg.trim()}`);
-                void vscode.window.showInformationMessage(
-                    this.tr("msg.installSkillSh.started", { pkg: pkg.trim() }));
-                return;
-            }
-            case "new-resource": {
-                if (!message.kind) {
-                    return;
-                }
-                const name = await vscode.window.showInputBox({
-                    prompt: this.tr("msg.newResource.namePrompt", { kind: this.tr("config.kind." + message.kind) }),
-                    validateInput: (v) => v.trim() ? undefined : this.tr("msg.newResource.nameRequired"),
-                });
-                if (!name) {
-                    return;
-                }
-                const description = await vscode.window.showInputBox({ prompt: this.tr("msg.newResource.descPrompt") }) ?? "";
-                const file = api.resources.create(message.kind, name.trim(), description);
-                await this.pushState();
-                const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
-                await vscode.window.showTextDocument(doc);
-                return;
-            }
-            case "delete-resource": {
-                if (!message.kind || !message.name) {
-                    return;
-                }
-                const del = this.tr("msg.deleteResource.confirmAction");
-                const ok = await vscode.window.showWarningMessage(
-                    this.tr("msg.deleteResource.confirm", { kind: this.tr("config.kind." + message.kind), name: message.name }), { modal: true }, del);
-                if (ok === del) {
-                    api.resources.remove(message.kind, message.name);
-                    await this.pushState();
-                }
                 return;
             }
             case "test-backend":
@@ -295,150 +168,6 @@ export class ConfigPanel {
                     // Custom OpenAI-compatible endpoint: edit the adapters JSON directly.
                     await vscode.commands.executeCommand("symposium.editAdapters");
                 }
-                return;
-            }
-            case "add-endpoint": {
-                const patch = await this.promptEndpoint();
-                if (!patch) { return; }
-                await api.backends.addAdapter(patch);
-                await this.pushState();
-                // No reload: the extension's config listener rebuilds the adapter live.
-                void vscode.window.showInformationMessage(this.tr("msg.endpoint.added", { name: patch.name || patch.baseUrl || "" }));
-                return;
-            }
-            case "edit-endpoint": {
-                const id = message.backend;
-                if (!id) { return; }
-                const current = this.readAdapterEntry(id);
-                if (!current) { return; }
-                const patch = await this.promptEndpoint(current);
-                if (!patch) { return; }
-                await api.backends.updateAdapter(id, patch);
-                await this.pushState();
-                await this.offerReload(this.tr("msg.endpoint.updated"));
-                return;
-            }
-            case "remove-endpoint": {
-                const id = message.backend;
-                if (!id) { return; }
-                const current = this.readAdapterEntry(id);
-                const label = current?.name || current?.baseUrl || id;
-                const rm = this.tr("msg.endpoint.removeAction");
-                const ok = await vscode.window.showWarningMessage(
-                    this.tr("msg.endpoint.removeConfirm", { label }), { modal: true }, rm);
-                if (ok !== rm) { return; }
-                await api.backends.removeAdapter(id);
-                await this.pushState();
-                await this.offerReload(this.tr("msg.endpoint.removed", { label }));
-                return;
-            }
-            case "import-backends": {
-                // Remote-WSL can't browse the local OS filesystem, so offer a paste
-                // path (works anywhere) alongside the file picker.
-                const pasteLbl = this.tr("config.import.paste");
-                const fileLbl = this.tr("config.import.file");
-                const mode = await vscode.window.showQuickPick([pasteLbl, fileLbl], { title: this.tr("config.btn.importBackends") });
-                if (!mode) { return; }
-                let raw: string | undefined;
-                if (mode === pasteLbl) {
-                    raw = await vscode.window.showInputBox({
-                        title: this.tr("config.btn.importBackends"),
-                        prompt: this.tr("config.import.pastePrompt"),
-                        ignoreFocusOut: true,
-                    });
-                } else {
-                    const picked = await vscode.window.showOpenDialog({
-                        canSelectMany: false, openLabel: "Import",
-                        filters: { JSON: ["json"] }, title: this.tr("config.btn.importBackends"),
-                    });
-                    if (picked && picked.length) { raw = fs.readFileSync(picked[0].fsPath, "utf8"); }
-                }
-                if (!raw || !raw.trim()) { return; }
-                let data: unknown;
-                try { data = JSON.parse(raw); }
-                catch (e) { void vscode.window.showErrorMessage(this.tr("msg.backends.importErr", { err: String(e) })); return; }
-                // Accept a raw array, or a { "symposium.adapters": [...] } / { adapters: [...] } wrapper
-                // (so a settings.json snippet pasted into a file imports cleanly too).
-                const d = data as Record<string, unknown>;
-                const incoming: any[] = Array.isArray(data) ? data
-                    : Array.isArray(d?.["symposium.adapters"]) ? d["symposium.adapters"] as any[]
-                    : Array.isArray(d?.adapters) ? d.adapters as any[] : [];
-                const cfg = vscode.workspace.getConfiguration("symposium");
-                const cur = cfg.get<any[]>("adapters", []) || [];
-                const keyOf = (a: any) => a.id || (a.baseUrl + "|" + (a.name || ""));
-                const byKey = new Map<string, any>(cur.map((a) => [keyOf(a), a]));
-                let n = 0;
-                for (const b of incoming) {
-                    if (!b || !b.baseUrl) { continue; }
-                    const k = keyOf(b);
-                    byKey.set(k, { ...(byKey.get(k) || {}), ...b }); // merge: imported fields win
-                    n++;
-                }
-                await cfg.update("adapters", Array.from(byKey.values()), vscode.ConfigurationTarget.Global);
-                await this.pushState();
-                void vscode.window.showInformationMessage(this.tr("msg.backends.imported", { n: String(n) }));
-                return;
-            }
-            case "export-backends": {
-                const defs = vscode.workspace.getConfiguration("symposium").get<any[]>("adapters", []) || [];
-                if (!defs.length) { void vscode.window.showInformationMessage(this.tr("msg.backends.none")); return; }
-                const save = await vscode.window.showSaveDialog({
-                    filters: { JSON: ["json"] },
-                    defaultUri: vscode.Uri.file(path.join(rootDir(), "symposium-backends.json")),
-                    title: this.tr("config.btn.exportBackends"),
-                });
-                if (!save) { return; }
-                fs.writeFileSync(save.fsPath, JSON.stringify(defs, null, 2), "utf8");
-                void vscode.window.showInformationMessage(this.tr("msg.backends.exported", { path: save.fsPath }));
-                return;
-            }
-            case "backup-backends": {
-                const defs = vscode.workspace.getConfiguration("symposium").get<any[]>("adapters", []) || [];
-                if (!defs.length) { void vscode.window.showInformationMessage(this.tr("msg.backends.none")); return; }
-                const hub = new HubClient();
-                if (!hub.configured()) { void vscode.window.showErrorMessage(this.tr("msg.backends.hubOff")); return; }
-                try {
-                    // Upsert a single backup observation (reuse the existing id so we
-                    // overwrite the last backup instead of piling up duplicates).
-                    const existing = await hub.searchByType("symposium-backends", 1).catch(() => []);
-                    await hub.save({
-                        id: existing[0]?.id,
-                        type: "symposium-backends",
-                        title: "Symposium backends",
-                        summary: this.tr("msg.backends.backedUp", { n: String(defs.length) }),
-                        payload: JSON.stringify(defs),
-                        tags: "scope:symposium,kind:backends",
-                    });
-                    void vscode.window.showInformationMessage(this.tr("msg.backends.backedUp", { n: String(defs.length) }));
-                } catch (e) { void vscode.window.showErrorMessage(this.tr("msg.backends.hubErr", { err: String(e) })); }
-                return;
-            }
-            case "restore-backends": {
-                const hub = new HubClient();
-                if (!hub.configured()) { void vscode.window.showErrorMessage(this.tr("msg.backends.hubOff")); return; }
-                try {
-                    const recs = await hub.searchByType("symposium-backends", 5);
-                    if (!recs.length) { void vscode.window.showInformationMessage(this.tr("msg.backends.hubEmpty")); return; }
-                    const docs = await hub.getByIds(recs.map((r) => r.id));
-                    const incoming: any[] = [];
-                    for (const doc of docs) {
-                        try { const arr = JSON.parse(doc.payload || "[]"); if (Array.isArray(arr)) { incoming.push(...arr); } } catch { /* skip bad payload */ }
-                    }
-                    const cfg = vscode.workspace.getConfiguration("symposium");
-                    const cur = cfg.get<any[]>("adapters", []) || [];
-                    const keyOf = (a: any) => a.id || (a.baseUrl + "|" + (a.name || ""));
-                    const byKey = new Map<string, any>(cur.map((a) => [keyOf(a), a]));
-                    let n = 0;
-                    for (const b of incoming) {
-                        if (!b || !b.baseUrl) { continue; }
-                        const k = keyOf(b);
-                        byKey.set(k, { ...(byKey.get(k) || {}), ...b });
-                        n++;
-                    }
-                    await cfg.update("adapters", Array.from(byKey.values()), vscode.ConfigurationTarget.Global);
-                    await this.pushState();
-                    void vscode.window.showInformationMessage(this.tr("msg.backends.restored", { n: String(n) }));
-                } catch (e) { void vscode.window.showErrorMessage(this.tr("msg.backends.hubErr", { err: String(e) })); }
                 return;
             }
             case "set-model":
@@ -511,201 +240,6 @@ export class ConfigPanel {
                 await this.pushState();
                 return;
             }
-            case "list-compression-presets": {
-                const { CompressionManager } = await import("../compression");
-                const presets = CompressionManager.getInstance().getPresets();
-                this.panel.webview.postMessage({ type: "compression-presets", presets });
-                return;
-            }
-            case "add-compression-preset": {
-                const { CompressionManager } = await import("../compression");
-
-                // Step 1: Name
-                const name = await vscode.window.showInputBox({
-                    prompt: "Nome do preset de compressão",
-                    placeHolder: "Ex: Desenvolvimento, Review Code, Debug Profundo",
-                    validateInput: (v) => v.trim() ? undefined : "Nome obrigatório",
-                });
-                if (!name) { return; }
-
-                // Step 2: Description (optional)
-                const description = await vscode.window.showInputBox({
-                    prompt: "Descrição (opcional)",
-                    placeHolder: "Descreva quando usar este preset",
-                });
-
-                // Step 3: Strategy
-                const strategy = await vscode.window.showQuickPick([
-                    { label: "none", description: "Sem compressão - mantém todo histórico" },
-                    { label: "summarize", description: "Resume mensagens antigas, mantém N recentes" },
-                    { label: "aggressive", description: "Compressão máxima - só 5 mensagens recentes" },
-                    { label: "token-budget", description: "Limite de tokens - corta pelo tamanho estimado" },
-                ], {
-                    placeHolder: "Escolha a estratégia de compressão",
-                });
-                if (!strategy) { return; }
-
-                const id = `custom-${Date.now()}`;
-                const preset: CompressionPreset = {
-                    id,
-                    name: name.trim(),
-                    description: description?.trim() || undefined,
-                    strategy: strategy.label as CompressionStrategyType,
-                    params: { keepRecent: 10, maxTokens: 4000, toolCompressionLevel: undefined }
-                };
-
-                // Step 4: Strategy-specific params
-                if (strategy.label === "summarize") {
-                    const keepRecent = await vscode.window.showInputBox({
-                        prompt: "Quantas mensagens recentes manter?",
-                        value: "10",
-                        validateInput: (v) => {
-                            const n = parseInt(v);
-                            return (n > 0 && n <= 100) ? undefined : "Entre 1 e 100";
-                        }
-                    });
-                    if (!keepRecent) { return; }
-                    if (!preset.params) { preset.params = {}; }
-                    preset.params.keepRecent = parseInt(keepRecent);
-
-                } else if (strategy.label === "aggressive") {
-                    const keepRecent = await vscode.window.showInputBox({
-                        prompt: "Quantas mensagens recentes manter?",
-                        value: "5",
-                        validateInput: (v) => {
-                            const n = parseInt(v);
-                            return (n > 0 && n <= 20) ? undefined : "Entre 1 e 20";
-                        }
-                    });
-                    if (!keepRecent) { return; }
-                    if (!preset.params) { preset.params = {}; }
-                    preset.params.keepRecent = parseInt(keepRecent);
-
-                } else if (strategy.label === "token-budget") {
-                    const maxTokens = await vscode.window.showInputBox({
-                        prompt: "Limite máximo de tokens?",
-                        value: "4000",
-                        validateInput: (v) => {
-                            const n = parseInt(v);
-                            return (n >= 500 && n <= 200000) ? undefined : "Entre 500 e 200000";
-                        }
-                    });
-                    if (!maxTokens) { return; }
-                    if (!preset.params) { preset.params = {}; }
-                    preset.params.maxTokens = parseInt(maxTokens);
-                }
-
-                // Step 5: Tool compression level (future: per-tool config)
-                const toolLevel = await vscode.window.showQuickPick([
-                    { label: "none", description: "Não comprimir tool requests" },
-                    { label: "low", description: "Remove headers redundantes (contextId, sessionId)" },
-                    { label: "medium", description: "Compacta em hints (action: 'saved task')" },
-                    { label: "high", description: "Remove tool calls já processados" },
-                ], {
-                    placeHolder: "Nível de compressão de tool requests (opcional)",
-                });
-
-                if (toolLevel) {
-                    if (!preset.params) { preset.params = {}; }
-                    preset.params.toolCompressionLevel = toolLevel.label;
-                }
-
-                await CompressionManager.getInstance().savePreset(preset);
-                await this.pushState();
-                vscode.window.showInformationMessage(`Preset "${name.trim()}" criado com sucesso!`);
-                return;
-            }
-            case "remove-compression-preset": {
-                const { CompressionManager } = await import("../compression");
-                if (!message.key) { return; }
-                await CompressionManager.getInstance().deletePreset(message.key);
-                await this.pushState();
-                return;
-            }
-            case "edit-compression-preset": {
-                const { CompressionManager } = await import("../compression");
-                if (!message.key) { return; }
-                const presets = CompressionManager.getInstance().getPresets();
-                const preset = presets.find(p => p.id === message.key);
-                if (!preset) { return; }
-
-                // Edit name
-                const name = await vscode.window.showInputBox({
-                    prompt: "Nome do preset",
-                    value: preset.name,
-                    validateInput: (v) => v.trim() ? undefined : "Nome obrigatório",
-                });
-                if (name === undefined) { return; }
-
-                // Edit description
-                const description = await vscode.window.showInputBox({
-                    prompt: "Descrição (opcional)",
-                    value: preset.description || "",
-                });
-
-                const updated: CompressionPreset = {
-                    ...preset,
-                    name: name.trim(),
-                    description: description?.trim() || undefined,
-                };
-
-                // Edit strategy-specific params
-                if (preset.strategy === "summarize" || preset.strategy === "aggressive") {
-                    const keepRecent = await vscode.window.showInputBox({
-                        prompt: "Mensagens recentes a manter",
-                        value: String(preset.params?.keepRecent || 10),
-                        validateInput: (v) => {
-                            const n = parseInt(v);
-                            return (n > 0 && n <= 100) ? undefined : "Entre 1 e 100";
-                        }
-                    });
-                    if (keepRecent !== undefined) {
-                        updated.params = { ...updated.params, keepRecent: parseInt(keepRecent) };
-                    }
-                } else if (preset.strategy === "token-budget") {
-                    const maxTokens = await vscode.window.showInputBox({
-                        prompt: "Limite de tokens",
-                        value: String(preset.params?.maxTokens || 4000),
-                        validateInput: (v) => {
-                            const n = parseInt(v);
-                            return (n >= 500 && n <= 200000) ? undefined : "Entre 500 e 200000";
-                        }
-                    });
-                    if (maxTokens !== undefined) {
-                        updated.params = { ...updated.params, maxTokens: parseInt(maxTokens) };
-                    }
-                }
-
-                // Edit tool compression level
-                const currentToolLevel = (preset.params?.toolCompressionLevel as string) || "none";
-                const toolLevel = await vscode.window.showQuickPick([
-                    { label: "none", description: "Não comprimir", picked: currentToolLevel === "none" },
-                    { label: "low", description: "Remove headers", picked: currentToolLevel === "low" },
-                    { label: "medium", description: "Hints compactos", picked: currentToolLevel === "medium" },
-                    { label: "high", description: "Remove processados", picked: currentToolLevel === "high" },
-                ], {
-                    placeHolder: "Nível de compressão de tool requests",
-                });
-
-                if (toolLevel) {
-                    updated.params = { ...updated.params, toolCompressionLevel: toolLevel.label };
-                }
-
-                await CompressionManager.getInstance().savePreset(updated);
-                await this.pushState();
-                vscode.window.showInformationMessage(`Preset "${name.trim()}" atualizado!`);
-                return;
-            }
-            case "set-compression-preset-default": {
-                const { CompressionManager } = await import("../compression");
-                await CompressionManager.getInstance().setDefaultPreset(message.value ?? "");
-                await this.pushState();
-                return;
-            }
-            case "show-compression-manual": {
-                await vscode.commands.executeCommand("symposium.showCompressionManual");
-                return;
-            }
             case "stt-download-model": {
                 const id = message.modelId;
                 if (!id) { return; }
@@ -745,178 +279,7 @@ export class ConfigPanel {
                 }
                 return;
             }
-            case "fetch-ollama-models": {
-                const ollamaUrl = message.value as string;
-                if (!ollamaUrl) {
-                    void vscode.window.showWarningMessage(this.tr("msg.ollama.noUrl"));
-                    return;
-                }
-                try {
-                    // Remove trailing slash if present
-                    const baseUrl = ollamaUrl.replace(/\/$/, "");
-                    // Try both Ollama v1 API and the classic /api/tags endpoint
-                    let models: any[] = [];
-                    try {
-                        const response = await fetch(`${baseUrl}/api/tags`, {
-                            method: "GET",
-                            headers: { "Accept": "application/json" },
-                        });
-                        if (response.ok) {
-                            const data = await response.json() as any;
-                            models = data.models || [];
-                        }
-                    } catch {
-                        // Try v1 endpoint
-                        try {
-                            const response = await fetch(`${baseUrl}/v1/models`, {
-                                method: "GET",
-                                headers: { "Accept": "application/json" },
-                            });
-                            if (response.ok) {
-                                const data = await response.json() as any;
-                                models = data.data || [];
-                            }
-                        } catch {
-                            void vscode.window.showErrorMessage(this.tr("msg.ollama.fetchFailed"));
-                            return;
-                        }
-                    }
-                    
-                    if (models.length === 0) {
-                        void vscode.window.showInformationMessage(this.tr("msg.ollama.noModels"));
-                        return;
-                    }
-                    
-                    // Post models back to the webview
-                    this.panel.webview.postMessage({ 
-                        type: "ollama-models-list", 
-                        models: models.map((m: any) => ({
-                            id: m.model || m.id,
-                            name: m.name || m.model || m.id,
-                            digest: m.digest || m.digest || "",
-                        }))
-                    });
-                    void vscode.window.showInformationMessage(this.tr("msg.ollama.fetched", { count: models.length }));
-                } catch (e) {
-                    void vscode.window.showErrorMessage(this.tr("msg.ollama.fetchError", { error: String((e && (e as Error).message) || e) }));
-                }
-                return;
-            }
         }
-    }
-
-    /** Reads one custom endpoint entry (by id) from symposium.adapters. */
-    private readAdapterEntry(id: string): { id?: string; name?: string; baseUrl?: string; apiKey?: string; model?: string } | undefined {
-        const arr = vscode.workspace.getConfiguration("symposium").get<Array<{ id?: string }>>("adapters", []) ?? [];
-        return Array.isArray(arr) ? arr.find((a) => a && a.id === id) : undefined;
-    }
-
-    /**
-     * Collects the editable endpoint fields through a sequence of input boxes
-     * (base URL → name → API key → model). Returns the patch, or undefined if the
-     * user cancels at any step (Esc). Prefilled from `current` when editing.
-     */
-    private async promptEndpoint(current?: { name?: string; baseUrl?: string; apiKey?: string; model?: string }): Promise<AdapterPatch | undefined> {
-        const baseUrl = await vscode.window.showInputBox({
-            title: current ? this.tr("msg.promptEndpoint.baseUrlTitleEdit") : this.tr("msg.promptEndpoint.baseUrlTitleNew"),
-            prompt: this.tr("msg.promptEndpoint.baseUrlPrompt"),
-            value: current?.baseUrl ?? "",
-            placeHolder: "https://ai.sufficit.com.br/openai/v1",
-            ignoreFocusOut: true,
-            validateInput: (v) => {
-                const s = v.trim();
-                if (!s) { return this.tr("msg.promptEndpoint.baseUrlRequired"); }
-                try { new URL(s); return undefined; } catch { return this.tr("msg.promptEndpoint.baseUrlInvalid"); }
-            },
-        });
-        if (baseUrl === undefined) { return undefined; }
-        const name = await vscode.window.showInputBox({
-            title: this.tr("msg.promptEndpoint.nameTitle"),
-            prompt: this.tr("msg.promptEndpoint.namePrompt"),
-            value: current?.name ?? "",
-            ignoreFocusOut: true,
-        });
-        if (name === undefined) { return undefined; }
-        const apiKey = await vscode.window.showInputBox({
-            title: this.tr("msg.promptEndpoint.apiKeyTitle"),
-            prompt: this.tr("msg.promptEndpoint.apiKeyPrompt"),
-            value: current?.apiKey ?? "",
-            password: true,
-            ignoreFocusOut: true,
-        });
-        if (apiKey === undefined) { return undefined; }
-        const model = await vscode.window.showInputBox({
-            title: this.tr("msg.promptEndpoint.modelTitle"),
-            prompt: this.tr("msg.promptEndpoint.modelPrompt"),
-            value: current?.model ?? "",
-            ignoreFocusOut: true,
-        });
-        if (model === undefined) { return undefined; }
-        return { baseUrl: baseUrl.trim(), name: name.trim(), apiKey: apiKey.trim(), model: model.trim() };
-    }
-
-    /** Parses "KEY=VALUE" pairs separated by newlines or commas (env + headers). */
-    private parsePairs(raw: string): Record<string, string> {
-        const out: Record<string, string> = {};
-        for (const pair of (raw || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean)) {
-            const eq = pair.indexOf("=");
-            if (eq > 0) { out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim(); }
-        }
-        return out;
-    }
-
-    /**
-     * Persists an MCP server from the in-panel add/edit form (no native prompts).
-     * Validates host-side too (the webview already pre-validates), then writes the
-     * manifest and refreshes. On edit, name/transport are authoritative from the
-     * form; unedited manifest fields (version/source/builtin) are preserved.
-     */
-    private async saveMcpServer(p?: McpFormPayload): Promise<void> {
-        if (!p) { return; }
-        const editing = p.mode === "edit";
-        const name = (editing ? (p.originalName ?? "") : (p.name ?? "")).trim();
-        if (!name) { void vscode.window.showWarningMessage(this.tr("msg.addMcp.nameRequired")); return; }
-        if (!editing) {
-            if (!/^[\w.-]+$/.test(name)) { void vscode.window.showWarningMessage(this.tr("msg.addMcp.nameInvalid")); return; }
-            if (listServers().some((s) => s.name.toLowerCase() === name.toLowerCase())) {
-                void vscode.window.showWarningMessage(this.tr("msg.addMcp.nameExists")); return;
-            }
-        }
-        const transport: "stdio" | "sse" = p.transport === "sse" ? "sse" : "stdio";
-        const cur = editing ? (readManifest(name) ?? {}) : {};
-        const manifest: ServerManifest = {
-            ...cur,
-            name,
-            transport,
-            description: (p.description ?? "").trim() || undefined,
-        };
-
-        if (transport === "stdio") {
-            const command = (p.command ?? "").trim();
-            if (!command) { void vscode.window.showWarningMessage(this.tr("msg.addMcp.commandRequired")); return; }
-            manifest.command = command;
-            const args = (p.args ?? "").trim() ? (p.args as string).trim().split(/\s+/) : [];
-            if (args.length) { manifest.args = args; } else { delete manifest.args; }
-            const env = this.parsePairs(p.env ?? "");
-            if (Object.keys(env).length) { manifest.env = env; } else { delete manifest.env; }
-            delete manifest.url;
-            delete manifest.headers;
-        } else {
-            const url = (p.url ?? "").trim();
-            if (!url) { void vscode.window.showWarningMessage(this.tr("msg.addMcp.urlRequired")); return; }
-            try { new URL(url); } catch { void vscode.window.showWarningMessage(this.tr("msg.addMcp.urlInvalid")); return; }
-            manifest.url = url;
-            const headers = this.parsePairs(p.headers ?? "");
-            if (Object.keys(headers).length) { manifest.headers = headers; } else { delete manifest.headers; }
-            delete manifest.command;
-            delete manifest.args;
-            delete manifest.env;
-        }
-
-        writeManifest(name, manifest);
-        await this.pushState();
-        void vscode.window.showInformationMessage(
-            this.tr(editing ? "msg.editMcp.updated" : "msg.addMcp.created", { name }));
     }
 
     /** Confirms a CRUD change and offers a reload (added/removed endpoints register on reload). */

@@ -17,15 +17,7 @@ import {
     RequestEstimate, windowMessages, isWindowTruncated, estimateRequest, requestEstimateDiagnostic,
 } from "./requestWindow";
 import { compressMessages, CompressionManager } from "../../compression";
-
-/**
- * Strip source prefix from tool name (sym_, local_, agent_, vscode_).
- * Added by turnRunner to resolve name collisions across tool sources.
- */
-function stripSourcePrefix(name: string): string {
-    const prefixMatch = name.match(/^(sym_|local_|agent_|vscode_)(.*)$/);
-    return prefixMatch ? prefixMatch[2] : name;
-}
+import { mergeToolDefinitions, stripSourcePrefix } from "./toolMerge";
 
 /**
  * One conversation turn for an OpenAISession: the streaming tool-call loop that
@@ -150,47 +142,7 @@ export class TurnRunner {
             ...subagentTools.map((t) => ({ tool: t, source: "agent_" })),
             ...vscodeTools.map((t) => ({ tool: t, source: "vscode_" })),
         ];
-        interface ToolDefinition {
-            name?: string;
-            function?: {
-                name: string;
-                description?: string;
-            };
-            description?: string;
-        }
-        const nameGroups = new Map<string, { tool: ToolDefinition; source: string }[]>();
-        for (const { tool, source } of allTools) {
-            const t = tool as ToolDefinition;
-            const name = (t.function?.name ?? t.name) as string;
-            if (!nameGroups.has(name)) { nameGroups.set(name, []); }
-            nameGroups.get(name)!.push({ tool, source });
-        }
-        const finalTools: { tool: ToolDefinition; source: string }[] = [];
-        for (const group of nameGroups.values()) {
-            const t0 = group[0].tool as ToolDefinition;
-            const firstDesc = t0.function?.description ?? t0.description;
-            const allSameDesc = group.every((g) => {
-                const tg = g.tool as ToolDefinition;
-                return (tg.function?.description ?? tg.description) === firstDesc;
-            });
-            if (allSameDesc) {
-                // Deduplicate: keep only one (any source, descriptions match)
-                finalTools.push(group[0]);
-            } else {
-                // Prefix source to avoid collision
-                for (const { tool, source } of group) {
-                    const nameKey = (tool.function?.name ?? tool.name) as string;
-                    if (tool.function) {
-                        tool.function = { ...tool.function, name: `${source}${nameKey}` };
-                        tool.function.description = `[${source.slice(0, -1)}] ${tool.function.description ?? ""}`;
-                    } else if (tool.name) {
-                        tool.name = `${source}${nameKey}`;
-                        tool.description = `[${source.slice(0, -1)}] ${tool.description}`;
-                    }
-                    finalTools.push({ tool, source });
-                }
-            }
-        }
+        const finalTools = mergeToolDefinitions(allTools);
 
         // How many tool round-trips one turn may run before pausing. In
         // autonomous mode (presence "away") there is NO limit; otherwise the
@@ -227,7 +179,7 @@ export class TurnRunner {
                 // unset, expose all; when set to [], expose none (tools off).
                 const allow = this.d.options.aiTools;
                 const toolList = filterTools<{ function?: { name: string }; name?: string }>(
-                    finalTools.map((ft) => ft.tool) as { function?: { name: string }; name?: string }[], allow);
+                    finalTools as { function?: { name: string }; name?: string }[], allow);
                 if (toolList.length > 0) {
                     body.tools = toolList;
                     body.tool_choice = "auto";

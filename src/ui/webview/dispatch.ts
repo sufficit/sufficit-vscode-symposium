@@ -1,21 +1,23 @@
 // Inbound message dispatch from the extension host. Registers the listener on import.
-import { vscode, saved } from "./vscode";
+import { vscode } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
 import { renderChips, setBrowserOpen } from "./composer";
-import { append, branchBanner, endStream, message, renderError, renderStatusNotice, renderThinkBlock, streamDelta, streamThinkingDelta, resetLastMsg, endThinkingStream } from "./messages";
-import { fillToolResult, renderTool } from "./tools";
-import { bindWorkingSet, renderChangedFiles, renderGuardrails, renderQueued, renderTasks, renderPlan, resetWorkingState, startWorkingSet, refreshPanels, changedItems, setChangedItems } from "./panels";
+import { applyMeta } from "./meta";
+import { applyEvent } from "./events";
+import { append, branchBanner, endStream, message, renderThinkBlock, resetLastMsg } from "./messages";
+import { renderTool } from "./tools";
+import { renderChangedFiles, renderGuardrails, renderQueued, renderTasks, renderPlan, resetWorkingState, refreshPanels, changedItems, setChangedItems } from "./panels";
 import { renderAccount, renderSessions } from "./sessions";
 import { setLang, t } from "./i18n";
 import { applyStaticI18n } from "./staticI18n";
-import { renderStatusbar, openUsagePopover, setLastTurn, setLastUsage, setSessionCostUsd, sessionCostUsd } from "./statusbar";
-import { setStatus, setLoading, updateSendTitle } from "./status";
+import { openUsagePopover } from "./statusbar";
+import { setStatus, updateSendTitle } from "./status";
 import { hideCtx, openChoiceMenu, showToast } from "./menus";
-import { modelLabel, modelLabels, modelValue, modelList, modelDefault, reasoningList, setModelDefault, setModelLabel, setModelLabels, setModelList, setModelValue, setPinnedModels, setReasoningDefault, setReasoningLabel, setReasoningList, setReasoningValue, buildModelMenuOpts } from "./models";
+import { modelLabels, modelValue, modelList, modelDefault, setModelDefault, setModelLabel, setModelLabels, setModelList, setModelValue, setPinnedModels, buildModelMenuOpts } from "./models";
 import { armStickyUserMessage, layout, refreshEmpty, scrollToBottom, nearBottom, autoScroll } from "./scroll";
 import { svgIcon } from "./icons";
-import { log, root, composerEl, status, chatTitle, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, configBtn, ctxMenu, modelPicker, reasoningPicker, sendMode } from "./dom";
-import { activeSessionId, currentBackend, currentBackendName, sessions, busy, activeModel, agentLabels, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setActiveSessionId, setAgentLabels, setBootstrapPath, setBusy, setCommands, setConversationRows, setCurrentBackend, setCurrentBackendName, setPendingSessionSwitch, setQueued, setSessions, setSideMode, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPermissionModes, setPermissionValue, setPermissionDefault, setAiToolsAvailable, setAiToolsEnabled, setPendingSwitchAnchor } from "./state";
+import { log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker } from "./dom";
+import { sessions, busy, activeModel, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setBusy, setCommands, setConversationRows, setPendingSessionSwitch, setQueued, setSessions, setSideMode, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPendingSwitchAnchor } from "./state";
 
 window.addEventListener("message", ({ data }) => {
     switch (data.type) {
@@ -25,94 +27,7 @@ window.addEventListener("message", ({ data }) => {
             break;
         }
         case "setLang": { setLang(String(data.lang || "en")); applyStaticI18n(); break; }
-        case "meta": {
-            setSideMode(data.sessionsSide || "auto");
-            // Seed the default send mode once (don't override a saved choice).
-            if (data.whenBusy && !(saved && saved.sendMode)) { sendMode.value = data.whenBusy; }
-            // Apply the real busy state from the host (overrides any stale busy set by render log replay).
-            setBusy(!!data.busy);
-            root.classList.toggle("chat-only", !!data.chatOnly);
-            layout();   // apply the sessions-side now (meta sets sideMode)
-            layout();
-            setActiveSessionId(data.sessionId || "");
-            copySessionBtn.style.display = "inline-flex";   // a session surface is open
-            clearTimeout(bootTimer); bootStep("host", null, "ok"); bootStep("session", "Session ready", "ok"); bootComplete();
-            startWorkingSet(activeSessionId);   // bind edited-files set to this session
-            setCurrentBackend(data.backend || "");
-            setCurrentBackendName(data.backendName || "");
-            setAgentLabels(data.agentLabels || null);
-            // Per-workspace bootstrap link on the empty screen (read-only ref).
-            const bootEl = document.getElementById("bootstrapLink");
-            if (data.bootstrapLink && data.bootstrapLink.path) {
-                setBootstrapPath(data.bootstrapLink.path);
-                bootEl.querySelector(".lbl").textContent = t("chat.empty.bootstrap.label", { name: data.bootstrapLink.name || t("chat.empty.bootstrap.open") });
-                bootEl.style.display = "inline-flex";
-            } else {
-                setBootstrapPath("");
-                bootEl.style.display = "none";
-            }
-            chatTitle.textContent = (data.title ? data.title + " · " : "") + (data.backendName || data.backend);
-            setBrowserOpen(!!data.browserOpen);
-            setAiToolsAvailable((data.aiTools && data.aiTools.available) || []);
-            setAiToolsEnabled((data.aiTools && data.aiTools.enabled) || []);
-            setModelDefault(data.modelDefault || "");
-            setModelLabels(data.modelLabels || {});
-            setReasoningDefault(data.reasoningDefault || "");
-            setModelList(data.models || []);
-            setPinnedModels(data.pinnedModels || []);
-            // Keep the user's chosen model across re-meta (e.g. edit-resend,
-            // handoff) when it's still offered. Otherwise pick the right
-            // starting model: a resumed session restores its last-used model
-            // (data.sessionModel), a new session honors the configured default
-            // (data.modelDefault), and only then falls back to the first model.
-            if (!modelValue || (modelValue !== "default" && !modelList.includes(modelValue))) {
-                if (data.resumed && data.sessionModel) {
-                    setModelValue(data.sessionModel);
-                } else if (modelDefault && (modelDefault === "default" || modelList.includes(modelDefault))) {
-                    setModelValue(modelDefault);
-                } else {
-                    setModelValue(modelList[0] || "");
-                }
-            }
-            // Keep the picker visible even with an empty list: the menu
-            // offers a manual-entry fallback so the user can always pick a
-            // model (remote discovery may have failed, e.g. 401 / no login).
-            modelPicker.disabled = false;
-            modelPicker.style.display = "";
-            setModelLabel();
-            setReasoningList(data.reasoningLevels || []);
-            setReasoningValue(reasoningList[0] || "default");
-            reasoningPicker.disabled = false;
-            reasoningPicker.style.display = reasoningList.length ? "" : "none";
-            setReasoningLabel();
-            setPermissionModes(data.permissionModes || []);
-            setPermissionValue(data.permission || "default");
-            setPermissionDefault(data.permission || "default");
-            // Always shown (the `|| true` made the prior expression constant);
-            // the config button is available regardless of permissionModes.
-            configBtn.style.display = "";
-            // Hand-off works for live chat dialogues and for terminal
-            // sessions (whose transcript is read back from the CLI). Only
-            // read-only live mirrors can't be handed off.
-            switchAgentBtn.style.display = data.readOnly ? "none" : "";
-            document.getElementById("composer").style.display = data.readOnly ? "none" : "flex";
-            if (data.readOnly) {
-                append("meta", "👁 watching live — read only (this session runs elsewhere)");
-            } else if (data.terminal) {
-                append("meta", "▷ terminal session — drive it here or type in the terminal panel" + (data.resumed ? " (resumed)" : ""));
-            } else {
-                append("meta", data.backend + (data.resumed ? " · resumed session" : " · new session"));
-            }
-            renderSessions();
-            renderStatusbar(data);
-            setActiveFile(data.activeFile || null);
-            setActiveFileRange((data.activeFileStart && data.activeFileEnd) ? { start: data.activeFileStart, end: data.activeFileEnd } : null);
-            setActiveFilePreview(!!data.activeFilePreview); setActiveFilePinned(false);
-            setActiveFileDismissed(false); renderChips();
-            setLoading(false);   // session resolved — reveal the conversation
-            scrollToBottom();
-            break;
-        }
+        case "meta": { applyMeta(data); break; }
         case "browser-state": {
             setBrowserOpen(!!data.open);
             break;
@@ -352,58 +267,6 @@ window.addEventListener("message", ({ data }) => {
             setStatus();
             break;
         }
-        case "event": {
-            const ev = data.event;
-            // Processamento de thinking events: forçar separação de thinking blocks consecutivos
-            // chamando endThinkingStream() antes de cada thinking delta para garantir
-            // que múltiplos thinking blocks sejam exibidos como elementos separados
-            if (ev.kind === "thinking") {
-                endThinkingStream(); // Força finalização do thinking block anterior
-                streamThinkingDelta(ev.text);
-            }
-            else if (ev.kind === "text") streamDelta(ev.text);
-            else if (ev.kind === "status-notice") renderStatusNotice(ev.text);
-            else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }
-            else if (ev.kind === "tool-output") fillToolResult(ev.toolId, ev.text);
-            else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);
-            else if (ev.kind === "usage") { setLastUsage(ev); renderStatusbar(); }
-            else if (ev.kind === "error") {
-                // The composer's send/stop button reflects ONLY the agent's
-                // turn lifecycle. A non-fatal error (ev.fatal === false) is a
-                // local UI failure (e.g. failing to open a file/image) and
-                // must NOT touch busy, or it would flip the button as if the
-                // agent had stopped while it is still working.
-                // Legacy events without fatal are treated as fatal (default),
-                // preserving the old defensive behaviour for real turn errors.
-                if (ev.fatal !== false) {
-                    setBusy(false); sendBtn.disabled = false; setStatus();
-                }
-                renderError(ev.message);
-            }
-            else if (ev.kind === "session") {
-                if (ev.model) {
-                    setActiveModel(ev.model);
-                    if (modelList.includes(ev.model)) { setModelValue(ev.model); setModelLabel(); }
-                }
-                setActiveSessionId(ev.sessionId || activeSessionId);
-                bindWorkingSet(ev.sessionId);
-                if (agentLabels) {
-                    const parts = ["agent: " + agentLabels.agent, "model: " + (ev.model ? modelLabel(ev.model) : "default"), "backend: " + (currentBackendName || currentBackend)];
-                    if (agentLabels.toolsDeclared && agentLabels.toolsDeclared.length) { parts.push("tools: " + agentLabels.toolsDeclared.join(", ")); }
-                    append("meta", parts.join(" · "));
-                    // only once, so re-opening a saved session won't show stale agent badges
-                    setAgentLabels(null);
-                }
-                append("meta", "session " + ev.sessionId + (ev.model ? " · " + modelLabel(ev.model) : ""));
-                setStatus();
-            }
-            else if (ev.kind === "turn-end") {
-                setBusy(false); sendBtn.disabled = false; setStatus();
-                setLastTurn({ costUsd: ev.costUsd, durationMs: ev.durationMs });
-                if (ev.costUsd) { setSessionCostUsd(sessionCostUsd + ev.costUsd); }
-                append("meta", "—" + (ev.costUsd ? " $" + ev.costUsd.toFixed(4) : "") + (ev.durationMs ? " " + (ev.durationMs/1000).toFixed(1) + "s" : "") + " —");
-            }
-            break;
-        }
+        case "event": { applyEvent(data.event); break; }
     }
 });

@@ -12,7 +12,10 @@ import { HubClient } from "../sync/hubClient";
 import { setTaskDone } from "../sync/tasks";
 import { removeGuardrail, clearSessionGuardrails } from "../sync/guardrails";
 import { probeRtk } from "../adapters/rtk";
-import { writeDroppedFile, writePastedImage, attachmentFromUri } from "./chatSurfaceContext";
+import { handleVoiceMessage } from "./surfaceMessageVoice";
+import { handleFileMessage } from "./surfaceMessageFiles";
+import { handleChangedFilesMessage } from "./surfaceMessageChangedFiles";
+import { handleSessionMessage } from "./surfaceMessageSessions";
 import { symposiumLog } from "../extension";
 
 /**
@@ -89,81 +92,18 @@ export class SurfaceMessages {
                     }
                     return;
                 }
-                case "paste-image": {
-                    const file = await writePastedImage(message.mime, message.data);
-                    if (file) {
-                        this.d.post({ type: "attachments-picked", files: [file] });
-                    }
-                    return;
-                }
-                case "voice-start": {
-                    // Native mic capture in the extension host (no webview
-                    // getUserMedia — VS Code drops that permission on reload).
-                    try {
-                        const { startCapture } = await import("../voice/recorder");
-                        const { readSettings } = await import("../voice/sttService");
-                        await startCapture(readSettings().ffmpegPath);
-                        this.d.post({ type: "voice-recording", ok: true });
-                    } catch (e) {
-                        this.d.post({ type: "voice-recording", ok: false, error: String((e && (e as Error).message) || e) });
-                    }
-                    return;
-                }
-                case "voice-stop": {
-                    try {
-                        const { stopCapture } = await import("../voice/recorder");
-                        const wav = await stopCapture();
-                        const { transcribeWav } = await import("../voice/sttService");
-                        const text = await transcribeWav(wav);
-                        this.d.post({ type: "stt-result", text });
-                    } catch (e) {
-                        this.d.post({ type: "stt-error", error: String((e && (e as Error).message) || e) });
-                    }
-                    return;
-                }
-                case "voice-cancel": {
-                    const { cancelCapture } = await import("../voice/recorder");
-                    cancelCapture();
-                    return;
-                }
-                case "stt-transcribe": {
-                    // Local hybrid path: the webview captured audio; transcribe it
-                    // offline with the configured engine and return the text.
-                    try {
-                        const { transcribeAudio } = await import("../voice/sttService");
-                        const text = await transcribeAudio(message.data, message.mime);
-                        this.d.post({ type: "stt-result", text });
-                    } catch (e) {
-                        this.d.post({ type: "stt-error", error: String((e && (e as Error).message) || e) });
-                    }
-                    return;
-                }
-                case "drop-file": {
-                    const file = await writeDroppedFile(message.name, message.mime, message.data ?? "");
-                    if (file) {
-                        this.d.post({ type: "attachments-picked", files: [file] });
-                    }
-                    return;
-                }
-                case "drop-files": {
-                    const payloads = Array.isArray(message.files) ? message.files : [];
-                    const written = await Promise.all(
-                        payloads.map((f: { name?: string; mime?: string; data?: string }) =>
-                            writeDroppedFile(f?.name, f?.mime, f?.data ?? "")),
-                    );
-                    const files = written.filter((f: { path: string; name: string } | undefined): f is { path: string; name: string } => Boolean(f));
-                    if (files.length) {
-                        this.d.post({ type: "attachments-picked", files });
-                    }
-                    return;
-                }
+                case "paste-image":
+                case "drop-file":
+                case "drop-files":
                 case "drop-uris": {
-                    const files = Array.isArray(message.uris)
-                        ? message.uris.map((u: string) => attachmentFromUri(u)).filter((f: { path: string; name: string } | undefined): f is { path: string; name: string } => Boolean(f))
-                        : [];
-                    if (files.length) {
-                        this.d.post({ type: "attachments-picked", files });
-                    }
+                    if (await handleFileMessage(message, this.d)) { return; }
+                    return;
+                }
+                case "voice-start":
+                case "voice-stop":
+                case "voice-cancel":
+                case "stt-transcribe": {
+                    if (await handleVoiceMessage(message, this.d)) { return; }
                     return;
                 }
                 case "refresh-tasks": {
@@ -374,42 +314,11 @@ export class SurfaceMessages {
                     }
                     return;
                 }
-                case "file-approve": {
-                    if (typeof message.path === "string") {
-                        await this.d.changedFiles.approve(message.path);
-                        this.d.changedFiles.refreshNow();
-                    }
-                    return;
-                }
-                case "file-reject": {
-                    if (typeof message.path === "string") {
-                        if (await this.d.changedFiles.reject(message.path)) { this.d.getController()?.resolveChanged(message.path); }
-                        else { void vscode.window.showWarningMessage("Could not revert " + message.path); }
-                        this.d.changedFiles.refreshNow();
-                    }
-                    return;
-                }
-                case "file-approve-all": {
-                    // Operate on exactly the paths the panel shows (sent by the
-                    // webview); fall back to the controller's tracked set.
-                    const paths = message.paths ?? this.d.getController()?.changedPaths() ?? [];
-                    for (const p of paths) {
-                        await this.d.changedFiles.approve(p);
-                    }
-                    this.d.changedFiles.refreshNow();
-                    return;
-                }
+                case "file-approve":
+                case "file-reject":
+                case "file-approve-all":
                 case "file-reject-all": {
-                    const paths = message.paths ?? this.d.getController()?.changedPaths() ?? [];
-                    if (!paths.length) { return; }
-                    const pick = await vscode.window.showWarningMessage(
-                        `Revert ${paths.length} file(s) to their pre-edit state? This discards the agent's changes.`,
-                        { modal: true }, "Revert");
-                    if (pick !== "Revert") { return; }
-                    for (const p of paths) {
-                        if (await this.d.changedFiles.reject(p)) { this.d.getController()?.resolveChanged(p); }
-                    }
-                    this.d.changedFiles.refreshNow();
+                    if (await handleChangedFilesMessage(message, this.d)) { return; }
                     return;
                 }
                 case "refresh-sessions": {
@@ -417,78 +326,10 @@ export class SurfaceMessages {
                     this.d.post({ type: "sessions", items: all.map((s) => ({ ...s, updatedAt: s.updatedAt?.toISOString() })) });
                     return;
                 }
-                case "session-action": {
-                    const sessions = await this.d.deps.listSessions();
-                    const info = sessions.find((s) => s.sessionId === message.sessionId && s.backend === message.backend);
-                    if (!info) {
-                        return;
-                    }
-                    const command = {
-                        open: "symposium.resumeInTerminal",
-                        rename: "symposium.renameSession",
-                        watch: "symposium.followSession",
-                        archive: "symposium.archiveSession",
-                        unarchive: "symposium.unarchiveSession",
-                        pin: "symposium.pinSession",
-                        unpin: "symposium.unpinSession",
-                        pinUp: "symposium.pinUp",
-                        pinDown: "symposium.pinDown",
-                        delete: "symposium.deleteSession",
-                    }[message.action as string];
-                    if (!command) {
-                        return;
-                    }
-                    // Archive / unarchive / delete cascade across the whole
-                    // conversation lineage — a conversation (sessions sharing a
-                    // lineageId) is atomic, so the action hits all of its sessions.
-                    if (message.action === "archive" || message.action === "unarchive" || message.action === "delete") {
-                        const lineageKey = info.lineageId || info.sessionId;
-                        const targets = sessions.filter((s) => (s.lineageId || s.sessionId) === lineageKey);
-                        if (message.action === "delete" && targets.length > 1) {
-                            const confirm = await vscode.window.showWarningMessage(
-                                `Permanently delete this conversation and all ${targets.length} of its sessions? Every transcript is scrubbed from disk and it cannot be undone.`,
-                                { modal: true },
-                                "Delete all",
-                            );
-                            if (confirm !== "Delete all") {
-                                return;
-                            }
-                            for (const target of targets) {
-                                await vscode.commands.executeCommand("symposium.deleteSession", target, { skipConfirm: true });
-                            }
-                            return;
-                        }
-                        for (const target of targets) {
-                            await vscode.commands.executeCommand(command, target);
-                        }
-                        return;
-                    }
-                    await vscode.commands.executeCommand(command, info);
-                    return;
-                }
-                case "session-list-backends": {
-                    // "Continue with another agent" from a session's right-click
-                    // menu: offer every configured backend except the session's own.
-                    const items = [...this.d.deps.adapterByBackend.values()].map((adapter) => ({
-                        backend: adapter.backend,
-                        name: adapter.displayName ?? adapter.backend,
-                        current: adapter.backend === message.backend,
-                    }));
-                    this.d.post({ type: "session-backends", items });
-                    return;
-                }
+                case "session-action":
+                case "session-list-backends":
                 case "session-switch-backend": {
-                    if (
-                        typeof message.sessionId === "string" &&
-                        typeof message.backend === "string" &&
-                        typeof message.targetBackend === "string"
-                    ) {
-                        await this.d.handoff.forSession(
-                            message.sessionId,
-                            message.backend,
-                            message.targetBackend,
-                        );
-                    }
+                    if (await handleSessionMessage(message, this.d)) { return; }
                     return;
                 }
                 default: {

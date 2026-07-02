@@ -1,0 +1,205 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as vscode from "vscode";
+import { readSession, dumpToText } from "../../sessionReader";
+import { mimeTypeFor } from "../parse";
+import { workspaceKey, resourceContentPath, ensureScaffold, readWorkspaceBootstrap } from "../../config/root";
+import { ToolContext, getLiveTranscriptReader } from "./types";
+import { canUseRtk, normalizeTerminalId, resolvePath, runShell, runShellInTerminal } from "./shell";
+
+/**
+ * Local tool branches (web navigation, session memory read-back, per-workspace
+ * bootstrap, and the host shell/filesystem tools) extracted from run.ts so that
+ * file stays under the per-file line cap. runAiTool delegates here first; when
+ * the name isn't one of these local tools this returns undefined so runAiTool
+ * falls through to its memory/hub/subagent switch.
+ *
+ * Mechanical move only — the behavior of each branch is unchanged.
+ */
+
+/** Strips HTML to readable text (drops script/style, tags → spaces). */
+function htmlToText(html: string): string {
+    return html
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<!--[\s\S]*?-->/g, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/[ \t\f\r]+/g, " ")
+        .replace(/\n\s*\n\s*\n+/g, "\n\n")
+        .trim();
+}
+
+/**
+ * Runs one LOCAL tool (web/session/bootstrap/shell/fs). Returns the JSON string
+ * result for the model, or undefined when `name` is not a local tool (so the
+ * caller falls through to its memory/hub/subagent branches).
+ */
+export async function runLocalTool(name: string, args: Record<string, unknown>, ctx: ToolContext): Promise<string | undefined> {
+    const planMode = ctx.permission === "plan";
+
+    // ---- web navigation ----
+    if (name === "fetch_url") {
+        const url = String(args.url ?? "").trim();
+        if (!/^https?:\/\//i.test(url)) { return JSON.stringify({ error: "url must start with http(s)://" }); }
+        const max = Number(args.max_chars) || 30000;
+        const res = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 (Symposium VS Code agent)" } });
+        const ct = res.headers.get("content-type") || "";
+        const raw = await res.text();
+        const body = /html/i.test(ct) ? htmlToText(raw) : raw;
+        return JSON.stringify({ url, status: res.status, content_type: ct, content: body.slice(0, max), truncated: body.length > max });
+    }
+    if (name === "open_url") {
+        const url = String(args.url ?? "").trim();
+        if (!/^https?:\/\//i.test(url)) { return JSON.stringify({ error: "url must start with http(s)://" }); }
+        await vscode.commands.executeCommand("simpleBrowser.show", url);
+        return JSON.stringify({ opened: url });
+    }
+    // ---- session memory (read-only, allowed in plan mode) ----
+    if (name === "read_session") {
+        const id = String(args.id ?? "").trim() || ctx.sessionId;
+        if (!id) { return JSON.stringify({ error: "no session id (none provided and no current session)" }); }
+        const tail = typeof args.tail === "number" ? args.tail : undefined;
+        const maxChars = typeof args.max_chars === "number" ? args.max_chars : undefined;
+        // Disk (ledger) is the lossless, complete history. A RESUMED session's
+        // live controller only holds post-resume messages, so it must NOT shadow
+        // the ledger. Pick whichever source has MORE messages: live wins only
+        // when it has unflushed messages the ledger doesn't yet have; disk wins
+        // for resumed sessions where the ledger is complete. Either way we never
+        // error — a running session always has at least its current message, and
+        // when nothing is found we return an empty-but-valid dump, not an error
+        // (an error would make the agent believe it has no context).
+        const disk = readSession(id);
+        const live = getLiveTranscriptReader()?.read(id);
+        const liveCount = live ? live.messages.length : 0;
+        if (live && liveCount > disk.count) {
+            const dump = { id, source: "live" as const, backend: live.backend ?? disk.backend, title: live.title ?? disk.title, count: liveCount, messages: live.messages };
+            return dumpToText(dump, { tail, maxChars });
+        }
+        if (disk.source !== "none") {
+            return dumpToText(disk, { tail, maxChars });
+        }
+        // Nothing on disk: fall back to live even if it ties at 0, then to an
+        // empty dump so the caller always gets a well-formed transcript.
+        const dump = live
+            ? { id, source: "live" as const, backend: live.backend, title: live.title, count: liveCount, messages: live.messages }
+            : { id, source: "none" as const, count: 0, messages: [] };
+        return dumpToText(dump, { tail, maxChars });
+    }
+    // ---- per-workspace session bootstrap (a local config file, NOT memory) ----
+    if (name === "get_workspace_bootstrap") {
+        const bs = readWorkspaceBootstrap(ctx.cwd);
+        return JSON.stringify(bs
+            ? { key: bs.name, path: bs.path, text: bs.text }
+            : { key: workspaceKey(ctx.cwd), text: "", note: "no bootstrap set for this workspace" });
+    }
+    if (name === "set_workspace_bootstrap") {
+        const text = String(args.text ?? "").trim();
+        if (!text) { return JSON.stringify({ error: "text is required" }); }
+        ensureScaffold();
+        const key = workspaceKey(ctx.cwd);
+        const file = resourceContentPath("bootstrap", key);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, text.endsWith("\n") ? text : text + "\n", "utf8");
+        return JSON.stringify({ ok: true, key, path: file, bytes: Buffer.byteLength(text) });
+    }
+    // ---- local workspace tools (shell / filesystem) ----
+    if (name === "shell") {
+        if (planMode) { return JSON.stringify({ error: "plan mode: command execution is disabled" }); }
+        const command = String(args.command ?? "").trim();
+        if (!command) { return JSON.stringify({ error: "empty command" }); }
+        const cwd = args.cwd ? resolvePath(ctx.cwd, String(args.cwd)) : ctx.cwd;
+        // Timeout: default 30s. 0 (or negative) means UNLIMITED — the model
+        // must opt into that explicitly for long-running services. A bounded
+        // value is clamped to [1s, 1h].
+        const rawTimeout = args.timeout_ms === undefined ? 30000 : Number(args.timeout_ms);
+        const unlimited = !(rawTimeout > 0);
+        const timeout = unlimited ? Number.MAX_SAFE_INTEGER : Math.min(Math.max(rawTimeout, 1000), 3600000);
+        const notify = args.notify === true;
+        const mode = ctx.shellExecution ?? "silent";
+        const terminalId = mode === "terminal" ? normalizeTerminalId(args.terminal_id) : undefined;
+        const shouldUseRtk = mode === "silent" && await canUseRtk(command, cwd);
+        const runCommand = shouldUseRtk ? `rtk ${command}` : command;
+        const terminalRun = mode === "terminal"
+            ? await runShellInTerminal(runCommand, cwd, timeout, ctx.progress, terminalId, ctx.abortSignal)
+            : undefined;
+        const { stdout, code } = terminalRun ?? await runShell(runCommand, cwd, timeout, mode === "inline" ? ctx.progress : undefined, ctx.abortSignal);
+        // When the model flags the result as relevant, push it through the
+        // progress sink as a steer-style notification so the chat surfaces it
+        // even if the model wouldn't otherwise narrate the outcome.
+        if (notify) {
+            const head = stdout.split("\n").slice(0, 6).join("\n");
+            ctx.progress?.onNotify?.(`shell exit ${code}${head ? `\n${head}` : ""}`);
+        }
+        return JSON.stringify({
+            exit_code: code,
+            output: stdout,
+            display: mode,
+            timed_out: code === 124,
+            unlimited,
+            terminal_id: terminalRun?.terminal_id,
+            reused_terminal: terminalRun?.reused ?? false
+        });
+    }
+    if (name === "read_file") {
+        const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+        const buf = fs.readFileSync(p);
+        const mime = mimeTypeFor(p);
+        const isImage = !!mime && mime.startsWith("image/");
+        // Binary detection: a NUL byte in the first chunk means it isn't text.
+        const isBinary = isImage || buf.subarray(0, 4096).includes(0);
+        if (isBinary) {
+            // Images: return a base64 data URI (capped) instead of UTF-8
+            // garbage, so a vision-capable model/preset can interpret it.
+            const cap = Number(args.max_bytes) || 1_500_000;
+            if (isImage && buf.length <= cap) {
+                return JSON.stringify({
+                    path: p, mime, bytes: buf.length, image: true,
+                    data_uri: `data:${mime};base64,${buf.toString("base64")}`,
+                    note: "Binary image returned as a base64 data URI — it cannot be read as text. A vision-capable model/preset is needed to interpret it; otherwise ask the user to describe it.",
+                });
+            }
+            return JSON.stringify({
+                path: p, mime: mime ?? "application/octet-stream", bytes: buf.length, binary: true,
+                note: "Binary file — not shown as text" + (isImage ? " (image exceeds the inline cap; raise max_bytes to return base64)" : "") + ".",
+            });
+        }
+        const max = Number(args.max_bytes) || 100000;
+        const data = buf.toString("utf8");
+        return JSON.stringify({ path: p, content: data.slice(0, max), truncated: data.length > max });
+    }
+    if (name === "write_file") {
+        if (planMode) { return JSON.stringify({ error: "plan mode: writing files is disabled" }); }
+        const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+        fs.mkdirSync(path.dirname(p), { recursive: true });
+        fs.writeFileSync(p, String(args.content ?? ""), "utf8");
+        return JSON.stringify({ path: p, bytes: Buffer.byteLength(String(args.content ?? "")) });
+    }
+    if (name === "edit_file") {
+        if (planMode) { return JSON.stringify({ error: "plan mode: editing files is disabled" }); }
+        const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+        const oldStr = String(args.old_string ?? "");
+        const newStr = String(args.new_string ?? "");
+        const replaceAll = args.replace_all === true;
+        if (!oldStr) { return JSON.stringify({ error: "old_string is required and must be non-empty" }); }
+        let content: string;
+        try { content = fs.readFileSync(p, "utf8"); }
+        catch { return JSON.stringify({ error: `file not found: ${p}` }); }
+        const occurrences = content.split(oldStr).length - 1;
+        if (occurrences === 0) { return JSON.stringify({ error: "old_string not found in the file (it must match exactly, including whitespace)" }); }
+        if (occurrences > 1 && !replaceAll) {
+            return JSON.stringify({ error: `old_string is not unique (${occurrences} matches); add surrounding context or set replace_all: true` });
+        }
+        const updated = replaceAll ? content.split(oldStr).join(newStr) : content.replace(oldStr, newStr);
+        fs.writeFileSync(p, updated, "utf8");
+        return JSON.stringify({ path: p, replaced: replaceAll ? occurrences : 1 });
+    }
+    if (name === "list_dir") {
+        const p = args.path ? resolvePath(ctx.cwd, String(args.path)) : ctx.cwd;
+        const entries = fs.readdirSync(p, { withFileTypes: true }).map((e) => ({ name: e.name, dir: e.isDirectory() }));
+        return JSON.stringify({ path: p, entries });
+    }
+
+    // Not a local tool — caller falls through to its memory/hub/subagent switch.
+    return undefined;
+}
