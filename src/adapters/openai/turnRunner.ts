@@ -86,23 +86,37 @@ export class TurnRunner {
         const url = base + (responses ? "/responses" : "/chat/completions");
         const effort = this.d.options.reasoning;
         const loginToken = await this.d.authToken();   // logged-in Bearer, if needed
-        // Apply compression if configured
+        // Apply compression if configured. Recomputed per hop so tool calls and
+        // results appended to `messages` during the turn reach the next request
+        // (a one-shot snapshot would resend a stale context on hop 2+). Notices
+        // are emitted once per turn, not per hop.
         const compressionPresetId = this.d.options.compressionPresetId;
-        let workingMessages = messages;
-        if (compressionPresetId && compressionPresetId !== "none") {
+        let compressionNoticed = false;
+        const compressWorking = (): ChatMessage[] => {
+            if (!compressionPresetId || compressionPresetId === "none") { return messages; }
             try {
                 const preset = CompressionManager.getInstance().getPreset(compressionPresetId);
-                if (preset) {
-                    workingMessages = compressMessages(messages, preset.strategy, preset.params);
-                    this.d.emit({ kind: "info", message: `[Compression: applied preset "${compressionPresetId}" - ${messages.length} → ${workingMessages.length} messages]` });
-                } else {
-                    this.d.emit({ kind: "warn", message: `[Compression: preset "${compressionPresetId}" not found]` });
+                if (!preset) {
+                    if (!compressionNoticed) {
+                        compressionNoticed = true;
+                        this.d.emit({ kind: "error", message: `[Compression: preset "${compressionPresetId}" not found]` });
+                    }
+                    return messages;
                 }
+                const compressed = compressMessages(messages, preset.strategy, preset.params);
+                if (!compressionNoticed) {
+                    compressionNoticed = true;
+                    this.d.emit({ kind: "status-notice", text: `[Compression: applied preset "${compressionPresetId}" - ${messages.length} → ${compressed.length} messages]` });
+                }
+                return compressed;
             } catch (err) {
-                this.d.emit({ kind: "error", message: `[Compression: failed to apply preset "${compressionPresetId}": ${err instanceof Error ? err.message : String(err)}` });
-                workingMessages = messages; // fallback to original messages
+                if (!compressionNoticed) {
+                    compressionNoticed = true;
+                    this.d.emit({ kind: "error", message: `[Compression: failed to apply preset "${compressionPresetId}": ${err instanceof Error ? err.message : String(err)}` });
+                }
+                return messages; // fallback to original messages
             }
-        }
+        };
         // Auth guard: when the gateway has no explicit apiKey/Authorization
         // configured, it relies on the logged-in Sufficit token. If that token
         // is missing (not logged in, or the token didn't persist — e.g. a
@@ -177,17 +191,15 @@ export class TurnRunner {
                 // Deduplicate: keep only one (any source, descriptions match)
                 finalTools.push(group[0]);
             } else {
-                // Prefix source to avoid collision
+                // Prefix source to avoid collision. Clone before renaming: the
+                // defs are shared module constants (AI_TOOLS/LOCAL_TOOLS/…) and
+                // mutating them would leak the prefix across turns and sessions.
                 for (const { tool, source } of group) {
                     const nameKey = (tool.function?.name ?? tool.name) as string;
-                    if (tool.function) {
-                        tool.function = { ...tool.function, name: `${source}${nameKey}` };
-                        tool.function.description = `[${source.slice(0, -1)}] ${tool.function.description ?? ""}`;
-                    } else if (tool.name) {
-                        tool.name = `${source}${nameKey}`;
-                        tool.description = `[${source.slice(0, -1)}] ${tool.description}`;
-                    }
-                    finalTools.push({ tool, source });
+                    const renamed: ToolDefinition = tool.function
+                        ? { ...tool, function: { ...tool.function, name: `${source}${nameKey}`, description: `[${source.slice(0, -1)}] ${tool.function.description ?? ""}` } }
+                        : { ...tool, name: `${source}${nameKey}`, description: `[${source.slice(0, -1)}] ${tool.description}` };
+                    finalTools.push({ tool: renamed, source });
                 }
             }
         }
@@ -214,7 +226,7 @@ export class TurnRunner {
             // Tool-call loop: keep round-tripping while the model requests tools.
             for (let hop = 0; hop < maxHops; hop++) {
                 this.abort = new AbortController();
-                const windowed = windowMessages(workingMessages, this.d.cfg.maxHistoryMessages ?? 40);
+                const windowed = windowMessages(compressWorking(), this.d.cfg.maxHistoryMessages ?? 40);
                 // Continuous follow-up: once history is being windowed out (or after
                 // a few hops into the tool-loop), append a fresh objective+progress
                 // anchor at the tail so a small-context model keeps the thread.
