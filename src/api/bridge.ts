@@ -43,20 +43,26 @@ export class RemoteBridge {
         let token = cfg.get<string>("token", "");
         if (!token) {
             token = randomUUID();
-            this.log(`[bridge] no token configured; generated ephemeral token: ${token}`);
+            this.log("[bridge] no token configured; generated ephemeral token (see ~/.symposium/bridge.json)");
         }
 
         const url = `http://${host}:${port}`;
         this.server = http.createServer((req, res) => void this.handle(req, res, token));
-        this.server.on("error", (err) => this.log(`[bridge] server error: ${err}`));
-        this.server.listen(port, host, () => this.log(`[bridge] listening on ${url}`));
-        // Publish url+token so local skills/scripts can reach the bridge without
-        // hardcoding them.
-        try {
-            const dir = path.join(os.homedir(), ".symposium");
-            fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(path.join(dir, "bridge.json"), JSON.stringify({ url, token }), { mode: 0o600 });
-        } catch (err) { this.log(`[bridge] bridge.json write failed: ${err}`); }
+        this.server.on("error", (err) => {
+            this.log(`[bridge] server error: ${err}`);
+            // Don't advertise a URL we don't own (e.g. EADDRINUSE).
+            try { fs.rmSync(path.join(os.homedir(), ".symposium", "bridge.json"), { force: true }); } catch { /* ignore */ }
+        });
+        this.server.listen(port, host, () => {
+            this.log(`[bridge] listening on ${url}`);
+            // Publish url+token so local skills/scripts can reach the bridge without
+            // hardcoding them.
+            try {
+                const dir = path.join(os.homedir(), ".symposium");
+                fs.mkdirSync(dir, { recursive: true });
+                fs.writeFileSync(path.join(dir, "bridge.json"), JSON.stringify({ url, token }), { mode: 0o600 });
+            } catch (err) { this.log(`[bridge] bridge.json write failed: ${err}`); }
+        });
         return url;
     }
 
@@ -73,7 +79,8 @@ export class RemoteBridge {
         }
         // EventSource cannot set headers, so allow the token as a query param
         // for the SSE follow endpoint only.
-        return url.searchParams.get("token") === token;
+        return /^\/sessions\/[^/]+\/follow\/?$/.test(url.pathname)
+            && url.searchParams.get("token") === token;
     }
 
     private async handle(req: http.IncomingMessage, res: http.ServerResponse, token: string): Promise<void> {
@@ -250,7 +257,7 @@ function json(res: http.ServerResponse, status: number, body: unknown): void {
 function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
         let data = "";
-        req.on("data", (chunk) => { data += chunk; if (data.length > 1_000_000) { reject(new Error("body too large")); } });
+        req.on("data", (chunk) => { data += chunk; if (data.length > 1_000_000) { reject(new Error("body too large")); req.destroy(); } });
         req.on("end", () => {
             try {
                 resolve((data ? JSON.parse(data) : {}) as Record<string, unknown>);
