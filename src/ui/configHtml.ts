@@ -20,7 +20,9 @@ import { renderConfigScript } from "./configScript";
 export function renderConfigHtml(lang: string): string {
     const dict = makeConfigDict(lang);
     const t = (k: string): string => (dict[k] != null ? dict[k] : k);
-    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline';`;
+    // Nonce required by VSCode 1.90+ webview CSP enforcement (unsafe-inline alone is blocked).
+    const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';`;
     return /* html */ `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -41,7 +43,7 @@ export function renderConfigHtml(lang: string): string {
 </header>
 <nav id="tabs"></nav>
 <main id="content"><div class="empty">${t("config.loading")}</div></main>
-<script>${renderConfigScript(dict)}</script>
+<script nonce="${nonce}">${renderConfigScript(dict)}</script>
 </body>
 </html>`;
 }
