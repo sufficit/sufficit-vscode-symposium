@@ -6,7 +6,7 @@ import { setStatus, syncProgress, setLoading } from "./status";
 import { modelLabel } from "./models";
 import { showFileMenu } from "./menus";
 import { autoScroll, nearBottom, refreshEmpty, scrollToBottom } from "./scroll";
-import { renderMarkdown, inline } from "./markdown";
+import { renderMarkdown, inline, copyText } from "./markdown";
 import { svgIcon, fileIcon } from "./icons";
 import { middleEllipsisPath, allDigits } from "./format";
 import { beginEdit, lastUserRow } from "./composer";
@@ -222,8 +222,9 @@ export function message(role, text, ts, model) {
         const cp = document.createElement("button"); cp.className = "msgCopy"; cp.title = "Copy this reply";
         cp.appendChild(svgIcon("copy"));
         cp.addEventListener("click", () => {
-            if (navigator.clipboard) { navigator.clipboard.writeText(wrap._raw != null ? wrap._raw : text); }
-            cp.classList.add("done"); setTimeout(() => cp.classList.remove("done"), 1000);
+            copyText(wrap._raw != null ? wrap._raw : text, () => {
+                cp.classList.add("done"); setTimeout(() => cp.classList.remove("done"), 1000);
+            });
         });
         tools.appendChild(cp);
     }

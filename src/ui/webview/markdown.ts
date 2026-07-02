@@ -104,14 +104,36 @@ function tableEl(head, rows) {
     t.appendChild(tb); return t;
 }
 
+// Clipboard write with proper failure handling: navigator.clipboard.writeText
+// rejects ASYNCHRONOUSLY when the clipboard is blocked, so a sync try/catch
+// never sees the failure. On rejection (or missing API) fall back to a hidden
+// textarea + execCommand("copy"), then run the success feedback either way.
+export function copyText(text, done) {
+    const fallback = () => {
+        try {
+            const ta = document.createElement("textarea");
+            ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+            document.body.appendChild(ta); ta.select();
+            document.execCommand("copy"); document.body.removeChild(ta);
+        } catch (_) { /* give up silently */ }
+        done();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+        fallback();
+    }
+}
+
 function codeBlock(lang, code) {
     const block = document.createElement("div"); block.className = "codeblock";
     const head = document.createElement("div"); head.className = "cbhead";
     const tag = document.createElement("span"); tag.textContent = lang || "code";
     const copy = document.createElement("button"); copy.className = "cbcopy"; copy.textContent = "Copy";
     copy.addEventListener("click", () => {
-        if (navigator.clipboard) { navigator.clipboard.writeText(code); }
-        copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1200);
+        copyText(code, () => {
+            copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1200);
+        });
     });
     head.appendChild(tag); head.appendChild(copy);
     const pre = document.createElement("pre"); const c = document.createElement("code");
@@ -177,7 +199,7 @@ function tagBlock(tag, body) {
 
 function codexTagStart(line) {
     const t = line.trim();
-    const m = t.match(/^<([A-Za-z][A-Za-z0-9_-]*)(?:s[^>]*)?>s*$/);
+    const m = t.match(/^<([A-Za-z][A-Za-z0-9_-]*)(?:\s[^>]*)?>\s*$/);
     if (!m) return null;
     const tag = m[1];
     // Only structural wrapper tags get special rendering. Keep HTML-ish
@@ -196,7 +218,16 @@ export function inline(parent, text) {
         if (tok.startsWith("`")) { const e = document.createElement("code"); e.className = "inline"; e.textContent = tok.slice(1, -1); parent.appendChild(e); }
         else if (tok.startsWith("**")) { const e = document.createElement("strong"); e.textContent = tok.slice(2, -2); parent.appendChild(e); }
         else if (tok.startsWith("*")) { const e = document.createElement("em"); e.textContent = tok.slice(1, -1); parent.appendChild(e); }
-        else { const mm = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/); const a = document.createElement("a"); a.textContent = mm[1]; a.href = mm[2]; a.title = mm[2]; parent.appendChild(a); }
+        else {
+            const mm = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+            // Only link whitelisted schemes; anything else (javascript:, data:, …)
+            // would execute in the webview — render the label as plain text.
+            if (/^(https?|mailto|file|vscode):/i.test(mm[2].trim())) {
+                const a = document.createElement("a"); a.textContent = mm[1]; a.href = mm[2]; a.title = mm[2]; parent.appendChild(a);
+            } else {
+                parent.appendChild(document.createTextNode(mm[1]));
+            }
+        }
         last = re.lastIndex;
     }
     if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
