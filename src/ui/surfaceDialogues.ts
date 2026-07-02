@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { FollowHandle, SessionInfo, SessionStartOptions } from "../adapters/types";
+import { FollowHandle, HistoryMessage, SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "./chatController";
 import { TerminalSession } from "./terminalSession";
 import type { ChatSurfaceDeps } from "./chatSurface";
@@ -39,6 +39,14 @@ export interface SurfaceDialoguesDeps {
 
 export class SurfaceDialogues {
     constructor(private readonly d: SurfaceDialoguesDeps) { }
+
+    /**
+     * Bumped on every dialogue-binding entry point (open/terminal/follow).
+     * followSession awaits adapter.history(); if the user opens another
+     * dialogue during that await, the captured generation no longer matches
+     * and the stale history/follow handle must not be bound to the new pane.
+     */
+    private generation = 0;
 
     /** Restores the last active session on open, or starts a default dialogue. */
     async restoreOrStart(): Promise<void> {
@@ -83,15 +91,11 @@ export class SurfaceDialogues {
         if (!from || !Number.isInteger(index) || index < 0) {
             return;
         }
-        // Adjust index: webview idx includes all rendered messages (user/assistant/thinking/tool/error),
-        // but transcriptMessages only includes user/assistant. We need to map the index by assuming
-        // that the N-th user/assistant in conversationRows corresponds to the N-th in transcriptMessages.
-        // We approximate this by using the index directly, which works when there are no thinking/tool/error
-        // rows, or when we iterate through the messages to find the correct position.
-        // For now, use a simple approach: since we cannot access conversationRows from the host,
-        // we'll use the index as-is but handle the case where it's out of bounds.
+        // The webview sends a conversation-ROW index (its conversationRows array:
+        // one entry per user/assistant bubble). transcriptMessages() rebuilds the
+        // same row sequence from the render log, so the index maps 1:1 — just
+        // clamp it to the valid range.
         const transcriptMessages = from.transcriptMessages();
-        // Clamp the index to the valid range
         const adjustedIndex = Math.min(index, transcriptMessages.length - 1);
         if (adjustedIndex < 0) {
             return;
@@ -150,9 +154,10 @@ ${transcript}
             void this.d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
             return;
         }
-        // Adjust index: webview idx includes all rendered messages (user/assistant/thinking/tool/error),
-        // but transcriptMessages only includes user/assistant. We use the same approach as restartFromMessage:
-        // clamp the index to the valid range and use it as-is.
+        // Same conversation-row index space as restartFromMessage: clamp and use
+        // directly. anchorIndex 0 yields keepTo = -1 below, which seeds nothing
+        // (transcriptMessagesUpTo(-1) is an empty slice) — editing the first
+        // message genuinely restarts from scratch.
         const transcriptMessages = from.transcriptMessages();
         const adjustedIndex = Math.min(anchorIndex, transcriptMessages.length - 1);
         if (adjustedIndex < 0) {
@@ -210,6 +215,7 @@ ${transcript}
             this.openSession(info);
             return;
         }
+        const generation = ++this.generation;
         this.d.detachActive();
         this.d.post({ type: "clear" });
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
@@ -230,11 +236,19 @@ ${transcript}
             execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
         });
         if (adapter.history) {
+            let messages: HistoryMessage[] | undefined;
             try {
-                const messages = await adapter.history(info);
-                this.d.post({ type: "history", messages });
+                messages = await adapter.history(info);
             } catch {
                 // ignore; live tail still attaches below
+            }
+            // Another dialogue was opened while history loaded: its pane owns
+            // the surface now — don't post stale history or tail the old session.
+            if (generation !== this.generation) {
+                return;
+            }
+            if (messages) {
+                this.d.post({ type: "history", messages });
             }
         }
         const handle = adapter.follow(info, (message) => {
@@ -262,6 +276,7 @@ ${transcript}
         if (!adapter) {
             return;
         }
+        this.generation++;
         this.d.detachActive();
         this.d.post({ type: "clear" });
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
@@ -315,6 +330,7 @@ ${transcript}
         if (!adapter) {
             return;
         }
+        this.generation++;
         this.d.detachActive();
         this.d.post({ type: "clear" });
 
