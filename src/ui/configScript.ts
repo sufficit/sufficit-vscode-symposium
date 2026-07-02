@@ -2,8 +2,9 @@
  * Symposium configuration webview client script.
  *
  * Extracted from configHtml.ts to keep the markup module under the file-size
- * budget. Runs inside the webview (CSP allows 'unsafe-inline' scripts only).
- * The only host-injected value is the serialized i18n dictionary; every other
+ * budget. Runs inside the webview (CSP allows nonce'd scripts only; see
+ * renderConfigHtml). The only host-injected value is the serialized i18n
+ * dictionary; every other
  * translation lookup happens client-side via the inlined t().
  */
 import { configViews } from "./configViews";
@@ -145,9 +146,9 @@ export function renderConfigScript(dict: Record<string, string>): string {
             renderTabs();
             return;
         }
-        if (active === "prefs" || active === "compression") {
+        if (active === "prefs" || active === "compaction") {
             main.innerHTML = page(
-                active === "compression" ? compressionView() :
+                active === "compaction" ? compressionView() :
                 prefsView()
             );
             main.querySelectorAll("select.pref").forEach(el => {
@@ -160,7 +161,7 @@ export function renderConfigScript(dict: Record<string, string>): string {
                 el.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); save(); } };
             });
             // Compression presets buttons
-            if (active === "compression") {
+            if (active === "compaction") {
                 const addPresetBtn = document.getElementById("btn-add-preset");
                 if (addPresetBtn) {
                     addPresetBtn.onclick = () => vscode.postMessage({ type: "add-compression-preset" });
@@ -361,12 +362,6 @@ export function renderConfigScript(dict: Record<string, string>): string {
             const id = editBtn.getAttribute("data-id");
             if (id) vscode.postMessage({ type: "edit-compression-preset", key: id });
             return;
-        }
-    });
-
-    document.addEventListener("change", (e) => {
-        if (e.target.id === "per-session-toggle") {
-            vscode.postMessage({ type: "enable-compression-per-session", value: e.target.checked });
         }
     });
 

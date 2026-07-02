@@ -511,12 +511,6 @@ export class ConfigPanel {
                 await this.pushState();
                 return;
             }
-            case "list-compression-presets": {
-                const { CompressionManager } = await import("../compression");
-                const presets = CompressionManager.getInstance().getPresets();
-                this.panel.webview.postMessage({ type: "compression-presets", presets });
-                return;
-            }
             case "add-compression-preset": {
                 const { CompressionManager } = await import("../compression");
 
