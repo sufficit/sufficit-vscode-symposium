@@ -55,29 +55,33 @@ function loadVscodeMcpServers(): Record<string, { command: string; args: string[
             const s = server as Record<string, unknown>;
             if (s.type === "http" && s.url && typeof s.url === "string") {
                 // HTTP MCP servers need to communicate via HTTP POST
-                // We create a wrapper that uses node to handle HTTP MCP protocol
-                const headers: Record<string, string> = {};
-                if (s.headers && typeof s.headers === "object") {
-                    for (const [k, v] of Object.entries(s.headers)) {
-                        headers[k] = String(v);
-                    }
-                }
-                // Create a temporary wrapper script for HTTP MCP servers
+                // We create a wrapper that uses node to handle HTTP MCP protocol.
+                // The wrapper reads url/headers from mcp.json at runtime so
+                // Authorization headers are never baked into the script.
                 const wrapperPath = path.join(os.homedir(), ".symposium", `mcp-http-${name}.js`);
                 const wrapperScript = `
+const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const readline = require('readline');
 
-const URL = '${s.url}';
-const HEADERS = ${JSON.stringify(headers)};
+const CONFIG_PATH = ${JSON.stringify(configPath)};
+const SERVER_NAME = ${JSON.stringify(name)};
+
+const server = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')).servers[SERVER_NAME];
+const TARGET_URL = server.url;
+const HEADERS = {};
+if (server.headers && typeof server.headers === 'object') {
+    for (const [k, v] of Object.entries(server.headers)) {
+        HEADERS[k] = String(v);
+    }
+}
 
 async function makeRequest(data) {
-    const url = new URL(URL);
-    const client = url.protocol === 'https:' ? https : http;
-    
+    const client = new URL(TARGET_URL).protocol === 'https:' ? https : http;
+
     return new Promise((resolve, reject) => {
-        const req = client.request(URL, {
+        const req = client.request(TARGET_URL, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -121,7 +125,8 @@ rl.on('line', async (line) => {
                 if (!fs.existsSync(dir)) {
                     fs.mkdirSync(dir, { recursive: true });
                 }
-                fs.writeFileSync(wrapperPath, wrapperScript, "utf8");
+                fs.writeFileSync(wrapperPath, wrapperScript, { encoding: "utf8", mode: 0o600 });
+                fs.chmodSync(wrapperPath, 0o600); // mode above only applies on creation
                 result[name] = { command: "node", args: [wrapperPath] };
             } else if (s.type === "stdio" && s.command && typeof s.command === "string") {
                 const args: string[] = [];
@@ -162,6 +167,12 @@ export class CodexSession extends EventEmitter implements AgentSession {
     }
 
     send(text: string): void {
+        // A mid-turn send must not leave two `codex exec` processes writing
+        // the same rollout: kill the in-flight child first (same signal as cancel()).
+        if (this.current) {
+            this.current.kill("SIGINT");
+            this.current = undefined;
+        }
         const base = ["exec", "--json", "--skip-git-repo-check"];
         const model = this.options.model || this.config.model;
         if (model) {
@@ -208,15 +219,27 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.reportedError = false;
 
         const rl = readline.createInterface({ input: child.stdout! });
-        rl.on("line", (line) => this.handleLine(line));
+        // Guard handlers so a child superseded by a newer send() can't emit
+        // stale events (or clobber this.current) while it winds down.
+        rl.on("line", (line) => {
+            if (this.current === child) {
+                this.handleLine(line);
+            }
+        });
 
         let stderr = "";
         child.stderr!.on("data", (chunk) => { stderr += String(chunk); });
         child.on("error", (error) => {
+            if (this.current !== child) {
+                return;
+            }
             this.emit("event", { kind: "error", message: `codex spawn failed: ${error.message}` });
             this.emit("event", { kind: "turn-end" });
         });
         child.on("exit", (code) => {
+            if (this.current !== child) {
+                return; // superseded by a newer send() or disposed
+            }
             this.current = undefined;
             if (this.disposed) {
                 return;
