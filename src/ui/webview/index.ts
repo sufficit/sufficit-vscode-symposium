@@ -1,5 +1,5 @@
 import { vscode, saved, saveState } from "./vscode";
-import { activeFileSuffix, makeChip, renderChips, markEditing, lastUserRow, beginEdit, cancelEdit, retryLast, send, slashActive, updateSlash, renderSlash, acceptSlash, setBrowserOpen, handlePaste } from "./composer";
+import { activeFileSuffix, makeChip, renderChips, markEditing, lastUserRow, beginEdit, cancelEdit, send, slashActive, updateSlash, renderSlash, acceptSlash, setBrowserOpen, handlePaste } from "./composer";
 import { resetLastMsg, renderError, append, branchBanner, message, streamDelta, endStream, renderThinkBlock, streamThinkingDelta, bumpToolGroup } from "./messages";
 import { renderTool, fillToolResult } from "./tools";
 import { renderStatusbar, openUsagePopover, setLastUsage, setLastTurn, sessionCostUsd, setSessionCostUsd } from "./statusbar";

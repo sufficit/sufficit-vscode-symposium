@@ -159,17 +159,22 @@ export class SyncEngine {
                 }
                 const { kind, name, content } = parsed;
                 const hash = hashOf(content);
-                const file = resourceContentPath(kind, sanitize(name));
-                const local = readContent(kind, sanitize(name));
+                // Key by the sanitized (on-disk) name — push scans the disk, so a
+                // raw-name key would never match and the resource would be
+                // re-pushed as a duplicate on every push.
+                const fileName = sanitize(name);
+                const key = `${kind}/${fileName}`;
+                const file = resourceContentPath(kind, fileName);
+                const local = readContent(kind, fileName);
                 if (local != null && hashOf(local) === hash) {
-                    map[`${kind}/${name}`] = { id: obs.id ?? "", hash };
+                    map[key] = { id: obs.id ?? "", hash };
                     result.skipped++;
                     continue;
                 }
                 try {
                     fs.mkdirSync(path.dirname(file), { recursive: true });
                     fs.writeFileSync(file, content, "utf8");
-                    map[`${kind}/${name}`] = { id: obs.id ?? "", hash };
+                    map[key] = { id: obs.id ?? "", hash };
                     result.pulled++;
                 } catch (err) {
                     result.errors.push(`write ${kind}/${name}: ${err}`);

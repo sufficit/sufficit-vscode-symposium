@@ -65,15 +65,12 @@ export type WebviewToHost =
     | { type: "refresh-sessions" }
     | { type: "recheck-shell-tools" }
     | { type: "task-set-done"; id: string; done: boolean }
-    | { type: "add-guardrail" }
     | { type: "remove-guardrail"; id: string }
     | { type: "clear-guardrails" }
     | { type: "pin-model"; model: string }
     | { type: "set-model-default"; model: string }
-    | { type: "set-input"; text: string }
     | { type: "new-session"; compressionPresetId?: string }
     | { type: "set-compression-preset"; compressionPresetId: string }
-    | { type: "compression-preset-set"; presetId: string }
     | { type: "list-backends" }
     | { type: "switch-backend"; backend: string }
     | { type: "restart-from-message"; index: number }

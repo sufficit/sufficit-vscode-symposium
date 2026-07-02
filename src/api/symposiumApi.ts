@@ -10,6 +10,7 @@ import { aiToolsForAgent } from "../adapters/aiTools";
 import { importAgents } from "../config/importAgents";
 import { importTools, importInstructions } from "../config/importResources";
 import { seedExamples } from "../config/seed";
+import { symposiumLog } from "../extension/log";
 import { HubClient } from "../sync/hubClient";
 import { SyncEngine, SyncResult } from "../sync/sync";
 
@@ -282,7 +283,13 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                 }
                 const opts: SessionStartOptions = { cwd: options.cwd, model: options.model };
                 if (options.tools && options.tools.length > 0) {
-                    opts.env = (await resolveToolEnv(options.tools)).env;
+                    const { env, missing } = await resolveToolEnv(options.tools);
+                    opts.env = env;
+                    if (missing.length > 0) {
+                        // Unresolved vault refs → the session starts without those
+                        // credentials; leave a trace instead of failing silently later.
+                        symposiumLog(`sessions.create(${backend}): unresolved tool secrets: ${missing.join(", ")}`);
+                    }
                 }
                 // Bind agent-def: gate AI tools + seed the developer prompt.
                 if (options.agent) {
