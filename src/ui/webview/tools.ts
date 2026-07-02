@@ -159,9 +159,12 @@ export function renderTool(name, detail, opts) {
     else if (opts.input) { body.appendChild(toolSection("Input", opts.input)); }
     let resultSec = null;
     let resultText = "";
-    const showResult = (text) => {
+    const showResult = (text, replace) => {
         if (!text) return;
-        resultText += String(text);
+        // A final tool-end result REPLACES streamed chunks: adapters stream
+        // the output via tool-output and then return the same full text as
+        // the result — appending would show everything twice.
+        resultText = replace ? String(text) : resultText + String(text);
         const shown = resultText.length > 30000 ? resultText.slice(resultText.length - 30000) : resultText;
         if (!resultSec) { resultSec = toolSection("Result", shown); body.appendChild(resultSec); }
         else { resultSec.querySelector("pre").textContent = shown; }
@@ -191,7 +194,14 @@ export function renderTool(name, detail, opts) {
     if (opts.toolId) { toolRows[opts.toolId] = { showResult }; }
     return wrap;
 }
-export function fillToolResult(toolId, result) {
+export function fillToolResult(toolId, result, final) {
     const rec = toolId && toolRows[toolId];
-    if (rec) { rec.showResult(result); }
+    if (rec) {
+        rec.showResult(result, final);
+        // The tool is done — drop the entry so the map doesn't pin the
+        // detached DOM of every tool row ever rendered.
+        if (final) { delete toolRows[toolId]; }
+    }
 }
+// Drop all pending tool rows (log cleared / session switched).
+export function resetToolRows() { for (const k in toolRows) { delete toolRows[k]; } }

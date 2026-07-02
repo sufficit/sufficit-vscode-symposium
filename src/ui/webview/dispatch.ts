@@ -2,8 +2,8 @@
 import { vscode, saved } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
 import { renderChips, setBrowserOpen } from "./composer";
-import { append, branchBanner, endStream, message, renderError, renderStatusNotice, renderThinkBlock, streamDelta, streamThinkingDelta, resetLastMsg, endThinkingStream } from "./messages";
-import { fillToolResult, renderTool } from "./tools";
+import { append, branchBanner, endStream, message, renderError, renderStatusNotice, renderThinkBlock, streamDelta, streamThinkingDelta, resetLastMsg } from "./messages";
+import { fillToolResult, renderTool, resetToolRows } from "./tools";
 import { bindWorkingSet, renderChangedFiles, renderGuardrails, renderQueued, renderTasks, renderPlan, resetWorkingState, startWorkingSet, refreshPanels, changedItems, setChangedItems } from "./panels";
 import { renderAccount, renderSessions } from "./sessions";
 import { setLang, t } from "./i18n";
@@ -11,7 +11,7 @@ import { applyStaticI18n } from "./staticI18n";
 import { renderStatusbar, openUsagePopover, setLastTurn, setLastUsage, setSessionCostUsd, sessionCostUsd } from "./statusbar";
 import { setStatus, setLoading, updateSendTitle } from "./status";
 import { hideCtx, openChoiceMenu, showToast } from "./menus";
-import { modelLabel, modelLabels, modelValue, modelList, modelDefault, reasoningList, setModelDefault, setModelLabel, setModelLabels, setModelList, setModelValue, setPinnedModels, setReasoningDefault, setReasoningLabel, setReasoningList, setReasoningValue, buildModelMenuOpts } from "./models";
+import { modelLabel, modelLabels, modelValue, modelList, modelDefault, reasoningList, reasoningValue, setModelDefault, setModelLabel, setModelLabels, setModelList, setModelValue, setPinnedModels, setReasoningDefault, setReasoningLabel, setReasoningList, setReasoningValue, buildModelMenuOpts } from "./models";
 import { armStickyUserMessage, layout, refreshEmpty, scrollToBottom, nearBottom, autoScroll } from "./scroll";
 import { svgIcon } from "./icons";
 import { log, root, composerEl, status, chatTitle, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, configBtn, ctxMenu, modelPicker, reasoningPicker, sendMode } from "./dom";
@@ -33,7 +33,6 @@ window.addEventListener("message", ({ data }) => {
             setBusy(!!data.busy);
             root.classList.toggle("chat-only", !!data.chatOnly);
             layout();   // apply the sessions-side now (meta sets sideMode)
-            layout();
             setActiveSessionId(data.sessionId || "");
             copySessionBtn.style.display = "inline-flex";   // a session surface is open
             clearTimeout(bootTimer); bootStep("host", null, "ok"); bootStep("session", "Session ready", "ok"); bootComplete();
@@ -81,7 +80,11 @@ window.addEventListener("message", ({ data }) => {
             modelPicker.style.display = "";
             setModelLabel();
             setReasoningList(data.reasoningLevels || []);
-            setReasoningValue(reasoningList[0] || "default");
+            // Keep the user's chosen effort across re-meta (edit-resend,
+            // handoff) when it's still offered — mirrors the model pick above.
+            if (!reasoningValue || !reasoningList.includes(reasoningValue)) {
+                setReasoningValue(reasoningList[0] || "default");
+            }
             reasoningPicker.disabled = false;
             reasoningPicker.style.display = reasoningList.length ? "" : "none";
             setReasoningLabel();
@@ -138,6 +141,7 @@ window.addEventListener("message", ({ data }) => {
             copySessionBtn.style.display = "none";
             setActiveModel(""); setBusy(false); setQueued(0);
             resetWorkingState();
+            resetToolRows();
             refreshEmpty();
             sendBtn.disabled = false;
             document.getElementById("composer").style.display = "flex";
@@ -354,18 +358,16 @@ window.addEventListener("message", ({ data }) => {
         }
         case "event": {
             const ev = data.event;
-            // Processamento de thinking events: forçar separação de thinking blocks consecutivos
-            // chamando endThinkingStream() antes de cada thinking delta para garantir
-            // que múltiplos thinking blocks sejam exibidos como elementos separados
-            if (ev.kind === "thinking") {
-                endThinkingStream(); // Força finalização do thinking block anterior
-                streamThinkingDelta(ev.text);
-            }
+            // Consecutive thinking deltas coalesce into ONE block (the Claude
+            // adapter streams token-level deltas). Genuinely distinct blocks
+            // stay separate because every other event kind (text, tool-start,
+            // notices) already closes the open thinking stream via endStream().
+            if (ev.kind === "thinking") { streamThinkingDelta(ev.text); }
             else if (ev.kind === "text") streamDelta(ev.text);
             else if (ev.kind === "status-notice") renderStatusNotice(ev.text);
             else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }
             else if (ev.kind === "tool-output") fillToolResult(ev.toolId, ev.text);
-            else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result);
+            else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result, true);
             else if (ev.kind === "usage") { setLastUsage(ev); renderStatusbar(); }
             else if (ev.kind === "error") {
                 // The composer's send/stop button reflects ONLY the agent's

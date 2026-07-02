@@ -238,6 +238,14 @@ export function message(role, text, ts, model) {
 // Coalesce streaming assistant deltas into ONE message (the OpenAI adapter
 // emits token-by-token; without this each token became its own bubble).
 let streamMsg = null, streamBody = null, streamText = "";
+// Re-rendering the whole accumulated markdown on EVERY token is O(n²) per
+// reply; throttle to one re-render per animation frame instead.
+// ponytail: still a full re-render per frame — incremental rendering if that ever matters.
+let streamRaf = 0;
+function flushStreamRender() {
+    streamRaf = 0;
+    if (streamBody) { streamBody.textContent = ""; renderMarkdown(streamBody, streamText); }
+}
 export function streamDelta(text) {
     const stick = nearBottom();
     endThinkingStream(); // close any open thinking block before first text token
@@ -250,10 +258,17 @@ export function streamDelta(text) {
     streamMsg._raw = streamText;
     const idx = Number(streamMsg.dataset.msgIndex || "-1");
     if (idx >= 0 && conversationRows[idx]) { conversationRows[idx].text = streamText; }
-    if (streamBody) { streamBody.textContent = ""; renderMarkdown(streamBody, streamText); }
+    if (!streamRaf) {
+        streamRaf = requestAnimationFrame(() => { flushStreamRender(); autoScroll(stick); });
+    }
     autoScroll(stick);
 }
-export function endStream() { streamMsg = null; streamBody = null; streamText = ""; endThinkingStream(); }
+export function endStream() {
+    // Flush a pending frame so the final text is fully rendered.
+    if (streamRaf) { cancelAnimationFrame(streamRaf); flushStreamRender(); }
+    streamMsg = null; streamBody = null; streamText = "";
+    endThinkingStream();
+}
 
 // Streaming thinking blocks (extended reasoning).
 // Gerencia o estado de streaming de thinking blocks, incluindo:
