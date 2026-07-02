@@ -42,7 +42,7 @@ export async function canUseRtk(command: string, cwd: string): Promise<boolean> 
 }
 
 /** Runs a shell command, capturing combined output. Never throws. */
-export function runShell(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink): Promise<{ stdout: string; code: number }> {
+export function runShell(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink, abortSignal?: AbortSignal): Promise<{ stdout: string; code: number }> {
     return new Promise((resolve) => {
         const child = spawn("bash", ["-lc", command], { cwd, env: process.env });
         let out = "";
@@ -66,6 +66,17 @@ export function runShell(command: string, cwd: string, timeoutMs: number, progre
             done = true; clearTimeout(timer);
             resolve({ stdout: out.slice(0, 30000), code: typeof code === "number" ? code : 1 });
         });
+
+        // Support cancellation via AbortSignal
+        if (abortSignal) {
+            const abortHandler = () => {
+                if (!done) {
+                    out += `\n[Symposium] command cancelled by user; terminating...\n`;
+                    try { child.kill("SIGTERM"); } catch { /* ignore */ }
+                }
+            };
+            abortSignal.addEventListener("abort", abortHandler, { once: true });
+        }
     });
 }
 
@@ -108,13 +119,27 @@ function shellQuote(value: string): string {
     return `'${String(value).replace(/'/g, `'"'"'`)}'`;
 }
 
-export async function runShellInTerminal(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink, terminalId?: string): Promise<{ stdout: string; code: number; terminal_id: string; reused: boolean }> {
+export async function runShellInTerminal(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink, terminalId?: string, abortSignal?: AbortSignal): Promise<{ stdout: string; code: number; terminal_id: string; reused: boolean }> {
     const existed = !!(terminalId && TERMINALS.has(terminalId));
     const handle = terminalHandleFor(terminalId, cwd);
     const name = handle.name;
     const term = handle.terminal;
     term.show(true);
     progress?.onTerminal?.(name);
+
+    // Handle cancellation via abortSignal
+    let cancelled = false;
+    if (abortSignal) {
+        const abortHandler = () => {
+            cancelled = true;
+            try {
+                // Send Ctrl+C to interrupt the running command
+                term.sendText('\x03', false);
+                progress?.onData?.('\n[Symposium] command cancelled by user; interrupting...\n');
+            } catch { /* ignore */ }
+        };
+        abortSignal.addEventListener('abort', abortHandler, { once: true });
+    }
 
     // Run the command ONCE in the visible terminal. We tee output to a temp file
     // so the model still gets the result, and capture the COMMAND'S OWN exit
@@ -156,6 +181,10 @@ export async function runShellInTerminal(command: string, cwd: string, timeoutMs
             term.sendText("\u0003");
             const data = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : "";
             return { stdout: (data + `\n[Symposium] command timed out after ${timeoutMs}ms`).slice(0, 30000), code: 124, terminal_id: handle.id, reused: existed };
+        }
+        if (cancelled) {
+            const data = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : "";
+            return { stdout: (data + `\n[Symposium] command cancelled by user`).slice(0, 30000), code: 130, terminal_id: handle.id, reused: existed };
         }
         await new Promise((r) => setTimeout(r, 250));
     }

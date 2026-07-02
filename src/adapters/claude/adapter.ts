@@ -93,16 +93,15 @@ export class ClaudeAdapter implements AgentAdapter {
     models(): string[] {
         const cfg = this.getConfig();
         const cached = getCached("claude");
-        // Prefer discovered models; fall back to the known-model list when the
-        // discovery cache is still empty (e.g. CLI auth without API key).
-        const base = cached?.models?.length ? cached.models : CLAUDE_FALLBACK_MODELS;
+        // Only use discovered models; no fallback hardcoded models.
+        const base = cached?.models ?? [];
         const configured = cfg.model;
         return [...new Set([...(configured ? [configured] : []), ...base])];
     }
 
     /**
      * Fetch current Claude models from Anthropic API (requires ANTHROPIC_API_KEY
-     * in adapter env or process env). Falls back to file cache, then the CLAUDE_FALLBACK_MODELS list.
+     * in adapter env or process env). Falls back to file cache only.
      * Updates file cache on success.
      */
     async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
@@ -112,8 +111,8 @@ export class ClaudeAdapter implements AgentAdapter {
 
         const cached = getCached("claude");
         if (!apiKey) {
-            cfg.log?.("[claude] no ANTHROPIC_API_KEY — using fallback/file cache for models");
-            return { models: this.models(), labels: { ...CLAUDE_FALLBACK_LABELS, ...(cached?.labels ?? {}) } };
+            cfg.log?.("[claude] no ANTHROPIC_API_KEY — using file cache for models");
+            return { models: this.models(), labels: cached?.labels ?? {} };
         }
 
         // Skip if cache is fresh and caller didn't force a refresh
@@ -147,7 +146,7 @@ export class ClaudeAdapter implements AgentAdapter {
         } catch (err: unknown) {
             cfg.log?.(`[claude] model refresh failed: ${err instanceof Error ? err.message : String(err)}`);
         }
-        return { models: this.models(), labels: { ...CLAUDE_FALLBACK_LABELS, ...(cached?.labels ?? {}) } };
+        return { models: this.models(), labels: cached?.labels ?? {} };
     }
 
     hasNativeTodo(): boolean { return true; }   // TodoWrite

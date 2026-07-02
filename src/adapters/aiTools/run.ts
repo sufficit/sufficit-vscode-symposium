@@ -110,9 +110,9 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
             const shouldUseRtk = mode === "silent" && await canUseRtk(command, cwd);
             const runCommand = shouldUseRtk ? `rtk ${command}` : command;
             const terminalRun = mode === "terminal"
-                ? await runShellInTerminal(runCommand, cwd, timeout, ctx.progress, terminalId)
+                ? await runShellInTerminal(runCommand, cwd, timeout, ctx.progress, terminalId, ctx.abortSignal)
                 : undefined;
-            const { stdout, code } = terminalRun ?? await runShell(runCommand, cwd, timeout, mode === "inline" ? ctx.progress : undefined);
+            const { stdout, code } = terminalRun ?? await runShell(runCommand, cwd, timeout, mode === "inline" ? ctx.progress : undefined, ctx.abortSignal);
             // When the model flags the result as relevant, push it through the
             // progress sink as a steer-style notification so the chat surfaces it
             // even if the model wouldn't otherwise narrate the outcome.

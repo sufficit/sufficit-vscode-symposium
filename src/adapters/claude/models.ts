@@ -1,22 +1,11 @@
 /**
- * Known Claude model ids used as a fallback when remote discovery is
- * unavailable (e.g. the CLI authenticates without ANTHROPIC_API_KEY, so the
- * /v1/models endpoint can't be queried). Keeps the model picker populated.
+ * Deprecated: No hardcoded models.
+ *
+ * Models should always be discovered via refreshModels() from the Anthropic API.
+ * If refresh fails (e.g., no ANTHROPIC_API_KEY), the picker will show empty state.
+ *
+ * @deprecated Kept for backward compatibility; always returns empty arrays.
  */
-export const CLAUDE_FALLBACK_MODELS: string[] = [
-    "claude-opus-4-1",
-    "claude-opus-4-0",
-    "claude-sonnet-4-5",
-    "claude-sonnet-4-0",
-    "claude-3-7-sonnet-latest",
-    "claude-3-5-haiku-latest",
-];
+export const CLAUDE_FALLBACK_MODELS: string[] = [];
 
-export const CLAUDE_FALLBACK_LABELS: Record<string, string> = {
-    "claude-opus-4-1": "Claude Opus 4.1",
-    "claude-opus-4-0": "Claude Opus 4",
-    "claude-sonnet-4-5": "Claude Sonnet 4.5",
-    "claude-sonnet-4-0": "Claude Sonnet 4",
-    "claude-3-7-sonnet-latest": "Claude Sonnet 3.7",
-    "claude-3-5-haiku-latest": "Claude Haiku 3.5",
-};
+export const CLAUDE_FALLBACK_LABELS: Record<string, string> = {};

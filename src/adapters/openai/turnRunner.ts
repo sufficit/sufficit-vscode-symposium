@@ -384,7 +384,7 @@ export class TurnRunner {
                     };
                     const result = isLmTool(unprefixedName)
                         ? await invokeLmTool(unprefixedName, args)
-                        : await runAiTool(unprefixedName, args, { hub: this.d.hub, cwd: this.d.options.cwd, permission: this.d.options.permission, sessionId: this.d.sessionId, shellExecution: shellMode, progress: progressCbs, parentBackend: this.d.backend, subagents: getSubagentHost() });
+                        : await runAiTool(unprefixedName, args, { hub: this.d.hub, cwd: this.d.options.cwd, permission: this.d.options.permission, sessionId: this.d.sessionId, shellExecution: shellMode, progress: progressCbs, parentBackend: this.d.backend, subagents: getSubagentHost(), abortSignal: this.abort?.signal });
                     this.d.emit({ kind: "tool-end", toolName: unprefixedName, toolId: tc.id, result });
                     messages.push({ role: "tool", tool_call_id: tc.id, name: unprefixedName, content: result });
                     // Ledger (lossless): record the tool call + its result so the full

@@ -25,6 +25,8 @@ export interface ToolContext {
     parentBackend?: string;
     /** Spawns/controls subagents (set when the live runtime is available). */
     subagents?: SubagentHost;
+    /** Signal to cancel running tool execution (shell commands, etc.). */
+    abortSignal?: AbortSignal;
 }
 
 /** Live state of one spawned subagent. */
