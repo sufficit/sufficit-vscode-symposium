@@ -15,7 +15,7 @@ import { attachments, activeFile, activeFileRange, activeFileDismissed, activeFi
 import { allDigits, middleEllipsisPath, relWhen, relTime, bucket, fmtTokens, usageColor } from "./format";
 import { layout, nearBottom, autoScroll, scrollToBottom, updateScrollBtn, refreshEmpty, sideIsRight, lastAutoScroll } from "./scroll";
 import { root, log, input, chips, addContext, modelPicker, reasoningPicker, sendMode, sendBtn, status, sessionsList, chatTitle, sessionFilterBtn, sessionRefreshBtn, sessionSearch, listToggle, sendCaret, sendIcon, sendGroup, stopBtn, switchAgentBtn, tipEl, copySessionBtn, presencePicker, configBtn, sessionsPane, resizer, progress, composerEl, planEl, tasksEl, guardrailsEl, queuedEl, changedFiles, panelBody, panelTabs, attachedPanel, ctxMenu, statusbar, slash, addBrowserPage, bootStepsEl, bootHintEl } from "./dom";
-import { renderMarkdown, inline } from "./markdown";
+import { renderMarkdown, inline, copyText } from "./markdown";
 import { ICONS, svgIcon, fileIcon } from "./icons";
 import { applyStaticI18n } from "./staticI18n";
     window.addEventListener("error", (e) => {
@@ -69,23 +69,7 @@ import { applyStaticI18n } from "./staticI18n";
         const title = (chatTitle.textContent || "").trim();
         const text = [activeSessionId, title].filter(Boolean).join(" ");
         if (!text) { return; }
-        let ok = false;
-        try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text); ok = true;
-            }
-        } catch (_) { ok = false; }
-        if (!ok) {
-            // Fallback for webview contexts where navigator.clipboard is blocked:
-            // a hidden textarea + execCommand("copy") works on a user gesture.
-            try {
-                const ta = document.createElement("textarea");
-                ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
-                document.body.appendChild(ta); ta.select();
-                document.execCommand("copy"); document.body.removeChild(ta);
-            } catch (_) { /* give up silently */ }
-        }
-        showToast(t("chat.copy.toast"));
+        copyText(text, () => showToast(t("chat.copy.toast")));
     }
     copySessionBtn.addEventListener("click", copySession);
     // Clicking the title text also copies (more discoverable than the icon).
