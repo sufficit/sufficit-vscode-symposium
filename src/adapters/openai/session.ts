@@ -10,8 +10,7 @@ import * as ledger from "../../ledger";
 import { ChatMessage, ContentPart, OpenAIAdapterConfig } from "./types";
 import { readStored, writeStored } from "./store";
 import {
-    getDiscoveredContext, getDiscoveredLabels, getDiscoveredModels,
-    modelContextLength, setDiscovered,
+    discoverModels, getDiscoveredContext, getDiscoveredLabels, getDiscoveredModels,
 } from "./models";
 import { getOpenAITokenProvider } from "./token";
 import { Compactor } from "./compactor";
@@ -272,49 +271,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
      */
     private async discoverModels(loginToken?: string | null): Promise<void> {
         if (this.cfg.models.length || !this.cfg.baseUrl) { return; }
-        const url = this.cfg.baseUrl.replace(/\/+$/, "") + "/models";
-        const headers: Record<string, string> = { ...this.cfg.headers };
-        if (this.cfg.clientInfo) {
-            headers["x-client-id"] = this.cfg.clientInfo.id;
-            headers["x-client-version"] = this.cfg.clientInfo.version;
-            headers["x-client-hostname"] = this.cfg.clientInfo.hostname;
-            headers["x-client-os"] = this.cfg.clientInfo.os;
-            headers["user-agent"] = `${this.cfg.clientInfo.id}/${this.cfg.clientInfo.version} (${this.cfg.clientInfo.os}; ${this.cfg.clientInfo.hostname})`;
-        }
-        const hasAuth = Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
-        if (!hasAuth && this.cfg.apiKey) {
-            headers["authorization"] = `Bearer ${this.cfg.apiKey}`;
-        } else if (!hasAuth && loginToken) {
-            headers["authorization"] = `Bearer ${loginToken}`;
-        }
-        const res = await fetch(url, { headers });
-        if (!res.ok) { return; }
-        const json = await res.json() as { data?: unknown[]; models?: unknown[] };
-        const raw = json?.data ?? json?.models ?? [];
-        const list: string[] = [];
-        const labels: Record<string, string> = {};
-        const context: Record<string, number> = {};
-        for (const m of raw) {
-            let id: string;
-            if (typeof m === "string") {
-                id = m;
-            } else if (typeof m === "object" && m !== null) {
-                const obj = m as Record<string, unknown>;
-                id = typeof obj.id === "string" ? obj.id : (typeof obj.name === "string" ? obj.name : "");
-            } else {
-                continue;
-            }
-            if (!id) { continue; }
-            list.push(id);
-            const name = typeof m === "object" ? (typeof (m as Record<string, unknown>).name === "string" ? (m as Record<string, unknown>).name : typeof (m as Record<string, unknown>).title === "string" ? (m as Record<string, unknown>).title : undefined) : undefined;
-            if (typeof name === "string" && name && name !== id) { labels[id] = name; }
-            const ctx = modelContextLength(m);
-            if (ctx) { context[id] = ctx; }
-        }
-        if (list.length) {
-            setDiscovered(this.cfg.baseUrl, list, labels, context);
-            this.cfg.log?.(`[${this.backend}] discovered ${list.length} models from ${url}`);
-        }
+        await discoverModels(this.cfg, this.backend, loginToken);
     }
 
     /** Append one entry to the lossless ledger for the current turn (best-effort). */

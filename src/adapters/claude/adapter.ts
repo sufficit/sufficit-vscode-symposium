@@ -309,6 +309,8 @@ export class ClaudeAdapter implements AgentAdapter {
             }
         };
 
+        let stopTimer: (() => void) | undefined;
+
         const begin = async () => {
             if (!file) {
                 file = await this.findTranscript(info.sessionId);
@@ -321,13 +323,21 @@ export class ClaudeAdapter implements AgentAdapter {
             } catch {
                 offset = 0;
             }
+            // begin() is async: a dispose() racing it may already have run, and
+            // registering the watcher/timer after that would leak them forever.
+            if (closed) {
+                return;
+            }
             try {
                 watcher = fs.watch(file, () => void drain());
             } catch {
                 // fall back to polling if the platform can't watch the file
             }
             const timer = setInterval(() => void drain(), 1500);
-            const stopTimer = () => clearInterval(timer);
+            stopTimer = () => clearInterval(timer);
+            // A second follow of the same session replaces the map entry; stop
+            // the previous poll timer first so it doesn't keep firing.
+            this._followStops.get(info.sessionId)?.();
             this._followStops.set(info.sessionId, stopTimer);
         };
 
@@ -339,8 +349,10 @@ export class ClaudeAdapter implements AgentAdapter {
                 closed = true;
                 clearIdleTimer();
                 watcher?.close();
-                this._followStops.get(info.sessionId)?.();
-                this._followStops.delete(info.sessionId);
+                stopTimer?.();
+                if (this._followStops.get(info.sessionId) === stopTimer) {
+                    this._followStops.delete(info.sessionId);
+                }
             },
         };
     }

@@ -13,17 +13,16 @@ import { TODO_INJECTION } from "../todos";
 import { diffCounts, editDiff, prettyJson } from "../parse";
 import * as ledger from "../../ledger";
 import { buildOpenAIModelList } from "../openaiModels";
-import { getCached, setCached, isFresh } from "../modelCache";
+import { getCached, isFresh } from "../modelCache";
 import { OpenAIAdapterConfig } from "./types";
 import { readStored, storeDir, storePath } from "./store";
 import { contentText } from "./transform";
 import {
-    getDiscoveredLabels, getDiscoveredModels, hasDiscoveredModels,
-    modelContextLength, setDiscovered,
+    discoverModels, getDiscoveredLabels, getDiscoveredModels,
+    hasDiscoveredModels, setDiscovered,
 } from "./models";
 import { friendlyToolDetail, toolPath } from "./toolDetail";
 import { historyFromLedger, ledgerWasCompacted } from "./history";
-import { getOpenAITokenProvider } from "./token";
 import { OpenAISession } from "./session";
 
 export class OpenAIAdapter implements AgentAdapter {
@@ -42,7 +41,7 @@ export class OpenAIAdapter implements AgentAdapter {
         const cfg = this.getConfig();
         if (!cfg.baseUrl) { return { ok: false, error: `set baseUrl for ${this.displayName}` }; }
         // Best-effort model discovery so the picker is populated when opened.
-        await this.discoverModels(cfg).catch(() => undefined);
+        await discoverModels(cfg, this.backend).catch(() => undefined);
         return { ok: true, version: cfg.baseUrl };
     }
 
@@ -185,59 +184,6 @@ export class OpenAIAdapter implements AgentAdapter {
      */
     supportsImages(): boolean { return true; }
 
-    /** GET <baseUrl>/models → cache the offered model ids (OpenAI shape). */
-    private async discoverModels(cfg: OpenAIAdapterConfig): Promise<void> {
-        const url = cfg.baseUrl.replace(/\/+$/, "") + "/models";
-        const headers: Record<string, string> = { ...cfg.headers };
-        if (cfg.clientInfo) {
-            headers["x-client-id"] = cfg.clientInfo.id;
-            headers["x-client-version"] = cfg.clientInfo.version;
-            headers["x-client-hostname"] = cfg.clientInfo.hostname;
-            headers["x-client-os"] = cfg.clientInfo.os;
-            headers["user-agent"] = `${cfg.clientInfo.id}/${cfg.clientInfo.version} (${cfg.clientInfo.os}; ${cfg.clientInfo.hostname})`;
-        }
-        const hasAuth = Object.keys(headers).some((k) => k.toLowerCase() === "authorization");
-        if (!hasAuth && cfg.apiKey) {
-            headers["authorization"] = `Bearer ${cfg.apiKey}`;
-        } else if (!hasAuth) {
-            const provider = getOpenAITokenProvider();
-            if (provider) {
-                const t = await provider().catch(() => null);
-                if (t) { headers["authorization"] = `Bearer ${t}`; }
-            }
-        }
-        const res = await fetch(url, { headers });
-        if (!res.ok) { return; }
-        const json = await res.json() as { data?: unknown[]; models?: unknown[] };
-        const raw = json?.data ?? json?.models ?? [];
-        const list: string[] = [];
-        const labels: Record<string, string> = {};
-        const context: Record<string, number> = {};
-        for (const m of raw) {
-            let id: string;
-            if (typeof m === "string") {
-                id = m;
-            } else if (typeof m === "object" && m !== null) {
-                const obj = m as Record<string, unknown>;
-                id = typeof obj.id === "string" ? obj.id : (typeof obj.name === "string" ? obj.name : "");
-            } else {
-                continue;
-            }
-            if (!id) { continue; }
-            list.push(id);
-            const name = typeof m === "object" ? (typeof (m as Record<string, unknown>).name === "string" ? (m as Record<string, unknown>).name : typeof (m as Record<string, unknown>).title === "string" ? (m as Record<string, unknown>).title : undefined) : undefined;
-            if (typeof name === "string" && name && name !== id) { labels[id] = name; }
-            const ctx = modelContextLength(m);
-            if (ctx) { context[id] = ctx; }
-        }
-        if (list.length) {
-            setDiscovered(cfg.baseUrl, list, labels, context);
-            const cacheKey = `openai:${cfg.baseUrl}`;
-            setCached(cacheKey, { models: list, labels, context, lastUpdate: new Date().toISOString() });
-        }
-        cfg.log?.(`[${this.backend}] discovered ${list.length} models from ${url}`);
-    }
-
     /** Friendly id→name labels for the model picker (from discovery). */
     modelLabels(): Record<string, string> {
         return getDiscoveredLabels(this.getConfig().baseUrl) ?? {};
@@ -274,7 +220,7 @@ export class OpenAIAdapter implements AgentAdapter {
             if (!force && stored && isFresh(stored)) {
                 setDiscovered(cfg.baseUrl, stored.models, stored.labels ?? {}, stored.context);
             } else {
-                await this.discoverModels(cfg).catch(() => undefined);
+                await discoverModels(cfg, this.backend).catch(() => undefined);
             }
         }
         return { models: this.models(), labels: this.modelLabels() };

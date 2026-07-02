@@ -206,7 +206,6 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                             // Already streamed via stream_event deltas — don't repeat.
                             if (!this.streamedText) { this.emit("event", { kind: "text", text: b.text }); }
                         } else if (b.type === "tool_use") {
-                            const b = block as Record<string, unknown>;
                             const counts = diffCounts(String(b.name), b.input);
                             const filePath = toolFilePath(b.input);
                             // Snapshot the file BEFORE the CLI applies the edit, so the

@@ -54,6 +54,9 @@ export class CopilotSession extends EventEmitter implements AgentSession {
     }
 
     send(text: string): void {
+        // Per-turn flag: without the reset, one session.error would suppress
+        // the nonzero-exit fallback error for every later turn.
+        this.reportedError = false;
         const args = ["-p", text, "--output-format", "json"];
         const model = this.options.model || this.config.model;
         if (model) {
