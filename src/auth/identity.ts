@@ -186,7 +186,10 @@ export class SufficitAuth {
                 this.log(`[auth] refresh failed: ${err}`);
             }
         }
-        return t.accessToken;
+        // Expired and no way to refresh: honor the "valid token or null"
+        // contract instead of handing consumers a dead Bearer (opaque 401s).
+        this.log("[auth] access token expired and refresh unavailable/failed");
+        return null;
     }
 
     async getProfile(force = false): Promise<SufficitProfile | undefined> {
