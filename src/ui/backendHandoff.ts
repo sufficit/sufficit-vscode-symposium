@@ -65,7 +65,7 @@ export class BackendHandoff {
         const options: SessionStartOptions = { cwd, model: undefined, permission: undefined, env: {}, parentId, seedHistory };
         // If fromName is provided, include it in the transcript context.
         if (fromName) {
-            const header = `[Conversation continued from ${fromName}]\\n\\n${transcript}`;
+            const header = `[Conversation continued from ${fromName}]\n\n${transcript}`;
             this.d.openDialogue(backend, options, title);
             // Set the text in the textarea for user review, don't auto-send
             this.d.post({ type: "set-input", text: header });
@@ -100,16 +100,17 @@ export class BackendHandoff {
     }
 
     /** Hand a live TERMINAL session off (history read from the CLI transcript). */
-    async switchTerminal(): Promise<void> {
+    async switchTerminal(backend: string): Promise<void> {
         const term = this.d.getTerminalSession();
         if (!term) { return; }
+        if (!this.d.getAdapter(backend)) { return; }
         const fromName = this.displayName(term.backend);
         const history = await term.historyMessages();
         const rows = historyToRows(history);
         const transcript = historyFromRows(rows);
         // No parentId for terminal sessions (no sessionId)
-        this.openDialogueSeeded("claude", term.cwd, transcript, `From ${term.backend} (terminal)`, fromName, undefined, transcript);
-        this.carry(rows, transcript, fromName, "claude");
+        this.openDialogueSeeded(backend, term.cwd, transcript, `From ${term.backend} (terminal)`, fromName, undefined, transcript);
+        this.carry(rows, transcript, fromName, backend);
     }
 
     /**
@@ -149,16 +150,26 @@ export class BackendHandoff {
         const fromName = this.displayName(info.backend);
         const targetAdapter = this.d.getAdapter(targetBackend);
         if (!targetAdapter) { return; }
-        // TODO: read transcript from storage when available
-        const transcript = "";
+        // Read the stored transcript via the source adapter so the handoff
+        // carries the conversation instead of opening an empty composer.
+        const sourceAdapter = this.d.getAdapter(sourceBackend);
+        let rows: Row[] = [];
+        if (sourceAdapter && sourceAdapter.history) {
+            try {
+                rows = historyToRows(await sourceAdapter.history(info));
+            } catch {
+                // unreadable transcript: still hand off, just without context
+            }
+        }
+        const transcript = historyFromRows(rows);
         const parentId = sessionId; // new session links to the stored one
-        this.openDialogueSeeded(targetBackend, this.d.cwdFor(info), transcript, info.title, fromName, parentId, undefined);
-        this.carry([], transcript, fromName, targetBackend);
+        this.openDialogueSeeded(targetBackend, this.d.cwdFor(info), transcript, info.title, fromName, parentId, transcript);
+        this.carry(rows, transcript, fromName, targetBackend);
     }
 
     /** Alias for switchTerminal (used by surfaceMessages). */
-    fromTerminal(): Promise<void> {
-        return this.switchTerminal();
+    fromTerminal(backend: string): Promise<void> {
+        return this.switchTerminal(backend);
     }
 
     /** Alias for switchFromSession (used by surfaceMessages). */
