@@ -320,102 +320,105 @@ export class ChatController {
     }
 
     private async dispatch(msg: PendingMessage): Promise<void> {
-        // Guardrails: load once (cached), then inject on every message below.
-        if (!this.guardrailsLoaded && this.adapter.roleAware?.() === true && this.sessionId && this.hub.configured()) {
-            await this.reloadGuardrails();
-        }
-        // Tasks: refresh on EVERY dispatch to catch newly created tasks.
-        if (this.sessionId && this.hub.configured()) {
-            await this.reloadTasks();
-        }
-        // Resume hook (deterministic, no LLM): on a CONTINUITY message — the agent
-        // was idle or queued, NOT steered — prepend this session's latest
-        // checkpoint so it resumes from its own anchor without having to search.
-        // Looked up by session id; de-duped so the same checkpoint isn't repeated.
-        if (msg.mode !== "steer" && this.adapter.roleAware?.() === true && this.sessionId && this.hub.configured()) {
-            try {
-                const cp = await fetchLatestCheckpoint(this.hub, this.sessionId);
-                if (cp && cp.id !== this.injectedCheckpointId) {
-                    msg.resumeCheckpoint = `[Resume — latest checkpoint for this session]\n${cp.title}\n${cp.summary}`;
-                    this.injectedCheckpointId = cp.id;
-                }
-            } catch { /* best-effort; resume still proceeds without it */ }
-        }
-        // Apply per-message model/reasoning to the live options BEFORE (re)starting
-        // or sending. Stateless backends (OpenAI HTTP) read options.model on each
-        // request, so this lets the user switch model between messages. A running
-        // CLI process keeps its spawn-time model (it's pinned there).
-        if (msg.model && msg.model !== "default" && msg.model !== "auto") {
-            this.options.model = msg.model;
-        }
-        if (msg.reasoning && msg.reasoning !== "default") {
-            this.options.reasoning = msg.reasoning;
-        }
-        if (msg.permission) {
-            this.options.permission = msg.permission;
-        }
-        if (msg.execDisplay) {
-            this.options.execDisplay = msg.execDisplay;
-        }
-        // Presence drives unbounded tool loops for API backends (autonomous mode).
-        this.options.autonomy = msg.autonomy;
-        if (!this.session) {
-            this.session = this.adapter.start(this.options);
-            this.session.on("event", (event: AgentEvent) => this.onEvent(event));
-        }
-        // Images are inlined as vision blocks when the backend supports it
-        // (more reliable than asking the agent to Read them from disk).
-        const isImage = (p: string) => /\.(png|jpe?g|gif|webp)$/i.test(p);
-        const canVision = this.adapter.supportsImages?.() === true;
-        const images = canVision ? msg.attachments.filter(isImage) : [];
-        const fileAtts = canVision ? msg.attachments.filter((p) => !isImage(p)) : msg.attachments;
-        // Role-aware backends (HTTP API) carry one-shot app instructions as
-        // `developer` messages; CLIs get them prepended to the user text.
-        const roleAware = this.adapter.roleAware?.() === true;
-        const outbound = buildOutboundPrompt({
-            text: msg.text,
-            fileAttachments: fileAtts,
-            policyInjected: this.outboundPolicyInjected,
-            todoInjected: this.todoInjected,
-            seedInjected: this.seedInjected,
-            autonomyInjected: this.autonomyInjected,
-            rtkInjected: this.rtkInjected,
-            sessionIdInjected: this.sessionIdInjected,
-            bootstrapInjected: this.bootstrapInjected,
-            checkpointInjected: this.checkpointInjected,
-            sessionId: this.sessionId,
-            rtk: rtkCached(),
-            // Checkpoint discipline only where it's needed: a context-windowing
-            // backend (roleAware/native) that has the Sufficit memory tool.
-            checkpoints: roleAware && ((this.aiToolsInfo()?.available) ?? []).includes("memory_save"),
-            todoInjection: this.adapter.hasNativeTodo?.() === false ? this.adapter.todoInjection?.() : undefined,
-            seedHistory: this.options.seedHistory,
-            bootstrap: this.options.bootstrap,
-            resumeCheckpoint: msg.resumeCheckpoint,
-            guardrails: this.guardrails,
-            pendingTasksSummary: this.pendingTasksSummary(),
-            autonomy: msg.autonomy,
-            asRoles: roleAware,
-        });
-        this.outboundPolicyInjected = outbound.state.policyInjected;
-        this.todoInjected = outbound.state.todoInjected;
-        this.seedInjected = outbound.state.seedInjected;
-        this.bootstrapInjected = !!outbound.state.bootstrapInjected;
-        this.checkpointInjected = !!outbound.state.checkpointInjected;
-        this.autonomyInjected = outbound.state.autonomyInjected;
-        this.rtkInjected = !!outbound.state.rtkInjected;
-        this.sessionIdInjected = !!outbound.state.sessionIdInjected;
-        if (!this.firstTitle && msg.text.trim()) { this.firstTitle = msg.text.trim().slice(0, 60); }
+        // Gate concurrent sends IMMEDIATELY: the awaits below (guardrails, tasks,
+        // checkpoint) yield to the event loop, and a second onSend arriving during
+        // them must see busy === true and queue instead of dispatching in parallel.
         this.busy = true;
-        this.armWatchdog();
         this.onStatusChange?.();
-        this.emit({ type: "user", text: msg.text, attachments: msg.attachments });
         try {
+            // Guardrails: load once (cached), then inject on every message below.
+            if (!this.guardrailsLoaded && this.adapter.roleAware?.() === true && this.sessionId && this.hub.configured()) {
+                await this.reloadGuardrails();
+            }
+            // Tasks: refresh on EVERY dispatch to catch newly created tasks.
+            if (this.sessionId && this.hub.configured()) {
+                await this.reloadTasks();
+            }
+            // Resume hook (deterministic, no LLM): on a CONTINUITY message — the agent
+            // was idle or queued, NOT steered — prepend this session's latest
+            // checkpoint so it resumes from its own anchor without having to search.
+            // Looked up by session id; de-duped so the same checkpoint isn't repeated.
+            if (msg.mode !== "steer" && this.adapter.roleAware?.() === true && this.sessionId && this.hub.configured()) {
+                try {
+                    const cp = await fetchLatestCheckpoint(this.hub, this.sessionId);
+                    if (cp && cp.id !== this.injectedCheckpointId) {
+                        msg.resumeCheckpoint = `[Resume — latest checkpoint for this session]\n${cp.title}\n${cp.summary}`;
+                        this.injectedCheckpointId = cp.id;
+                    }
+                } catch { /* best-effort; resume still proceeds without it */ }
+            }
+            // Apply per-message model/reasoning to the live options BEFORE (re)starting
+            // or sending. Stateless backends (OpenAI HTTP) read options.model on each
+            // request, so this lets the user switch model between messages. A running
+            // CLI process keeps its spawn-time model (it's pinned there).
+            if (msg.model && msg.model !== "default" && msg.model !== "auto") {
+                this.options.model = msg.model;
+            }
+            if (msg.reasoning && msg.reasoning !== "default") {
+                this.options.reasoning = msg.reasoning;
+            }
+            if (msg.permission) {
+                this.options.permission = msg.permission;
+            }
+            if (msg.execDisplay) {
+                this.options.execDisplay = msg.execDisplay;
+            }
+            // Presence drives unbounded tool loops for API backends (autonomous mode).
+            this.options.autonomy = msg.autonomy;
+            if (!this.session) {
+                this.session = this.adapter.start(this.options);
+                this.session.on("event", (event: AgentEvent) => this.onEvent(event));
+            }
+            // Images are inlined as vision blocks when the backend supports it
+            // (more reliable than asking the agent to Read them from disk).
+            const isImage = (p: string) => /\.(png|jpe?g|gif|webp)$/i.test(p);
+            const canVision = this.adapter.supportsImages?.() === true;
+            const images = canVision ? msg.attachments.filter(isImage) : [];
+            const fileAtts = canVision ? msg.attachments.filter((p) => !isImage(p)) : msg.attachments;
+            // Role-aware backends (HTTP API) carry one-shot app instructions as
+            // `developer` messages; CLIs get them prepended to the user text.
+            const roleAware = this.adapter.roleAware?.() === true;
+            const outbound = buildOutboundPrompt({
+                text: msg.text,
+                fileAttachments: fileAtts,
+                policyInjected: this.outboundPolicyInjected,
+                todoInjected: this.todoInjected,
+                seedInjected: this.seedInjected,
+                autonomyInjected: this.autonomyInjected,
+                rtkInjected: this.rtkInjected,
+                sessionIdInjected: this.sessionIdInjected,
+                bootstrapInjected: this.bootstrapInjected,
+                checkpointInjected: this.checkpointInjected,
+                sessionId: this.sessionId,
+                rtk: rtkCached(),
+                // Checkpoint discipline only where it's needed: a context-windowing
+                // backend (roleAware/native) that has the Sufficit memory tool.
+                checkpoints: roleAware && ((this.aiToolsInfo()?.available) ?? []).includes("memory_save"),
+                todoInjection: this.adapter.hasNativeTodo?.() === false ? this.adapter.todoInjection?.() : undefined,
+                seedHistory: this.options.seedHistory,
+                bootstrap: this.options.bootstrap,
+                resumeCheckpoint: msg.resumeCheckpoint,
+                guardrails: this.guardrails,
+                pendingTasksSummary: this.pendingTasksSummary(),
+                autonomy: msg.autonomy,
+                asRoles: roleAware,
+            });
+            this.outboundPolicyInjected = outbound.state.policyInjected;
+            this.todoInjected = outbound.state.todoInjected;
+            this.seedInjected = outbound.state.seedInjected;
+            this.bootstrapInjected = !!outbound.state.bootstrapInjected;
+            this.checkpointInjected = !!outbound.state.checkpointInjected;
+            this.autonomyInjected = outbound.state.autonomyInjected;
+            this.rtkInjected = !!outbound.state.rtkInjected;
+            this.sessionIdInjected = !!outbound.state.sessionIdInjected;
+            if (!this.firstTitle && msg.text.trim()) { this.firstTitle = msg.text.trim().slice(0, 60); }
+            this.armWatchdog();
+            this.emit({ type: "user", text: msg.text, attachments: msg.attachments });
             this.session.send(outbound.text, images, outbound.preamble);
         } catch (error) {
-            // A synchronous adapter failure (for example transcript persistence or
-            // process spawn setup) must never leave the controller permanently
-            // busy. Surface the error and continue draining queued messages.
+            // Any failure before turn-end (adapter start, prompt build, transcript
+            // persistence, process spawn setup) must never leave the controller
+            // permanently busy. Surface the error and continue draining the queue.
             this.busy = false;
             this.clearWatchdog();
             this.onStatusChange?.();
