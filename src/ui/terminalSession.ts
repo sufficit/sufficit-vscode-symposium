@@ -191,7 +191,7 @@ export class TerminalSession {
                 if (!this.disposed) {
                     this.post({ type: "history", messages });
                 }
-            });
+            }).catch(() => { /* transcript read failed; the follow tail still attaches */ });
         }
         this.follow = this.adapter.follow(info, (message) => {
             this.post({ type: "append", message });

@@ -26,7 +26,11 @@ export class ChangedFilesManager {
     private gitWatcher: vscode.FileSystemWatcher | undefined;
     private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
-    constructor(private readonly deps: ChangedFilesDeps, private readonly disposables: vscode.Disposable[]) { }
+    constructor(private readonly deps: ChangedFilesDeps, private readonly disposables: vscode.Disposable[]) {
+        // A pending debounced refresh must not fire after dispose — refreshNow()
+        // would post() against a disposed webview.
+        disposables.push({ dispose: () => { if (this.refreshTimer) { clearTimeout(this.refreshTimer); } } });
+    }
 
     /**
      * Accepts a file's changes. In a git repo, approve = stage (git add) so the

@@ -47,6 +47,15 @@ export class RenderStream {
 
     /** Binds the active webview sink and replays the buffered log to it. */
     bindSink(sink: (message: unknown) => void): void {
+        // Single-sink model: a second surface (e.g. an editor panel) binding takes
+        // over rendering. Tell the previous surface once so it isn't silently dead
+        // — its controller stays live but nothing renders there anymore. Direct to
+        // the old sink only: not buffered, not fanned out.
+        if (this.sink && this.sink !== sink) {
+            try {
+                this.sink({ type: "event", event: { kind: "status-notice", text: "This conversation moved to another panel." } });
+            } catch { /* the old webview may already be disposed */ }
+        }
         this.sink = sink;
         for (const message of this.log) {
             sink(message);

@@ -163,6 +163,10 @@ export class SubagentManager implements SubagentHost {
         rec.status = "gone";
         rec.unsub();
         this.flush(rec);
+        // Drop the rec so the map, its output buffer and the captured controller
+        // don't accumulate forever; a later agent_status/agent_send on this id
+        // gets "no such subagent", same as an unknown id.
+        this.recs.delete(rec.id);
         return true;
     }
 
