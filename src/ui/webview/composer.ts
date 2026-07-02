@@ -284,6 +284,9 @@ let voicePreferences = {
     engine: 'auto',
     // localStt: host can transcribe captured audio locally (whisper.cpp/faster-whisper/vosk).
     localStt: true,
+    // hostCapture: host records the mic natively (ffmpeg) — preferred over
+    // webview getUserMedia, whose permission VS Code keeps dropping.
+    hostCapture: false,
 };
 
 // Get voice preferences from host or use defaults

@@ -58,7 +58,7 @@ ${chatStyles}
             </button>
         </div>
         <div id="logWrap">
-            <div id="log"></div>
+            <div id="log"><div id="logBody"></div></div>
             <div id="emptyState">
                 <div class="esLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
                 <div class="esTitle">Symposium</div>

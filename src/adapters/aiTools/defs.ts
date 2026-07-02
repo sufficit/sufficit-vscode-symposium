@@ -5,6 +5,10 @@
  *
  * This is the bridge that gives the native "Sufficit AI" backend the same
  * memory/search capability the CLI backends get from the MCP server.
+ *
+ * IMPORTANT: Tools are split into two categories:
+ * - UNIVERSAL_TOOLS: Work with ANY backend (have local fallbacks when hub unavailable)
+ * - HUB_TOOLS: Require the sufficit-ai hub to function correctly
  */
 
 // Subagent tool defs live in their own file (keeps defs.ts under the line cap);
@@ -16,7 +20,8 @@ export interface OpenAITool {
     function: { name: string; description: string; parameters: Record<string, unknown> };
 }
 
-export const AI_TOOLS: OpenAITool[] = [
+// Universal tools: work with any backend via local fallbacks
+const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
     {
         type: "function",
         function: {

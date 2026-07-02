@@ -551,7 +551,13 @@ export const configViews = `    function resourceList(kind) {
             item(t("config.vscode.gitlensVscodeModel.name"), t("config.vscode.gitlensVscodeModel.desc"),
                 input("gitlens.ai.vscode.model", vsccfg["gitlens.ai.vscode.model"] || "", t("config.vscode.gitlensVscodeModel.placeholder"))) +
             item(t("config.vscode.gitlensOllamaUrl.name"), t("config.vscode.gitlensOllamaUrl.desc"),
-                input("gitlens.ai.ollama.url", vsccfg["gitlens.ai.ollama.url"] || "", t("config.vscode.gitlensOllamaUrl.placeholder")))
+                '<div class="flex-row" style="align-items:center; gap:8px;">' +
+                input("gitlens.ai.ollama.url", vsccfg["gitlens.ai.ollama.url"] || "", t("config.vscode.gitlensOllamaUrl.placeholder"), "gitlens-ai-ollama-url") +
+                '<button class="secondary" id="fetch-ollama-models" style="white-space:nowrap; min-width: 120px;">' + esc(t("config.btn.fetchModels")) + '</button>' +
+                '</div>' +
+                '<select id="ollama-models-select" style="display:none; width:100%; margin-top:8px; padding:6px; background:var(--vscode-input-background); color:var(--vscode-input-foreground); border:1px solid var(--vscode-input-border); border-radius:2px;">' +
+                '<option value="">Selecione um modelo...</option>' +
+                '</select>')
         );
 
         html += section(t("config.vscode.section.copilot"),

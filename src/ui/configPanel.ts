@@ -745,6 +745,63 @@ export class ConfigPanel {
                 }
                 return;
             }
+            case "fetch-ollama-models": {
+                const ollamaUrl = message.value as string;
+                if (!ollamaUrl) {
+                    void vscode.window.showWarningMessage(this.tr("msg.ollama.noUrl"));
+                    return;
+                }
+                try {
+                    // Remove trailing slash if present
+                    const baseUrl = ollamaUrl.replace(/\/$/, "");
+                    // Try both Ollama v1 API and the classic /api/tags endpoint
+                    let models: any[] = [];
+                    try {
+                        const response = await fetch(`${baseUrl}/api/tags`, {
+                            method: "GET",
+                            headers: { "Accept": "application/json" },
+                        });
+                        if (response.ok) {
+                            const data = await response.json() as any;
+                            models = data.models || [];
+                        }
+                    } catch {
+                        // Try v1 endpoint
+                        try {
+                            const response = await fetch(`${baseUrl}/v1/models`, {
+                                method: "GET",
+                                headers: { "Accept": "application/json" },
+                            });
+                            if (response.ok) {
+                                const data = await response.json() as any;
+                                models = data.data || [];
+                            }
+                        } catch {
+                            void vscode.window.showErrorMessage(this.tr("msg.ollama.fetchFailed"));
+                            return;
+                        }
+                    }
+                    
+                    if (models.length === 0) {
+                        void vscode.window.showInformationMessage(this.tr("msg.ollama.noModels"));
+                        return;
+                    }
+                    
+                    // Post models back to the webview
+                    this.panel.webview.postMessage({ 
+                        type: "ollama-models-list", 
+                        models: models.map((m: any) => ({
+                            id: m.model || m.id,
+                            name: m.name || m.model || m.id,
+                            digest: m.digest || m.digest || "",
+                        }))
+                    });
+                    void vscode.window.showInformationMessage(this.tr("msg.ollama.fetched", { count: models.length }));
+                } catch (e) {
+                    void vscode.window.showErrorMessage(this.tr("msg.ollama.fetchError", { error: String((e && (e as Error).message) || e) }));
+                }
+                return;
+            }
         }
     }
 

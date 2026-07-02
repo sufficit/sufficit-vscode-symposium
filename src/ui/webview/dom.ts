@@ -1,6 +1,10 @@
 // Typed webview element references (resolved at load; script runs at end of <body>).
 export const root = document.getElementById("root") as HTMLElement;
-export const log = document.getElementById("log") as HTMLElement;
+// Scroll container (#log, column-reverse: pinned to the newest message) and the
+// message body (#logBody) all content is appended to. `log` keeps pointing at
+// the body so every existing append/query call site stays unchanged.
+export const logScroller = document.getElementById("log") as HTMLElement;
+export const log = document.getElementById("logBody") as HTMLElement;
 export const input = document.getElementById("input") as HTMLTextAreaElement;
 export const chips = document.getElementById("chips") as HTMLElement;
 export const addContext = document.getElementById("addContext") as HTMLButtonElement;

@@ -221,6 +221,15 @@ export function renderConfigScript(dict: Record<string, string>): string {
                     vscode.postMessage({ type: "set-vscode-config", key, value });
                 };
             });
+            // Fetch Ollama models button handler
+            const fetchModelsBtn = document.getElementById("fetch-ollama-models");
+            if (fetchModelsBtn) {
+                fetchModelsBtn.onclick = () => {
+                    const urlInput = document.getElementById("gitlens-ai-ollama-url") as HTMLInputElement;
+                    const ollamaUrl = urlInput?.value || "";
+                    vscode.postMessage({ type: "fetch-ollama-models", value: ollamaUrl });
+                };
+            }
             return;
         }
         if (active === "backends") {
@@ -380,6 +389,33 @@ export function renderConfigScript(dict: Record<string, string>): string {
                 else if (ratio >= 0) { bar.textContent = Math.round(ratio * 100) + "%"; }
                 else { bar.textContent = t("config.voice.downloading"); }
             }
+            return;
+        }
+        if (e.data?.type === "ollama-models-list") {
+            const select = document.getElementById("ollama-models-select") as HTMLSelectElement;
+            if (!select) return;
+            
+            select.innerHTML = '<option value="">Selecione um modelo...</option>';
+            e.data.models?.forEach((m: { id: string; name: string; digest: string }) => {
+                const option = document.createElement("option");
+                option.value = m.id;
+                option.textContent = m.name + " (" + (m.digest ? m.digest.substring(0, 12) : "") + ")";
+                select.appendChild(option);
+            });
+            select.style.display = "block";
+            
+            // Handler para quando um modelo é selecionado
+            select.onchange = () => {
+                const selected = select.value;
+                if (selected) {
+                    // Preencher o campo de modelo selecionado
+                    const modelInput = document.querySelector("input[data-key=\"gitlens.ai.ollama.model\"]") as HTMLInputElement;
+                    if (modelInput) {
+                        modelInput.value = selected;
+                        modelInput.dispatchEvent(new Event("change"));
+                    }
+                }
+            };
             return;
         }
     });

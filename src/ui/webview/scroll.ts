@@ -1,6 +1,6 @@
 // Layout + scroll helpers for the chat log and sessions pane. Side effects
 // (ResizeObserver, scroll/listToggle listeners, initial layout) run on import.
-import { root, log, listToggle } from "./dom";
+import { root, log, logScroller, listToggle } from "./dom";
 import { sideMode } from "./state";
 
 // The sessions pane sits on the OUTER edge: docked right → sessions right;
@@ -27,65 +27,62 @@ new ResizeObserver(layout).observe(document.body);
 layout();
 listToggle.addEventListener("click", () => root.classList.toggle("listOpen"));
 
-// Auto-scroll only when already near the bottom, so reading scrollback isn't
-// yanked away mid-stream.
-export function nearBottom(): boolean { return log.scrollHeight - log.scrollTop - log.clientHeight < 80; }
-// Timestamp of the last PROGRAMMATIC scroll, so the ctx-menu auto-close can tell
-// it apart from a user scroll. Read by the document scroll handler in index.
-export let lastAutoScroll = 0;
-export function autoScroll(stick: boolean): void { if (stick) { lastAutoScroll = Date.now(); log.scrollTop = log.scrollHeight; } }
-// Force-scroll to the very bottom, now and on the next frame (history/images can
-// change height a frame later).
-export function scrollToBottom(): void {
-    lastAutoScroll = Date.now();
-    log.scrollTop = log.scrollHeight;
-    requestAnimationFrame(() => { lastAutoScroll = Date.now(); log.scrollTop = log.scrollHeight; updateScrollBtn(); });
-}
-// Floating "scroll to bottom" button: visible only when scrolled up.
-let scrollBtn: any = null;
-export function updateScrollBtn(): void {
-    if (!scrollBtn) { return; }
-    scrollBtn.classList.toggle("show", !nearBottom() && log.childElementCount > 0);
-}
-log.addEventListener("scroll", updateScrollBtn);
-scrollBtn = document.getElementById("scrollBottom");
-if (scrollBtn) { scrollBtn.addEventListener("click", scrollToBottom); }
-// Show the empty-state placeholder when the log has no messages yet.
-export function refreshEmpty(): void { root.classList.toggle("empty", log.childElementCount === 0); }
+// The scroller (#log) is flex column-reverse: the browser anchors the viewport
+// to the NEWEST message natively. scrollTop is 0 at the bottom and grows
+// NEGATIVE while scrolling up, so restored history extends the scrollbar
+// upward without ever moving the view off the last message — no re-snap
+// hacks needed when fonts/images/history change the height after first paint.
+export function nearBottom(): boolean { return Math.abs(logScroller.scrollTop) < 80; }
 
-let stickyUserMessage: HTMLElement | null = null;
+// Timestamp of the last PROGRAMMATIC scroll (not user-initiated).
+let lastAutoScroll = 0;
 
-export function armStickyUserMessage(el: HTMLElement): void {
-    // Clear previous sticky
-    if (stickyUserMessage && stickyUserMessage !== el) {
-        stickyUserMessage.classList.remove("stickyUser");
+// ResizeObserver preserves scroll position when content streams in while
+// scrolled up (Chromium does not scroll-anchor reversed flows).
+let lastScrollTop = 0;
+new ResizeObserver(() => {
+    if (!nearBottom()) {
+        logScroller.scrollTop = lastScrollTop;
     }
-    stickyUserMessage = el;
-    // Don't apply sticky immediately - only on scroll
+}).observe(log);
+
+// Save scroll position before content changes
+function saveScrollPosition(): void {
+    lastScrollTop = logScroller.scrollTop;
 }
 
-export function clearStickyUserMessage(): void {
-    stickyUserMessage?.classList.remove("stickyUser");
-    stickyUserMessage = null;
-}
-
-// Check sticky state on scroll: apply when user message scrolled out of view upward
-// Only activate when user manually scrolls up (not at bottom)
-function updateStickyState(): void {
-    if (!stickyUserMessage) { return; }
-
-    // Don't apply sticky if we're at or near bottom (auto-scroll / not manually scrolled up)
-    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 100;
-    if (atBottom) {
-        stickyUserMessage.classList.remove("stickyUser");
-        return;
+// Auto-scroll the chat log to the bottom, but only if it's near the bottom
+// already (so we don't yank away the user while they're reading scrollback).
+export function snapToBottom(): void {
+    if (nearBottom()) {
+        lastAutoScroll = Date.now();
+        logScroller.scrollTop = 0; // 0 is the bottom in column-reverse
     }
-
-    // Use the in-flow offsetTop (stable; position:sticky keeps the element in flow)
-    // instead of getBoundingClientRect — whose top snaps to logRect.top the instant
-    // we pin, flipping the predicate every scroll event and making the header blink.
-    const shouldStick = log.scrollTop >= stickyUserMessage.offsetTop;
-    stickyUserMessage.classList.toggle("stickyUser", shouldStick);
 }
 
-log.addEventListener("scroll", updateStickyState, { passive: true });
+// Called by the stream renderer to auto-scroll the log while new content
+// streams in.
+export function autoScroll(): void {
+    if (nearBottom()) {
+        lastAutoScroll = Date.now();
+        logScroller.scrollTop = 0; // 0 is the bottom in column-reverse
+    }
+}
+
+// Expose save/restore scroll position for content changes
+export { saveScrollPosition };
+
+// Click the list toggle button to show/hide the sessions pane.
+export function toggleSessionsPane(): void {
+    listToggle.click();
+}
+
+// Return whether the sessions pane is currently visible.
+export function isSessionsPaneVisible(): boolean {
+    return root.classList.contains("listOpen");
+}
+
+// Show/hide the sessions pane programmatically.
+export function setSessionsPaneVisible(visible: boolean): void {
+    root.classList.toggle("listOpen", visible);
+}

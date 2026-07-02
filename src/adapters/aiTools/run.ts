@@ -8,6 +8,7 @@ import { saveGuardrail, clearSessionGuardrails } from "../../sync/guardrails";
 import { workspaceKey, resourceContentPath, ensureScaffold, readWorkspaceBootstrap } from "../../config/root";
 import { ToolContext, getLiveTranscriptReader } from "./types";
 import { canUseRtk, normalizeTerminalId, resolvePath, runShell, runShellInTerminal } from "./shell";
+import { LocalMemory } from "./localMemory";
 
 /** Strips HTML to readable text (drops script/style, tags → spaces). */
 function htmlToText(html: string): string {
@@ -226,16 +227,49 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
         }
         switch (name) {
             case "memory_search": {
-                const recs = await hub.searchMemory({
-                    query: String(args.query ?? ""),
-                    type: args.type ? String(args.type) : undefined,
-                    limit: typeof args.limit === "number" ? args.limit : undefined,
-                });
-                return JSON.stringify(recs);
+                try {
+                    const recs = await hub.searchMemory({
+                        query: String(args.query ?? ""),
+                        type: args.type ? String(args.type) : undefined,
+                        limit: typeof args.limit === "number" ? args.limit : undefined,
+                    });
+                    return JSON.stringify(recs);
+                } catch (e: unknown) {
+                    // Fallback to local memory if hub fails (e.g., 401 on other backends)
+                    console.warn(`[Symposium] Hub searchMemory failed, using local memory: ${e instanceof Error ? e.message : String(e)}`);
+                    const local = new LocalMemory();
+                    const recs = await local.searchMemory({
+                        query: String(args.query ?? ""),
+                        type: args.type ? String(args.type) : undefined,
+                        limit: typeof args.limit === "number" ? args.limit : undefined,
+                    });
+                    // ALERT MODEL that this is LOCAL memory, NOT shared cross-agent memories
+                    const result = {
+                        _notice: "SHARED MEMORY UNAVAILABLE: Using local fallback. Results are from local session storage only, not from shared cross-agent knowledge.",
+                        _memory_source: "local_fallback",
+                        records: recs,
+                    };
+                    return JSON.stringify(result);
+                }
             }
             case "memory_get_observations": {
-                const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
-                return JSON.stringify(await hub.getByIds(ids));
+                try {
+                    const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
+                    return JSON.stringify(await hub.getByIds(ids));
+                } catch (e: unknown) {
+                    // Fallback to local memory if hub fails
+                    console.warn(`[Symposium] Hub getByIds failed, using local memory: ${e instanceof Error ? e.message : String(e)}`);
+                    const local = new LocalMemory();
+                    const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
+                    const observations = await local.getByIds(ids);
+                    // ALERT MODEL that this is LOCAL memory, NOT shared cross-agent memories
+                    const result = {
+                        _notice: "SHARED MEMORY UNAVAILABLE: Using local fallback. Observations are from local session storage only, not from shared cross-agent knowledge.",
+                        _memory_source: "local_fallback",
+                        observations,
+                    };
+                    return JSON.stringify(result);
+                }
             }
             case "memory_save": {
                 // Bind task observations to the current Symposium chat session so
@@ -248,14 +282,34 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                         tags = tags ? `${tags},${tag}` : tag;
                     }
                 }
-                const id = await hub.save({
-                    type,
-                    title: String(args.title ?? ""),
-                    summary: String(args.summary ?? ""),
-                    payload: args.payload ? String(args.payload) : undefined,
-                    tags: tags || undefined,
-                });
-                return JSON.stringify({ id });
+                try {
+                    const id = await hub.save({
+                        type,
+                        title: String(args.title ?? ""),
+                        summary: String(args.summary ?? ""),
+                        payload: args.payload ? String(args.payload) : undefined,
+                        tags: tags || undefined,
+                    });
+                    return JSON.stringify({ id });
+                } catch (e: unknown) {
+                    // Fallback to local memory if hub fails
+                    console.warn(`[Symposium] Hub save failed, using local memory: ${e instanceof Error ? e.message : String(e)}`);
+                    const local = new LocalMemory();
+                    const id = await local.save({
+                        type,
+                        title: String(args.title ?? ""),
+                        summary: String(args.summary ?? ""),
+                        payload: args.payload ? String(args.payload) : undefined,
+                        tags: tags || undefined,
+                    });
+                    // ALERT MODEL that this was saved to LOCAL memory, NOT shared cross-agent knowledge
+                    const result = {
+                        id,
+                        _notice: "SHARED MEMORY UNAVAILABLE: Saved to local fallback storage only. This observation is NOT available in shared cross-agent knowledge.",
+                        _memory_source: "local_fallback",
+                    };
+                    return JSON.stringify(result);
+                }
             }
             case "TaskCreate":
             case "add_task": {
@@ -320,17 +374,71 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                 const text = String(args.text ?? "").trim();
                 if (!text) { return JSON.stringify({ error: "text is required" }); }
                 if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
-                if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured — guardrails unavailable" }); }
-                const id = await saveGuardrail(hub, ctx.sessionId, text);
-                // Silence success — empty string saves tokens; only the panel refresh matters.
-                return id ? "" : JSON.stringify({ error: "save failed" });
+                try {
+                    if (!hub.configured()) { throw new Error("memory hub not configured"); }
+                    const id = await saveGuardrail(hub, ctx.sessionId, text);
+                    // Silence success — empty string saves tokens; only the panel refresh matters.
+                    return id ? "" : JSON.stringify({ error: "save failed" });
+                } catch (e: unknown) {
+                    // Fallback to local memory if hub fails
+                    console.warn(`[Symposium] Hub saveGuardrail failed, using local memory: ${e instanceof Error ? e.message : String(e)}`);
+                    const local = new LocalMemory();
+                    const id = await local.save({
+                        type: "guardrail",
+                        title: `Guardrail for session ${ctx.sessionId}`,
+                        summary: text,
+                        tags: `symposium-session:${ctx.sessionId},guardrail`,
+                    });
+                    // ALERT MODEL that this was saved to LOCAL memory, NOT shared cross-agent knowledge
+                    const result = {
+                        id: id.id,
+                        _notice: "SHARED MEMORY UNAVAILABLE: Guardrail saved to local fallback storage only. It will persist in this session but is NOT available in shared cross-agent knowledge.",
+                        _memory_source: "local_fallback",
+                    };
+                    return JSON.stringify(result);
+                }
             }
             case "clear_guardrails": {
                 if (!ctx.sessionId) { return JSON.stringify({ error: "no current session" }); }
-                if (!hub.configured()) { return JSON.stringify({ error: "memory hub not configured — guardrails unavailable" }); }
-                const removed = await clearSessionGuardrails(hub, ctx.sessionId);
-                // Silence success — empty string saves tokens.
-                return removed >= 0 ? "" : JSON.stringify({ error: "clear failed" });
+                try {
+                    if (!hub.configured()) { throw new Error("memory hub not configured"); }
+                    const removed = await clearSessionGuardrails(hub, ctx.sessionId);
+                    // Silence success — empty string saves tokens.
+                    return removed >= 0 ? "" : JSON.stringify({ error: "clear failed" });
+                } catch (e: unknown) {
+                    // Fallback to local memory if hub fails
+                    console.warn(`[Symposium] Hub clearSessionGuardrails failed, using local memory: ${e instanceof Error ? e.message : String(e)}`);
+                    const local = new LocalMemory();
+                    const allObs = await local.searchMemory({
+                        query: "",
+                        type: "guardrail",
+                        limit: 100,
+                    });
+                    // Filter guardrails for this session
+                    const sessionGuardrails = allObs.filter((obs) =>
+                        obs.tags?.includes(`symposium-session:${ctx.sessionId}`)
+                    );
+                    // Soft-delete each guardrail
+                    for (const obs of sessionGuardrails) {
+                        if (obs.id) {
+                            await local.save({
+                                type: obs.type,
+                                title: obs.title,
+                                summary: obs.summary,
+                                tags: obs.tags,
+                                expiresAtUtc: new Date(Date.now() - 86400000).toISOString(), // 24 hours ago = soft-delete
+                                id: obs.id,
+                            });
+                        }
+                    }
+                    // ALERT MODEL that this cleared from LOCAL memory, NOT shared cross-agent knowledge
+                    const result = {
+                        removed: sessionGuardrails.length,
+                        _notice: `SHARED MEMORY UNAVAILABLE: Cleared ${sessionGuardrails.length} guardrail(s) from local fallback storage only. Shared cross-agent knowledge was not affected.`,
+                        _memory_source: "local_fallback",
+                    };
+                    return JSON.stringify(result);
+                }
             }
             case "web_search": {
                 const r = await hub.webSearch(String(args.query ?? ""), typeof args.limit === "number" ? args.limit : 8);
