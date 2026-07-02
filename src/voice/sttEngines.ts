@@ -14,29 +14,44 @@ export interface RunResult {
     stderr: string;
 }
 
-/** Runs a command, capturing stdout/stderr. Never rejects on non-zero exit. */
-function run(cmd: string, args: string[], cwd?: string): Promise<RunResult> {
+/**
+ * Runs a command, capturing stdout/stderr. Never rejects on non-zero exit.
+ * A hung process is killed after `timeoutMs` (SIGTERM, then SIGKILL after a
+ * grace period) and resolves with code -1 and a note in stderr.
+ */
+function run(cmd: string, args: string[], timeoutMs = 120_000): Promise<RunResult> {
     return new Promise((resolve) => {
         let stdout = "";
         let stderr = "";
         let child;
         try {
-            child = spawn(cmd, args, { cwd });
+            child = spawn(cmd, args);
         } catch (e) {
             resolve({ code: -1, stdout: "", stderr: String((e as Error).message) });
             return;
         }
+        let killTimer: NodeJS.Timeout | undefined;
+        const timer = setTimeout(() => {
+            stderr += `\n[${cmd} timed out after ${timeoutMs} ms; killed]`;
+            child.kill("SIGTERM");
+            killTimer = setTimeout(() => child.kill("SIGKILL"), 5000);
+        }, timeoutMs);
+        const done = (r: RunResult) => {
+            clearTimeout(timer);
+            if (killTimer) { clearTimeout(killTimer); }
+            resolve(r);
+        };
         child.stdout.on("data", (d) => { stdout += d.toString(); });
         child.stderr.on("data", (d) => { stderr += d.toString(); });
-        child.on("error", (e) => resolve({ code: -1, stdout, stderr: stderr + String(e.message) }));
-        child.on("close", (code) => resolve({ code: code ?? -1, stdout, stderr }));
+        child.on("error", (e) => done({ code: -1, stdout, stderr: stderr + String(e.message) }));
+        child.on("close", (code) => done({ code: code ?? -1, stdout, stderr }));
     });
 }
 
 /** True when the command is runnable (resolves a version/help without ENOENT). */
 export async function commandAvailable(cmd: string): Promise<boolean> {
     if (!cmd || !cmd.trim()) { return false; }
-    const r = await run(cmd, ["--help"]);
+    const r = await run(cmd, ["--help"], 10_000);
     // ENOENT surfaces as code -1 with an error message; anything else means it ran.
     return r.code !== -1;
 }
@@ -118,16 +133,18 @@ export async function transcribeFasterWhisper(wavPath: string, o: FasterWhisperO
         "--vad_filter", o.vad ? "True" : "False",
     ];
     if (o.language && o.language !== "auto") { args.push("--language", o.language); }
-    const r = await run(o.binary || "whisper-ctranslate2", args);
-    if (r.code !== 0) {
-        throw new Error(`whisper-ctranslate2 failed (code ${r.code}). ${r.stderr.split("\n").slice(-3).join(" ").trim()}`);
+    try {
+        const r = await run(o.binary || "whisper-ctranslate2", args);
+        if (r.code !== 0) {
+            throw new Error(`whisper-ctranslate2 failed (code ${r.code}). ${r.stderr.split("\n").slice(-3).join(" ").trim()}`);
+        }
+        // Output file is named after the input stem.
+        const stem = path.basename(wavPath).replace(/\.[^.]+$/, "");
+        const txt = path.join(outDir, stem + ".txt");
+        return fs.existsSync(txt) ? fs.readFileSync(txt, "utf8").trim() : r.stdout.trim();
+    } finally {
+        try { fs.rmSync(outDir, { recursive: true, force: true }); } catch { /* ignore */ }
     }
-    // Output file is named after the input stem.
-    const stem = path.basename(wavPath).replace(/\.[^.]+$/, "");
-    const txt = path.join(outDir, stem + ".txt");
-    const text = fs.existsSync(txt) ? fs.readFileSync(txt, "utf8").trim() : r.stdout.trim();
-    try { fs.rmSync(outDir, { recursive: true, force: true }); } catch { /* ignore */ }
-    return text;
 }
 
 export interface VoskOptions {

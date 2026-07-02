@@ -50,37 +50,54 @@ export interface DownloadProgress {
     ratio: number;
 }
 
+/** Milliseconds of socket inactivity before a download is aborted. */
+const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
+
 /** Streams a URL to a file, following redirects, reporting progress. */
 function httpDownload(url: string, dest: string, onProgress: (p: DownloadProgress) => void): Promise<void> {
     return new Promise((resolve, reject) => {
+        let out: fs.WriteStream | undefined;
+        /** Rejects, closing the write stream and removing the partial file. */
+        const fail = (e: Error) => {
+            if (out) {
+                out.destroy();
+                out = undefined;
+                try { fs.unlinkSync(dest); } catch { /* ignore */ }
+            }
+            reject(e);
+        };
         const get = (target: string, redirectsLeft: number) => {
             const req = https.get(target, { headers: { "User-Agent": "symposium-vscode" } }, (res) => {
                 const status = res.statusCode ?? 0;
                 if (status >= 300 && status < 400 && res.headers.location) {
                     res.resume();
-                    if (redirectsLeft <= 0) { reject(new Error("Too many redirects")); return; }
+                    if (redirectsLeft <= 0) { fail(new Error("Too many redirects")); return; }
                     const next = new URL(res.headers.location, target).toString();
                     get(next, redirectsLeft - 1);
                     return;
                 }
                 if (status !== 200) {
                     res.resume();
-                    reject(new Error(`HTTP ${status} for ${target}`));
+                    fail(new Error(`HTTP ${status} for ${target}`));
                     return;
                 }
                 const total = Number(res.headers["content-length"] || 0);
                 let received = 0;
-                const out = fs.createWriteStream(dest);
+                const file = fs.createWriteStream(dest);
+                out = file;
                 res.on("data", (chunk: Buffer) => {
                     received += chunk.length;
                     onProgress({ received, total, ratio: total > 0 ? received / total : -1 });
                 });
-                res.pipe(out);
-                out.on("finish", () => out.close(() => resolve()));
-                out.on("error", (e) => reject(e));
-                res.on("error", (e) => reject(e));
+                res.pipe(file);
+                file.on("finish", () => file.close(() => resolve()));
+                file.on("error", (e) => fail(e));
+                res.on("error", (e) => fail(e));
             });
-            req.on("error", (e) => reject(e));
+            req.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
+                req.destroy(new Error(`Download stalled (no data for ${DOWNLOAD_IDLE_TIMEOUT_MS / 1000}s): ${target}`));
+            });
+            req.on("error", (e) => fail(e));
         };
         get(url, 5);
     });
