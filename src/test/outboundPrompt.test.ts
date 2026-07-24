@@ -4,6 +4,7 @@ import {
     AUTONOMY_PREAMBLE,
     buildOutboundPrompt,
     CANCELED_RETRY_PREAMBLE,
+    EXECUTION_CONTINUITY_PREAMBLE,
     handoffReferenceNote,
     SHELL_EXECUTION_PREAMBLE,
     planTrackingPreamble,
@@ -19,9 +20,11 @@ test("buildOutboundPrompt keeps native shell guidance on every turn", () => {
         autonomyInjected: false,
     });
     assert.ok(first.text.includes(SHELL_EXECUTION_PREAMBLE));
+    assert.ok(first.text.includes(EXECUTION_CONTINUITY_PREAMBLE));
 
     const second = buildOutboundPrompt({ text: "Continue", fileAttachments: [], ...first.state });
     assert.ok(second.text.includes(SHELL_EXECUTION_PREAMBLE));
+    assert.ok(second.text.includes(EXECUTION_CONTINUITY_PREAMBLE));
 });
 
 test("buildOutboundPrompt injects canceled policy once", () => {

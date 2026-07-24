@@ -88,6 +88,16 @@ export const SHELL_EXECUTION_PREAMBLE =
     "It does not require an active VS Code terminal, a terminal id, or a Chat invocation context. " +
     "Do not ask the user to select or activate a terminal to work around an invocation-context error; use `shell` instead.";
 
+/**
+ * Repeated every turn so a resumed session cannot end merely by promising its
+ * next action after a tool failure. This is deliberately separate from the
+ * one-shot role prompt: old sessions have already received that prompt.
+ */
+export const EXECUTION_CONTINUITY_PREAMBLE =
+    "[Execution continuity] While an active request still needs work, do not end your turn with a future-action promise such as \"I will check/fix/run\" or \"vou verificar/corrigir/executar\". " +
+    "Use the available tool to take that next safe action in this same turn. After a failed tool call, inspect its result and try the next safe alternative; only stop when the work is complete, you have a concrete blocker, or you genuinely need the user's decision. " +
+    "For process restarts, never run `pkill -f` against a pattern embedded in the same shell command: it can kill that shell. Inspect explicit PIDs first, then stop only the intended PID before starting the replacement process.";
+
 export const CANCELED_RETRY_PREAMBLE =
     "[Operational rule] If any tool, command or step returns a status/error containing \"canceled\" or \"cancelled\", do not immediately retry. " +
     "First inspect the tool's own message/output and classify whether it was a manual user cancellation, a timeout, a deterministic error, or a transient issue. " +
@@ -203,6 +213,10 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
     // This must be per-message (rather than part of the one-shot role prompt):
     // a running session may have started before the terminal-tool migration.
     prefixes.push(SHELL_EXECUTION_PREAMBLE);
+    // Same reasoning as the shell rule above: an already-open session must
+    // receive the follow-through instruction even if its role prompt was sent
+    // before this safeguard existed.
+    prefixes.push(EXECUTION_CONTINUITY_PREAMBLE);
     if (!state.policyInjected) {
         prefixes.push(AGENT_ROLE_PREAMBLE);
         prefixes.push(CANCELED_RETRY_PREAMBLE);
