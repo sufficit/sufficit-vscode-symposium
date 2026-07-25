@@ -109,6 +109,7 @@ export class ChatSurface {
         this.messages = new SurfaceMessages({
             webview: this.webview,
             deps: this.deps,
+            chatOnly: this.chatOnly,
             post: (m) => this.post(m),
             markReady: () => this.markReady(),
             refreshSessions: () => this.refreshSessions(),

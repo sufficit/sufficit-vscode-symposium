@@ -15,7 +15,7 @@ import { openUsagePopover, renderStatusbar, setLastUsage, setLastTurn, setQuotaL
 import { setComposerBlocked, setLoading, setStatus, updateSendTitle } from "./status";
 import { hideCtx, openChoiceMenu, showToast } from "./menus";
 import { modelLabels, modelValue, modelList, modelDefault, setModelDefault, setModelLabel, setModelLabels, setModelList, setModelValue, setPinnedModels, buildModelMenuOpts } from "./models";
-import { armStickyUserMessage, layout, refreshEmpty, scrollToBottom, nearBottom, autoScroll } from "./scroll";
+import { armStickyUserMessage, layout, refreshEmpty, scrollToBottom, settleAtBottom, nearBottom, autoScroll } from "./scroll";
 import { svgIcon } from "./icons";
 import { renderAgentPicker, hideAgentPicker } from "./agentPicker";
 import { log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge } from "./dom";
@@ -91,16 +91,11 @@ window.addEventListener("message", ({ data }) => {
             break;
         }
         case "history-end": {
-            // Position the viewport at the useful tail before revealing it.
-            // A second snap on the next frame covers markdown/font layout that
-            // settles between DOM insertion and paint.
+            // Keep snapping until the rendered tail is stable. WSL/Electron can
+            // finish markdown/font layout several frames after history replay.
             const cycle = historyCycle;
             scrollToBottom();
-            requestAnimationFrame(() => {
-                if (cycle !== historyCycle) { return; }
-                scrollToBottom();
-                setLoading(false);
-            });
+            settleAtBottom(() => cycle === historyCycle, () => setLoading(false));
             break;
         }
         case "queue": {

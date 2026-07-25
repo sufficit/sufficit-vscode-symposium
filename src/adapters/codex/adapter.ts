@@ -16,6 +16,7 @@ import {
     SessionStartOptions,
     SlashCommand,
 } from "../types";
+import { readJsonlTail } from "../jsonlPrefix";
 import { getCached, setCached, ModelCacheEntry } from "../modelCache";
 import { CodexSession } from "./session";
 import { CodexAdapterConfig } from "./codexMcpConfig";
@@ -141,12 +142,9 @@ export class CodexAdapter implements AgentAdapter {
         if (!file) {
             return [];
         }
-        let content: string;
-        try {
-            content = await fs.promises.readFile(file, "utf8");
-        } catch {
-            return [];
-        }
+        // Codex app-server exposes `thread/resume.initialTurnsPage`; for the
+        // file-backed adapter, mirror that bounded recent-page behavior.
+        const content = await readJsonlTail(file, 4 * 1024 * 1024);
         const messages: HistoryMessage[] = [];
         let activeModel = info.model;
         for (const line of content.split("\n")) {

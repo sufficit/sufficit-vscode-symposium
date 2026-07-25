@@ -197,11 +197,18 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // a live controller can't re-inject them mid-delete.
     const deleting = new Set<string>();
 
-    const rawSessions = async (): Promise<SessionInfo[]> => {
-        const all = await Promise.all(adapters.map((adapter) =>
-            adapter.listSessions().catch(() => [] as SessionInfo[])));
-        return all.flat()
-            .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+    let sessionsScan: Promise<SessionInfo[]> | undefined;
+    const rawSessions = (): Promise<SessionInfo[]> => {
+        // A single extension-scoped scan is shared by the sidebar and all editor
+        // tabs. Previously each surface independently read the complete Claude
+        // and Codex corpus; opening one tab could double several GB of I/O.
+        if (sessionsScan) { return sessionsScan; }
+        sessionsScan = Promise.all(adapters.map((adapter) =>
+            adapter.listSessions().catch(() => [] as SessionInfo[])))
+            .then((all) => all.flat()
+                .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0)))
+            .finally(() => { sessionsScan = undefined; });
+        return sessionsScan;
     };
 
     const surfaceDeps = buildChatSurfaceDeps({ context, runtime, store, adapterByBackend, auth, deleting, rawSessions });

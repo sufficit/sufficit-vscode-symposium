@@ -20,6 +20,7 @@ import {
 import { getCached, setCached, ModelCacheEntry } from "../modelCache";
 import { ClaudeAdapterConfig, ClaudeSession } from "./session";
 import { claudeOAuthToken } from "./credentials";
+import { readJsonlTail } from "../jsonlPrefix";
 import { parseTranscriptLine, readSessionMeta } from "./transcript";
 import { followClaudeSession } from "./claudeFollow";
 import { claudeUsage } from "./usage";
@@ -285,12 +286,10 @@ export class ClaudeAdapter implements AgentAdapter {
         if (!file) {
             return [];
         }
-        let content: string;
-        try {
-            content = await fs.promises.readFile(file, "utf8");
-        } catch {
-            return [];
-        }
+        // Restore the recent transcript page from the physical tail. Reading a
+        // 100+ MB JSONL file before opening its tab freezes the WSL extension
+        // host; Claude Code likewise resumes by id instead of replaying it all.
+        const content = await readJsonlTail(file, 4 * 1024 * 1024);
         const messages: HistoryMessage[] = [];
         const taskTracker = new ClaudeTaskTracker();
         for (const line of content.split("\n")) {
