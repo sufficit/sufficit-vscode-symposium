@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as os from "os";
 import { FollowHandle, SessionInfo } from "../adapters/types";
 import { WebviewToHost } from "./protocol";
 import { ChatController } from "./chatController";
@@ -300,7 +301,10 @@ export class SurfaceMessages {
                 }
                 case "open-file": {
                     if (typeof message.path === "string" && message.path.trim()) {
-                        const raw = message.path.trim();
+                        // `~` isn't a real root — path.isAbsolute("~/x") is false,
+                        // so an unexpanded tilde would fall into the cwd-relative
+                        // branch below and resolve to a bogus <cwd>/~/x path.
+                        const raw = message.path.trim().replace(/^~(?=$|[/\\])/, os.homedir());
                         // Paths clicked from free-form message text (e.g. a
                         // file-path mention in an agent reply) are workspace-
                         // relative; tool/attachment-sourced paths are already
