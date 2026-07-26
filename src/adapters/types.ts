@@ -347,8 +347,8 @@ export interface AgentAdapter {
     readonly displayName?: string;
     /** Quick availability probe (CLI on PATH, version readable). */
     available(): Promise<{ ok: boolean; version?: string; error?: string }>;
-    /** Enumerate stored sessions for the tree view. */
-    listSessions(): Promise<SessionInfo[]>;
+    listSessions(): Promise<SessionInfo[]>; // stored sessions for the tree view
+    listSessionsIncremental?(cached: readonly SessionInfo[]): Promise<SessionInfo[]>;
     /** Start a new live session (or resume one). */
     start(options: SessionStartOptions): AgentSession;
     /**

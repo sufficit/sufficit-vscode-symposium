@@ -20,7 +20,8 @@ import { readJsonlTail } from "../jsonlPrefix";
 import { getCached, setCached, ModelCacheEntry } from "../modelCache";
 import { CodexSession } from "./session";
 import { CodexAdapterConfig } from "./codexMcpConfig";
-import { inferCodexLineage, looksInjected, readCodexMeta } from "./transcript";
+import { looksInjected } from "./transcript";
+import { listCodexSessions } from "./sessionDiscovery";
 import { parseCodexModelCatalog } from "./models";
 import { codexUsage } from "./usage";
 
@@ -65,129 +66,42 @@ export class CodexAdapter implements AgentAdapter {
         });
     }
 
-    /** Walks ~/.codex/sessions/YYYY/MM/DD for rollout-*.jsonl files. */
     async listSessions(): Promise<SessionInfo[]> {
-        const root = path.join(os.homedir(), ".codex", "sessions");
-        const files: string[] = [];
-        const walk = async (dir: string, depth: number): Promise<void> => {
-            let entries: fs.Dirent[];
-            try {
-                entries = await fs.promises.readdir(dir, { withFileTypes: true });
-            } catch {
-                return;
-            }
-            for (const entry of entries) {
-                const full = path.join(dir, entry.name);
-                if (entry.isDirectory() && depth < 3) {
-                    await walk(full, depth + 1);
-                } else if (entry.isFile() && entry.name.startsWith("rollout-") && entry.name.endsWith(".jsonl")) {
-                    files.push(full);
-                }
-            }
-        };
-        await walk(root, 0);
+        return listCodexSessions([]);
+    }
 
-        const records: { info: SessionInfo; seedHistory?: string }[] = [];
-        for (const file of files) {
-            try {
-                const meta = await readCodexMeta(file);
-                if (!meta.id) {
-                    continue;
-                }
-                const stat = await fs.promises.stat(file);
-                records.push({ info: {
-                    backend: "codex",
-                    sessionId: meta.id,
-                    title: meta.title ?? path.basename(file),
-                    model: meta.model,
-                    lineageId: meta.lineageId,
-                    parentId: meta.parentId,
-                    continuationBlockedReason: meta.continuationBlockedReason,
-                    cwd: meta.cwd,
-                    updatedAt: stat.mtime,
-                    transcriptPath: file,
-                }, seedHistory: meta.seedHistory });
-            } catch {
-                // skip unreadable rollout files
-            }
-        }
-        const sessions = records.map((record) => record.info);
-        sessions.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
-        const lineageCandidates = [...sessions]
-            .sort((a, b) => (a.updatedAt?.getTime() ?? 0) - (b.updatedAt?.getTime() ?? 0));
-        const historyCache = new Map<string, string>();
-        for (const record of records.filter((item) => !item.info.lineageId && item.seedHistory)) {
-            const candidates = lineageCandidates
-                .filter((candidate) => candidate.sessionId !== record.info.sessionId
-                    && candidate.cwd === record.info.cwd)
-                .map(async (candidate) => {
-                    let historyText = historyCache.get(candidate.sessionId);
-                    if (historyText === undefined) {
-                        const history = await this.history(candidate);
-                        historyText = history
-                            .filter((message) => message.role === "user" || message.role === "assistant")
-                            .map((message) => `${message.role}: ${message.text}`)
-                            .join("\n\n");
-                        historyCache.set(candidate.sessionId, historyText);
-                    }
-                    return { sessionId: candidate.sessionId, lineageId: candidate.lineageId, historyText };
-                });
-            record.info.lineageId = inferCodexLineage(record.seedHistory!, await Promise.all(candidates));
-        }
-        return sessions.slice(0, 50);
+    async listSessionsIncremental(cached: readonly SessionInfo[]): Promise<SessionInfo[]> {
+        return listCodexSessions(cached);
     }
 
     async history(info: SessionInfo): Promise<HistoryMessage[]> {
         const file = info.transcriptPath;
-        if (!file) {
-            return [];
-        }
-        // Codex app-server exposes `thread/resume.initialTurnsPage`; for the
-        // file-backed adapter, mirror that bounded recent-page behavior.
+        if (!file) { return []; }
         const content = await readJsonlTail(file, 4 * 1024 * 1024);
         const messages: HistoryMessage[] = [];
         let activeModel = info.model;
         for (const line of content.split("\n")) {
-            if (!line.trim()) {
-                continue;
-            }
+            if (!line.trim()) { continue; }
             interface CodexEntry {
                 type: string;
-                payload?: {
-                    type: string;
-                    role?: string;
-                    model?: string;
-                    content?: Array<{
-                        type: string;
-                        text?: string;
-                    }>;
-                };
+                payload?: { type: string; role?: string; model?: string; content?: Array<{ type: string; text?: string }> };
             }
             let entry: CodexEntry;
-            try {
-                entry = JSON.parse(line);
-            } catch {
-                continue;
-            }
+            try { entry = JSON.parse(line); } catch { continue; }
             if (entry.type === "turn_context" && typeof entry.payload?.model === "string") {
                 activeModel = entry.payload.model;
                 continue;
             }
-            if (entry.type !== "response_item" || entry.payload?.type !== "message") {
-                continue;
-            }
+            if (entry.type !== "response_item" || entry.payload?.type !== "message") { continue; }
             const role = entry.payload.role;
-            if (role !== "user" && role !== "assistant") {
-                continue; // skip developer/system scaffolding
-            }
+            if (role !== "user" && role !== "assistant") { continue; }
             const text = (entry.payload.content ?? [])
-                .filter((c: { type: string }) => c.type === "input_text" || c.type === "output_text" || c.type === "text")
-                .map((c: { text?: string }) => c.text)
+                .filter((content) => content.type === "input_text" || content.type === "output_text" || content.type === "text")
+                .map((content) => content.text)
                 .join("")
                 .trim();
-            // Skip the large injected scaffolding messages (instructions, skills, etc.).
             if (text && !looksInjected(text)) {
-                messages.push({ role: role === "user" ? "user" : "assistant", text, model: role === "assistant" ? activeModel : undefined });
+                messages.push({ role, text, model: role === "assistant" ? activeModel : undefined });
             }
         }
         return messages;

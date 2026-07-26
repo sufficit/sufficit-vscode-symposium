@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed for implementation by Hugo.
+Implemented incrementally in draft PR #41.
+
+The first performance layer bounds transcript reads and removes duplicate UI-path scans. The approved persistent repository architecture is documented in [`persistent-session-repository.md`](./persistent-session-repository.md): SQLite via `node:sqlite` as the primary backend, JSON and memory fallbacks, and provider-specific indexing adapters. The current JSON index is an incremental bridge and must be replaced before the PR is completed/merged.
 
 ## Summary
 

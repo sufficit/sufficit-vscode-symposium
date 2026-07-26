@@ -5,6 +5,7 @@ import { CopilotAdapter } from "./adapters/copilot";
 import { OpenAIAdapter, setOpenAITokenProvider } from "./adapters/openai";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
+import { SessionIndex } from "./sessions/index";
 import { LiveSessions } from "./sessions/runtime";
 import { SubagentManager } from "./sessions/subagents";
 import { setSubagentHost, setLiveTranscriptReader } from "./adapters/aiTools";
@@ -47,6 +48,12 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     ];
     const adapterByBackend = new Map<string, AgentAdapter>(
         adapters.map((adapter) => [adapter.backend, adapter]));
+    const sessionIndex = new SessionIndex({
+        storageDir: context.globalStorageUri.fsPath,
+        adapters,
+        log: symposiumLog,
+    });
+    context.subscriptions.push(sessionIndex);
 
     // Live backend registry: when the user adds/imports/removes a custom backend
     // (symposium.adapters), rebuild the custom adapters IN PLACE so they're usable
@@ -197,18 +204,28 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // a live controller can't re-inject them mid-delete.
     const deleting = new Set<string>();
 
-    let sessionsScan: Promise<SessionInfo[]> | undefined;
+    let indexPrimed = sessionIndex.listCached().length > 0;
+    let lastReconcileAt = 0;
+    const RECONCILE_INTERVAL_MS = 5_000;
     const rawSessions = (): Promise<SessionInfo[]> => {
-        // A single extension-scoped scan is shared by the sidebar and all editor
-        // tabs. Previously each surface independently read the complete Claude
-        // and Codex corpus; opening one tab could double several GB of I/O.
-        if (sessionsScan) { return sessionsScan; }
-        sessionsScan = Promise.all(adapters.map((adapter) =>
-            adapter.listSessions().catch(() => [] as SessionInfo[])))
-            .then((all) => all.flat()
-                .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0)))
-            .finally(() => { sessionsScan = undefined; });
-        return sessionsScan;
+        const cached = sessionIndex.listCached();
+        if (indexPrimed) {
+            // Stale-while-revalidate: startup and every surface receive the
+            // persisted snapshot immediately. Throttled provider reconciliation
+            // stays off the UI path and remains single-flight inside SessionIndex.
+            if (Date.now() - lastReconcileAt >= RECONCILE_INTERVAL_MS) {
+                lastReconcileAt = Date.now();
+                void sessionIndex.reconcile();
+            }
+            return Promise.resolve(cached);
+        }
+        // First run has no snapshot to show. Await one shared bootstrap pass;
+        // subsequent reloads are served entirely from globalStorage.
+        lastReconcileAt = Date.now();
+        return sessionIndex.reconcile().then((sessions) => {
+            indexPrimed = true;
+            return sessions;
+        });
     };
 
     const surfaceDeps = buildChatSurfaceDeps({ context, runtime, store, adapterByBackend, auth, deleting, rawSessions });
