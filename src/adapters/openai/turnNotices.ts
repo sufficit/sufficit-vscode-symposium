@@ -5,9 +5,14 @@ export const REPEAT_TOOL_CALL_LIMIT = 6;
 
 /**
  * Records one tool-call batch and tells the caller whether the same batch has
- * now been requested too many times in succession. Call this before adding
- * the assistant tool call to durable history: a stopped call has no tool
- * result, and persisting it would leave an invalid OpenAI tool-call pair.
+ * now been requested too many times in a bounded recent window. Looking beyond
+ * consecutive calls also catches loops that alternate between two equivalent
+ * reads (A/B/A/B), while the bounded window still permits a tool to be reused
+ * occasionally during a long task.
+ *
+ * Call this before adding the assistant tool call to durable history: a
+ * stopped call has no tool result, and persisting it would leave an invalid
+ * OpenAI tool-call pair.
  */
 export function repeatedToolCallWithoutProgress(
     recentCalls: string[],
@@ -15,10 +20,11 @@ export function repeatedToolCallWithoutProgress(
     limit = REPEAT_TOOL_CALL_LIMIT,
 ): boolean {
     recentCalls.push(signature);
-    if (recentCalls.length > limit) {
-        recentCalls.splice(0, recentCalls.length - limit);
+    const windowSize = limit * 2;
+    if (recentCalls.length > windowSize) {
+        recentCalls.splice(0, recentCalls.length - windowSize);
     }
-    return recentCalls.length === limit && recentCalls.every((call) => call === signature);
+    return recentCalls.filter((call) => call === signature).length >= limit;
 }
 
 /**

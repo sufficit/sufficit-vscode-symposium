@@ -97,6 +97,7 @@ export class ChatController {
         return {
             busy: () => this.busy,
             setBusy: (v) => { this.busy = v; },
+            markTurnFailed: () => { this.turnHadError = true; },
             cancel: () => this.session?.cancel(),
             onStatusChange: () => this.onStatusChange?.(),
             emit: (m) => this.emit(m),

@@ -11,6 +11,9 @@
 export interface WatchdogContext {
     busy(): boolean;
     setBusy(value: boolean): void;
+    /** Records the forced stop as a failed turn so a late backend turn-end
+     *  cannot drain a queued user message as though the turn succeeded. */
+    markTurnFailed(): void;
     cancel(): void;
     onStatusChange?(): void;
     emit(message: unknown): void;
@@ -39,9 +42,10 @@ export function clearWatchdog(state: { timer: ReturnType<typeof setTimeout> | un
 export function forceEndStalledTurn(ctx: WatchdogContext, state: { timer: ReturnType<typeof setTimeout> | undefined }, minutes: number): void {
     if (!ctx.busy()) { return; }
     ctx.setBusy(false);
+    ctx.markTurnFailed();
     clearWatchdog(state);
     ctx.cancel();
     ctx.onStatusChange?.();
-    ctx.emit({ type: "event", event: { kind: "error", message: `Turn ended automatically: no activity from the agent for ${minutes} minute${minutes === 1 ? "" : "s"} (likely a stalled tool or dropped connection).` } });
+    ctx.emit({ type: "event", event: { kind: "error", message: `Turn ended automatically: no activity from the agent for ${minutes} minute${minutes === 1 ? "" : "s"} (likely a stalled tool or dropped connection).`, retryable: true } });
     ctx.emit({ type: "event", event: { kind: "turn-end" } });
 }

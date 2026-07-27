@@ -27,3 +27,45 @@ test("RenderStream keeps editor and sidebar sinks synchronized", () => {
     detachEditor();
     assert.equal(stream.hasSink, false);
 });
+
+test("terminal retryable error remains actionable after replaying its turn-end", () => {
+    const stream = new RenderStream();
+    stream.seed([
+        { type: "event", event: { kind: "turn-start" } },
+        {
+            type: "event",
+            event: {
+                kind: "error",
+                message: "Turn ended automatically: no activity from the agent for 5 minutes.",
+                retryable: true,
+            },
+        },
+        { type: "event", event: { kind: "turn-end" } },
+    ]);
+    const replayed: unknown[] = [];
+
+    stream.bindSink((message) => replayed.push(message));
+
+    const error = replayed[1] as { event: { historical?: boolean; retryable?: boolean } };
+    assert.equal(error.event.retryable, true);
+    assert.equal(error.event.historical, undefined);
+});
+
+test("a later conversation turn neutralizes an earlier retry action on replay", () => {
+    const stream = new RenderStream();
+    stream.seed([
+        { type: "event", event: { kind: "error", message: "network failed", retryable: true } },
+        { type: "event", event: { kind: "turn-end" } },
+        { type: "user", text: "continue" },
+        { type: "event", event: { kind: "turn-start" } },
+        { type: "event", event: { kind: "text", text: "done" } },
+        { type: "event", event: { kind: "turn-end" } },
+    ]);
+    const replayed: unknown[] = [];
+
+    stream.bindSink((message) => replayed.push(message));
+
+    const error = replayed[0] as { event: { historical?: boolean; retryable?: boolean } };
+    assert.equal(error.event.retryable, true);
+    assert.equal(error.event.historical, true);
+});

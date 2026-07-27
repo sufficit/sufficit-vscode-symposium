@@ -114,18 +114,24 @@ function dropOrphanTurnStart(messages: unknown[]): unknown[] {
 }
 
 /**
- * Marks every "error" event as historical, except one that is the very last
- * message in the log. Without this, replaying a saved session re-renders a
- * live, clickable Retry button for EVERY past stall/error it ever hit — even
- * ones long since superseded by a successful retry and further conversation.
- * Only a trailing, never-followed-up error is still "current" and worth a
- * live button; the webview reads `historical` to render those without one.
+ * Marks every "error" event as historical, except the current terminal error
+ * (optionally followed by its mandatory turn-end). Without this, replaying a
+ * saved session re-renders a live, clickable Retry button for EVERY past
+ * stall/error it ever hit — even ones long since superseded by a successful
+ * retry and further conversation.
+ * A trailing turn-end does not supersede the error: it only releases the busy
+ * state, so the retry action must survive window reload/reconnection.
  */
 function neutralizeSupersededErrors(messages: unknown[]): unknown[] {
-    const lastIdx = messages.length - 1;
+    let currentErrorIdx = messages.length - 1;
+    while (currentErrorIdx >= 0 && eventKind(messages[currentErrorIdx]) === "turn-end") {
+        currentErrorIdx--;
+    }
+    if (eventKind(messages[currentErrorIdx]) !== "error") { currentErrorIdx = -1; }
+
     let sawSupersededError = false;
     const result = messages.map((m, i) => {
-        if (i === lastIdx || eventKind(m) !== "error") { return m; }
+        if (i === currentErrorIdx || eventKind(m) !== "error") { return m; }
         sawSupersededError = true;
         const envelope = m as { type: string; event: Record<string, unknown> };
         return { ...envelope, event: { ...envelope.event, historical: true } };

@@ -264,6 +264,35 @@ test("repeated tool-call guard stops before an unmatched tool call is persisted"
     assert.deepEqual(recent, Array(REPEAT_TOOL_CALL_LIMIT).fill(signature));
 });
 
+test("repeated tool-call guard catches an interleaved A/B loop", () => {
+    const recent: string[] = [];
+    const first = 'read_file:{"path":"/repo/current.service"}';
+    const second = 'read_file:{"path":"/repo/missing.service"}';
+
+    for (let i = 1; i < REPEAT_TOOL_CALL_LIMIT; i++) {
+        assert.equal(repeatedToolCallWithoutProgress(recent, first), false, `first call ${i} must remain executable`);
+        assert.equal(repeatedToolCallWithoutProgress(recent, second), false, `second call ${i} must remain executable`);
+    }
+
+    assert.equal(repeatedToolCallWithoutProgress(recent, first), true);
+    assert.equal(recent.filter((call) => call === first).length, REPEAT_TOOL_CALL_LIMIT);
+    assert.equal(recent.filter((call) => call === second).length, REPEAT_TOOL_CALL_LIMIT - 1);
+});
+
+test("repeated tool-call guard forgets occurrences outside its recent window", () => {
+    const recent: string[] = [];
+    const repeated = 'read_file:{"path":"/repo/reused.ts"}';
+
+    for (let i = 0; i < REPEAT_TOOL_CALL_LIMIT - 1; i++) {
+        assert.equal(repeatedToolCallWithoutProgress(recent, repeated), false);
+        assert.equal(repeatedToolCallWithoutProgress(recent, `other:${i}:a`), false);
+        assert.equal(repeatedToolCallWithoutProgress(recent, `other:${i}:b`), false);
+    }
+
+    assert.equal(repeatedToolCallWithoutProgress(recent, repeated), false);
+    assert.equal(recent.filter((call) => call === repeated).length, 4);
+});
+
 test("mergeToolDefinitions prefixes collisions without mutating shared tool defs", () => {
     const symTool = {
         type: "function",

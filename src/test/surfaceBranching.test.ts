@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { editResend } from "../ui/surfaceBranching";
+import { editResend, retryLastMessage } from "../ui/surfaceBranching";
 import type { SurfaceDialoguesDeps } from "../ui/surfaceDialogues";
 import type { WebviewToHost } from "../ui/protocol";
 
@@ -10,6 +10,36 @@ function depsFor(controller: () => Record<string, unknown>): SurfaceDialoguesDep
         post: () => undefined,
     } as unknown as SurfaceDialoguesDeps;
 }
+
+test("plain retry resends the interrupted message with its timeout reason", () => {
+    let handled: WebviewToHost | undefined;
+    const posted: unknown[] = [];
+    const controller = {
+        transcriptMessages: () => [
+            { role: "user", text: "run the complete build" },
+        ],
+        handleMessage: (message: WebviewToHost) => { handled = message; },
+    };
+    const deps = {
+        getController: () => controller,
+        post: (message: unknown) => { posted.push(message); },
+    } as unknown as SurfaceDialoguesDeps;
+    const reason = "Turn ended automatically: no activity from the agent for 5 minutes.";
+
+    retryLastMessage(deps, 0, reason);
+
+    assert.equal(handled?.type, "send");
+    assert.equal(handled?.text, "run the complete build");
+    assert.equal(handled?.interruptedBy, reason);
+    assert.deepEqual(posted, [{
+        type: "event",
+        event: {
+            kind: "status-notice",
+            text: `Continuing — told the model why: ${reason}`,
+            anchorIndex: 0,
+        },
+    }]);
+});
 
 test("editResend retries unchanged Claude text in the same session", () => {
     let opened = 0;
