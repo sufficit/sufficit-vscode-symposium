@@ -3,6 +3,7 @@ import { SufficitAuth } from "../auth/identity";
 import { symposiumLog } from "../extension/log";
 import { commitDiff, recentSubjects } from "../git";
 import { resolveVSCodeGateway, GatewayPreset } from "../ui/vscodeGateway";
+import { CommitMessageClientError, requestCommitMessage } from "./commitMessageClient";
 
 /**
  * Native "Generate Commit Message" for the Source Control input box.
@@ -10,8 +11,8 @@ import { resolveVSCodeGateway, GatewayPreset } from "../ui/vscodeGateway";
  * VS Code's built-in ✨ (github.copilot.git.generateCommitMessage) is hardwired
  * to Copilot's `copilot-utility-small` endpoint and hangs when there is no
  * Copilot session — it never reaches Sufficit. This command sits in the SAME
- * scm/inputBox toolbar and talks straight to the Sufficit AI Ollama gateway
- * (`<origin>/vscode/{token}` → POST /api/chat), so it works with just a
+ * scm/inputBox toolbar and talks straight to the Sufficit AI gateway
+ * (`<origin>/vscode/{token}` → POST /v1/chat/completions), so it works with just a
  * Sufficit login, on desktop and code-server alike.
  */
 
@@ -80,13 +81,13 @@ async function run(context: vscode.ExtensionContext, auth: SufficitAuth, arg?: u
                 }
 
                 const recent = await recentSubjects(repo.rootUri.fsPath, 5);
-                const message = await requestMessage(gw.gatewayUrl, model, diff, recent);
-                symposiumLog(`[commit] response length=${message.length}`);
-                if (!message) {
-                    void vscode.window.showErrorMessage("Sufficit: the AI returned no commit message.");
-                    return;
-                }
-                repo.inputBox.value = message;
+                const result = await requestMessage(gw.gatewayUrl, model, diff, recent);
+                symposiumLog(
+                    `[commit] POST /v1/chat/completions model=${model} -> HTTP ${result.status}; `
+                    + `protocol=${result.protocol}; finish=${result.finishReason ?? "(none)"}; `
+                    + `response length=${result.message.length}`,
+                );
+                repo.inputBox.value = result.message;
                 symposiumLog("[commit] message written to SCM input box");
             },
         );
@@ -157,7 +158,7 @@ function pickModel(configured: string, presets: GatewayPreset[]): string {
 
 async function requestMessage(
     gatewayUrl: string, model: string, diff: string, recent: string[],
-): Promise<string> {
+): ReturnType<typeof requestCommitMessage> {
     const clipped = diff.length > DIFF_BUDGET
         ? diff.slice(0, DIFF_BUDGET) + "\n…(diff truncated)…"
         : diff;
@@ -169,37 +170,14 @@ async function requestMessage(
     const user = `${context}Generate a commit message for this staged diff:\n\n${clipped}`;
 
     try {
-        const res = await fetch(`${gatewayUrl.replace(/\/+$/, "")}/api/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Accept": "application/json" },
-            body: JSON.stringify({
-                model,
-                stream: false,
-                messages: [
-                    { role: "system", content: system },
-                    { role: "user", content: user },
-                ],
-                options: { temperature: 0.2 },
-            }),
-        });
-        symposiumLog(`[commit] POST /api/chat model=${model} -> HTTP ${res.status}`);
-        if (!res.ok) {
-            symposiumLog(`[commit] gateway error body: ${(await res.text()).slice(0, 300)}`);
-            return "";
+        return await requestCommitMessage(gatewayUrl, model, system, user);
+    } catch (error) {
+        if (error instanceof CommitMessageClientError) {
+            symposiumLog(
+                `[commit] request failed: ${error.message}; status=${error.status ?? "(none)"}; `
+                + `shape=${error.responseShape ?? "(none)"}`,
+            );
         }
-        const d = await res.json() as { message?: { content?: string } };
-        return cleanup(d.message?.content ?? "");
-    } catch (e) {
-        symposiumLog(`[commit] /api/chat fetch failed: ${e instanceof Error ? e.message : String(e)}`);
-        return "";
+        throw error;
     }
-}
-
-/** Strips wrapping code fences / quotes the model may add. */
-function cleanup(raw: string): string {
-    let s = raw.trim();
-    const fence = s.match(/^```[a-z]*\n([\s\S]*?)\n```$/i);
-    if (fence) { s = fence[1].trim(); }
-    if (s.length > 1 && s.startsWith('"') && s.endsWith('"')) { s = s.slice(1, -1).trim(); }
-    return s;
 }
