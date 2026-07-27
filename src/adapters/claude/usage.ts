@@ -11,6 +11,11 @@ const LIMIT_MESSAGE = /(?:you(?:'|’)ve\s+)?hit your\s+(.+?)\s+limit\s*[·-]\s*
 const USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
 const CACHE_TTL_MS = 60_000;
 
+interface ClaudeUsageFetch {
+    snapshot?: AdapterQuotaSnapshot;
+    message?: string;
+}
+
 function asObject(value: unknown): JsonObject | undefined {
     return typeof value === "object" && value !== null && !Array.isArray(value)
         ? value as JsonObject
@@ -48,6 +53,23 @@ function displayName(value: string): string {
     return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+/**
+ * Claude uses different names for the same account windows in API snapshots
+ * and hard-limit messages. Keep provider-specific aliases out of the generic UI
+ * while preserving every unknown/new provider id unchanged.
+ */
+export function canonicalClaudeWindowId(value: string): string {
+    const key = value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+    const base = key.replace(/_limit$/, "");
+    if (base === "weekly" || base === "week" || base === "seven_day" || base === "7_day") {
+        return "seven_day";
+    }
+    if (base === "session" || base === "five_hour" || base === "5_hour") {
+        return "five_hour";
+    }
+    return value;
+}
+
 function apiWindow(id: string, value: JsonObject, label?: string): UsageQuotaWindow | undefined {
     if (value.enabled === false) { return undefined; }
     const utilization = finiteNumber(value.utilization ?? value.percent);
@@ -78,8 +100,9 @@ export function parseClaudeApiUsage(
     for (const [id, candidate] of Object.entries(root)) {
         const object = asObject(candidate);
         if (!object) { continue; }
-        const window = apiWindow(id, object);
-        if (window) { windows.set(id, window); }
+        const canonicalId = canonicalClaudeWindowId(id);
+        const window = apiWindow(canonicalId, object);
+        if (window) { windows.set(canonicalId, window); }
     }
 
     // Newer Claude responses also expose a dynamic limits array. Retain entries
@@ -94,11 +117,22 @@ export function parseClaudeApiUsage(
             const scopedLabel = typeof model?.display_name === "string" ? model.display_name : undefined;
             const kind = typeof object.kind === "string" ? object.kind
                 : typeof object.group === "string" ? object.group : `limit_${index + 1}`;
-            const id = scopedLabel ? `${kind}:${scopedLabel}` : kind;
-            const label = scopedLabel || (typeof object.group === "string" ? displayName(object.group) : undefined);
+            const canonicalKind = canonicalClaudeWindowId(kind);
+            const id = scopedLabel ? `${kind}:${scopedLabel}` : canonicalKind;
+            const label = scopedLabel || (canonicalKind === kind && typeof object.group === "string"
+                ? displayName(object.group) : undefined);
             const window = apiWindow(id, object, label);
             if (!window) { return; }
-            const duplicate = [...windows.values()].some((existing) =>
+            const sameId = windows.get(id);
+            if (sameId && !scopedLabel) {
+                windows.set(id, {
+                    ...window,
+                    ...sameId,
+                    ...(window.status ? { status: window.status } : {}),
+                });
+                return;
+            }
+            const duplicate = !scopedLabel && [...windows.values()].some((existing) =>
                 existing.usedPercent === window.usedPercent && existing.resetsAt === window.resetsAt,
             );
             if (!duplicate) { windows.set(id, window); }
@@ -164,14 +198,15 @@ export function parseClaudeQuota(event: unknown, backend = "claude"): AdapterQuo
     const reportedAt = typeof root.timestamp === "string" ? Date.parse(root.timestamp) : NaN;
     const updatedAt = Number.isFinite(reportedAt) ? reportedAt : Date.now();
     const limit = match[1].trim();
-    const id = `${limit.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "session"}_limit`;
+    const rawId = `${limit.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "session"}_limit`;
+    const id = canonicalClaudeWindowId(rawId);
     const resetsAt = nextZonedTime(updatedAt, Number(match[2]), Number(match[3] || 0), match[4], match[5]);
     return {
         backend,
         limitName: "Limit reached",
         windows: [{
             id,
-            label: `${limit.charAt(0).toUpperCase()}${limit.slice(1)} limit`,
+            ...(id === rawId ? { label: `${limit.charAt(0).toUpperCase()}${limit.slice(1)} limit` } : {}),
             usedPercent: 100,
             ...(resetsAt != null ? { resetsAt } : {}),
             status: "blocked",
@@ -184,9 +219,13 @@ const transcriptUsage = new JsonlAdapterUsage("claude", "Claude", () => [
     path.join(os.homedir(), ".claude", "projects"),
 ], parseClaudeQuota);
 
-async function fetchClaudeUsage(): Promise<AdapterQuotaSnapshot | undefined> {
+async function fetchClaudeUsage(): Promise<ClaudeUsageFetch> {
     const accessToken = await claudeOAuthToken();
-    if (!accessToken) { return undefined; }
+    if (!accessToken) {
+        return {
+            message: "Live Claude usage is unavailable because Claude Code is signed out. Run `claude auth login`, then refresh.",
+        };
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     try {
@@ -198,13 +237,40 @@ async function fetchClaudeUsage(): Promise<AdapterQuotaSnapshot | undefined> {
             },
             signal: controller.signal,
         });
-        if (!response.ok) { return undefined; }
-        return parseClaudeApiUsage(await response.json(), claudeOAuthMetadata());
-    } catch {
-        return undefined;
+        if (!response.ok) {
+            return {
+                message: response.status === 401
+                    ? "Live Claude usage authentication expired or was revoked. Run `claude auth login`, then refresh."
+                    : `Live Claude usage refresh failed (HTTP ${response.status}). Cached data may be out of date.`,
+            };
+        }
+        const snapshot = parseClaudeApiUsage(await response.json(), claudeOAuthMetadata());
+        return snapshot
+            ? { snapshot }
+            : { message: "Claude returned no recognized usage windows. Cached data may be out of date." };
+    } catch (error) {
+        return {
+            message: (error as { name?: string })?.name === "AbortError"
+                ? "Live Claude usage refresh timed out. Cached data may be out of date."
+                : "Live Claude usage refresh failed. Cached data may be out of date.",
+        };
     } finally {
         clearTimeout(timeout);
     }
+}
+
+/** Preserve the best local snapshot without presenting it as a live refresh. */
+export function staleClaudeUsage(
+    fallback: AdapterQuotaSnapshot,
+    displayName: string,
+    message: string | undefined,
+): AdapterQuotaSnapshot {
+    return {
+        ...fallback,
+        displayName,
+        state: "stale",
+        message: message ?? "Live Claude usage is unavailable. Cached data may be out of date.",
+    };
 }
 
 class ClaudeUsage implements AdapterUsageProvider {
@@ -217,9 +283,13 @@ class ClaudeUsage implements AdapterUsageProvider {
             return this.cached.value;
         }
         const live = await fetchClaudeUsage();
-        const value = live
-            ? { ...live, displayName: this.displayName, state: "ready" as const }
-            : this.cached?.value ?? await transcriptUsage.read(force);
+        let value: AdapterQuotaSnapshot;
+        if (live.snapshot) {
+            value = { ...live.snapshot, displayName: this.displayName, state: "ready" };
+        } else {
+            const fallback = this.cached?.value ?? await transcriptUsage.read(force);
+            value = staleClaudeUsage(fallback, this.displayName, live.message);
+        }
         this.cached = { readAt: Date.now(), value };
         return value;
     }

@@ -116,7 +116,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             resolveToolPath: (p) => this.resolveToolPath(p),
             safePersist: () => this.safePersist(),
             led: (role, content, extra) => this.led(role, content, extra),
-            maybeAutoCompact: () => this.compactor.maybeAutoCompact(),
+            maybeAutoCompact: (observedInputTokens) => this.compactor.maybeAutoCompact(observedInputTokens),
             compactOnTasksComplete: () => this.compactOnTasksComplete(),
             requestApproval: (toolId, toolName, detail, tier) => this.requestApproval(toolId, toolName, detail, tier),
         });

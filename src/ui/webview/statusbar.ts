@@ -52,7 +52,7 @@ function primaryQuota() {
     return { quota: current, window: indexed[0].window };
 }
 
-function meter(percent, label, onOpen, className = "") {
+function meter(percent, label, onOpen, className = "", displayedPercent = percent) {
     const hasValue = Number.isFinite(percent);
     const pct = hasValue ? Math.max(0, Math.min(100, Math.round(percent))) : 0;
     const col = hasValue ? usageColor(pct) : "var(--vscode-descriptionForeground, currentColor)";
@@ -66,7 +66,8 @@ function meter(percent, label, onOpen, className = "") {
         ? "conic-gradient(" + col + " " + pct + "%, var(--vscode-input-background, rgba(128,128,128,0.3)) 0)"
         : "var(--vscode-input-background, rgba(128,128,128,0.3))";
     button.appendChild(ring);
-    button.appendChild(document.createTextNode(hasValue ? pct + "%" : "—"));
+    const shown = Number.isFinite(displayedPercent) ? Math.max(0, Math.round(displayedPercent)) : pct;
+    button.appendChild(document.createTextNode(hasValue ? shown + "%" : "—"));
     button.classList.toggle("quotaEmpty", !hasValue);
     button.addEventListener("click", (event) => { event.stopPropagation(); onOpen(button); });
     button.addEventListener("mouseenter", () => onOpen(button));
@@ -96,14 +97,22 @@ export function renderStatusbar(data) {
     const sp = document.createElement("span"); sp.className = "grow"; statusbar.appendChild(sp);
     const pct = quota?.window.usedPercent;
     const label = quota
-        ? "Adapter usage " + Math.round(pct) + "% used — hover, focus, or click for limits"
+        ? "Adapter usage " + Math.round(pct) + "% used" +
+            (currentQuotaSnapshot().state === "stale" ? " — cached data; live refresh failed" : "") +
+            " — hover, focus, or click for limits"
         : quotaLoading ? "Loading adapter usage limits" : "Adapter usage unavailable — click for details";
     const quotaMeter = meter(pct, label, openQuotaPopover, "quotaMeter");
     quotaMeter.setAttribute("aria-busy", String(quotaLoading));
     statusbar.appendChild(quotaMeter);
     if (hasContext) {
-        const pct = Math.min(100, Math.round((lastUsage.inputTokens || 0) / lastUsage.contextWindow * 100));
-        statusbar.appendChild(meter(pct, "Context window " + pct + "% used — click for details", openUsagePopover));
+        const pct = Math.round((lastUsage.inputTokens || 0) / lastUsage.contextWindow * 100);
+        const exceeded = pct >= 100;
+        const contextLabel = exceeded
+            ? "Context window exceeded: " + pct + "% used — request must be compacted before sending"
+            : "Context window " + pct + "% used — click for details";
+        const contextMeter = meter(Math.min(100, pct), contextLabel, openUsagePopover, "contextMeter", pct);
+        contextMeter.classList.toggle("contextExceeded", exceeded);
+        statusbar.appendChild(contextMeter);
     }
     if (quotaPopoverOpen) { openQuotaPopover(quotaMeter); }
 }
@@ -173,6 +182,12 @@ export function openQuotaPopover(anchor) {
     providerHead.appendChild(name); if (meta.textContent) { providerHead.appendChild(meta); }
     provider.appendChild(providerHead);
 
+    if (quota.state === "stale") {
+        const warning = document.createElement("div"); warning.className = "qWarning";
+        warning.setAttribute("role", "status");
+        warning.textContent = quota.message || "Live refresh failed. These usage values may be out of date.";
+        provider.appendChild(warning);
+    }
     if (!quota.windows.length) {
         const empty = document.createElement("div"); empty.className = "qEmptyState";
         empty.textContent = quotaLoading ? "Reading this adapter's usage…" : (quota.message || "This adapter has not reported usage limits yet.");
@@ -197,7 +212,10 @@ export function openQuotaPopover(anchor) {
     }
     box.appendChild(provider);
     const foot = document.createElement("div"); foot.className = "qFoot";
-    const footText = document.createElement("span"); footText.textContent = quotaLoading ? "Refreshing this adapter…" : "Adapter-owned usage data.";
+    const footText = document.createElement("span");
+    footText.textContent = quotaLoading
+        ? "Refreshing this adapter…"
+        : quota.state === "stale" ? "Cached adapter data." : "Adapter-owned usage data.";
     const refresh = document.createElement("button"); refresh.className = "qRefresh"; refresh.type = "button"; refresh.textContent = quotaLoading ? "Refreshing…" : "Refresh"; refresh.disabled = quotaLoading;
     refresh.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -217,6 +235,7 @@ export function openUsagePopover(anchor) {
     const fresh = Math.max(0, used - cache);
     const free = Math.max(0, win - used);
     const pct = win ? Math.round(used / win * 100) : 0;
+    const freePct = Math.max(0, 100 - pct);
     const cachePct = used ? Math.round(cache / used * 100) : 0;
     const col = usageColor(pct);
     ctxMenu.textContent = "";
@@ -250,15 +269,22 @@ export function openUsagePopover(anchor) {
     // Bar: within the used portion, cache is a translucent sub-segment and
     // fresh tokens the solid one; the remainder is the free track.
     const bar = document.createElement("div"); bar.className = "uBar";
-    const fill = document.createElement("div"); fill.className = "uFill"; fill.style.width = pct + "%";
+    const fill = document.createElement("div"); fill.className = "uFill"; fill.style.width = Math.min(100, pct) + "%";
     const cfrac = used ? (cache / used * 100) : 0;
     fill.style.background = "linear-gradient(90deg, color-mix(in srgb, " + col + " 42%, transparent) 0 " + cfrac + "%, " + col + " " + cfrac + "% 100%)";
     bar.appendChild(fill); box.appendChild(bar);
 
     group("Context");
+    if (pct >= 100) {
+        const warning = document.createElement("div");
+        warning.className = "uWarning";
+        warning.setAttribute("role", "status");
+        warning.textContent = "Over the reported context limit. Symposium will compact before sending or block the request if it still cannot fit.";
+        box.appendChild(warning);
+    }
     if (u.estimated) { box.appendChild(row("Source", "local estimate")); }
     box.appendChild(row("Used", fmtTokens(used), { dot: col, note: pct + "%" }));
-    box.appendChild(row("Free", fmtTokens(free), { dot: "var(--vscode-input-background, rgba(128,128,128,0.3))", note: (100 - pct) + "%" }));
+    box.appendChild(row("Free", fmtTokens(free), { dot: "var(--vscode-input-background, rgba(128,128,128,0.3))", note: freePct + "%" }));
     box.appendChild(row("Window", fmtTokens(win)));
     if (u.providerKey || u.providerType || u.model || u.requestedModel || u.attempts || u.fallbackAttempts) {
         const provider = u.providerKey || u.providerType;
@@ -332,7 +358,12 @@ export function setLastUsage(v) { lastUsage = v; }
 export function setLastQuota(v) {
     if (!v || typeof v.backend !== "string" || !Array.isArray(v.windows)) { return; }
     const previous = quotaByBackend.get(v.backend);
-    const previousWindows = v.state === "unavailable" ? [] : (previous?.windows || []);
+    // A stale/unavailable refresh replaces the old browser snapshot. Merging it
+    // would keep expired provider windows alive and make partial cached data
+    // look current (for example Claude's missing five-hour window).
+    const previousWindows = v.state === "ready" || v.state === "unavailable" || v.state === "stale"
+        ? []
+        : (previous?.windows || []);
     const merged = new Map(previousWindows.map((window) => [window.id, window]));
     for (const window of v.windows) { if (window?.id) { merged.set(window.id, window); } }
     quotaByBackend.set(v.backend, {

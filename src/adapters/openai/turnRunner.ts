@@ -13,7 +13,7 @@ import { snapshots } from "../../snapshots";
 import { friendlyToolDetail, toolPath } from "./toolDetail";
 import { consumeStream } from "./streamConsume";
 import {
-    RequestEstimate, windowMessages, isWindowTruncated, estimateRequest, requestEstimateDiagnostic,
+    RequestEstimate, assessContextWindow, windowMessages, isWindowTruncated, estimateRequest, requestEstimateDiagnostic,
 } from "./requestWindow";
 import { compressMessages, CompressionManager, CompressionPreset } from "../../compression";
 import { stripSourcePrefix } from "./toolMerge";
@@ -56,7 +56,7 @@ export interface TurnRunnerDeps {
     resolveToolPath: (p: unknown) => string | undefined;
     safePersist: () => void;
     led: (role: string, content: unknown, extra?: Record<string, unknown>) => void;
-    maybeAutoCompact: () => Promise<void>;
+    maybeAutoCompact: (observedInputTokens?: number) => Promise<boolean>;
     /** Compacts now if symposium.openai.autoCompactOnTasksComplete is enabled
      *  (a task_complete/TaskUpdate call just reported zero remaining tasks). */
     compactOnTasksComplete: () => Promise<void>;
@@ -187,6 +187,31 @@ export class TurnRunner {
                 const bodyJson = JSON.stringify(body);
                 const estimate = estimateRequest(bodyJson, outMessages.length, toolList.length);
                 this.d.emitRequestEstimate(estimate);
+                const contextAssessment = assessContextWindow(
+                    estimate.inputTokens,
+                    this.d.contextWindow(),
+                    this.d.cfg.autoCompactAt,
+                );
+                if (contextAssessment.shouldCompact && await this.d.maybeAutoCompact(estimate.inputTokens)) {
+                    // The compactor rewrote the live history. Rebuild this same
+                    // hop from that smaller state before recording or sending
+                    // anything; compaction must not consume a tool-hop budget.
+                    hop--;
+                    continue;
+                }
+                if (contextAssessment.exceedsWindow) {
+                    const diagnostic = requestEstimateDiagnostic(estimate, this.d.contextWindow());
+                    const autoState = (this.d.cfg.autoCompactAt ?? 0) > 0
+                        ? "Automatic compaction could not reduce it enough."
+                        : "Automatic compaction is disabled.";
+                    this.d.emit({
+                        kind: "error",
+                        message: `Request not sent: the local input estimate reaches or exceeds this model's context window. ${autoState} Reduce the current message or attachments, lower symposium.openai.maxHistoryMessages, choose a compression preset, or select a model with a larger context window.\n${diagnostic}`,
+                        retryable: false,
+                    });
+                    hitCap = false;
+                    break;
+                }
                 this.d.cfg.log?.(`[${this.d.backend}] POST ${url} api=${this.d.cfg.api} model=${this.d.model()} tools=${toolList.length} hop=${hop}`);
                 ledger.recordRequest(this.d.sessionId, body);
                 const requestStartedAt = Date.now();

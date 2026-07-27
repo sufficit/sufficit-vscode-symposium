@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseNativeTodos, parseTodoFence } from "../adapters/todos";
+import { parseNativeTodos, parseTodoFence, todosSummary } from "../adapters/todos";
 
 test("parseNativeTodos: Claude TodoWrite", () => {
     const out = parseNativeTodos("TodoWrite", {
@@ -36,6 +36,56 @@ test("parseNativeTodos: Codex function_call update_plan arguments JSON", () => {
         { content: "Corrigir parser", status: "in_progress" },
         { content: "Validar", status: "pending" },
     ]);
+});
+
+test("parseNativeTodos: Codex exec JSONL todo_list recovers completed and current states", () => {
+    // Captured from codex-cli 0.144.1 `codex exec --json`: the public event
+    // omits update_plan's status strings and exposes only a completed boolean.
+    const out = parseNativeTodos("todo_list", {
+        id: "item_0",
+        type: "todo_list",
+        items: [
+            { text: "Inspect parser", completed: true },
+            { text: "Report result", completed: false },
+            { text: "Run regression", completed: false },
+        ],
+    });
+
+    assert.deepEqual(out, [
+        { content: "Inspect parser", status: "completed" },
+        { content: "Report result", status: "in_progress" },
+        { content: "Run regression", status: "pending" },
+    ]);
+});
+
+test("parseNativeTodos: completed Codex todo_list leaves no current step", () => {
+    const out = parseNativeTodos("todo_list", {
+        items: [
+            { text: "Inspect parser", completed: true },
+            { text: "Report result", completed: true },
+        ],
+    });
+
+    assert.deepEqual(out, [
+        { content: "Inspect parser", status: "completed" },
+        { content: "Report result", status: "completed" },
+    ]);
+    assert.equal(todosSummary(out!), undefined);
+});
+
+test("Codex todo_list reminder advances past completed work", () => {
+    const out = parseNativeTodos("todo_list", {
+        items: [
+            { text: "Inspect parser", completed: true },
+            { text: "Report result", completed: false },
+            { text: "Run regression", completed: false },
+        ],
+    });
+    const summary = todosSummary(out!);
+
+    assert.match(summary!, /CURRENT: Report result/);
+    assert.match(summary!, /- Run regression/);
+    assert.doesNotMatch(summary!, /Inspect parser/);
 });
 
 test("parseNativeTodos: Codex custom_tool_call exec-sandboxed update_plan (real payload)", () => {

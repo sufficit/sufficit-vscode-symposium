@@ -8,6 +8,15 @@ export interface RequestEstimate {
     toolCount: number;
 }
 
+export interface ContextWindowAssessment {
+    /** Estimated fraction of the advertised context window consumed. */
+    usedRatio: number;
+    /** True when the configured auto-compaction threshold was reached. */
+    shouldCompact: boolean;
+    /** True when dispatching this request would reach or exceed the window. */
+    exceedsWindow: boolean;
+}
+
 /**
  * Sliding-window view of the message array for outbound requests.
  *
@@ -57,6 +66,29 @@ export function estimateRequest(bodyJson: string, messageCount: number, toolCoun
         requestChars: bodyJson.length,
         messageCount,
         toolCount,
+    };
+}
+
+/**
+ * Decides what the preflight context guard must do. Configuration can also be
+ * edited directly in settings.json, so normalize the threshold here instead of
+ * assuming the settings UI already constrained it to 0..1.
+ */
+export function assessContextWindow(
+    inputTokens: number,
+    contextWindow: number,
+    autoCompactAt: number | undefined,
+): ContextWindowAssessment {
+    const used = Number.isFinite(inputTokens) ? Math.max(0, inputTokens) : 0;
+    const win = Number.isFinite(contextWindow) ? Math.max(0, contextWindow) : 0;
+    const configured = Number.isFinite(autoCompactAt)
+        ? Math.max(0, Math.min(1, autoCompactAt ?? 0))
+        : 0;
+    const usedRatio = win > 0 ? used / win : 0;
+    return {
+        usedRatio,
+        shouldCompact: win > 0 && configured > 0 && usedRatio >= configured,
+        exceedsWindow: win > 0 && used >= win,
     };
 }
 

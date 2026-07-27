@@ -13,15 +13,15 @@ const todoDismissals = saved.todoDismissals || {}; // sessionId -> removed todo 
 function todoId(t) {
     return String(t?.content || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
-function dismissedSet() {
-    return new Set(todoDismissals[wsKey] || []);
+function dismissedSet(key = wsKey) {
+    return new Set(todoDismissals[key] || []);
 }
 function persistDismissed(set) {
     todoDismissals[wsKey] = [...set].filter(Boolean);
     saveState({ todoDismissals });
 }
-function visibleTodos(todos) {
-    const removed = dismissedSet();
+function visibleTodos(todos, key = wsKey) {
+    const removed = dismissedSet(key);
     return (todos || []).map((t) => ({ ...t, removed: removed.has(todoId(t)) })).filter((t) => !t.removed);
 }
 export function todoMark(status) {
@@ -73,11 +73,27 @@ export function renderTodos(todos) {
             setTimeout(() => {
                 completing.delete(id);
                 const cur = planBySession[key] || [];
-                if (cur.length && cur.every((x) => x.status === "completed") && completing.size === 0) {
-                    dismissAll(key, cur);
-                } else if (key === wsKey) {
-                    renderPlan();
+                const latest = cur.find((x) => todoId(x) === id);
+                // The agent may have revised the item back to open while the
+                // completion animation was running. Never dismiss that newer
+                // state just because an older timer fired.
+                if (!latest || latest.status !== "completed") {
+                    if (key === wsKey) { renderPlan(); }
+                    return;
                 }
+                if (cur.every((x) => x.status === "completed") && completing.size === 0) {
+                    dismissAll(key, cur);
+                    return;
+                }
+                // A partially completed plan should advance visually as work
+                // progresses: after the short acknowledgement animation, drop
+                // this completed row while keeping current/pending rows.
+                const removed = new Set(todoDismissals[key] || []);
+                removed.add(id);
+                todoDismissals[key] = [...removed].filter(Boolean);
+                saveState({ todoDismissals });
+                planBySession[key] = visibleTodos(cur, key);
+                if (key === wsKey) { renderPlan(); }
             }, 5200);
         }
     }

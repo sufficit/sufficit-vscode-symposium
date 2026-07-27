@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { buildOpenAIModelList } from "../adapters/openaiModels";
 import { sanitizeToolParametersForOpenAI } from "../adapters/openaiSchema";
 import { compressMessages } from "../compression/webhook";
-import { windowMessages } from "../adapters/openai/requestWindow";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { assessContextWindow, windowMessages } from "../adapters/openai/requestWindow";
 import { findToolHistoryIssues, materializeToolSafeHistory } from "../adapters/openai/toolHistory";
 import { ChatMessage } from "../adapters/openai/types";
 import { mergeToolDefinitions } from "../adapters/openai/toolMerge";
@@ -187,6 +189,24 @@ test("windowMessages keeps tool results paired with the assistant call that prod
         ["system", "assistant", "tool:call_keep", "assistant"],
     );
     assert.deepEqual(findToolHistoryIssues(windowed), []);
+});
+
+test("request preflight compacts before an estimated context overflow", () => {
+    const observed = assessContextWindow(339_000, 195_000, 0.8);
+    assert.equal(observed.shouldCompact, true);
+    assert.equal(observed.exceedsWindow, true);
+    assert.ok(observed.usedRatio > 1.73);
+
+    const disabled = assessContextWindow(339_000, 195_000, 0);
+    assert.equal(disabled.shouldCompact, false);
+    assert.equal(disabled.exceedsWindow, true);
+
+    const source = readFileSync(resolve(__dirname, "../../src/adapters/openai/turnRunner.ts"), "utf8");
+    const compactAt = source.indexOf("maybeAutoCompact(estimate.inputTokens)");
+    const dispatchAt = source.indexOf("let res = await post(loginToken)");
+    assert.ok(compactAt >= 0, "preflight estimate must feed the compactor");
+    assert.ok(dispatchAt > compactAt, "compaction guard must run before the HTTP request");
+    assert.match(source, /Request not sent: the local input estimate reaches or exceeds/);
 });
 
 test("materializeToolSafeHistory folds orphan tool results without mutating saved history", () => {

@@ -385,7 +385,10 @@
     #ctxMenu .mi { display: flex; align-items: center; }
     /* ---- themed tooltip (replaces native title=) ---- */
     #tip {
-        position: fixed; z-index: 70; max-width: 320px; padding: 4px 9px;
+        /* Menus live at layer 1000. Tooltips for controls inside those menus
+           must remain above them instead of being clipped visually behind the
+           menu surface. */
+        position: fixed; z-index: 1100; max-width: 320px; padding: 4px 9px;
         border-radius: 5px; font-size: 0.8em; line-height: 1.35; white-space: normal;
         background: var(--vscode-editorHoverWidget-background, var(--vscode-menu-background, #252526));
         color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground, #ccc));
@@ -437,7 +440,11 @@
     }
     @keyframes menuIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     #ctxMenu .mi { padding: 6px 12px; cursor: pointer; font-size: 0.9em; transition: background 100ms ease; }
-    #ctxMenu .mi:hover { background: var(--vscode-menu-selectionBackground, var(--vscode-list-hoverBackground)); color: var(--vscode-menu-selectionForeground, inherit); }
+    #ctxMenu .mi:hover,
+    #ctxMenu .mi.active {
+        background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground)));
+        color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, inherit));
+    }
     #ctxMenu .mi.danger { color: var(--vscode-errorForeground); }
     #ctxMenu .sep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, rgba(128,128,128,0.3)); }
     #ctxMenu .menuSearch {
@@ -480,9 +487,15 @@
     #ctxMenu .mi .midetail { opacity: 0.5; font-size: 0.85em; flex-shrink: 0; }
     #ctxMenu .mi .miacts { display: none; flex-shrink: 0; gap: 1px; }
     #ctxMenu .mi:hover .miacts { display: inline-flex; }
-    #ctxMenu .mi .miact { background: none; border: none; cursor: pointer; padding: 2px 3px; border-radius: 3px; opacity: 0.55; display: inline-flex; color: inherit; }
+    #ctxMenu .mi .miact { background: none; border: none; cursor: pointer; padding: 2px 3px; border-radius: 3px; opacity: 0.62; display: inline-flex; color: inherit; }
     #ctxMenu .mi .miact:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
-    #ctxMenu .mi .miact.on { opacity: 0.9; color: var(--vscode-focusBorder, #7C3AED); }
+    #ctxMenu .mi .miact.on {
+        opacity: 1;
+        color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)));
+        background: color-mix(in srgb, currentColor 20%, transparent);
+        box-shadow: inset 0 0 0 1px currentColor;
+    }
+    #ctxMenu .mi .miact.on:hover { background: color-mix(in srgb, currentColor 30%, transparent); }
     #ctxMenu .mi .miact svg { width: 13px; height: 13px; }
 
     /* ---- chat column ---- */
@@ -1531,6 +1544,7 @@
     .tokenMeter:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
     .tokenMeter:focus-visible { opacity: 1; outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
     .tokenMeter .tmRing { width: 12px; height: 12px; border-radius: 50%; flex: 0 0 auto; -webkit-mask: radial-gradient(circle 3px at center, transparent 98%, #000 100%); mask: radial-gradient(circle 3px at center, transparent 98%, #000 100%); }
+    .contextMeter.contextExceeded { color: var(--vscode-editorError-foreground, #f14c4c); font-weight: 600; opacity: 1; }
     .quotaMeter { opacity: 0.95; }
     .quotaMeter .tmRing { box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent); }
     .quotaMeter.quotaEmpty .tmRing { opacity: 0.55; outline: 1px dashed currentColor; outline-offset: -1px; }
@@ -1544,6 +1558,8 @@
     .usagePop .uBar { height: 7px; border-radius: 4px; background: var(--vscode-input-background, rgba(128,128,128,0.25)); overflow: hidden; margin: 0 0 2px; box-shadow: inset 0 0 0 1px rgba(128,128,128,0.12); }
     .usagePop .uFill { height: 100%; border-radius: 4px; transition: width 220ms ease; }
     .usagePop .uGroup { font-size: 0.69em; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.5; font-weight: 700; margin: 13px 0 5px; }
+    .usagePop .uWarning { margin: 7px 0 4px; padding: 7px 9px; border-left: 2px solid var(--vscode-editorError-foreground, #f14c4c); color: var(--vscode-errorForeground, inherit); background: color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 9%, transparent); font-size: 0.8em; line-height: 1.35; }
+    .quotaPop .qWarning { margin: 8px 0 10px; padding: 7px 9px; border-left: 2px solid var(--vscode-editorWarning-foreground, #cca700); background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 9%, transparent); font-size: 0.8em; line-height: 1.35; }
     .usagePop .uRow { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 0.88em; padding: 3px 0; }
     .usagePop .uRow.uSub { padding: 1.5px 0 1.5px 14px; font-size: 0.83em; opacity: 0.82; }
     .usagePop .uLbl { display: inline-flex; align-items: center; gap: 7px; opacity: 0.82; min-width: 0; }

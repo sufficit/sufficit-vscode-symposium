@@ -17,13 +17,33 @@ function toItem(raw: string | Record<string, unknown>): TodoItem | undefined {
     if (typeof content !== "string" || !content.trim()) { return undefined; }
     const orderRaw = obj.order ?? obj.index ?? obj.number ?? obj.stepNumber ?? obj.step_number;
     const order = Number(orderRaw);
-    return { content: String(content).trim(), status: normStatus(obj.status ?? obj.state), ...(Number.isFinite(order) && order > 0 ? { order } : {}) };
+    // `codex exec --json` deliberately flattens update_plan's three states to
+    // todo_list items shaped as { text, completed }. Preserve completed steps
+    // here; the first remaining open item is promoted to in_progress below.
+    const status = typeof obj.completed === "boolean"
+        ? (obj.completed ? "completed" : "pending")
+        : normStatus(obj.status ?? obj.state);
+    return { content: String(content).trim(), status, ...(Number.isFinite(order) && order > 0 ? { order } : {}) };
 }
 
 function toItems(arr: unknown): TodoItem[] | undefined {
     if (!Array.isArray(arr)) { return undefined; }
     const out = arr.map(toItem).filter((x): x is TodoItem => !!x);
     return out.length ? out : undefined;
+}
+
+/**
+ * Codex's public JSONL todo_list loses the explicit in_progress value, but the
+ * plan contract keeps work ordered: completed prefix, then current, then
+ * pending suffix. Recover the current marker as the first open item so both
+ * the panel and the next-turn reminder advance with the agent.
+ */
+function recoverCodexTodoListCurrent(items: TodoItem[]): TodoItem[] {
+    if (items.some((item) => item.status === "in_progress")) { return items; }
+    const current = items.findIndex((item) => item.status !== "completed");
+    return current < 0
+        ? items
+        : items.map((item, index) => index === current ? { ...item, status: "in_progress" } : item);
 }
 
 function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
@@ -175,7 +195,9 @@ export function parseNativeTodos(toolName: string, input: unknown): TodoItem[] |
     const payload = todoPayload(input);
     const o = (payload ?? {}) as Record<string, unknown>;
     const fromKeys = toItems(o.todos) ?? toItems(o.plan) ?? toItems(o.steps) ?? toItems(o.items);
-    if (fromKeys) { return fromKeys; }
+    if (fromKeys) {
+        return name.includes("todo_list") ? recoverCodexTodoListCurrent(fromKeys) : fromKeys;
+    }
     // A bare array input on a clearly-named todo tool.
     if (isTodoTool) { return toItems(payload); }
     return undefined;

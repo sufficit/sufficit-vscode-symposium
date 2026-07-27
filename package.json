@@ -979,6 +979,7 @@
     "vscode:prepublish": "npm run compile && npm run check:webview"
   },
   "devDependencies": {
+    "@microsoft/agent-host-protocol": "0.6.0",
     "@types/node": "^22.10.2",
     "@types/vscode": "^1.100.0",
     "@typescript-eslint/eslint-plugin": "^8.18.2",

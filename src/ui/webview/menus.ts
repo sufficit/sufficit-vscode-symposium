@@ -14,6 +14,7 @@ export function openChoiceMenu(anchorEl, options, current, onPick, opts) {
     const wantSearch = opts.search || options.length >= 9;
 
     const list = document.createElement("div"); list.className = "menuList";
+    list.setAttribute("role", "listbox");
     const renderRows = (filter) => {
         list.textContent = "";
         const q = (filter || "").toLowerCase();
@@ -25,8 +26,11 @@ export function openChoiceMenu(anchorEl, options, current, onPick, opts) {
                 const gh = document.createElement("div"); gh.className = "menuGroup"; gh.textContent = o.group;
                 list.appendChild(gh);
             }
-            const mi = document.createElement("div"); mi.className = "mi";
-            const tick = document.createElement("span"); tick.className = "tick"; tick.textContent = o.value === current ? "✓" : "";
+            const selected = o.value === current;
+            const mi = document.createElement("div"); mi.className = "mi" + (selected ? " active" : "");
+            mi.setAttribute("role", "option");
+            mi.setAttribute("aria-selected", String(selected));
+            const tick = document.createElement("span"); tick.className = "tick"; tick.textContent = selected ? "✓" : "";
             const lbl = document.createElement("span"); lbl.className = "milbl"; lbl.textContent = o.label;
             mi.appendChild(tick); mi.appendChild(lbl);
             if (o.detail) { const d = document.createElement("span"); d.className = "midetail"; d.textContent = o.detail; mi.appendChild(d); }
@@ -37,6 +41,9 @@ export function openChoiceMenu(anchorEl, options, current, onPick, opts) {
                     const btn = document.createElement("button");
                     btn.className = "miact" + (act.on ? " on" : "");
                     btn.title = act.title; btn.innerHTML = act.icon;
+                    btn.type = "button";
+                    btn.setAttribute("aria-label", act.title);
+                    btn.setAttribute("aria-pressed", String(!!act.on));
                     btn.addEventListener("click", (e) => { e.stopPropagation(); act.onClick(); });
                     acts.appendChild(btn);
                 }

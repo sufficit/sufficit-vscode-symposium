@@ -70,6 +70,56 @@ session state and model selection. Agents converse, but the host conducts.
         Sufficit API  CLIs  local transcripts
 ```
 
+## Agent Host Protocol Direction
+
+Symposium is incrementally adopting Microsoft's
+[Agent Host Protocol (AHP)](https://microsoft.github.io/agent-host-protocol/)
+as its client-facing state and synchronization layer.
+
+Symposium is the **AHP host** in this architecture. The existing
+`AgentAdapter` implementations remain the downstream boundary to Claude Code,
+Codex CLI, GitHub Copilot CLI and OpenAI-compatible services. AHP sits above
+them so the VS Code webview, PWA and future CLI/mobile clients can share one
+host-authoritative view of a live session.
+
+```text
+ VS Code webview       PWA       CLI/mobile
+        \               |             /
+         +---------- AHP clients ----+
+                       |
+              WebSocket / in-process
+                       |
+        +-------- Symposium AHP host --------+
+        | state · serverSeq · replay · auth  |
+        +----------------+--------------------+
+                         |
+                LiveSessions / controllers
+                         |
+             AgentAdapter implementations
+```
+
+Phase 0 is implemented: the repository contains a transport-independent AHP
+channel store with global action sequencing, snapshots, bounded reconnect
+replay, rejected-action reconciliation and subscriber isolation. This
+foundation does **not** yet expose a public AHP WebSocket endpoint; the current
+webview and remote HTTP+SSE Bridge continue to operate unchanged.
+
+The incremental roadmap is:
+
+1. Project normalized `AgentEvent` values into root, session and chat channels
+   in shadow mode.
+2. Add an authenticated `/ahp` WebSocket endpoint while retaining REST+SSE
+   compatibility.
+3. Migrate the PWA to the official AHP TypeScript client and state mirror.
+4. Move the editor/sidebar webview to an in-process AHP transport.
+5. Add optional changeset, terminal, resource, customization/MCP and telemetry
+   channels.
+
+The protocol is still a draft, so the official TypeScript contract is
+exact-pinned to `@microsoft/agent-host-protocol@0.6.0`. See
+[docs/AHP-ADOPTION.md](docs/AHP-ADOPTION.md) for the complete architecture,
+security requirements, version policy and phase acceptance criteria.
+
 ## Installation
 
 Install from the Visual Studio Marketplace:

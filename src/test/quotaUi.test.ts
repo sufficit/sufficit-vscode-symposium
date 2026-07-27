@@ -17,6 +17,23 @@ test("quota badge is available by pointer, keyboard focus, and click", () => {
     assert.match(css, /\.tokenMeter:focus-visible/);
 });
 
+test("context overflow remains numerically visible and never shows negative free space", () => {
+    assert.match(statusbar, /displayedPercent/);
+    assert.match(statusbar, /Context window exceeded:/);
+    assert.match(statusbar, /contextExceeded/);
+    assert.match(statusbar, /const freePct = Math\.max\(0, 100 - pct\)/);
+    assert.match(statusbar, /fill\.style\.width = Math\.min\(100, pct\)/);
+    assert.match(statusbar, /Over the reported context limit/);
+    assert.match(css, /\.contextMeter\.contextExceeded/);
+});
+
+test("stale Claude quota replaces ghost windows and explains the failed refresh", () => {
+    assert.match(statusbar, /quota\.state === "stale"/);
+    assert.match(statusbar, /Cached adapter data/);
+    assert.match(statusbar, /v\.state === "ready" \|\| v\.state === "unavailable" \|\| v\.state === "stale"/);
+    assert.match(css, /\.quotaPop \.qWarning/);
+});
+
 test("quota panel renders semantic dynamic progress bars", () => {
     assert.match(events, /ev\.kind === "quota"/);
     assert.match(statusbar, /setAttribute\("role", "progressbar"\)/);

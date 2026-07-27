@@ -1,6 +1,7 @@
 import { ChatMessage, OpenAIAdapterConfig } from "./types";
 import { contentText, toResponsesInput } from "./transform";
 import { expandStartToToolBoundary } from "./toolHistory";
+import { assessContextWindow } from "./requestWindow";
 import * as ledger from "../../ledger";
 
 /**
@@ -35,13 +36,17 @@ export class Compactor {
      *  between tool hops, so a long tool-calling turn can't balloon past the
      *  window before it ever gets a chance to fold) and after turn-end
      *  (fire-and-forget, so it never delays the turn finishing). */
-    async maybeAutoCompact(): Promise<void> {
-        const at = this.d.cfg.autoCompactAt ?? 0;
-        if (at <= 0 || this.compacting) { return; }
+    async maybeAutoCompact(observedInputTokens?: number): Promise<boolean> {
+        if (this.compacting) { return false; }
         const win = this.d.contextWindow();
-        const lastInputTokens = this.d.getLastInputTokens();
-        if (!win || !lastInputTokens) { return; }
-        if (lastInputTokens / win >= at) { await this.compact("auto"); }
+        const inputTokens = observedInputTokens ?? this.d.getLastInputTokens();
+        const assessment = assessContextWindow(inputTokens, win, this.d.cfg.autoCompactAt);
+        if (!assessment.shouldCompact) { return false; }
+        this.d.emit({
+            kind: "status-notice",
+            text: `Context reached ${Math.round(assessment.usedRatio * 100)}% of the ${win.toLocaleString("en-US")}-token window — compacting before the next request.`,
+        });
+        return this.compact("auto");
     }
 
     /**
@@ -51,8 +56,8 @@ export class Compactor {
      * read_session), and a `kind:"compaction"` marker is committed. Fail-safe:
      * any error leaves the context untouched (windowing still applies).
      */
-    async compact(reason: "manual" | "auto"): Promise<void> {
-        if (this.compacting) { return; }
+    async compact(reason: "manual" | "auto"): Promise<boolean> {
+        if (this.compacting) { return false; }
         this.compacting = true;
         // Rendered as a quiet system annotation (same style as "authorization
         // refreshed" etc.) instead of an assistant text bubble, so a compaction
@@ -64,13 +69,13 @@ export class Compactor {
             const firstUserIdx = messages.findIndex((m) => m.role === "user");
             if (firstUserIdx === -1) {
                 if (reason === "manual") { note("Nothing to compact yet."); }
-                return;
+                return false;
             }
             let prefix = messages.slice(0, firstUserIdx);
             const conv = messages.slice(firstUserIdx);
             if (conv.length <= keepTurns + 2) {
                 if (reason === "manual") { note("Conversation is short — nothing to compact yet."); }
-                return;
+                return false;
             }
             // Idempotent: a prior summary lives in the prefix region (developer/
             // system, before the first user msg). Pull it out and re-fold it into
@@ -84,7 +89,7 @@ export class Compactor {
             const summary = await this.summarizeMessages(middle);
             if (!summary) {
                 if (reason === "manual") { note("Compaction failed (summary unavailable) — keeping full context."); }
-                return;   // fail-safe
+                return false;   // fail-safe
             }
             const role = this.d.cfg.supportsDeveloperRole !== false ? "developer" : "system";
             const synthetic: ChatMessage = {
@@ -102,6 +107,7 @@ export class Compactor {
             void ledger.commitTurn(this.d.sessionId, `compact — folded ${folded} msgs (${reason}, model=${this.d.model()})`);
             this.d.safePersist();
             note(`Compacted ${folded} messages — context shrunk; full history preserved (read_session to recover).`);
+            return true;
         } finally {
             this.compacting = false;
             // A manual /compact is its own "turn" from the controller's view — close

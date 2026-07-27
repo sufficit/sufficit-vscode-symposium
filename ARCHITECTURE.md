@@ -11,6 +11,9 @@ adapters/            AgentAdapter + AgentSession contract, one per backend
   claude/codex/copilot   CLI-backed (spawn, stream-json / JSONL)
   openai                 HTTP-backed (chat completions OR responses), multi-instance
   todos / builtins / skills / scrub / exec   shared adapter helpers
+ahp/
+  channelStore        transport-independent authoritative channel state,
+                      global sequencing, snapshots and reconnect replay
 sessions/
   runtime (LiveSessions)  registry of live ChatControllers (survive view switches)
   store (SessionStore)    per-session metadata in globalState (titles/archived/pinned)
@@ -31,6 +34,15 @@ sync/ hubClient+sync  pull/push against the sufficit-ai memory/vault hub
 git.ts               diff/approve/reject + pendingChanges (two-way git sync)
 snapshots.ts         per-session pre-edit baselines for revert without git
 ```
+
+## AHP direction
+
+Symposium is adopting the
+[Agent Host Protocol](docs/AHP-ADOPTION.md) as its client-facing state and
+synchronization layer. `AgentAdapter` remains the downstream agent boundary;
+AHP sits above `LiveSessions` so the webview, PWA and future external clients
+can share one host-authoritative session. Phase 0 adds the channel store without
+changing the current render path.
 
 ## Key flows
 

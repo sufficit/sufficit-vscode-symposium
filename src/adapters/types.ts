@@ -39,7 +39,7 @@ export type AdapterQuotaSnapshot = {
     limitName?: string;
     windows: UsageQuotaWindow[];
     updatedAt: number;
-    state?: "ready" | "unavailable";
+    state?: "ready" | "stale" | "unavailable";
     message?: string;
 };
 

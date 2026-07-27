@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import { parseAdapterQuota } from "../adapters/quota";
 import { CodexSession } from "../adapters/codex/session";
 import { ClaudeSession } from "../adapters/claude/session";
-import { parseClaudeApiUsage, parseClaudeQuota } from "../adapters/claude/usage";
+import {
+    canonicalClaudeWindowId, parseClaudeApiUsage, parseClaudeQuota, staleClaudeUsage,
+} from "../adapters/claude/usage";
 import type { AgentEvent } from "../adapters/types";
 
 test("normalizes Codex primary and secondary rate-limit windows from emitted JSON", () => {
@@ -86,14 +88,59 @@ test("normalizes Claude Code synthetic session-limit errors with their zoned res
         backend: "claude",
         limitName: "Limit reached",
         windows: [{
-            id: "session_limit",
-            label: "Session limit",
+            id: "five_hour",
             usedPercent: 100,
             resetsAt: Date.parse("2026-07-22T17:30:00.000Z"),
             status: "blocked",
         }],
         updatedAt: Date.parse("2026-07-22T15:00:00.000Z"),
     });
+});
+
+test("canonicalizes Claude account-window aliases without changing unknown ids", () => {
+    assert.equal(canonicalClaudeWindowId("weekly_limit"), "seven_day");
+    assert.equal(canonicalClaudeWindowId("Seven Day"), "seven_day");
+    assert.equal(canonicalClaudeWindowId("session_limit"), "five_hour");
+    assert.equal(canonicalClaudeWindowId("five_hour"), "five_hour");
+    assert.equal(canonicalClaudeWindowId("newly_added_window"), "newly_added_window");
+});
+
+test("maps a Claude weekly hard limit onto the official seven-day window", () => {
+    const quota = parseClaudeQuota({
+        type: "result",
+        is_error: true,
+        result: "You've hit your weekly limit · resets 8:20pm (America/Sao_Paulo)",
+    });
+
+    assert.deepEqual(quota?.windows.map(({ id, label, usedPercent }) => ({ id, label, usedPercent })), [{
+        id: "seven_day",
+        label: undefined,
+        usedPercent: 100,
+    }]);
+});
+
+test("does not duplicate unscoped weekly aliases but retains model-scoped limits", () => {
+    const reset = "2026-07-26T22:59:59Z";
+    const quota = parseClaudeApiUsage({
+        seven_day: { utilization: 100, resets_at: reset },
+        limits: [
+            { kind: "weekly", group: "weekly", percent: 100, resets_at: reset, severity: "blocked" },
+            {
+                kind: "weekly_scoped",
+                group: "weekly",
+                percent: 100,
+                resets_at: reset,
+                scope: { model: { display_name: "Fable" } },
+            },
+        ],
+    });
+
+    assert.deepEqual(quota?.windows.map(({ id, label, usedPercent, status }) => ({
+        id, label, usedPercent, status,
+    })), [
+        { id: "seven_day", label: undefined, usedPercent: 100, status: "blocked" },
+        { id: "weekly_scoped:Fable", label: "Fable", usedPercent: 100, status: undefined },
+    ]);
 });
 
 test("discovers Claude API usage windows and de-duplicates limit aliases", () => {
@@ -121,6 +168,24 @@ test("discovers Claude API usage windows and de-duplicates limit aliases", () =>
         { id: "newly_added_window", label: undefined, usedPercent: 12 },
         { id: "weekly_scoped:Fable", label: "Fable", usedPercent: 43 },
     ]);
+});
+
+test("marks Claude fallback windows stale when live OAuth usage cannot refresh", () => {
+    const stale = staleClaudeUsage({
+        backend: "claude",
+        plan: "Max",
+        windows: [
+            { id: "seven_day", usedPercent: 76 },
+            { id: "weekly_scoped:Fable", label: "Fable", usedPercent: 48 },
+        ],
+        updatedAt: 1,
+        state: "ready",
+    }, "Claude", "Live Claude usage authentication expired or was revoked.");
+
+    assert.equal(stale.state, "stale");
+    assert.equal(stale.displayName, "Claude");
+    assert.equal(stale.message, "Live Claude usage authentication expired or was revoked.");
+    assert.deepEqual(stale.windows.map((window) => window.id), ["seven_day", "weekly_scoped:Fable"]);
 });
 
 test("Claude limit parser accepts live result errors but not quoted user text", () => {
