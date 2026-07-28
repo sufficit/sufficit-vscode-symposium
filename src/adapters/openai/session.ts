@@ -13,6 +13,7 @@ import { buildHeaders, resolveAuthToken } from "./httpAuth";
 import { discoverModels as discoverModelsFromCatalog } from "./discovery";
 import { Compactor } from "./compactor";
 import { TurnRunner } from "./turnRunner";
+import { makeLogicalTurnId, parseTurnSeq } from "./turnId";
 import { RequestEstimate } from "./requestWindow";
 import { buildTimeGapNotice } from "./timeGapNotice";
 import { buildImageParts } from "./imageParts";
@@ -30,7 +31,17 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     /** Conversation lineage inherited at branch time (groups sidebar entries). */
     private lineageId: string | undefined;
     private readonly hub = new HubClient();
-    private turnNo = 0;
+    /**
+     * Monotonic logical-turn sequence, stable across retries and reopen
+     * (reconstructed from meta.json/ledger on resume, unlike the old turnNo
+     * which reset to 0 on every reopen). The visible turn number exposed to
+     * the UI and the legacy ledger `turn` field derive from this.
+     */
+    private turnSeq = 0;
+    /** Stable id of the in-flight logical turn (sessionId/turn-<seq>), or undefined between turns. */
+    private currentLogicalTurnId: string | undefined;
+    /** Intent id propagated from the controller for the in-flight turn (no arbiter here — carried, not decided). */
+    private currentIntentId: string | undefined;
     // Continuous follow-up anchor (small-context guardrail). `objective` is the
     // current task (north star), updated on each substantive user turn; `progress`
     // is a rolling digest of tool steps taken on it. Re-injected fresh into every
@@ -78,11 +89,26 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         // Lineage: an explicit branch option wins; else inherit the resumed
         // session's lineage; else this session starts a fresh conversation.
         this.lineageId = options.lineageId ?? resumed?.lineageId;
+        // Reconstruct the monotonic logical-turn sequence so reopening does NOT
+        // restart turn numbering at 0. Prefer the persisted nextTurnSeq in
+        // meta.json (canonical); fall back to the max seq embedded in the
+        // ledger's logicalTurnId fields so even a hand-restored/partial ledger
+        // converges. A brand-new session leaves turnSeq at 0.
+        if (ledger.hasLedger(this.sessionId)) {
+            const meta = ledger.readMeta(this.sessionId);
+            const fromMeta = typeof meta?.nextTurnSeq === "number" ? meta.nextTurnSeq - 1 : 0;
+            let fromLedger = 0;
+            for (const m of ledger.readMessages(this.sessionId)) {
+                const seq = parseTurnSeq(m.logicalTurnId as string | undefined);
+                if (seq && seq > fromLedger) { fromLedger = seq; }
+            }
+            this.turnSeq = Math.max(fromMeta, fromLedger);
+        }
         this.compactor = new Compactor({
             cfg: this.cfg,
             sessionId: this.sessionId,
             getMessages: () => this.messages,
-            getTurnNo: () => this.turnNo,
+            getTurnNo: () => this.turnSeq,
             getLastInputTokens: () => this.lastInputTokens,
             model: () => this.model(),
             contextWindow: () => this.contextWindow(),
@@ -99,8 +125,11 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             hub: this.hub,
             getMessages: () => this.messages,
             getProgress: () => this.progress,
-            bumpTurnNo: () => { this.turnNo++; },
-            getTurnNo: () => this.turnNo,
+            bumpTurnNo: () => { this.bumpTurn(); },
+            bumpTurn: () => this.bumpTurn(),
+            getTurnNo: () => this.turnSeq,
+            getLogicalTurnId: () => this.currentLogicalTurnId,
+            getIntentId: () => this.currentIntentId,
             getLastInputTokens: () => this.lastInputTokens,
             setLastInputTokens: (n) => { this.lastInputTokens = n; },
             emit: (event) => { this.emit("event", event); },
@@ -304,18 +333,40 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         await this.compactor.compact("auto");
     }
 
-    /** Append one entry to the lossless ledger for the current turn (best-effort). */
-    private led(role: string, content: unknown, extra?: Record<string, unknown>): void {
-        ledger.appendMessage(this.sessionId, { role, content, turn: this.turnNo, ...extra });
+    /**
+     * Advances to the next logical turn: increments the monotonic seq (stable
+     * across reopen), assigns the stable logicalTurnId, and persists the next
+     * seq to meta.json so a reload resumes numbering correctly. Returns the new
+     * logicalTurnId. Replaces the old `this.turnNo++` that reset on every reopen.
+     */
+    private bumpTurn(): string {
+        this.turnSeq++;
+        this.currentLogicalTurnId = makeLogicalTurnId(this.sessionId, this.turnSeq);
+        // Persist the next seq so resume doesn't restart at 0 (best-effort).
+        ledger.writeMeta(this.sessionId, { nextTurnSeq: this.turnSeq + 1 });
+        return this.currentLogicalTurnId;
     }
 
-    send(text: string, images?: string[], preamble?: string[]): void {
+    /** Append one entry to the lossless ledger for the current turn (best-effort). */
+    private led(role: string, content: unknown, extra?: Record<string, unknown>): void {
+        ledger.appendMessage(this.sessionId, {
+            role, content, turn: this.turnSeq,
+            ...(this.currentLogicalTurnId ? { logicalTurnId: this.currentLogicalTurnId } : {}),
+            ...(this.currentIntentId ? { intentId: this.currentIntentId } : {}),
+            ...extra,
+        });
+    }
+
+    send(text: string, images?: string[], preamble?: string[], intentId?: string): void {
         // Intercept /compact: a local command (summarize the conversation to shrink
         // the model context), NOT a user turn to ship to the gateway.
         if (text.trim().toLowerCase() === "/compact") {
             void this.compactor.compact("manual");
             return;
         }
+        // Carry the controller-assigned intent id for the ledger rows of this
+        // turn (no arbiter here — the controller decides; the adapter carries it).
+        this.currentIntentId = intentId;
         // One-shot app instructions (todo capability, autonomy, policy) go in as
         // `developer` messages — above the user turn, below the preset's system —
         // instead of being glued onto the user text. Downgraded to `system` for
@@ -328,14 +379,14 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         const last = this.messages[this.messages.length - 1];
         if (last && last.role === "user") {
             this.messages.push({ role: "assistant", content: "(previous turn interrupted)" });
-            ledger.appendMessage(this.sessionId, { role: "assistant", content: "(previous turn interrupted)", turn: this.turnNo });
+            this.led("assistant", "(previous turn interrupted)");
         }
         const gapNote = buildTimeGapNotice(this.cfg, this.sessionId);
         const fullPreamble = gapNote ? [gapNote, ...(preamble ?? [])] : (preamble ?? []);
         for (const p of fullPreamble) {
             if (p && p.trim()) {
                 this.messages.push({ role, content: p });
-                ledger.appendMessage(this.sessionId, { role, content: p, turn: this.turnNo + 1 });
+                ledger.appendMessage(this.sessionId, { role, content: p, turn: this.turnSeq + 1 });
             }
         }
         const imageParts = buildImageParts(images);
@@ -351,7 +402,11 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         ledger.appendMessage(this.sessionId, {
             role: "user",
             content: imageParts.length ? `${text}\n[${imageParts.length} image(s) attached]` : text,
-            turn: this.turnNo + 1,
+            turn: this.turnSeq + 1,
+            // The user message anticipates the upcoming turn (bumpTurn runs in
+            // run()). Stamp the intent now so the row carries it even though the
+            // logicalTurnId is assigned when the turn actually starts.
+            ...(this.currentIntentId ? { intentId: this.currentIntentId } : {}),
         });
         if (!this.title) { this.title = text.trim().slice(0, 60); }
         this.safePersist();

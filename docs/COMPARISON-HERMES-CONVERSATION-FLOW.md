@@ -33,7 +33,7 @@ O Hermes Agent já sofreu um defeito quase idêntico. O teste [`test_resume_stal
 - scaffolding de retry não persistido como conversa real;
 - identificadores únicos de turno.
 
-A recomendação é adotar essas propriedades, não copiar a implementação inteira do Hermes. O Symposium pode chegar ao mesmo contrato com mudanças menores e mais tipadas.
+A recomendação é adotar essas propriedades, não copiar a implementação inteira do Hermes. O Symposium pode chegar ao mesmo contrato com mudanças menores e mais tipadas. Os benefícios mensuráveis dessa adoção estão detalhados em [Benefícios esperados da implementação](#benefícios-esperados-da-implementação).
 
 ## O que aconteceu na sessão
 
@@ -307,6 +307,49 @@ O Hermes oferece referências excelentes, mas não é um molde integral:
 4. A queue do ACP ainda é uma lista de strings, sem demonstrar um protocolo completo de idempotência de entrada. `clientMessageId`/`intentId` continuam sendo uma evolução necessária no Symposium.
 5. Prompt wording é defesa em profundidade, não fronteira de segurança. Autorização de escrita, escopo de repositório e deduplicação precisam ser garantidos pelo host.
 
+## Benefícios esperados da implementação
+
+O valor da reforma não é “ficar parecido com o Hermes”. Cada defeito diagnosticado acima corresponde a um benefício concreto e verificável. A tabela abaixo mapeia problema → benefício → sinal observável que confirma que o benefício foi alcançado.
+
+### Matriz problema → benefício
+
+| # | Problema atual | Benefício ao corrigir | Sinal mensurável |
+|---|---|---|---|
+| 1 | Backlog/checkpoints antigos entram como `developer CURRENT` com autoridade maior que a nova mensagem `user`. | A última solicitação real do usuário é, por contrato, a única intenção ativa. | Replay da sessão `ce8109bf-...` termina criando somente o TODO quando essa é a última solicitação; `stale_task_injection_count == 0`. |
+| 2 | `task-checkpoint` e `task-anchor` compartilham namespace; fato concluído vira `CURRENT`. | Estado observado (o que já fiz) nunca é confundido com intenção autorizada (o que devo fazer). | `memory_save(type=task-checkpoint)` aparece em checkpoints e nunca em `pendingTasks`; `CURRENT` só aponta para `task-anchor`. |
+| 3 | Compactação gera summaries imperativos (“Immediate next actions”, pseudo tool calls) promovidos a `developer`. | Summaries viram dado histórico `REFERENCE ONLY`, não plano executável. | `summary_validation_failure_count` registra rejeição de headings proibidos e de pseudo tool calls; summaries antigos são renormalizados na retomada. |
+| 4 | Retry reenvia o texto como nova intenção e repete efeitos. | Retomada e retry são idempotentes; efeitos confirmados não se repetem. | Dois envios do mesmo `clientMessageId` produzem uma bolha, um `logicalTurnId`, zero reexecução de tool effects; `duplicate_client_message_count` monitorado. |
+| 5 | `queue` é o padrão para mensagem durante execução, inclusive para “pare”/“não era isso”. | Correção durante o turno redireciona a intenção ativa em vez de esperar atrás dela. | Mensagem regular durante execução vira `redirect` por padrão e invalida plano incompatível; `intent_redirect_count` visível. |
+| 6 | Não há guardrail de escopo: o agente atravessou Blazor, Endpoints, Base, Client, QuePasa e mexeu em WIP de `sufficit-ai`. | Escrita, commit e deploy são limitados por `allowedWriteRoots` e pela ação autorizada da intenção. | `cross_scope_write_block_count > 0` ao tentar escrever fora do root; commit nunca captura staged files preexistentes; `authorizedAction = read` sob “não ajuste nada”. |
+| 7 | `turnNo` reinicia ao reabrir; identidade de turno não é estável. | Identidade de turno/tentativa sobrevive a reload e resume. | Reabrir a sessão três vezes mantém `logicalTurnId` únicos e `turn_id_reset_detected == 0`. |
+| 8 | Guardrails existentes não medem divergência de intenção; hard cap de 200 é generoso. | Orçamento atrelado à intenção, com checkpoints de convergência e pausa por falta de progresso. | Após 20 tool calls sem evidência de aproximação, o turno pausa para confirmação; `intent.retries`/`intent.elapsed` sobrevivem a resume. |
+
+### Benefícios por público
+
+- **Para o usuário operador** — previsibilidade: o que ele pediu por último é o que o agente tenta fazer; “pare” realmente para; um retry não reinicia tudo do zero.
+- **Para revisão/auditoria** — separação entre conversa negociada e eventos de runtime; o ledger continua lossless como auditoria, mas nem todo evento do runtime vira mensagem com autoridade.
+- **Para o time de engenharia (custo/danos)** — menos trabalho desperdiçado em objetivos fantasmas, menos commits que capturam WIP alheio, menos turnos de 200 hops antes de parar.
+- **Para o produto (confiança/autonomia)** — autonomia maior no modo `away` sem precisar da supervisão contínua que o defeito atual exige; o modo `present` ganha limites por intenção em vez de um cap global.
+
+### Por que a fase P0 (0A–0C) paga o resto
+
+As três mudanças P0 (separar checkpoints, summary `REFERENCE ONLY`, não reinjetar plano antigo) resolvem o sintoma visível da sessão analisada — “continuei implementando depois de ter sido dito para parar”. Elas são baixo/médio risco e devem entrar **juntas**, porque corrigir apenas uma dimensão deixa as outras duas como vetor do mesmo defeito:
+
+- só 0A (checkpoints) ainda deixa summaries imperativos como `developer`;
+- só 0B (summary) ainda deixa backlog `developer CURRENT`;
+- só 0C (plano antigo) ainda deixa checkpoints como tarefas.
+
+O benefício mensurável de P0 isoladamente já é: **a última mensagem do usuário determina a intenção ativa, e nenhum contexto inerte consegue iniciar trabalho sozinho.** As fases P1/P2 endurecem (idempotência, redirect, escopo, telemetria) e tornam o benefício observável e defensável.
+
+### O que *não* é um benefício desta reforma
+
+Para manter o escopo honesto:
+
+- **Não** promete modelo mais inteligente. Prompt é defesa em profundidade; autorização de escrita, escopo de repositório e deduplicação são garantidas pelo host.
+- **Não** promete custo zero. Summaries estruturados, renormalização e telemetria adicionam overhead; a expectativa é que a redução de trabalho desperdiçado compense.
+- **Não** elimina o ledger lossless. Auditoria completa permanece; o que muda é o que ganha autoridade conversacional.
+- **Não** copia a implementação do Hermes. O valor está no contrato (WorkItem ≠ Checkpoint, latest-user-wins, redirect, write-roots), não no tamanho dos colaboradores Python.
+
 ## Arquitetura-alvo proposta
 
 ```text
@@ -385,7 +428,7 @@ O ponto essencial é que `Checkpoint` nunca satisfaz `WorkItem` e nunca aparece 
 
 ### P0 — eliminar a disputa de autoridade
 
-#### P0.1 Separar tasks de checkpoints
+#### P0.1 Separar tasks de checkpoints (entrega 0A)
 
 Arquivos iniciais:
 
@@ -408,7 +451,7 @@ Compatibilidade:
 - um migration/read adapter classifica `task-checkpoint` como histórico;
 - nenhum registro precisa ser apagado.
 
-#### P0.2 Parar de reinjetar backlog como ordem `developer`
+#### P0.2 Parar de reinjetar backlog como ordem `developer` (entrega 0C)
 
 Arquivos:
 
@@ -434,7 +477,7 @@ Regra de autoridade:
 | Plano da intenção atual | estado tipado da intenção, sem autoridade independente |
 | Nova solicitação | último `user`; fonte de verdade |
 
-#### P0.3 Tornar compactação não executável
+#### P0.3 Tornar compactação não executável (entrega 0B)
 
 Arquivos:
 
@@ -470,7 +513,7 @@ Validações:
 - renormalizar summaries antigos na retomada;
 - registrar o summary no ledger com `kind: "compaction"`, mas não tratá-lo como autorização.
 
-#### P0.4 Limpar plano nativo quando uma nova intenção substitui a anterior
+#### P0.4 Limpar plano nativo quando uma nova intenção substitui a anterior (entrega 0C)
 
 Hoje `lastTodos` vive na controller inteira. Ele deve ser:
 
@@ -485,7 +528,7 @@ Quando chega uma intenção `new` ou `redirect` incompatível:
 - continua visível no histórico/painel;
 - somente `continue`/`retry` reativa o mesmo plano.
 
-### P1 — identidade, idempotência e retomada
+### P1 — identidade, idempotência e retomada (entregas 1A–1C)
 
 #### P1.1 Persistir `intentId`, `logicalTurnId` e `attemptId`
 
@@ -535,7 +578,7 @@ Casos:
 
 Preambles de retry viram metadata de `TurnAttempt`, não novas falas `developer` persistidas.
 
-### P1 — redirecionamento durante execução
+### P1 — redirecionamento durante execução (entrega 1D)
 
 Adicionar um quarto conceito interno, ainda que a UI mantenha três opções:
 
@@ -562,7 +605,7 @@ No runner:
 - invalidar plano incompatível;
 - não autoexecutar o restante do turno antigo.
 
-### P1 — guardrail de escopo e autorização
+### P1 — guardrail de escopo e autorização (entrega 1E)
 
 A sessão analisada atravessou Blazor, Endpoints, Base, Client, QuePasa e chegou a manipular WIP de `sufficit-ai`. O host deve distinguir leitura de mutação:
 

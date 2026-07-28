@@ -64,6 +64,10 @@ export type AgentEvent =
      *  this specific toolId until the webview posts an "approval-response". */
     | { kind: "approval-request"; toolId: string; toolName: string; detail?: string; tier: "write" | "destructive" }
     | { kind: "approval-resolved"; toolId: string; approved: boolean }
+    /** Start of a logical turn; pairs with turn-end. Carries the stable
+     *  logicalTurnId (survives retries/reopen) and the controller-assigned
+     *  intentId so downstream render/retry logic can associate deltas correctly. */
+    | { kind: "turn-start"; logicalTurnId: string; intentId?: string }
     | { kind: "turn-end"; costUsd?: number; durationMs?: number }
     | ({ kind: "quota" } & AdapterQuotaSnapshot)
     | {
@@ -297,7 +301,7 @@ export interface AgentSession extends EventEmitter {
      * `developer` messages before the user turn (role-aware backends only; CLIs
      * ignore it — they get the instructions prepended to `text` instead).
      */
-    send(text: string, images?: string[], preamble?: string[]): void;
+    send(text: string, images?: string[], preamble?: string[], intentId?: string): void;
     /**
      * Replaces the model for the next turn. The currently running CLI/API
      * request is intentionally left unchanged.

@@ -65,7 +65,7 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
             set: (value) => void context.workspaceState.update("symposium.lastActive", value),
         },
         account: {
-            get: () => auth.getProfile(),
+            get: (force?: boolean) => auth.getProfile(force),
             onDidChange: auth.onDidChange,
         },
         modelPrefs: {

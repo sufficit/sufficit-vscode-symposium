@@ -1,4 +1,4 @@
-import { fetchSessionTasks, markTaskDone, rememberTaskCreated, rememberTaskDone, rememberTaskBatch, priorInBatch } from "../../sync/tasks";
+import { fetchSessionTasks, fetchPendingWorkItems, markTaskDone, rememberTaskCreated, rememberTaskDone, rememberTaskBatch, priorInBatch } from "../../sync/tasks";
 import { saveGuardrail, clearSessionGuardrails } from "../../sync/guardrails";
 import { ToolContext } from "./types";
 import { LocalMemory } from "./localMemory";
@@ -249,7 +249,11 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                 if (!ctx.sessionId) { return JSON.stringify({ ok: true }); }
                 const completed = [id, ...cascaded];
                 const completedSet = new Set(completed);
-                const remaining = (await fetchSessionTasks(hub, ctx.sessionId)).filter((t) => !t.done && !completedSet.has(t.id));
+                // Next-step hand-back: pending WORK ITEMS only (task-anchor, not
+                // done). A task-checkpoint (observed state) must never be handed
+                // back as the next CURRENT step — completing work and observing
+                // state are different things. Excludes the just-completed ids.
+                const remaining = (await fetchPendingWorkItems(hub, ctx.sessionId)).filter((t) => !completedSet.has(t.id));
                 const cascadeNote = cascaded.length
                     ? `Also auto-completed ${cascaded.length} earlier step(s) from the same numbered plan (they precede this one in the same add_task call).`
                     : undefined;

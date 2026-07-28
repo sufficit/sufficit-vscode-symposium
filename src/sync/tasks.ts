@@ -26,7 +26,16 @@ export interface TaskItem {
     done?: boolean;
 }
 
+/** Task-anchor: an executable work item the agent/user is meant to do. */
+export const TASK_ANCHOR = "task-anchor";
+/** Task-checkpoint: observed state (a fact/decision/result), NOT executable work. */
+export const TASK_CHECKPOINT = "task-checkpoint";
+
 const isTask = (type: unknown): boolean => String(type ?? "").startsWith("task");
+/** A task-anchor: executable work (the only kind that counts as "pending work"). */
+const isWorkItem = (type: unknown): boolean => String(type ?? "") === TASK_ANCHOR;
+/** A task-checkpoint: observed historical state, never executable work. */
+const isCheckpoint = (type: unknown): boolean => String(type ?? "") === TASK_CHECKPOINT;
 const hasTag = (tags: unknown, tag: string): boolean => String(tags ?? "").split(",").map((t) => t.trim()).includes(tag);
 
 /**
@@ -88,7 +97,18 @@ export function priorInBatch(sessionId: string, id: string): string[] {
     return [];
 }
 
-/** Lists the task observations bound to a Symposium session (newest first). */
+/**
+ * Lists the task observations bound to a Symposium session (newest first).
+ *
+ * Returns BOTH task-anchor (executable work items) AND task-checkpoint
+ * (observed historical state). This is the "display/state of the world" read:
+ * the Tasks panel and the agent's list_tasks tool use it to show everything
+ * bound to the session, including completed work and context checkpoints.
+ *
+ * Do NOT use this for "what should I do next" — a completed checkpoint must
+ * never become the CURRENT pending task. Use {@link fetchPendingWorkItems}
+ * for the intent path (prompt reminder + task_complete's next-step).
+ */
 export async function fetchSessionTasks(hub: HubClient, sessionId: string): Promise<TaskItem[]> {
     if (!hub.configured() || !sessionId) { return []; }
     // Search is scoped to the session by the native sessionId field on the
@@ -114,6 +134,32 @@ export async function fetchSessionTasks(hub: HubClient, sessionId: string): Prom
     return [...fromSearch, ...ghosts];
 }
 
+/**
+ * Pending executable work items for a session — ONLY task-anchor records that
+ * are not yet done, newest first. This is the INTENT path: it feeds the prompt
+ * reminder (so the CURRENT task is always real work, never a completed fact)
+ * and task_complete's "next step" hand-back.
+ *
+ * A task-checkpoint (observed state) NEVER appears here, even when pending,
+ * because observed state is not work to be done. This is the core separation
+ * between "what I observed/did" and "what I should do".
+ */
+export async function fetchPendingWorkItems(hub: HubClient, sessionId: string): Promise<TaskItem[]> {
+    const all = await fetchSessionTasks(hub, sessionId);
+    return all.filter((t) => isWorkItem(t.type) && !t.done);
+}
+
+/**
+ * Checkpoints (observed historical state) for a session, newest first — the
+ * records that describe facts/decisions/results, NOT work to be done. This is
+ * the read for resume context: the latest checkpoint anchors "where things
+ * stand" without being confused with a pending task.
+ */
+export async function fetchSessionCheckpoints(hub: HubClient, sessionId: string): Promise<TaskItem[]> {
+    const all = await fetchSessionTasks(hub, sessionId);
+    return all.filter((t) => isCheckpoint(t.type));
+}
+
 /** Sets/clears a task's completed state (DONE_TAG). User- or agent-driven. */
 export async function setTaskDone(hub: HubClient, id: string, done: boolean, completionSummary?: string): Promise<boolean> {
     if (!hub.configured() || !id) { return false; }
@@ -128,7 +174,14 @@ export async function setTaskDone(hub: HubClient, id: string, done: boolean, com
         const summary = completionSummary?.trim()
             ? (baseSummary ? `${baseSummary}\n\nCompleted: ${completionSummary.trim()}` : `Completed: ${completionSummary.trim()}`)
             : baseSummary;
-        await hub.save({ id, type: obs?.type || "task-checkpoint", title: obs?.title || "task", summary, tags: tags.join(",") });
+        // Preserve the observation's existing type verbatim. The fallback only
+        // applies when the record is missing its type: defaulting a task being
+        // COMPLETED to task-anchor (executable work) rather than task-checkpoint
+        // (observed state) — completing work must never silently reclassify it
+        // into a historical-fact type, which would then disappear from pending
+        // work and resurface only as resume context.
+        const type = obs?.type || TASK_ANCHOR;
+        await hub.save({ id, type, title: obs?.title || "task", summary, tags: tags.join(",") });
         return true;
     } catch { return false; }
 }
@@ -142,12 +195,18 @@ export async function markTaskDone(hub: HubClient, id: string, completionSummary
     return setTaskDone(hub, id, true, completionSummary);
 }
 
-/** Latest PENDING task-checkpoint for a session (falls back to latest pending task, then any). */
+/**
+ * Latest task-checkpoint for a session (newest first), for resume context.
+ *
+ * Returns ONLY a real task-checkpoint — observed historical state that anchors
+ * "where things stand". There is NO fallback to a task-anchor (executable work):
+ * a pending work item must never be promoted to resume context, because that is
+ * exactly the confusion between "what I observed/did" and "what I should do".
+ * Returns undefined when the session has no checkpoint yet.
+ */
 export async function fetchLatestCheckpoint(hub: HubClient, sessionId: string): Promise<TaskItem | undefined> {
-    const tasks = await fetchSessionTasks(hub, sessionId);
-    return tasks.find((t) => t.type === "task-checkpoint" && !t.done)
-        ?? tasks.find((t) => !t.done)
-        ?? tasks[0];
+    const checkpoints = await fetchSessionCheckpoints(hub, sessionId);
+    return checkpoints[0];
 }
 
 /** Expires (soft-deletes) every task observation bound to a session. Returns count. */

@@ -18,6 +18,7 @@ import {
 import { compressMessages, CompressionManager, CompressionPreset } from "../../compression";
 import { stripSourcePrefix } from "./toolMerge";
 import { findToolHistoryIssues, materializeToolSafeHistory } from "./toolHistory";
+import { makeAttemptId } from "./turnId";
 import { buildTurnTools, executeTurnTool } from "./turnTools";
 import { emitTurnUsage } from "./turnUsage";
 import { guardrailStopNotice, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress } from "./turnNotices";
@@ -39,8 +40,19 @@ export interface TurnRunnerDeps {
     getMessages: () => ChatMessage[];
     /** Live continuous-follow-up progress digest — pushed to per tool step. */
     getProgress: () => string[];
+    /** @deprecated legacy in-memory turn counter; superseded by bumpTurn/getLogicalTurnId. */
     bumpTurnNo: () => void;
+    /**
+     * Advances to the next logical turn and returns its stable logicalTurnId
+     * (sessionId/turn-<seq>), which survives retries and reopen. Replaces the
+     * reset-on-reopen bumpTurnNo.
+     */
+    bumpTurn: () => string;
     getTurnNo: () => number;
+    /** Stable id of the in-flight logical turn, or undefined between turns. */
+    getLogicalTurnId: () => string | undefined;
+    /** Intent id carried from the controller for the in-flight turn (no arbiter here). */
+    getIntentId: () => string | undefined;
     getLastInputTokens: () => number;
     setLastInputTokens: (n: number) => void;
     emit: (event: Record<string, unknown>) => void;
@@ -85,8 +97,14 @@ export class TurnRunner {
         const messages = this.d.getMessages();
         const progress = this.d.getProgress();
         this.abort = new AbortController();
-        this.d.bumpTurnNo();   // each run() is one conversation turn (ledger turn index)
+        // Assign a stable logicalTurnId for this turn (survives retries/reopen).
+        const logicalTurnId = this.d.bumpTurn();
+        const intentId = this.d.getIntentId();
         const turnStartedAt = Date.now();
+        // turn-start pairs with turn-end below; carries the stable ids so the
+        // render pipeline (renderStream/controllerTranscript) and any future
+        // retry/redirect logic can associate deltas with the right turn.
+        this.d.emit({ kind: "turn-start", logicalTurnId, ...(intentId ? { intentId } : {}) });
         const emitTurnEnd = () => this.d.emit({ kind: "turn-end", durationMs: Date.now() - turnStartedAt });
         const responses = this.d.cfg.api === "responses";
         const base = this.d.cfg.baseUrl.replace(/\/+$/, "");
@@ -213,7 +231,10 @@ export class TurnRunner {
                     break;
                 }
                 this.d.cfg.log?.(`[${this.d.backend}] POST ${url} api=${this.d.cfg.api} model=${this.d.model()} tools=${toolList.length} hop=${hop}`);
-                ledger.recordRequest(this.d.sessionId, body);
+                // One attemptId per model POST (hop) within this logical turn, so a
+                // multi-hop turn and a retried turn are distinguishable downstream.
+                const attemptId = makeAttemptId(logicalTurnId, hop + 1);
+                ledger.recordRequest(this.d.sessionId, body, attemptId);
                 const requestStartedAt = Date.now();
                 const signal = this.abort.signal;
                 const post = (token: string | null | undefined) => fetch(url, { method: "POST", headers: this.d.headers(token), body: bodyJson, signal });
@@ -366,7 +387,9 @@ export class TurnRunner {
             }
         }
         this.d.safePersist();
-        void ledger.commitTurn(this.d.sessionId, `turn ${this.d.getTurnNo()} — user→assistant (model=${this.d.model()})`);
+        // Include the stable logicalTurnId in the commit subject so `git log`
+        // (and the timeline view) shows a durable, reopen-stable id per turn.
+        void ledger.commitTurn(this.d.sessionId, `turn ${this.d.getTurnNo()} (${logicalTurnId}) — user→assistant (model=${this.d.model()})`);
         void this.d.maybeAutoCompact();
         if (this.pendingTasksCompact) {
             this.pendingTasksCompact = false;

@@ -57,6 +57,12 @@ export interface LedgerMeta {
     model?: string;
     reasoning?: string;
     updatedAt?: string;
+    /**
+     * Next logicalTurnId sequence number for this session (monotonic, survives
+     * reload). Persisted here so a reopened session doesn't restart turn
+     * numbering at 0. Reconstructed from the ledger as a fallback on resume.
+     */
+    nextTurnSeq?: number;
 }
 
 function ledgerRoot(): string {
@@ -127,9 +133,9 @@ export async function ensureLedger(sessionId: string, meta: LedgerMeta): Promise
             await git(dir, ["config", "commit.gpgsign", "false"]);
             await git(dir, ["config", "core.hooksPath", "/dev/null"]);
             if (!fs.existsSync(messagesFile(dir))) { fs.writeFileSync(messagesFile(dir), ""); }
-            writeMeta(dir, meta);
+            writeMetaDir(dir, meta);
         } else {
-            writeMeta(dir, meta);
+            writeMetaDir(dir, meta);
         }
         return dir;
     } catch {
@@ -137,16 +143,32 @@ export async function ensureLedger(sessionId: string, meta: LedgerMeta): Promise
     }
 }
 
-function writeMeta(dir: string, meta: LedgerMeta): void {
+function writeMetaDir(dir: string, meta: LedgerMeta): void {
     try {
-        const existing = readMetaFrom(dir);
+        const existing = readMetaDir(dir);
         const merged: LedgerMeta = { ...existing, ...meta, updatedAt: new Date().toISOString() };
         fs.writeFileSync(metaFile(dir), JSON.stringify(merged, null, 2));
     } catch { /* best-effort */ }
 }
 
-function readMetaFrom(dir: string): LedgerMeta | undefined {
+function readMetaDir(dir: string): LedgerMeta | undefined {
     try { return JSON.parse(fs.readFileSync(metaFile(dir), "utf8")); } catch { return undefined; }
+}
+
+/**
+ * Merges partial meta into the session's `meta.json` (public, session-id keyed
+ * wrapper around the internal dir-based writer). Used to persist transient
+ * session state — e.g. advancing the logicalTurnId sequence — outside the
+ * `ensureLedger` path. Best-effort: never throws on a missing/corrupt ledger.
+ */
+export function writeMeta(sessionId: string, meta: Partial<LedgerMeta>): void {
+    if (isLedgerDeleted(sessionId)) { return; }
+    try { writeMetaDir(ledgerDir(sessionId), { ...(readMetaDir(ledgerDir(sessionId)) ?? { id: sessionId, backend: "" }), ...meta } as LedgerMeta); } catch { /* best-effort */ }
+}
+
+/** Reads the session's merged `meta.json`, or undefined when absent/corrupt. */
+export function readMeta(sessionId: string): LedgerMeta | undefined {
+    try { return readMetaDir(ledgerDir(sessionId)); } catch { return undefined; }
 }
 
 /** Appends one message to the session ledger (append-only, never rewrites). */
@@ -183,12 +205,16 @@ export function lastMessageAtMs(sessionId: string): number | undefined {
  * Records the LITERAL request body sent to the gateway this turn — the absolute
  * truth of what the LLM received (system/developer/user + tools + model + effort).
  */
-export function recordRequest(sessionId: string, body: unknown): void {
+export function recordRequest(sessionId: string, body: unknown, attemptId?: string): void {
     if (isLedgerDeleted(sessionId)) { return; }
     try {
         const dir = ledgerDir(sessionId);
         fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(requestFile(dir), JSON.stringify(body, null, 2));
+        // Wrap with the attempt id (when provided) so the persisted request is
+        // attributable to a specific model POST within a logical turn, without
+        // mutating the gateway payload itself.
+        const envelope = attemptId ? { attemptId, body } : body;
+        fs.writeFileSync(requestFile(dir), JSON.stringify(envelope, null, 2));
     } catch { /* best-effort */ }
 }
 
@@ -262,7 +288,7 @@ export function listLedgerSessions(): LedgerMeta[] {
     const out: LedgerMeta[] = [];
     for (const sessionId of entries) {
         if (deleted.has(sessionId)) { continue; }
-        const meta = readMetaFrom(ledgerDir(sessionId));
+        const meta = readMetaDir(ledgerDir(sessionId));
         if (meta) { out.push(meta); }
     }
     return out;

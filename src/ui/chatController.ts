@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { randomUUID } from "crypto";
 import { AgentAdapter, AgentEvent, AgentSession, SessionInfo, SessionStartOptions, TodoItem } from "../adapters/types";
 import { parseTodoFence, todosSummary } from "../adapters/todos";
 import { type TrackingMode } from "./outboundPrompt";
@@ -7,7 +8,7 @@ import { HubClient } from "../sync/hubClient";
 import { WebviewToHost } from "./protocol";
 import { RenderStream } from "./renderStream";
 import { transcriptText, transcriptMessages, transcriptMessagesUpTo } from "./controllerTranscript";
-import { ChatQueue, PendingMessage, SendMode } from "./controllerQueue";
+import { ChatQueue, MessageDedup, PendingMessage, SendMode } from "./controllerQueue";
 import { ChangedFilesState } from "./changedFilesState";
 import { handleControllerMessage } from "./controllerMessageHandler";
 import { HubState, HubStateContext, reloadGuardrails as reloadHubGuardrails, reloadTasks as reloadHubTasks, pendingTasksSummary as hubPendingTasksSummary } from "./controllerHubState";
@@ -61,6 +62,11 @@ export class ChatController {
     // controllerHubState). The controller reads/writes these directly.
     private readonly persistState = { count: 0 };
     private readonly hubState: HubState = { guardrails: [], guardrailsLoaded: false, pendingTasks: [] };
+    /**
+     * Host-side idempotency: a clientMessageId already accepted is not processed
+     * again (no second dispatch/enqueue/tool run). See MessageDedup.
+     */
+    private readonly dedup = new MessageDedup();
 
     constructor(
         private readonly adapter: AgentAdapter,
@@ -215,6 +221,12 @@ export class ChatController {
 
     private onSend(msg: PendingMessage, mode: SendMode): void {
         msg.mode = mode;
+        // Idempotency: a clientMessageId already seen means this is a transport
+        // double-delivery / reconnect replay of a message the host already
+        // accepted. Drop it silently — no second dispatch, no second enqueue, no
+        // second tool execution. The webview already reconciled its optimistic
+        // bubble on the first acceptance.
+        if (!this.dedup.accept(msg.clientMessageId)) { return; }
         if (mode === "steer" && this.busy) {
             this.queue.clear();
             this.queue.push(msg);
@@ -301,7 +313,13 @@ export class ChatController {
             if (!msg.interruptedBy) {
                 this.emit({ type: "user", text: msg.text, attachments: msg.attachments, clientMessageId: msg.clientMessageId });
             }
-            this.session.send(outboundText, images, outboundPreamble);
+            // Assign a stable intent id for this user request (unless the
+            // webview/sender already provided one) and carry it into the turn so
+            // the ledger rows are attributable to a single intent. No arbiter
+            // here — every message gets its own fresh intent; reuse across
+            // retry/redirect is a later concern.
+            const intentId = msg.intentId ?? randomUUID();
+            this.session.send(outboundText, images, outboundPreamble, intentId);
         } catch (error) {
             // Any failure before turn-end (adapter start, prompt build, transcript
             // persistence, process spawn setup) must never leave the controller

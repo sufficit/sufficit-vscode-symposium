@@ -237,6 +237,14 @@ export function parseTodoFence(text: string): TodoItem[] | undefined {
  * locally-parsed TodoWrite/update_plan/fence state instead of Sufficit-memory
  * task records, so the agent is told what's still open on every message, not
  * just the turn that first stated the plan.
+ *
+ * Authority: this reminder is CONTEXT, not a command. It describes the agent's
+ * own tracked plan, but it is explicitly subordinate to the latest user
+ * message: if the user's current request redirects, narrows, or cancels work
+ * ("stop", "don't do that now", "just verify", "only document", "that's not
+ * what I meant", or a change of subject), the CURRENT/Up next shown here YIELD
+ * to that request — the agent must not resume an old plan that the user has
+ * since moved away from.
  */
 export function todosSummary(todos: TodoItem[]): string | undefined {
     const open = todos.filter((t) => t.status !== "completed");
@@ -245,6 +253,9 @@ export function todosSummary(todos: TodoItem[]): string | undefined {
     const upNext = open.filter((t) => t !== current).map((t) => `- ${t.content}`).join("\n");
     return (
         "[PLAN — current step marked below, still open from your own tracked plan. " +
+        "This is CONTEXT, not an override: the LATEST USER MESSAGE is the source of truth. " +
+        "If the user redirects, narrows, or cancels work (stop, don't do that now, just verify, only document, " +
+        "change of subject), the steps below YIELD to that request — do not resume an old plan the user moved away from. " +
         "The moment you finish CURRENT (or any other step's state changes), re-emit the FULL plan via your " +
         "native plan/todo tool with that step marked completed — do not wait until everything is done to " +
         "report progress in one batch; the panel only shows what you last emitted.]\n" +

@@ -3,6 +3,13 @@ export type SendMode = "send" | "queue" | "steer";
 export interface PendingMessage {
     id?: number;
     clientMessageId?: string;
+    /**
+     * Controller-assigned intent id for this user request. Stable across the
+     * turn it drives; the adapter carries it into ledger rows without deciding
+     * the relation between messages (no Intent Arbiter yet). Generated in
+     * ChatController.dispatch when absent.
+     */
+    intentId?: string;
     text: string;
     attachments: string[];
     model?: string;
@@ -125,4 +132,29 @@ export function recoverPersistedQueue(messages: unknown[]): PendingMessage[] {
         if (index >= 0) { pending.splice(index, 1); }
     }
     return pending;
+}
+
+/**
+ * Host-side idempotency index for incoming messages keyed by their webview-local
+ * `clientMessageId`. A message sent twice with the same optimistic id (transport
+ * double-delivery, webview reconnect replay, a duplicate postMessage) is accepted
+ * exactly once: the first call to `accept` returns true and records the id; every
+ * later call with the same id returns false so the caller drops it silently (no
+ * second dispatch, no second enqueue, no second tool execution). Messages with no
+ * clientMessageId bypass dedup entirely (retry/edit-resend legitimately resend).
+ *
+ * The set grows with the number of accepted messages in a session; it is bounded
+ * by user-driven message count and never accumulates tool hops or model turns.
+ */
+export class MessageDedup {
+    private readonly seen = new Set<string>();
+    /** Records the id and returns true on first sight, false on a repeat. */
+    accept(clientMessageId: string | undefined): boolean {
+        if (!clientMessageId) { return true; }   // no id → not deduped
+        if (this.seen.has(clientMessageId)) { return false; }
+        this.seen.add(clientMessageId);
+        return true;
+    }
+    /** Whether an id has already been accepted (for introspection/tests). */
+    has(clientMessageId: string): boolean { return this.seen.has(clientMessageId); }
 }

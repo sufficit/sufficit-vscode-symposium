@@ -88,6 +88,26 @@ test("Codex todo_list reminder advances past completed work", () => {
     assert.doesNotMatch(summary!, /Inspect parser/);
 });
 
+// --- Regressão entrega 0C: o reminder de plano é CONTEXTO, não override ---
+// O defeito: o reminder [PLAN/TASKS — CURRENT...] era injetado como `developer`
+// em toda mensagem, com autoridade aparente maior que a nova mensagem do usuário,
+// fazendo o agente retomar um plano antigo após o usuário pedir para parar. O
+// contrato agora declara o reminder subordinado à última mensagem do usuário.
+
+test("todosSummary declares itself CONTEXT subordinate to the latest user message", () => {
+    const out = parseNativeTodos("TodoWrite", {
+        todos: [{ content: "Implementar rescan", status: "in_progress" }, { content: "Deploy", status: "pending" }],
+    });
+    const summary = todosSummary(out!);
+    assert.ok(summary, "expected a reminder for open steps");
+    assert.match(summary!, /CONTEXT, not an override/i);
+    assert.match(summary!, /LATEST USER MESSAGE is the source of truth/i);
+    // Reverse signals enumerated so redirects/cancels win over the stale plan.
+    assert.match(summary!, /stop/i);
+    assert.match(summary!, /only document/i);
+    assert.match(summary!, /YIELD/i);
+});
+
 test("parseNativeTodos: Codex custom_tool_call exec-sandboxed update_plan (real payload)", () => {
     // Captured verbatim from a real Codex CLI 0.144.1 rollout: the whole turn
     // is a JS "program" as source text (`input`), not a structured

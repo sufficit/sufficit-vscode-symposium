@@ -367,6 +367,16 @@ export class SufficitAuth {
                 void this.getProfile(true).then((p) => { if (p) { this.onChangeEmitter.fire(); } });
                 return saved;
             }
+            // We have a persisted profile but the token didn't resolve right now
+            // (a refresh is in flight, or a transient failure cleared the session
+            // without onDidChange reaching a re-push). Don't give up silently: if
+            // the session is still alive, a deferred force-fetch will recover the
+            // profile and notify the UI. If getProfile(true) also fails, fire the
+            // event so the UI reflects the actual logged-out state rather than a
+            // stale logged-in footer (or vice-versa).
+            if (saved) {
+                void this.getProfile(true).then(() => { this.onChangeEmitter.fire(); });
+            }
             return undefined;
         }
         const token = await this.getAccessToken();

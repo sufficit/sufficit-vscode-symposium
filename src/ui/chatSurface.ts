@@ -27,7 +27,7 @@ export interface ChatSurfaceDeps {
     };
     /** Sufficit account for the sessions-pane footer (avatar + login/logout). */
     account?: {
-        get(): Promise<{ name?: string; email?: string; picture?: string } | undefined>;
+        get(force?: boolean): Promise<{ name?: string; email?: string; picture?: string } | undefined>;
         onDidChange: vscode.Event<void>;
     };
     /** Per-adapter model preferences: pinned list + default override. */

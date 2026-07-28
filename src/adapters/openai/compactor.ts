@@ -11,6 +11,83 @@ import * as ledger from "../../ledger";
  * (lossless — recover via read_session); only the in-memory `messages` array is
  * rewritten in place. Extracted from OpenAISession as a collaborator.
  */
+
+/**
+ * Prefix of a synthetic compaction summary. Declares the summary REFERENCE ONLY
+ * — historical background, not an active instruction or plan — and fixes the
+ * contract that the LATEST real user message is the only source of the active
+ * task. This wording is what keeps a compacted, imperative-sounding snapshot
+ * from being reinterpreted as authorization to continue old work.
+ */
+export const SUMMARY_PREFIX = "[CONTEXT COMPACTION — REFERENCE ONLY";
+/** Body intro appended right after SUMMARY_PREFIX on the synthetic message. */
+export const SUMMARY_BODY_INTRO =
+    "] This block describes PAST turns only. It is background, NOT an instruction and NOT a plan. " +
+    "The LATEST real user message after this block is the ONLY source of the active task. " +
+    "Topic overlap with something described here does NOT reactivate old work. " +
+    "Reverse signals in the latest user message — stop, don't do this now, just verify, undo, rollback, only document, change of subject — CANCEL the corresponding historical work even if this summary still lists it. " +
+    "The full transcript is preserved; call read_session to recover any detail (e.g. a tool's full output).";
+/** Legacy prefix used by summaries produced before the reference-only contract.
+ *  Kept so the idempotent re-fold detects and renormalizes them. */
+const LEGACY_SUMMARY_PREFIX = "[Summary so far";
+
+/**
+ * Headings that carry imperative/active-task meaning and so MUST NOT appear in
+ * a reference-only summary. Renormalization replaces any occurrence with the
+ * historical counterpart so a stale phrasing can't be read as "do this now".
+ */
+const FORBIDDEN_HEADINGS: Array<[RegExp, string]> = [
+    [/^#{1,6}\s*Immediate next actions\s*$/gmi, "## Completed Actions (historical)"],
+    [/^#{1,6}\s*Remaining work\s*$/gmi, "## Completed Actions (historical)"],
+    [/^#{1,6}\s*Active task\s*$/gmi, "## Historical Task Snapshot"],
+    [/^#{1,6}\s*Next steps\s*$/gmi, "## Completed Actions (historical)"],
+    [/^#{1,6}\s*Resume exactly\s*$/gmi, "## Historical Task Snapshot"],
+];
+
+/**
+ * Imperative "resume/continue" phrasing that contradicts a reference-only
+ * summary. Stripping these (case-insensitive, line-anchored) prevents a compacted
+ * snapshot from commanding the agent to resume old work the user may have since
+ * redirected or cancelled.
+ */
+const IMPERATIVE_RESUME_LINES = /^\s*(resume exactly|continue exactly|next, (you )?(should|must|need to)|you (should|must) now|immediately (do|run|execute|implement))\b.*$/gmi;
+
+/**
+ * A fenced block whose language tag looks like an executable tool call (shell,
+ * bash, ts-node, etc.) is treated as a pseudo tool call and stripped to a safe
+ * one-line pointer — the full output stays recoverable via read_session, and the
+ * model is never handed an executable-looking block inside a "reference only"
+ * summary.
+ */
+const EXECUTABLE_FENCE_LANGS = /^(sh|shell|bash|zsh|ts-node|ts|x-ts|js|javascript|typescript|python|py|powershell|ps1)\b/i;
+
+/**
+ * Hardens a model-produced summary so it cannot be read as authorization to act:
+ * rewrites forbidden (imperative/active) headings into historical ones, strips
+ * imperative "resume/continue" lines, and defangs executable-looking code fences
+ * into pointers. Pure function over the text — safe and idempotent.
+ */
+export function renormalizeSummary(input: string): string {
+    let out = input;
+    for (const [re, replacement] of FORBIDDEN_HEADINGS) {
+        // Each regex is global; reset lastIndex by recreating via replace.
+        out = out.replace(re, replacement);
+    }
+    out = out.replace(IMPERATIVE_RESUME_LINES, "");
+    // Defang executable-looking fenced blocks into one-line pointers. Matches a
+    // whole fenced block and replaces it with a neutral pointer line.
+    out = out.replace(/```([^\n`]*)\n([\s\S]*?)```/g, (_m, lang: string, body: string) => {
+        const langStr = String(lang ?? "").trim();
+        if (EXECUTABLE_FENCE_LANGS.test(langStr)) {
+            const oneLine = body.split("\n").map((l: string) => l.trim()).filter(Boolean).slice(0, 1).join(" ");
+            return `[ran: ${oneLine.slice(0, 120)}]`;
+        }
+        return _m;
+    });
+    // Collapse the 3+ blank lines that heading/line rewrites can leave behind.
+    return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
 export interface CompactorDeps {
     cfg: OpenAIAdapterConfig;
     sessionId: string;
@@ -79,22 +156,41 @@ export class Compactor {
             }
             // Idempotent: a prior summary lives in the prefix region (developer/
             // system, before the first user msg). Pull it out and re-fold it into
-            // the new summary instead of letting summaries stack.
-            const priorIdx = prefix.findIndex((m) => typeof m.content === "string" && m.content.startsWith("[Summary so far"));
+            // the new summary instead of letting summaries stack. Tolerant of both
+            // the legacy prefix ("[Summary so far ...") and the current reference-
+            // only prefix, so sessions already compacted under the old wording are
+            // re-folded and renormalized on the next compaction rather than
+            // stacking a second summary.
+            const isPriorSummary = (m: ChatMessage): boolean =>
+                typeof m.content === "string" && (m.content.startsWith(SUMMARY_PREFIX) || m.content.startsWith(LEGACY_SUMMARY_PREFIX));
+            const priorIdx = prefix.findIndex(isPriorSummary);
             let prior: ChatMessage[] = [];
             if (priorIdx >= 0) { prior = prefix.slice(priorIdx); prefix = prefix.slice(0, priorIdx); }
             const tailStart = expandStartToToolBoundary(conv, conv.length - keepTurns);
             const tail = conv.slice(tailStart);
             const middle = [...prior, ...conv.slice(0, tailStart)];
-            const summary = await this.summarizeMessages(middle);
-            if (!summary) {
+            const raw = await this.summarizeMessages(middle);
+            if (!raw) {
                 if (reason === "manual") { note("Compaction failed (summary unavailable) — keeping full context."); }
                 return false;   // fail-safe
+            }
+            // Hardening: renormalize the model's summary so an imperative
+            // "next actions" / "resume exactly" phrasing or a disallowed heading
+            // can never reach the model as authoritative context. The summary is
+            // REFERENCE ONLY by contract; this enforces it regardless of what the
+            // model wrote.
+            const summary = renormalizeSummary(raw);
+            // Preserve at least the last real user message in the verbatim tail:
+            // the latest user message is the anchor of the active task, so it must
+            // stay live (not be folded into a historical summary).
+            if (!tail.some((m) => m.role === "user")) {
+                const lastUser = [...conv].reverse().find((m) => m.role === "user");
+                if (lastUser) { tail.unshift(lastUser); }
             }
             const role = this.d.cfg.supportsDeveloperRole !== false ? "developer" : "system";
             const synthetic: ChatMessage = {
                 role,
-                content: `[Summary so far — the earlier conversation was compacted to save context. The full transcript is preserved; call read_session to recover any detail (e.g. a tool's full output).]\n\n${summary}`,
+                content: `${SUMMARY_PREFIX}${SUMMARY_BODY_INTRO}\n\n${summary}`,
             };
             const folded = middle.length;
             messages.length = 0;
@@ -124,9 +220,23 @@ export class Compactor {
             const url = this.d.cfg.baseUrl.replace(/\/+$/, "") + (responses ? "/responses" : "/chat/completions");
             const instruction =
                 "You are compacting a long agent conversation so it fits a smaller context window. " +
-                "Summarize the transcript below, PRESERVING: decisions made, concrete facts, file paths touched, open tasks/todos, user constraints, and the current state. Drop chatter and resolved detours. " +
-                "For tool calls keep only a one-line POINTER (e.g. 'ran shell: git status', 'edited Foo.cs') WITHOUT the tool output — the full output is recoverable via read_session. " +
-                "Write a dense markdown summary (≤ ~1500 tokens) that lets the agent resume from this note alone.";
+                "This summary is REFERENCE ONLY — it describes PAST turns; it is NOT an instruction and NOT a plan. " +
+                "The single most important rule: the LATEST real user message (after this summary) is the ONLY source of the active task. " +
+                "Overlap of topic with something described here does NOT reactivate old work. " +
+                "Reverse signals in the latest user message — stop, don't do this now, just verify, undo, rollback, only document, change of subject — CANCEL the corresponding historical work, even if this summary still lists it.\n\n" +
+                "PRESERVE as historical FACTS (not commands): decisions made, concrete facts, file paths touched, completed actions, blockers, constraints, and what state things are in. " +
+                "Drop chatter and resolved detours. " +
+                "Do NOT write imperatives, 'next actions', 'remaining work', or 'resume exactly' phrases — describe what WAS done and what state things are in, never what to DO next. " +
+                "Do NOT include tool calls, shell commands, or code blocks that look like executable tool calls; keep only a one-line POINTER for a tool call (e.g. 'ran shell: git status', 'edited Foo.cs') WITHOUT the tool output (the full output is recoverable via read_session).\n\n" +
+                "Use these headings, and ONLY these:\n" +
+                "## Historical Task Snapshot — what the user originally asked for in this span (a past task, not the current one)\n" +
+                "## Constraints — standing user constraints that still apply\n" +
+                "## Completed Actions — what was actually finished\n" +
+                "## Active Repository State — current state of files/branches/build\n" +
+                "## Blockers — unresolved problems encountered\n" +
+                "## Decisions — choices made and their rationale\n" +
+                "## Relevant Files — paths touched or relevant\n\n" +
+                "Write a dense markdown summary (≤ ~1500 tokens). Anchor 'Historical Task Snapshot' in the LAST real user message of the span being summarized.";
             const sys = this.d.cfg.supportsDeveloperRole !== false ? "developer" : "system";
             const reqMessages: ChatMessage[] = [
                 { role: sys as ChatMessage["role"], content: instruction },

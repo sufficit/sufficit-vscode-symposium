@@ -124,6 +124,8 @@ export type WebviewToHost =
           id?: number;
           /** Webview-local optimistic row id, confirmed when the host accepts the message. */
           clientMessageId?: string;
+          /** Controller-assigned intent id; carried into ledger rows for the turn. */
+          intentId?: string;
           /** One-shot note on what error interrupted the previous turn (plain Retry only). */
           interruptedBy?: string;
       }

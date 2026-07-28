@@ -22,7 +22,7 @@ export interface SurfaceSyncDeps {
     post: (message: unknown) => void;
     getController: () => SyncController | undefined;
     getTerminalSession: () => SyncTerminal | undefined;
-    getAccount: () => { get(): Promise<unknown> } | undefined;
+    getAccount: () => { get(force?: boolean): Promise<unknown> } | undefined;
     setLoggedIn: (v: boolean) => void;
     getCommands: () => SlashCommand[];
 }
@@ -304,8 +304,25 @@ export class SurfaceSync {
         const account = this.d.getAccount();
         if (!account) { return; }
         void account.get().then((profile) => {
-            this.d.setLoggedIn(!!profile);
-            this.d.post({ type: "account", profile: profile ?? null });
+            // If the profile came back empty on the (non-force) read, the token
+            // refresh may still be in flight — a common race right after window
+            // load that leaves the footer stuck on "Entrar na Sufficit" even
+            // though the user is logged in. Force a fresh profile fetch before
+            // settling on logged-out, so a transient null self-corrects without
+            // waiting for (or missing) a later onDidChange.
+            if (profile) {
+                this.d.setLoggedIn(true);
+                this.d.post({ type: "account", profile });
+                return;
+            }
+            void account.get(true).then((forced) => {
+                const final = forced ?? null;
+                this.d.setLoggedIn(!!forced);
+                this.d.post({ type: "account", profile: final });
+            }).catch(() => {
+                this.d.setLoggedIn(false);
+                this.d.post({ type: "account", profile: null });
+            });
         }).catch(() => undefined);
     }
 }

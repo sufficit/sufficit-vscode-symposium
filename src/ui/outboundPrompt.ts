@@ -41,9 +41,12 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
      */
     guardrails?: string[];
     /**
-     * Summary of pending tasks for this session (agent-created or user-requested),
-     * injected on EVERY message to remind the agent to call task_complete.
-     * Empty string when no pending tasks.
+     * Summary of pending WORK ITEMS for this session (agent-created or
+     * user-requested), injected on EVERY message to remind the agent to call
+     * task_complete. Despite being injected per-message, it is declared CONTEXT,
+     * not an override: the latest user message is the source of truth, and the
+     * reminder itself tells the agent to yield to redirects/cancels. Empty
+     * string when no pending tasks.
      */
     pendingTasksSummary?: string;
     autonomy?: string;
