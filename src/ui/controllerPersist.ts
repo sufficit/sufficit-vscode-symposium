@@ -1,5 +1,6 @@
 import * as renderLog from "../renderLog";
 import { RenderStream } from "./renderStream";
+import { PendingMessage, recoverPersistedQueue } from "./controllerQueue";
 
 /** Mutable render-log persistence state owned by the controller. */
 export interface PersistState {
@@ -52,8 +53,17 @@ export function persistEmit(ctx: PersistContext, message: unknown): void {
  * mark it already-persisted. Returns true when seeded, so the caller skips the
  * lossy adapter.history() reconstruction.
  */
-export function seedRenderLog(ctx: PersistContext, resumeSessionId: string | undefined): boolean {
-    if (!resumeSessionId || !renderLog.hasRender(resumeSessionId)) { return false; }
-    ctx.state.count = ctx.stream.seed(renderLog.readRender(resumeSessionId));
-    return true;
+export function seedRenderLog(
+    ctx: PersistContext,
+    resumeSessionId: string | undefined,
+): { seeded: boolean; pending: PendingMessage[] } {
+    if (!resumeSessionId || !renderLog.hasRender(resumeSessionId)) {
+        return { seeded: false, pending: [] };
+    }
+    const persisted = renderLog.readRender(resumeSessionId);
+    const pending = recoverPersistedQueue(persisted);
+    // A final canonical snapshot overwrites stale queue cards during replay.
+    // It is intentionally not appended to disk; it is re-derived on each seed.
+    ctx.state.count = ctx.stream.seed([...persisted, { type: "queue", items: pending }]);
+    return { seeded: true, pending };
 }

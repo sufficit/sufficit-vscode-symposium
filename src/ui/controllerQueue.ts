@@ -66,7 +66,63 @@ export class ChatQueue {
         this.messages.length = 0;
     }
 
-    items(): { id: number | undefined; text: string; attachments: string[] }[] {
-        return this.messages.map((message) => ({ id: message.id, text: message.text, attachments: message.attachments }));
+    /** Rehydrates a persisted queue and advances the id sequence past it. */
+    restore(messages: PendingMessage[]): void {
+        this.clear();
+        for (const original of messages) {
+            const message = { ...original, attachments: [...original.attachments] };
+            if (typeof message.id !== "number" || !Number.isFinite(message.id)) {
+                message.id = ++this.seq;
+            } else {
+                this.seq = Math.max(this.seq, message.id);
+            }
+            this.messages.push(message);
+        }
     }
+
+    /** Full durable snapshot; the webview ignores dispatch-only metadata. */
+    items(): PendingMessage[] {
+        return this.messages.map((message) => ({ ...message, attachments: [...message.attachments] }));
+    }
+}
+
+function sameAttachments(first: string[], second: unknown): boolean {
+    return Array.isArray(second)
+        && first.length === second.length
+        && first.every((value, index) => value === second[index]);
+}
+
+/**
+ * Reduces append-only render messages to the queue that was genuinely pending
+ * at shutdown. A later user row consumes its matching queued item, covering
+ * legacy logs that omitted the final empty queue snapshot during dispatch.
+ */
+export function recoverPersistedQueue(messages: unknown[]): PendingMessage[] {
+    let pending: PendingMessage[] = [];
+    for (const raw of messages) {
+        const message = raw as { type?: unknown; items?: unknown; text?: unknown; attachments?: unknown; clientMessageId?: unknown };
+        if (message?.type === "queue" && Array.isArray(message.items)) {
+            pending = message.items.flatMap((item) => {
+                const value = item as Partial<PendingMessage>;
+                if (typeof value?.text !== "string") { return []; }
+                return [{
+                    ...value,
+                    text: value.text,
+                    attachments: Array.isArray(value.attachments)
+                        ? value.attachments.filter((path): path is string => typeof path === "string")
+                        : [],
+                }];
+            });
+            continue;
+        }
+        if (message?.type !== "user" || typeof message.text !== "string") { continue; }
+        const index = pending.findIndex((item) => {
+            const queuedId = item.clientMessageId;
+            const sentId = typeof message.clientMessageId === "string" ? message.clientMessageId : undefined;
+            if (queuedId && sentId) { return queuedId === sentId; }
+            return item.text === message.text && sameAttachments(item.attachments, message.attachments ?? []);
+        });
+        if (index >= 0) { pending.splice(index, 1); }
+    }
+    return pending;
 }

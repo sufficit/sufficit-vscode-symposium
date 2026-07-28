@@ -180,7 +180,9 @@ export class ChatController {
 
     /** Restores a reopened session's render log from disk (see controllerPersist). */
     seedRenderLog(): boolean {
-        return seedRenderLogFn({ sessionId: () => this.sessionId, stream: this.stream, state: this.persistState }, this.options.resumeSessionId);
+        const restored = seedRenderLogFn({ sessionId: () => this.sessionId, stream: this.stream, state: this.persistState }, this.options.resumeSessionId);
+        this.queue.restore(restored.pending);
+        return restored.seeded;
     }
 
     async loadHistory(info: SessionInfo): Promise<void> {
