@@ -203,6 +203,13 @@ export interface SlashCommand {
 /** Options for starting or resuming a live session. */
 export interface SessionStartOptions {
     cwd: string;
+    /**
+     * Authorized write roots for this session: when set (non-empty), host-level
+     * containment blocks write_file/edit_file and shell cwd outside these paths
+     * (delivery 1E write-root guardrail). Empty/undefined = no containment.
+     * Typically computed from the open workspace folders.
+     */
+    allowedWriteRoots?: string[];
     /** Resume an existing session instead of starting a new one. */
     resumeSessionId?: string;
     /** Model override; adapters map it to their CLI flag. */

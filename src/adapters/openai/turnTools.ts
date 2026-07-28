@@ -42,6 +42,7 @@ export async function executeTurnTool(args: {
     return runAiTool(args.name, args.input, {
         hub: args.hub,
         cwd: args.options.cwd,
+        allowedWriteRoots: args.options.allowedWriteRoots,
         permission: args.options.permission,
         sessionId: args.sessionId,
         shellExecution: args.shellMode,

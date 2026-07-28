@@ -6,6 +6,7 @@ import { mimeTypeFor } from "../parse";
 import { workspaceKey, resourceContentPath, ensureScaffold, readWorkspaceBootstrap } from "../../config/root";
 import { ToolContext, getLiveTranscriptReader } from "./types";
 import { canUseRtk, normalizeTerminalId, resolvePath, runShell, runShellInTerminal } from "./shell";
+import { writeRootError } from "./writeRootGuard";
 
 /**
  * Local tool branches (web navigation, session memory read-back, per-workspace
@@ -144,6 +145,11 @@ export async function runLocalTool(name: string, args: Record<string, unknown>, 
         const command = String(args.command ?? "").trim();
         if (!command) { return JSON.stringify({ error: "empty command" }); }
         const cwd = args.cwd ? resolvePath(ctx.cwd, String(args.cwd)) : ctx.cwd;
+        // Write-root guardrail: block running commands in a cwd outside the
+        // authorized workspace roots (prevents cross-repo operations, stashing
+        // WIP from another project, etc.).
+        const cwdError = writeRootError(cwd, ctx.allowedWriteRoots);
+        if (cwdError) { return JSON.stringify({ error: cwdError }); }
         // Timeout: default 30s. 0 (or negative) means UNLIMITED — the model
         // must opt into that explicitly for long-running services. A bounded
         // value is clamped to [1s, 1h]. "Unlimited" is capped at 2^31-1 ms
@@ -212,6 +218,8 @@ export async function runLocalTool(name: string, args: Record<string, unknown>, 
             return JSON.stringify({ error: "plan mode: writing files is disabled (except creating new *.md planning documents)" });
         }
         const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+        const rootError = writeRootError(p, ctx.allowedWriteRoots);
+        if (rootError) { return JSON.stringify({ error: rootError }); }
         fs.mkdirSync(path.dirname(p), { recursive: true });
         fs.writeFileSync(p, String(args.content ?? ""), "utf8");
         return JSON.stringify({ path: p, bytes: Buffer.byteLength(String(args.content ?? "")) });
@@ -219,6 +227,8 @@ export async function runLocalTool(name: string, args: Record<string, unknown>, 
     if (name === "edit_file") {
         if (planMode) { return JSON.stringify({ error: "plan mode: editing files is disabled" }); }
         const p = resolvePath(ctx.cwd, String(args.path ?? ""));
+        const rootError = writeRootError(p, ctx.allowedWriteRoots);
+        if (rootError) { return JSON.stringify({ error: rootError }); }
         const oldStr = String(args.old_string ?? "");
         const newStr = String(args.new_string ?? "");
         const replaceAll = args.replace_all === true;

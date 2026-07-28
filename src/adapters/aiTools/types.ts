@@ -14,6 +14,16 @@ export interface ToolContext {
     /** Session working directory — base for shell/fs tools and relative paths. */
     cwd: string;
     /**
+     * Authorized write roots: when set (non-empty), write_file/edit_file and
+     * shell cwd are contained to these resolved absolute paths. A mutation
+     * targeting a path outside any root is blocked by the host (not the prompt),
+     * preventing the agent from writing across repo boundaries or into files
+     * outside the authorized workspace. Empty/undefined = no containment
+     * enforced (preserves the unrestricted behavior for backends that don't
+     * scope writes).
+     */
+    allowedWriteRoots?: string[];
+    /**
      * Unified permission mode: "admin" (no gate) | "manager" (destructive tools
      * need inline approval — see turnRunner.ts's requestApproval) | "user"
      * (every write/destructive tool needs approval) | "plan" (read-only here;

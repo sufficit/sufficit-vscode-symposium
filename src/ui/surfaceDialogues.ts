@@ -276,6 +276,16 @@ export class SurfaceDialogues {
         if (!adapter) {
             return;
         }
+        // Write-root guardrail (delivery 1E): scope the agent's writes to the
+        // open workspace folders so it can't write across repo boundaries or
+        // into files outside the authorized workspace. Empty when no folders
+        // are open (no containment, preserving the unrestricted default).
+        if (!options.allowedWriteRoots || options.allowedWriteRoots.length === 0) {
+            const folders = vscode.workspace.workspaceFolders ?? [];
+            if (folders.length) {
+                options = { ...options, allowedWriteRoots: folders.map((f) => f.uri.fsPath) };
+            }
+        }
         const generation = ++this.generation;
         this.d.setSendBlockedReason(undefined);
         this.d.detachActive();
