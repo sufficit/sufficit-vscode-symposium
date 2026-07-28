@@ -23,6 +23,7 @@ import { claudeOAuthToken } from "./credentials";
 import { parseTranscriptLine, readSessionMeta } from "./transcript";
 import { followClaudeSession } from "./claudeFollow";
 import { claudeUsage } from "./usage";
+import { ClaudeTaskTracker } from "./tasks";
 
 export class ClaudeAdapter implements AgentAdapter {
     readonly backend = "claude" as const;
@@ -206,7 +207,7 @@ export class ClaudeAdapter implements AgentAdapter {
         return { models: this.models(), labels: cached?.labels ?? {} };
     }
 
-    hasNativeTodo(): boolean { return true; }   // TodoWrite
+    hasNativeTodo(): boolean { return true; }   // TaskCreate/TaskUpdate (previously TodoWrite)
     supportsImages(): boolean { return true; }
 
     // claude --effort <level> (2.1.177). "default" means: don't pass the flag.
@@ -291,8 +292,9 @@ export class ClaudeAdapter implements AgentAdapter {
             return [];
         }
         const messages: HistoryMessage[] = [];
+        const taskTracker = new ClaudeTaskTracker();
         for (const line of content.split("\n")) {
-            messages.push(...parseTranscriptLine(line));
+            messages.push(...parseTranscriptLine(line, taskTracker));
         }
         return messages;
     }

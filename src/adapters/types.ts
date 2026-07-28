@@ -59,7 +59,7 @@ export type AgentEvent =
     | { kind: "thinking"; text: string }
     | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string; diff?: { old: string; new: string }[]; terminalName?: string }
     | { kind: "tool-output"; toolName?: string; toolId?: string; text: string }
-    | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string }
+    | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string; todos?: TodoItem[] }
     /** Inline permission gate (admin/manager/user modes): the turn pauses on
      *  this specific toolId until the webview posts an "approval-response". */
     | { kind: "approval-request"; toolId: string; toolName: string; detail?: string; tier: "write" | "destructive" }

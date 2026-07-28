@@ -327,7 +327,7 @@ export class ChatController {
             this.emitChanged();
         }
         // Remember the latest native TodoWrite/update_plan state — see lastTodos.
-        if (event.kind === "tool-start" && event.todos) {
+        if ((event.kind === "tool-start" || event.kind === "tool-end") && event.todos) {
             this.lastTodos = event.todos;
         }
         // Fence mode only: a hub-tools session already tracks its plan via

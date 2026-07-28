@@ -34,7 +34,10 @@ export function applyEvent(ev: any): void {
     else if (ev.kind === "status-notice") renderStatusNotice(ev.text, ev.anchorIndex, ev.severity);
     else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }
     else if (ev.kind === "tool-output") fillToolResult(ev.toolId, ev.text);
-    else if (ev.kind === "tool-end") fillToolResult(ev.toolId, ev.result, true);
+    else if (ev.kind === "tool-end") {
+        fillToolResult(ev.toolId, ev.result, true);
+        if (ev.todos) { renderTool("TodoWrite", "", { todos: ev.todos }); }
+    }
     else if (ev.kind === "approval-request") renderApprovalRequest(ev.toolId, ev.toolName, ev.detail, ev.tier);
     else if (ev.kind === "usage") { setLastUsage(ev); renderStatusbar(); }
     else if (ev.kind === "quota") { setLastQuota(ev); renderStatusbar(); }

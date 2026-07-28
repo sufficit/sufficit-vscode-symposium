@@ -135,8 +135,9 @@ export const CHECKPOINT_PREAMBLE =
  * How the agent should track multi-step work, per backend capability:
  *  - "hub-tools": no native todo tool, but the Symposium session task tools
  *    (add_task / list_tasks / task_complete) are available (OpenAI adapter w/ Hub).
- *  - "native":    the CLI has its own todo/plan tool (Claude TodoWrite, Codex
- *    update_plan). The agent must use that — Symposium parses and renders it.
+ *  - "native":    the CLI has its own todo/plan tool (Claude TaskCreate /
+ *    TaskUpdate, Codex update_plan). The agent must use that — Symposium parses
+ *    and renders it.
  *  - "fence":     neither; the agent keeps a fenced ```todo block (Copilot).
  */
 export type TrackingMode = "hub-tools" | "native" | "fence";
@@ -157,7 +158,7 @@ export function planTrackingPreamble(mode: TrackingMode): string {
     }
     if (mode === "native") {
         return head + " " +
-            "Use your native plan/todo tool (e.g. TodoWrite, update_plan) to record the plan and re-emit the FULL list, with each step's status, the moment ANY step changes state — Symposium renders it and keeps the next step in view. " +
+            "Use your native plan/todo tool (e.g. Claude TaskCreate/TaskUpdate, TodoWrite, update_plan) to record the plan and update every step's status the moment it changes — Symposium renders the current state and keeps the next step in view. " +
             "Calling it once at the start and never again defeats the whole point: the panel is meant to show your CURRENT progress, not a snapshot of your original intent. If you marked a step in_progress, call it again with that step completed as soon as you finish it — do not batch several steps' worth of progress into one call at the end.";
     }
     return head + " " +

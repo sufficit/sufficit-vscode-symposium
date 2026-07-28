@@ -4,6 +4,7 @@ import {
     prettyJson, summarizeToolInput, toolFilePath,
 } from "../parse";
 import { HistoryMessage } from "../types";
+import { ClaudeTaskTracker } from "./tasks";
 
 /**
  * Cleans a stored user message for display: slash-command invocations are
@@ -39,7 +40,7 @@ export function rawLineType(line: string): string | undefined {
 }
 
 /** Parses one transcript JSONL line into chat messages (text + tool calls). */
-export function parseTranscriptLine(line: string): HistoryMessage[] {
+export function parseTranscriptLine(line: string, taskTracker?: ClaudeTaskTracker): HistoryMessage[] {
     if (!line.trim()) {
         return [];
     }
@@ -48,16 +49,19 @@ export function parseTranscriptLine(line: string): HistoryMessage[] {
         type: "user" | "assistant" | "result";
         message?: {
             content?: string | Array<{
-                type: "text" | "thinking" | "tool_use";
+                type: string;
                 text?: string;
                 thinking?: string;
+                id?: string;
                 name?: string;
                 input?: unknown;
+                tool_use_id?: string;
             }>;
         };
         is_error?: boolean;
         result?: unknown;
         subtype?: unknown;
+        toolUseResult?: unknown;
         timestamp?: string;
     }
     let entry: TranscriptEntry;
@@ -81,7 +85,15 @@ export function parseTranscriptLine(line: string): HistoryMessage[] {
                     const t = cleanUserText(block.text);
                     if (t) { messages.push({ role: "user", text: t }); }
                 }
-                // tool_result blocks are skipped: the tool line was already added
+                if (typeof block === "object" && block !== null && block.type === "tool_result") {
+                    const toolId = typeof (block as { tool_use_id?: unknown }).tool_use_id === "string"
+                        ? (block as { tool_use_id: string }).tool_use_id : undefined;
+                    const todos = taskTracker?.observeToolResult(toolId, entry.toolUseResult);
+                    // Task results are normally hidden because their tool row was
+                    // already rendered. A changed native task snapshot is the
+                    // exception: emit a hidden todo render update for the panel.
+                    if (todos) { messages.push({ role: "tool", text: "TodoWrite", toolName: "TodoWrite", todos }); }
+                }
             }
         }
     } else if (entry.type === "assistant") {
@@ -98,7 +110,8 @@ export function parseTranscriptLine(line: string): HistoryMessage[] {
                         role: "tool", text: block.name ?? "", toolName: block.name ?? "",
                         detail: summarizeToolInput(block.input), input: prettyJson(block.input),
                         added: counts?.added, removed: counts?.removed,
-                        todos: extractTodos(block.name ?? "", block.input),
+                        todos: extractTodos(block.name ?? "", block.input)
+                            ?? taskTracker?.observeToolUse(block.name ?? "", block.input, block.id),
                         path: toolFilePath(block.input),
                         diff: editDiff(block.name ?? "", block.input),
                     });

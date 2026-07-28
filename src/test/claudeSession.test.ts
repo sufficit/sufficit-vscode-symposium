@@ -61,3 +61,31 @@ test("Claude keeps normal session ids and titles unchanged", () => {
     assert.equal(claudeResumeSessionId("my named session"), "my named session");
     assert.equal(claudeResumeSessionId("not-a-uuid/subagents/agent-123"), "not-a-uuid/subagents/agent-123");
 });
+
+test("Claude emits native TaskCreate/TaskUpdate snapshots for the plan panel", () => {
+    const session = new ClaudeSession({ executable: "claude", model: "", permissionMode: "plan", env: {} }, { cwd: process.cwd() });
+    const events: AgentEvent[] = [];
+    session.on("event", (event: AgentEvent) => events.push(event));
+    const receive = (session as unknown as { handleLine(line: string): void }).handleLine.bind(session);
+
+    receive(JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "create-1", name: "TaskCreate", input: { subject: "Inspect Claude task events" } }] },
+    }));
+    receive(JSON.stringify({
+        type: "user",
+        toolUseResult: { task: { id: "4", subject: "Inspect Claude task events" } },
+        message: { content: [{ type: "tool_result", tool_use_id: "create-1", content: "Task #4 created" }] },
+    }));
+    receive(JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "update-1", name: "TaskUpdate", input: { taskId: "4", status: "in_progress" } }] },
+    }));
+
+    const snapshots = events.filter((event): event is Extract<AgentEvent, { kind: "tool-start" }> => event.kind === "tool-start" && !!event.todos);
+    assert.deepEqual(snapshots.map((event) => event.todos), [
+        [{ content: "Inspect Claude task events", status: "pending", order: 1 }],
+        [{ content: "Inspect Claude task events", status: "in_progress", order: 1 }],
+    ]);
+    session.dispose();
+});

@@ -13,6 +13,8 @@ import {
 } from "../parse";
 import { AgentSession, SessionStartOptions } from "../types";
 import { claudeResumeSessionId } from "./resume";
+import { ClaudeTaskTracker } from "./tasks";
+import { imageBlock } from "./images";
 export interface ClaudeAdapterConfig {
     executable: string;
     /** Optional diagnostics sink (the Symposium output channel). */
@@ -73,6 +75,8 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     // A "result" line's turn-end, held back while pendingToolIds is non-empty
     // so busy/the working indicator doesn't drop while delegated work continues.
     private deferredTurnEnd: { costUsd: unknown; durationMs: unknown } | undefined;
+    /** Claude 2.1.210 emits individual TaskCreate/TaskUpdate records, not TodoWrite snapshots. */
+    private readonly taskTracker = new ClaudeTaskTracker();
 
     constructor(
         private readonly config: ClaudeAdapterConfig,
@@ -277,7 +281,8 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                                 input: prettyJson(b.input),
                                 added: counts?.added,
                                 removed: counts?.removed,
-                                todos: extractTodos(String(b.name), b.input),
+                                todos: extractTodos(String(b.name), b.input)
+                                    ?? this.taskTracker.observeToolUse(String(b.name), b.input, typeof b.id === "string" ? b.id : undefined),
                                 path: filePath,
                                 diff: editDiff(String(b.name), b.input),
                             });
@@ -293,11 +298,16 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                         const b = block as Record<string, unknown>;
                         if (b.type === "tool_result") {
                             if (typeof b.tool_use_id === "string") { this.pendingToolIds.delete(b.tool_use_id); }
+                            const todos = this.taskTracker.observeToolResult(
+                                typeof b.tool_use_id === "string" ? b.tool_use_id : undefined,
+                                event.toolUseResult,
+                            );
                             this.emit("event", {
                                 kind: "tool-end",
                                 toolName: typeof b.tool_use_id === "string" ? b.tool_use_id : "tool",
                                 toolId: b.tool_use_id,
                                 result: toolResultText(b.content),
+                                todos,
                             });
                         }
                     }
@@ -384,16 +394,4 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         this.child = undefined;
         this.removeAllListeners();
     }
-}
-
-/** Reads an image file into an Anthropic base64 image content block. */
-function imageBlock(file: string): { type: string; source: { type: string; media_type: string; data: string } } | undefined {
-    const ext = (file.split(".").pop() || "").toLowerCase();
-    const media = ext === "jpg" || ext === "jpeg" ? "image/jpeg"
-        : ext === "gif" ? "image/gif" : ext === "webp" ? "image/webp" : ext === "png" ? "image/png" : "";
-    if (!media) { return undefined; }
-    try {
-        const data = fs.readFileSync(file).toString("base64");
-        return { type: "image", source: { type: "base64", media_type: media, data } };
-    } catch { return undefined; }
 }
