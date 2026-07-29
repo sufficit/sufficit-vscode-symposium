@@ -207,13 +207,13 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const surfaceDeps = buildChatSurfaceDeps({ context, runtime, store, adapterByBackend, auth, deleting, rawSessions });
     const chatView = new ChatViewProvider(surfaceDeps);
 
-    const refreshAll = async () => {
+    const refreshAll = () => {
         void chatView.refreshSessions();
         ChatPanel.refreshSessions();
         // Re-push session titles to active surfaces so the chat header updates
         // when a session is renamed (not just the sessions list row).
-        await ChatPanel.reMetaActive(store as any);
-        chatView.reMetaActive(store as any);
+        ChatPanel.reMetaActive();
+        chatView.reMetaActive();
     };
     // Debounce status-driven refreshes (turns flip busy frequently).
     let statusTimer: ReturnType<typeof setTimeout> | undefined;

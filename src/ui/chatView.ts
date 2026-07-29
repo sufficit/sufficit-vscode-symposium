@@ -57,8 +57,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         void this.surface?.refreshSessions();
     }
 
-    reMetaActive(store: { customTitle: (id: string) => string | undefined }): void {
-        this.surface?.reMetaActive(store);
+    reMetaActive(): void {
+        void this.surface?.reMetaActive();
     }
 
     /** Resets the surface if it currently shows the just-deleted session. */
