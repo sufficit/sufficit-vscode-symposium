@@ -40,7 +40,17 @@ export class RemoteAccessPanel {
                 void vscode.window.showInformationMessage("Symposium: remote-access URL copied.");
             }
         }, undefined, context.subscriptions);
-        this.panel.onDidDispose(() => { RemoteAccessPanel.current = undefined; }, undefined, context.subscriptions);
+        this.panel.onDidDispose(() => {
+            RemoteAccessPanel.current = undefined;
+            bridge.setRelayUrlCallback(() => undefined);   // stop refreshing on dispose
+        }, undefined, context.subscriptions);
+        // Re-render the QR when the relay URL arrives (async WS handshake may
+        // complete after the panel first opened with a tailnet fallback URL).
+        bridge.setRelayUrlCallback(() => {
+            if (RemoteAccessPanel.current === this) {
+                void this.render(bridge);
+            }
+        });
         void bridge; // referenced only for the constructor signature symmetry with render()
     }
 

@@ -38,6 +38,11 @@ export class RemoteBridge {
     private connection: { url: string; token: string; https: boolean } | undefined;
     private lastRejection: { at: string; reason: "allowedHosts"; receivedHost: string; allowedHosts: string[] } | undefined;
     private relay: RelayClient | undefined;
+    /** Called when the relay URL changes (connect/disconnect) so the QR panel can refresh. */
+    private onRelayUrlChange?: (url: string | undefined) => void;
+
+    /** Register a callback fired when the relay public URL is assigned or lost. */
+    setRelayUrlCallback(cb: (url: string | undefined) => void): void { this.onRelayUrlChange = cb; }
 
     /** The public URL assigned by the Sufficit relay, or undefined when not active. */
     getRelayPublicUrl(): string | undefined { return this.relay?.getPublicUrl(); }
@@ -116,6 +121,7 @@ export class RemoteBridge {
             relayUrl: reg.relayWsUrl,
             bridgePort: port,
             getToken: () => getHubLoginToken(),
+            onPublicUrl: (url) => this.onRelayUrlChange?.(url),
             log: (msg) => this.log(msg),
         });
         void this.relay.start();

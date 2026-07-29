@@ -37,6 +37,8 @@ export interface RelayClientOptions {
     bridgePort: number;
     /** Returns the Sufficit JWT to authenticate the outbound connection. */
     getToken: () => Promise<string | null>;
+    /** Called when the public URL is assigned (registered) or lost (disconnect). */
+    onPublicUrl?: (url: string | undefined) => void;
     /** Optional logger. */
     log?: (msg: string) => void;
 }
@@ -158,6 +160,7 @@ export class RelayClient {
             this.log("connection closed");
             this.stopHeartbeat();
             this.publicUrl = undefined;
+            this.opts.onPublicUrl?.(undefined);
             this.scheduleReconnect();
         });
         ws.addEventListener("error", () => {
@@ -193,6 +196,7 @@ export class RelayClient {
         if (type === "registered") {
             this.publicUrl = msg.publicUrl as string | undefined;
             this.log(`registered — public URL ${this.publicUrl ?? "(none)"}`);
+            this.opts.onPublicUrl?.(this.publicUrl);
         } else if (type === "request") {
             void this.handleProxyRequest(msg);
         }
