@@ -1612,3 +1612,42 @@
     #resizer:hover::after, #resizer.dragging::after { background: var(--vscode-focusBorder); opacity: 1; }
     #root.side-right #resizer { order: 2; }
     #root.narrow #resizer, #root.chat-only #resizer { display: none; }
+
+    /* ── Developer Mode: zone identifier badges ────────────────────────────── */
+    /* When .dev-mode is on #root, every [data-zone] shows a badge with its id. */
+    .dev-mode [data-zone] {
+        outline: 1px dashed rgba(124, 58, 237, 0.35);
+        outline-offset: -1px;
+        position: relative;
+    }
+    .dev-mode [data-zone]::before {
+        content: attr(data-zone);
+        position: absolute;
+        top: 0; left: 0;
+        z-index: 99999;
+        background: rgba(124, 58, 237, 0.85);
+        color: #fff;
+        font-size: 9px;
+        line-height: 1;
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-weight: 600;
+        padding: 2px 5px;
+        border-radius: 0 0 4px 0;
+        pointer-events: auto;
+        text-transform: lowercase;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+    }
+    .dev-mode [data-zone]:hover::before {
+        opacity: 1;
+    }
+    /* Always show on the biggest zones for quick scanning */
+    .dev-mode [data-zone="header"]::before,
+    .dev-mode [data-zone="composer"]::before,
+    .dev-mode [data-zone="sessions"]::before,
+    .dev-mode [data-zone="chat"]::before,
+    .dev-mode [data-zone="footer"]::before {
+        opacity: 1;
+    }

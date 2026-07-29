@@ -273,6 +273,11 @@ export const configViews = `    function resourceList(kind) {
                     '<div class="desc">' + esc(t("config.prefs.systemInstruction.desc")) + '</div>' +
                     '<textarea class="pref-text" data-key="symposium.chat.systemInstruction" rows="5" placeholder="' + esc(t("config.prefs.systemInstruction.placeholder")) + '">' + esc(p.systemInstruction || "") + '</textarea>' +
                 "</div>"
+            ) +
+            section(t("config.prefs.section.developer"),
+                item(t("config.prefs.devMode.name"), t("config.prefs.devMode.desc"),
+                    sel("symposium.chat.devMode", p.devMode ? "true" : "false",
+                        [{ v: "true", l: t("config.prefs.devMode.on") }, { v: "false", l: t("config.prefs.devMode.off") }]))
             )
         );
     }

@@ -181,6 +181,9 @@ export class ConfigPanel {
                     else if (message.key === "symposium.voice.whisper.translate" || message.key === "symposium.voice.fasterWhisper.vad") {
                         value = message.value === "true";
                     }
+                    else if (message.key === "symposium.chat.devMode") {
+                        value = message.value === "true";
+                    }
                     else if (message.key === "symposium.voice.whisper.threads") { value = Math.max(1, Number(message.value) || 4); }
                     else if (message.key === "symposium.voice.whisper.beamSize" || message.key === "symposium.voice.fasterWhisper.beamSize") { value = Math.max(1, Number(message.value) || 5); }
                     else if (message.key === "symposium.voice.whisper.temperature") { value = Math.min(1, Math.max(0, Number(message.value) || 0)); }
@@ -331,6 +334,7 @@ export class ConfigPanel {
                 autoCompactOnTasksComplete: vscode.workspace.getConfiguration("symposium.openai").get<boolean>("autoCompactOnTasksComplete", true),
                 maxHistoryMessages: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxHistoryMessages", 40),
                 timeGapNotice: vscode.workspace.getConfiguration("symposium.openai").get<string>("timeGapNotice", "5m"),
+                devMode: chat.get<boolean>("devMode", false),
                 shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
                 autoApprove: vscode.workspace.getConfiguration().get<boolean>("chat.tools.global.autoApprove", false),
                 voiceLanguage: root.get<string>("voice.language", "pt-BR"),

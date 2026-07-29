@@ -150,6 +150,9 @@ export class ChatSurface {
             if (e.affectsConfiguration("symposium.chat.sessionsSide")) {
                 this.post({ type: "prefs", sessionsSide: vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto") });
             }
+            if (e.affectsConfiguration("symposium.chat.devMode")) {
+                this.post({ type: "prefs", devMode: vscode.workspace.getConfiguration("symposium.chat").get<boolean>("devMode", false) });
+            }
             if (e.affectsConfiguration("symposium.voice") && this.ready) {
                 this.pushVoicePreferences();
             }

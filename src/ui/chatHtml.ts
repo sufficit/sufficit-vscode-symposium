@@ -17,8 +17,8 @@ export const chatBodyMarkup = /* html */ `<div id="root">
         <div id="bootHint">Starting…</div>
     </div>
     <div id="progress"></div>
-    <aside id="sessionsPane">
-        <div id="sessionsHeader">
+    <aside id="sessionsPane" data-zone="sessions">
+        <div id="sessionsHeader" data-zone="sessions-header">
             <span>Sessions</span>
             <span>
                 <button id="sessionRefreshBtn" class="iconBtn" title="Refresh sessions" aria-label="Refresh sessions"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M13.6 2.7v3.2h-3.2l1.2-1.2A4 4 0 1 0 12 8h1.3A5.3 5.3 0 1 1 12.5 4l1.1-1.3Z"/></svg></button>
@@ -28,12 +28,12 @@ export const chatBodyMarkup = /* html */ `<div id="root">
             </span>
         </div>
         <input id="sessionSearch" class="sessionSearch" type="search" placeholder="Search sessions…" aria-label="Search sessions" />
-        <div id="sessionsList"></div>
-        <div id="accountFooter" title="Sufficit account"></div>
+        <div id="sessionsList" data-zone="sessions-list"></div>
+        <div id="accountFooter" data-zone="account" title="Sufficit account"></div>
     </aside>
     <div id="resizer" title="Drag to resize"></div>
     <main id="chatCol">
-        <div id="chatHeader">
+        <div id="chatHeader" data-zone="header">
             <button id="listToggle" class="iconBtn" title="Sessions" aria-label="Sessions"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v1H2V4Zm0 4h12v1H2V8Zm0 4h12v1H2v-1Z"/></svg></button>
             <span id="chatTitle"></span>
             <span id="agentBadge" class="agentBadge" style="display:none" title="Agent driving this session"></span>
@@ -53,9 +53,9 @@ export const chatBodyMarkup = /* html */ `<div id="root">
                 <svg viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1H2a1 1 0 0 0-1 1v4.5a1 1 0 0 0 1 1h4.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1Zm0 1v4.5H2V2h4.5ZM4 3.5h.5v.5H4v-.5ZM14 1H9.5a1 1 0 0 0-1 1v4.5a1 1 0 0 0 1 1H14a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1Zm0 1v4.5H9.5V2H14Zm-2 1.5h.5v.5H12v-.5ZM6.5 8.5H2a1 1 0 0 0-1 1V14a1 1 0 0 0 1 1h4.5a1 1 0 0 0 1-1V9.5a1 1 0 0 0-1-1Zm0 1V14H2V9.5h4.5ZM4 11h.5v.5H4V11ZM9 8.5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0v-6Zm5.5 0a.5.5 0 0 0-1 0V11H12a.5.5 0 0 0 0 1h1.5v3a.5.5 0 0 0 1 0v-6.5Z"/></svg>
             </button>
         </div>
-        <div id="logWrap">
-            <div id="log"><div id="logBody"></div></div>
-            <div id="emptyState">
+        <div id="logWrap" data-zone="chat">
+            <div id="log" data-zone="chat-log"><div id="logBody"></div></div>
+            <div id="emptyState" data-zone="empty-state">
                 <div class="esLogo"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M7.5 1.5h1V3H11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h2.5V1.5ZM6 6.5A1 1 0 1 0 6 8.5 1 1 0 0 0 6 6.5Zm4 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM1 6h1v4H1V6Zm13 0h1v4h-1V6Z"/></svg></div>
                 <div class="esTitle">Symposium</div>
                 <div class="esHint">Type below to start a conversation.</div>
@@ -73,23 +73,23 @@ export const chatBodyMarkup = /* html */ `<div id="root">
             </div>
             <button id="scrollBottom" title="Go to the bottom" aria-label="Go to the bottom"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 13.5 13 8.5h-3v-6H6v6H3L8 13.5Z"/></svg></button>
         </div>
-        <div id="queued"></div>
-        <div id="panelTabs"></div>
-        <div id="panelBody">
+        <div id="queued" data-zone="queued"></div>
+        <div id="panelTabs" data-zone="panel-tabs"></div>
+        <div id="panelBody" data-zone="panel-body">
             <div id="plan"></div>
             <div id="guardrails"></div>
             <div id="tasks"></div>
             <div id="changedFiles"></div>
             <div id="attachedPanel"><div class="apHead">Attached to context</div><div id="chips"></div></div>
         </div>
-        <div id="composer">
+        <div id="composer" data-zone="composer">
             <div id="slash"></div>
             <div id="composerBlockedNotice" role="status" aria-live="polite">
                 <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.25 13 3v3.75c0 3.35-2.02 6.4-5 7.75-2.98-1.35-5-4.4-5-7.75V3l5-1.75Zm0 1.6L4.5 4.07v2.68c0 2.55 1.42 4.96 3.5 6.12 2.08-1.16 3.5-3.57 3.5-6.12V4.07L8 2.85ZM7.25 5h1.5v4h-1.5V5Zm0 5h1.5v1.5h-1.5V10Z"/></svg>
                 <span></span>
             </div>
-            <textarea id="input" placeholder="Ask the agent…  (Enter sends · Shift+Enter newline)"></textarea>
-            <div id="toolbar">
+            <textarea id="input" data-zone="input" placeholder="Ask the agent…  (Enter sends · Shift+Enter newline)"></textarea>
+            <div id="toolbar" data-zone="toolbar">
                 <div id="toolbarControls">
                     <button id="addContext" class="iconBtn" title="Attach files" aria-label="Attach files">
                         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg>
@@ -112,7 +112,7 @@ export const chatBodyMarkup = /* html */ `<div id="root">
                     <option value="queue">Queue</option>
                     <option value="steer">Steer</option>
                 </select>
-                <div id="sendGroup">
+                <div id="sendGroup" data-zone="send-group">
                     <button id="stopBtn" title="Stop the running turn (Esc)" aria-label="Stop the running turn" style="display:none"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg></button>
                     <button id="mic" title="Voice input" aria-label="Voice input" style="display:none"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5a2.5 2.5 0 0 0-2.5 2.5v4a2.5 2.5 0 0 0 5 0V4a2.5 2.5 0 0 0-2.5-2.5Z"/><path d="M4.75 7.5a.75.75 0 0 1 .75.75 2.5 2.5 0 0 0 5 0 .75.75 0 0 1 1.5 0 4.002 4.002 0 0 1-3.25 3.93V14h1.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1 0-1.5h1.5v-1.82A4.002 4.002 0 0 1 4 8.25a.75.75 0 0 1 .75-.75Z"/></svg></button>
                     <button id="send" title="Send (Enter)" aria-label="Send (Enter)"><span id="sendIcon"></span></button>
@@ -120,7 +120,7 @@ export const chatBodyMarkup = /* html */ `<div id="root">
                 </div>
             </div>
         </div>
-        <footer id="statusbar"></footer>
+        <footer id="statusbar" data-zone="footer"></footer>
     </main>
 </div>
 <div id="ctxMenu"></div>

@@ -17,6 +17,7 @@ import { activeSessionId, setAgentLabels, setActiveFile, setActiveFileDismissed,
 /** Apply a `meta` message payload (session resolved / re-meta). */
 export function applyMeta(data: any): void {
     setSideMode(data.sessionsSide || "auto");
+    root.classList.toggle("dev-mode", !!data.devMode);
     // Seed the default send mode once (don't override a saved choice).
     if (data.whenBusy && !(saved && saved.sendMode)) { sendMode.value = data.whenBusy; }
     // Apply the real busy state from the host (overrides any stale busy set by render log replay).

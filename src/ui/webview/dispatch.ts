@@ -56,6 +56,7 @@ window.addEventListener("message", ({ data }) => {
         case "prefs": {
             // Live preference updates (no reload needed), e.g. sessions side.
             if (typeof data.sessionsSide === "string") { setSideMode(data.sessionsSide); layout(); }
+            if (typeof data.devMode === "boolean") { root.classList.toggle("dev-mode", data.devMode); }
             break;
         }
         case "clear": {
