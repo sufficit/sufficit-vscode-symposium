@@ -42,7 +42,8 @@ export function getJoinedHostname(): string | undefined {
     return joinedHostname;
 }
 
-async function readStatus(): Promise<TailscaleStatus | null> {
+/** Reads Tailscale daemon status directly (exported for configPanel VPN check). */
+export async function checkTailscaleStatus(): Promise<TailscaleStatus | null> {
     const { code, stdout } = await runTailscale(["status", "--json"]);
     if (code !== 0 || !stdout.trim()) {
         return null;
@@ -70,7 +71,7 @@ function deviceLabel(): string {
  * error surfaced to the user (login must never fail because of this).
  */
 export async function ensureTailnetJoined(hub: HubClient, log: (msg: string) => void): Promise<void> {
-    const status = await readStatus();
+    const status = await checkTailscaleStatus();
     if (status === null) {
         log("[tailnet] `tailscale` CLI not found or not responding — remote access needs it installed separately.");
         return;

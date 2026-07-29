@@ -291,9 +291,17 @@ export class ConfigPanel {
 
         // Network status: bridge, relay, VPN (Tailscale) — for the Sufficit tab.
         const bridgeCfg = vscode.workspace.getConfiguration("symposium.bridge");
-        const { getJoinedHostname } = await import("../net/tailnet");
+        const { getJoinedHostname, checkTailscaleStatus } = await import("../net/tailnet");
         const { getMachineId } = await import("../net/relayClient");
-        const vpnHostname = getJoinedHostname();
+        // Try the module-level cache first; if empty, check Tailscale directly
+        // (ensureTailnetJoined may not have run, e.g. not logged in to Sufficit).
+        let vpnHostname = getJoinedHostname();
+        if (!vpnHostname) {
+            const ts = await checkTailscaleStatus();
+            if (ts?.BackendState === "Running" && ts.Self?.HostName) {
+                vpnHostname = ts.Self.HostName;
+            }
+        }
         const machineId = getMachineId();
         const bridgeEnabled = bridgeCfg.get<boolean>("enabled", false);
         const relayMode = bridgeCfg.get<string>("relay", "auto");
