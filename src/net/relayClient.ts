@@ -48,7 +48,7 @@ export interface RelayClientOptions {
 export function getMachineId(): string {
     const file = path.join(os.homedir(), ".symposium", "relay-machine-id");
     try {
-        let id = fs.readFileSync(file, "utf8").trim();
+        const id = fs.readFileSync(file, "utf8").trim();
         if (id) { return id; }
     } catch { /* not yet created */ }
     const id = randomUUID();
@@ -225,7 +225,6 @@ export class RelayClient {
                 this.send({ type: "response", id, status: res.status, headers: resHeaders, stream: true });
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
-                // eslint-disable-next-line no-constant-condition
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) { break; }

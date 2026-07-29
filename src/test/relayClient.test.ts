@@ -81,7 +81,7 @@ test("RelayClient.getPublicUrl returns undefined before registration", () => {
     const client = new RelayClient({
         relayUrl: "wss://test.invalid/relay",
         bridgePort: 47600,
-        getToken: async () => "fake-token",
+        getToken: () => Promise.resolve("fake-token"),
     });
     assert.equal(client.getPublicUrl(), undefined);
     client.stop();
@@ -91,7 +91,7 @@ test("RelayClient.stop is idempotent (no throw on double stop)", () => {
     const client = new RelayClient({
         relayUrl: "wss://test.invalid/relay",
         bridgePort: 47600,
-        getToken: async () => null,
+        getToken: () => Promise.resolve(null),
     });
     client.stop();
     client.stop();   // must not throw
