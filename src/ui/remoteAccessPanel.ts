@@ -46,6 +46,7 @@ export class RemoteAccessPanel {
         this.panel.webview.onDidReceiveMessage(async (m) => {
             if (m?.type === "refresh") { await this.refresh(); }
             else if (m?.type === "upnp") { await this.tryUpnp(); }
+            else if (m?.type === "bind-all") { await this.toggleBindAll(); }
             else if (m?.type === "copy" && m.url) { void vscode.env.clipboard.writeText(m.url); }
         }, undefined, context.subscriptions);
         this.panel.onDidDispose(() => { RemoteAccessPanel.current = undefined; }, undefined, context.subscriptions);
@@ -95,6 +96,25 @@ export class RemoteAccessPanel {
             vscode.window.showWarningMessage("UPnP: failed to open port. Check router settings.");
         }
         this.panel.webview.html = this.renderHtml(this.bridge.getConnection()!);
+    }
+
+    private isBindAll(): boolean {
+        return vscode.workspace.getConfiguration("symposium.bridge").get<string>("host", "127.0.0.1") === "0.0.0.0";
+    }
+
+    private async toggleBindAll(): Promise<void> {
+        const cfg = vscode.workspace.getConfiguration("symposium.bridge");
+        const current = cfg.get<string>("host", "127.0.0.1");
+        const newHost = current === "0.0.0.0" ? "127.0.0.1" : "0.0.0.0";
+        await cfg.update("host", newHost, vscode.ConfigurationTarget.Global);
+        vscode.window.showInformationMessage(
+            newHost === "0.0.0.0"
+                ? "Bridge: now listening on all interfaces (0.0.0.0). Accessible from LAN/public."
+                : "Bridge: listening on localhost only (127.0.0.1)."
+        );
+        // Wait for bridge restart, then refresh
+        await new Promise(r => setTimeout(r, 2000));
+        await this.refresh();
     }
 
     private renderEmpty(): string {
@@ -208,6 +228,7 @@ export class RemoteAccessPanel {
                     ${vpnStatus}
                     ${upnpBtn}
                     <button class="btn" id="refreshBtn" style="margin-left:4px">Refresh</button>
+                <button class="btn" id="bindBtn" style="margin-left:4px">${this.isBindAll() ? "Bind: 0.0.0.0 ✓" : "Bind: 0.0.0.0"}</button>
                 </div>
 
                 <div class="section">
@@ -218,6 +239,7 @@ export class RemoteAccessPanel {
                 <script>
                     const vscode = acquireVsCodeApi();
                     document.getElementById("refreshBtn")?.addEventListener("click", () => vscode.postMessage({ type: "refresh" }));
+                    document.getElementById("bindBtn")?.addEventListener("click", () => vscode.postMessage({ type: "bind-all" }));
                     document.getElementById("upnpBtn")?.addEventListener("click", () => vscode.postMessage({ type: "upnp" }));
                     document.querySelectorAll(".copy").forEach(btn => {
                         btn.addEventListener("click", () => vscode.postMessage({ type: "copy", url: btn.getAttribute("data-url") }));
