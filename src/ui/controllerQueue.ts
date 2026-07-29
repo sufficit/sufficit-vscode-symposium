@@ -1,4 +1,4 @@
-export type SendMode = "send" | "queue" | "steer";
+export type SendMode = "send" | "queue" | "steer" | "redirect";
 
 export interface PendingMessage {
     id?: number;
@@ -10,6 +10,13 @@ export interface PendingMessage {
      * ChatController.dispatch when absent.
      */
     intentId?: string;
+    /**
+     * Set when this is a Retry: the logicalTurnId of the failed turn being
+     * retried (delivery 1C). When present, the adapter reuses that logicalTurnId
+     * instead of allocating a new one, so the retry is attributable to the
+     * original turn for observability — without duplicating the user message.
+     */
+    retryOf?: string;
     text: string;
     attachments: string[];
     model?: string;

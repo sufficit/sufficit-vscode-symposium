@@ -308,7 +308,7 @@ export interface AgentSession extends EventEmitter {
      * `developer` messages before the user turn (role-aware backends only; CLIs
      * ignore it — they get the instructions prepended to `text` instead).
      */
-    send(text: string, images?: string[], preamble?: string[], intentId?: string): void;
+    send(text: string, images?: string[], preamble?: string[], intentId?: string, resumeTurnId?: string): void;
     /**
      * Replaces the model for the next turn. The currently running CLI/API
      * request is intentionally left unchanged.

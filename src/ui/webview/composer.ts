@@ -25,7 +25,7 @@ stopBtn.addEventListener("click", (ev) => {
 sendCaret.addEventListener("click", (ev) => {
     ev.stopPropagation();
     ctxMenu.textContent = "";
-    for (const mode of ["queue", "steer"]) {
+    for (const mode of ["redirect", "queue", "steer"]) {
         const mi = document.createElement("div"); mi.className = "mi";
         mi.title = MODE_DESC[mode];
         const tick = document.createElement("span"); tick.className = "tick";
@@ -250,6 +250,12 @@ input.addEventListener("keydown", (e) => {
         if (e.key === "ArrowUp") { e.preventDefault(); slashSel = (slashSel - 1 + slashMatches.length) % slashMatches.length; renderSlash(); return; }
         if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); acceptSlash(slashSel); return; }
         if (e.key === "Escape") { e.preventDefault(); slash.style.display = "none"; return; }
+    }
+    // Shift+Enter alone (no Ctrl/Alt) = redirect (cancel + correct next).
+    if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        send("redirect");
+        return;
     }
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();

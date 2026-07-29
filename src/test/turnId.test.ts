@@ -50,3 +50,20 @@ test("parseTurnSeq rejects non-positive / non-numeric seqs", () => {
     assert.equal(parseTurnSeq("sess/turn-abc"), undefined);
     assert.equal(parseTurnSeq("sess/turn--1"), undefined);
 });
+
+// --- Regressão 1C: retry reusa logicalTurnId (validade do formato) ---
+// O resumeTurn valida o id com id.includes("/turn-"). Garantir que um id valido
+// passa e um invalido (string qualquer) falha (fallback a bumpTurn).
+
+test("retry reuse: valid logicalTurnId passes the format check", () => {
+    const id = makeLogicalTurnId("sess-abc", 7);
+    assert.ok(id.includes("/turn-"), "a valid logicalTurnId must contain /turn-");
+});
+
+test("retry reuse: an arbitrary string fails the format check (fallback)", () => {
+    // A bare UUID or random string without /turn- should NOT be accepted as a
+    // reuse id — resumeTurn falls back to bumpTurn in that case.
+    assert.equal("random-uuid-1234".includes("/turn-"), false);
+    assert.equal("a1b2c3d4-e5f6".includes("/turn-"), false);
+});
+

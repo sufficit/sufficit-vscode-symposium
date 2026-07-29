@@ -48,6 +48,13 @@ export interface TurnRunnerDeps {
      * reset-on-reopen bumpTurnNo.
      */
     bumpTurn: () => string;
+    /**
+     * Reuses `resumeTurnId` (when set) as the logicalTurnId for a RETRY instead
+     * of allocating a new one; falls back to bumpTurn when absent (delivery 1C).
+     */
+    resumeTurn: (resumeTurnId?: string) => string;
+    /** The logicalTurnId to reuse on a retry (set by send when retryOf is passed). */
+    getResumeTurnId?: () => string | undefined;
     getTurnNo: () => number;
     /** Stable id of the in-flight logical turn, or undefined between turns. */
     getLogicalTurnId: () => string | undefined;
@@ -98,7 +105,9 @@ export class TurnRunner {
         const progress = this.d.getProgress();
         this.abort = new AbortController();
         // Assign a stable logicalTurnId for this turn (survives retries/reopen).
-        const logicalTurnId = this.d.bumpTurn();
+        // A Retry passes resumeTurnId so the adapter REUSES the original turn's id
+        // instead of allocating a new one (delivery 1C).
+        const logicalTurnId = this.d.resumeTurn(this.d.getResumeTurnId?.());
         const intentId = this.d.getIntentId();
         const turnStartedAt = Date.now();
         // turn-start pairs with turn-end below; carries the stable ids so the

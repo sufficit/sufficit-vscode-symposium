@@ -126,6 +126,8 @@ export type WebviewToHost =
           clientMessageId?: string;
           /** Controller-assigned intent id; carried into ledger rows for the turn. */
           intentId?: string;
+          /** logicalTurnId being retried (Retry button); the adapter reuses it instead of allocating a new turn. */
+          retryOf?: string;
           /** One-shot note on what error interrupted the previous turn (plain Retry only). */
           interruptedBy?: string;
       }

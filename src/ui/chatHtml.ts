@@ -105,6 +105,7 @@ export const chatBodyMarkup = /* html */ `<div id="root">
                     <span class="grow"></span>
                 </div>
                 <select id="sendMode" style="display:none">
+                    <option value="redirect">Redirect</option>
                     <option value="queue">Queue</option>
                     <option value="steer">Steer</option>
                 </select>

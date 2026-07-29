@@ -92,7 +92,12 @@ export function retryLastMessage(d: SurfaceDialoguesDeps, index: number, errorMe
         // to the original message instead of rendering a duplicate bubble.
         d.post({ type: "event", event: { kind: "status-notice", text: `Continuing — told the model why: ${interruptedBy}`, anchorIndex: adjustedIndex } });
     }
-    void from.handleMessage({ type: "send", text: original.text, mode: "send", interruptedBy } as WebviewToHost);
+    // Delivery 1C: tell the adapter to REUSE the failed turn's logicalTurnId
+    // (when available) so the retry is attributable to the original turn — not a
+    // new logical turn with a duplicate user message. Falls back to a fresh turn
+    // when the id is unknown (e.g. after a reload).
+    const retryOf = from.lastTurnId;
+    void from.handleMessage({ type: "send", text: original.text, mode: "send", interruptedBy, retryOf } as WebviewToHost);
 }
 
 /**

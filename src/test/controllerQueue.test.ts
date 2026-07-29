@@ -82,3 +82,35 @@ test("MessageDedup treats an empty-string clientMessageId as no id", () => {
     assert.equal(dedup.accept(""), true);
 });
 
+// --- Regressão 1D: redirect preserva a queue (diferente do steer que limpa) ---
+// O redirect faz queue.unshift (front-insert) SEM clear, ao contrario do steer
+// que faz queue.clear() + push. A queue existente deve sobreviver ao redirect.
+
+test("redirect uses unshift (front-insert) without clearing the queue", () => {
+    const queue = new ChatQueue();
+    // Pre-existing queued work.
+    queue.enqueue({ text: "queued-1", attachments: [] });
+    queue.enqueue({ text: "queued-2", attachments: [] });
+    // Redirect front-inserts the correction (simulating onSend redirect branch).
+    queue.unshift({ text: "correction", attachments: [] });
+    const items = queue.items();
+    // Correction is first (runs next), original queue preserved after it.
+    assert.equal(items.length, 3);
+    assert.equal(items[0].text, "correction");
+    assert.equal(items[1].text, "queued-1");
+    assert.equal(items[2].text, "queued-2");
+});
+
+test("steer would clear the queue, but redirect does not", () => {
+    // Contrast: steer clears first, so the queue is lost. Redirect keeps it.
+    const steerQueue = new ChatQueue();
+    steerQueue.enqueue({ text: "queued", attachments: [] });
+    steerQueue.clear();
+    steerQueue.push({ text: "steer-msg", attachments: [] });
+    assert.equal(steerQueue.items().length, 1);   // original queue gone
+
+    const redirectQueue = new ChatQueue();
+    redirectQueue.enqueue({ text: "queued", attachments: [] });
+    redirectQueue.unshift({ text: "redirect-msg", attachments: [] });   // no clear
+    assert.equal(redirectQueue.items().length, 2);   // original queue kept
+});

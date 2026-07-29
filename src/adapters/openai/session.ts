@@ -42,6 +42,8 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     private currentLogicalTurnId: string | undefined;
     /** Intent id propagated from the controller for the in-flight turn (no arbiter here — carried, not decided). */
     private currentIntentId: string | undefined;
+    /** logicalTurnId to reuse for a Retry (set by send when resumeTurnId is passed); consumed once by resumeTurn(). */
+    private pendingResumeTurnId: string | undefined;
     // Continuous follow-up anchor (small-context guardrail). `objective` is the
     // current task (north star), updated on each substantive user turn; `progress`
     // is a rolling digest of tool steps taken on it. Re-injected fresh into every
@@ -127,6 +129,8 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             getProgress: () => this.progress,
             bumpTurnNo: () => { this.bumpTurn(); },
             bumpTurn: () => this.bumpTurn(),
+            resumeTurn: (id) => this.resumeTurn(id),
+            getResumeTurnId: () => this.pendingResumeTurnId,
             getTurnNo: () => this.turnSeq,
             getLogicalTurnId: () => this.currentLogicalTurnId,
             getIntentId: () => this.currentIntentId,
@@ -347,6 +351,26 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         return this.currentLogicalTurnId;
     }
 
+    /**
+     * Reuses an existing logicalTurnId for a RETRY (delivery 1C): instead of
+     * allocating a fresh turn, the adapter continues under the same stable id so
+     * the retry is attributable to the original turn for observability. Does NOT
+     * increment the turn seq (it's the same logical turn) — but attemptIds
+     * continue advancing (the turnRunner assigns them per-hop). Falls back to a
+     * fresh bumpTurn when the id is absent/invalid (e.g. after a reload).
+     */
+    private resumeTurn(resumeTurnId?: string): string {
+        // Consume the staged retry id (one-shot — cleared so it can't leak to a
+        // later turn). The turnRunner reads it via getResumeTurnId before calling.
+        const id = resumeTurnId ?? this.pendingResumeTurnId;
+        this.pendingResumeTurnId = undefined;
+        if (typeof id === "string" && id.includes("/turn-")) {
+            this.currentLogicalTurnId = id;
+            return id;
+        }
+        return this.bumpTurn();
+    }
+
     /** Append one entry to the lossless ledger for the current turn (best-effort). */
     private led(role: string, content: unknown, extra?: Record<string, unknown>): void {
         ledger.appendMessage(this.sessionId, {
@@ -357,7 +381,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         });
     }
 
-    send(text: string, images?: string[], preamble?: string[], intentId?: string): void {
+    send(text: string, images?: string[], preamble?: string[], intentId?: string, resumeTurnId?: string): void {
         // Intercept /compact: a local command (summarize the conversation to shrink
         // the model context), NOT a user turn to ship to the gateway.
         if (text.trim().toLowerCase() === "/compact") {
@@ -367,6 +391,9 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         // Carry the controller-assigned intent id for the ledger rows of this
         // turn (no arbiter here — the controller decides; the adapter carries it).
         this.currentIntentId = intentId;
+        // Retry (1C): the logicalTurnId to reuse is staged here and consumed once
+        // by resumeTurn() at the start of the turn.
+        this.pendingResumeTurnId = resumeTurnId;
         // One-shot app instructions (todo capability, autonomy, policy) go in as
         // `developer` messages — above the user turn, below the preset's system —
         // instead of being glued onto the user text. Downgraded to `system` for

@@ -67,6 +67,13 @@ export class ChatController {
      * again (no second dispatch/enqueue/tool run). See MessageDedup.
      */
     private readonly dedup = new MessageDedup();
+    /**
+     * The stable logicalTurnId of the most recent turn (from the turn-start
+     * event emitted by the adapter). Used by Retry to tell the adapter to REUSE
+     * this id instead of allocating a new one — so a retried turn is attributable
+     * to the original for observability (delivery 1C).
+     */
+    private lastLogicalTurnId: string | undefined;
 
     constructor(
         private readonly adapter: AgentAdapter,
@@ -88,6 +95,11 @@ export class ChatController {
     /** True while a turn is running (agent working). */
     get isBusy(): boolean {
         return this.busy;
+    }
+
+    /** The stable logicalTurnId of the last turn (for Retry reuse), or undefined. */
+    get lastTurnId(): string | undefined {
+        return this.lastLogicalTurnId;
     }
 
     /** (Re)arms the silence watchdog while busy; no-op when idle. */
@@ -227,6 +239,16 @@ export class ChatController {
         // second tool execution. The webview already reconciled its optimistic
         // bubble on the first acceptance.
         if (!this.dedup.accept(msg.clientMessageId)) { return; }
+        // Redirect (delivery 1D): like steer, cancel the running turn so the
+        // correction dispatches next — but UNLIKE steer, keep the existing queue
+        // (steer clears it) and front-insert the redirect so it runs before any
+        // already-queued work. The correction is not a separate "do later" intent.
+        if (mode === "redirect" && this.busy) {
+            this.queue.unshift(msg);
+            this.session?.cancel();
+            this.emitQueue();
+            return;
+        }
         if (mode === "steer" && this.busy) {
             this.queue.clear();
             this.queue.push(msg);
@@ -319,7 +341,9 @@ export class ChatController {
             // here — every message gets its own fresh intent; reuse across
             // retry/redirect is a later concern.
             const intentId = msg.intentId ?? randomUUID();
-            this.session.send(outboundText, images, outboundPreamble, intentId);
+            // Retry (delivery 1C): when retryOf is set, tell the adapter to reuse
+            // the original logicalTurnId instead of allocating a new one.
+            this.session.send(outboundText, images, outboundPreamble, intentId, msg.retryOf);
         } catch (error) {
             // Any failure before turn-end (adapter start, prompt build, transcript
             // persistence, process spawn setup) must never leave the controller
@@ -363,6 +387,9 @@ export class ChatController {
         }
         if (event.kind === "error" && event.fatal !== false) {
             this.turnHadError = true;
+        }
+        if (event.kind === "turn-start" && typeof event.logicalTurnId === "string") {
+            this.lastLogicalTurnId = event.logicalTurnId;
         }
         if (event.kind === "turn-end") {
             this.busy = false;
