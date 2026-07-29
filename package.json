@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Sufficit Symposium",
   "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "2026.729.5",
+  "version": "2026.729.6",
   "publisher": "sufficit",
   "license": "MIT",
   "icon": "media/symposium-icon.png",
@@ -574,7 +574,10 @@
         },
         "symposium.bridge.relay": {
           "type": "string",
-          "enum": ["auto", "off"],
+          "enum": [
+            "auto",
+            "off"
+          ],
           "default": "auto",
           "description": "Use the Sufficit relay to publish a public URL so any device (phone, browser) can scan the QR and access this Symposium without Tailscale. 'auto' uses relay when logged in; 'off' disables (tailnet/local only)."
         },

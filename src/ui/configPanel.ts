@@ -289,6 +289,24 @@ export class ConfigPanel {
         // OS-keyring persistence (drives the Sufficit-tab fallback-creds banner).
         const secretStorageWorking = this.deps.auth ? await this.deps.auth.isSecretStorageWorking().catch(() => true) : true;
 
+        // Network status: bridge, relay, VPN (Tailscale) — for the Sufficit tab.
+        const bridgeCfg = vscode.workspace.getConfiguration("symposium.bridge");
+        const { getJoinedHostname } = await import("../net/tailnet");
+        const { getMachineId } = await import("../net/relayClient");
+        const vpnHostname = getJoinedHostname();
+        const machineId = getMachineId();
+        const bridgeEnabled = bridgeCfg.get<boolean>("enabled", false);
+        const relayMode = bridgeCfg.get<string>("relay", "auto");
+        const networkInfo = {
+            bridgeEnabled,
+            bridgePort: bridgeCfg.get<number>("port", 47600),
+            relayMode,
+            relayMachineId: machineId,
+            relayPublicUrl: bridgeEnabled ? `https://ai.sufficit.com.br/symposium/${machineId}` : undefined,
+            vpnConnected: !!vpnHostname,
+            vpnHostname: vpnHostname ?? undefined,
+        };
+
         if (profile) {   // ensure the Sufficit native MCP server exists when logged in
             try {
                 ensureSufficitNativeServer();
@@ -361,6 +379,7 @@ export class ConfigPanel {
             },
             // Local speech-to-text engines, models (with installed flag) and tool availability.
             stt: await getSttState().catch(() => null),
+            networkInfo,
         };
         await this.panel.webview.postMessage({ type: "state", state });
     }
