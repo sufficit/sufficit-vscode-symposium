@@ -21,7 +21,7 @@ export function renderPwaHtml(): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1e1e1e">
 <title>Symposium</title>
-<link rel="manifest" href="/pwa/manifest.webmanifest">
+<link rel="manifest" href="manifest.webmanifest">
 <style>
 ${chatStyles}
 </style>
@@ -29,10 +29,10 @@ ${chatStyles}
 <body>
 ${chatBodyMarkup}
 <script>window.__SYMPOSIUM__ = { base: "", sessionId: "" };</script>
-<script src="/pwa/app.js"></script>
+<script src="app.js"></script>
 <script>
 if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/pwa/sw.js", { scope: "/pwa/" }).catch(() => {});
+    navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 </script>
 </body>
