@@ -113,8 +113,18 @@ export function registerMiscCommands(ctx: CommandContext): void {
         // Settings UI, then shows the QR/URL once the bridge comes up.
         vscode.commands.registerCommand("symposium.showRemoteAccess", async () => {
             const cfg = vscode.workspace.getConfiguration("symposium.bridge");
+            // One-click: enable everything needed for remote access so the user
+            // just clicks the QR button and scans — no manual settings.
+            let needsRestart = false;
             if (!cfg.get<boolean>("enabled", false)) {
                 await cfg.update("enabled", true, vscode.ConfigurationTarget.Global);
+                needsRestart = true;
+            }
+            if (!cfg.get<boolean>("pwa", false)) {
+                await cfg.update("pwa", true, vscode.ConfigurationTarget.Global);
+                needsRestart = true;
+            }
+            if (needsRestart) {
                 for (let i = 0; i < 20 && !bridge.getConnection(); i++) { await sleep(100); }
             }
             await RemoteAccessPanel.show(context, bridge);
