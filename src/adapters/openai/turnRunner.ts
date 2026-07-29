@@ -352,10 +352,13 @@ export class TurnRunner {
                     // checks only the shell's cwd, NOT the command — so a shell is an
                     // escape hatch when roots are set (redirection, git -C, curl|sh).
                     // When containment is active, force approval for destructive tools
-                    // (shell) regardless of permission mode, so the user sees the
-                    // command before it runs unconstrained.
+                    // (shell) — BUT only in non-admin modes. Admin mode means the user
+                    // explicitly opted into no gates; the containment is still enforced
+                    // for the file tools (write_file/edit_file), which check roots
+                    // unconditionally. Shell is advisory in admin.
                     const containmentActive = Array.isArray(this.d.options.allowedWriteRoots) && this.d.options.allowedWriteRoots.length > 0;
-                    const requiresApproval = tier !== "read" && (needsApproval(this.d.options.permission, tier) || (tier === "destructive" && containmentActive));
+                    const isAdmin = this.d.options.permission === "admin";
+                    const requiresApproval = tier !== "read" && (needsApproval(this.d.options.permission, tier) || (tier === "destructive" && containmentActive && !isAdmin));
                     if (requiresApproval) {
                         const approved = await this.d.requestApproval(tc.id, unprefixedName, friendlyToolDetail(unprefixedName, args), tier);
                         result = approved

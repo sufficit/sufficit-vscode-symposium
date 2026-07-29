@@ -36,10 +36,11 @@ export async function executeTurnTool(args: {
 }): Promise<string> {
     if (isLmTool(args.name)) {
         // LM tools (runInTerminal/runTask/runTests) bypass the ToolContext/containment
-        // entirely (defect 6.2). When write-root containment is active, block the
-        // terminal/exec-classified LM tools so the agent can't escape roots via VS
-        // Code tasks. Non-terminal LM tools (safe ones) pass through.
-        const containmentActive = Array.isArray(args.options.allowedWriteRoots) && args.options.allowedWriteRoots.length > 0;
+        // entirely (defect 6.2). When write-root containment is active AND not in admin
+        // mode, block terminal/exec-classified LM tools so the agent can't escape roots
+        // via VS Code tasks. Admin mode = user opted into no gates.
+        const isAdmin = args.options.permission === "admin";
+        const containmentActive = !isAdmin && Array.isArray(args.options.allowedWriteRoots) && args.options.allowedWriteRoots.length > 0;
         if (containmentActive) {
             const tier = classifyLmTool(args.name);
             if (tier === "destructive") {
