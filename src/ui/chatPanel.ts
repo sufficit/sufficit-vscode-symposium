@@ -75,6 +75,17 @@ export class ChatPanel {
         for (const panel of ChatPanel.panels) { void panel.surface.refreshSessions(); }
     }
 
+    /** Re-pushes the session title to each open panel's chat header so a rename
+     *  is reflected immediately (not just in the sessions list). */
+    static async reMetaActive(store: { customTitle: (id: string) => string | undefined }): Promise<void> {
+        for (const panel of ChatPanel.panels) {
+            const sid = panel.surface.sessionId;
+            if (!sid) { continue; }
+            const title = store.customTitle(sid) ?? panel.surface.title;
+            panel.surface.post({ type: "meta", title });
+        }
+    }
+
     /** Resets only panels currently showing the just-deleted session. */
     static sessionDeleted(sessionId: string): void {
         for (const panel of ChatPanel.panels) {

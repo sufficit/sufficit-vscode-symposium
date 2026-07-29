@@ -61,6 +61,8 @@ export class ChatController {
     // Shared mutable state for the extracted helper modules (controllerPersist,
     // controllerHubState). The controller reads/writes these directly.
     private readonly persistState = { count: 0 };
+    /** Optional session store for custom titles (set by the surface). */
+    private sessionStore: { customTitle: (id: string) => string | undefined } | undefined;
     private readonly hubState: HubState = { guardrails: [], guardrailsLoaded: false, pendingTasks: [] };
     /**
      * Host-side idempotency: a clientMessageId already accepted is not processed
@@ -134,7 +136,16 @@ export class ChatController {
     /** Conversation lineage this session belongs to (sidebar grouping; undefined = own). */
     get lineageId(): string | undefined { return this.options.lineageId; }
     /** First user message, used as a title for a not-yet-persisted live session. */
-    get title(): string { return this.firstTitle || "New session"; }
+    get title(): string {
+        // Prefer the custom (renamed) title from the store, then the first-message title.
+        if (this.sessionId && this.sessionStore) {
+            const custom = this.sessionStore.customTitle(this.sessionId);
+            if (custom) { return custom; }
+        }
+        return this.firstTitle || "New session";
+    }
+    /** Sets the session store reference so title() can read custom titles. */
+    setSessionStore(store: { customTitle: (id: string) => string | undefined }): void { this.sessionStore = store; }
 
     /** Define o modelo para a próxima mensagem da sessão atual. */
     setModel(model: string): void {
