@@ -251,12 +251,6 @@ input.addEventListener("keydown", (e) => {
         if (e.key === "Tab" || e.key === "Enter") { e.preventDefault(); acceptSlash(slashSel); return; }
         if (e.key === "Escape") { e.preventDefault(); slash.style.display = "none"; return; }
     }
-    // Shift+Enter alone (no Ctrl/Alt) = redirect (cancel + correct next).
-    if (e.key === "Enter" && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        send("redirect");
-        return;
-    }
     if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         // Per-mode shortcuts: Ctrl/Cmd+Enter steers, Alt+Enter queues,

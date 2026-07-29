@@ -8,7 +8,7 @@ export const isMac = navigator.platform.indexOf("Mac") === 0;
 export const MOD = isMac ? "⌘" : "Ctrl";
 export const ALT = isMac ? "⌥" : "Alt";
 export const MODE_LABELS: any = { send: "Send", queue: "Queue", steer: "Steer", redirect: "Redirect" };
-export const MODE_KBD: any = { send: "Enter", queue: ALT + "+Enter", steer: MOD + "+Enter", redirect: "Shift+Enter" };
+export const MODE_KBD: any = { send: "Enter", queue: ALT + "+Enter", steer: MOD + "+Enter", redirect: "Dropdown" };
 export const MODE_ICONS: any = {
     // paper plane
     send: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 2.8 3 8 1.2 13.2a.5.5 0 0 0 .7.6l13-5.5a.5.5 0 0 0 0-.9l-13-5.5a.5.5 0 0 0-.7.6Z"/></svg>',
