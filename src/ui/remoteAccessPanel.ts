@@ -73,8 +73,8 @@ async function buildHtml(bridge: RemoteBridge): Promise<{ body: string; shareUrl
     // the tailnet hostname (needs the Tailscale app on the client).
     const relayUrl = bridge.getRelayPublicUrl();
     const shareUrl = relayUrl
-        ? `${relayUrl}/pwa?token=${encodeURIComponent(conn.token)}`
-        : `${conn.https ? "https" : "http"}://${thisHostname ?? bound.hostname}:${bound.port}/pwa?token=${encodeURIComponent(conn.token)}`;
+        ? `${relayUrl}/pwa/?token=${encodeURIComponent(conn.token)}`
+        : `${conn.https ? "https" : "http"}://${thisHostname ?? bound.hostname}:${bound.port}/pwa/?token=${encodeURIComponent(conn.token)}`;
 
     let statusLine: string;
     if (relayUrl) {
