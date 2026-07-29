@@ -22,7 +22,7 @@ export const MODE_ICONS: any = {
 export const MODE_DESC: any = {
     send: "Send now; queued while a turn runs",
     queue: "Always wait for the current turn (FIFO)",
-    steer: "Interrupt the running turn and send now",
+    steer: "Interrupt the running turn, CLEAR the queue, and send immediately",
     redirect: "Cancel the running turn and send the correction next (keeps the queue)",
 };
 export const STOP_ICON = '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>';

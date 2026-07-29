@@ -6,6 +6,7 @@ import {
 } from "../aiTools";
 import { isLmTool, invokeLmTool, lmToolDefs, lmToolDefsResponses } from "../lmTools";
 import { SessionStartOptions } from "../types";
+import { classifyLmTool } from "../aiTools/permissionTiers";
 import { mergeToolDefinitions } from "./toolMerge";
 
 export function buildTurnTools(hubConfigured: boolean, responses: boolean) {
@@ -33,7 +34,20 @@ export async function executeTurnTool(args: {
     abortSignal?: AbortSignal;
     emit: (event: Record<string, unknown>) => void;
 }): Promise<string> {
-    if (isLmTool(args.name)) { return invokeLmTool(args.name, args.input); }
+    if (isLmTool(args.name)) {
+        // LM tools (runInTerminal/runTask/runTests) bypass the ToolContext/containment
+        // entirely (defect 6.2). When write-root containment is active, block the
+        // terminal/exec-classified LM tools so the agent can't escape roots via VS
+        // Code tasks. Non-terminal LM tools (safe ones) pass through.
+        const containmentActive = Array.isArray(args.options.allowedWriteRoots) && args.options.allowedWriteRoots.length > 0;
+        if (containmentActive) {
+            const tier = classifyLmTool(args.name);
+            if (tier === "destructive") {
+                return JSON.stringify({ error: `Write-root guardrail: LM tool "${args.name}" is terminal/exec-capable and bypasses workspace containment. Blocked while write-root containment is active. Use the native shell tool (which is contained) instead.` });
+            }
+        }
+        return invokeLmTool(args.name, args.input);
+    }
     const progress = {
         onData: (chunk: string) => args.emit({ kind: "tool-output", toolName: args.name, toolId: args.toolId, text: chunk }),
         onTerminal: (terminalName: string) => args.emit({ kind: "tool-start", toolName: args.name, detail: `watching in terminal: ${terminalName}`, toolId: args.toolId, terminalName }),

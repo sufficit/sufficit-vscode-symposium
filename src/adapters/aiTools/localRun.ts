@@ -159,6 +159,13 @@ export async function runLocalTool(name: string, args: Record<string, unknown>, 
         const unlimited = !(rawTimeout > 0);
         const timeout = unlimited ? 2147483647 : Math.min(Math.max(rawTimeout, 1000), 3600000);
         const notify = args.notify === true;
+        // Commit-scope notice (defect 6.4): a `git commit` captures whatever is
+        // staged, including files the user staged manually and the agent never
+        // touched. Surface a warning so the user is aware before it runs. Not a
+        // hard block — the user may legitimately want the agent to commit.
+        if (/\bgit\b.*\bcommit\b/.test(command)) {
+            ctx.progress?.onNotify?.(`⚠ git commit will capture ALL currently staged files (not just this turn's changes). Verify the staging area is what you intend.`);
+        }
         const mode = ctx.shellExecution ?? "silent";
         const terminalId = mode === "terminal" ? normalizeTerminalId(args.terminal_id) : undefined;
         const shouldUseRtk = mode === "silent" && await canUseRtk(command, cwd);
@@ -220,6 +227,10 @@ export async function runLocalTool(name: string, args: Record<string, unknown>, 
         const p = resolvePath(ctx.cwd, String(args.path ?? ""));
         const rootError = writeRootError(p, ctx.allowedWriteRoots);
         if (rootError) { return JSON.stringify({ error: rootError }); }
+        // Honor a cancel/steer/redirect that landed while this tool was queued:
+        // a file write that completes after the user said stop is an unwanted
+        // mutation. Check abort right before the mutating syscalls (defect 5.1).
+        if (ctx.abortSignal?.aborted) { return JSON.stringify({ error: "interrupted (turn was cancelled before the write)" }); }
         fs.mkdirSync(path.dirname(p), { recursive: true });
         fs.writeFileSync(p, String(args.content ?? ""), "utf8");
         return JSON.stringify({ path: p, bytes: Buffer.byteLength(String(args.content ?? "")) });
@@ -229,6 +240,10 @@ export async function runLocalTool(name: string, args: Record<string, unknown>, 
         const p = resolvePath(ctx.cwd, String(args.path ?? ""));
         const rootError = writeRootError(p, ctx.allowedWriteRoots);
         if (rootError) { return JSON.stringify({ error: rootError }); }
+        // Honor cancel/steer/redirect: a file edit that completes after the user
+        // said stop is an unwanted mutation. Check abort before the mutating
+        // syscalls (defect 5.1). Reading is safe, so the abort check is placed
+        // right before the writes below.
         const oldStr = String(args.old_string ?? "");
         const newStr = String(args.new_string ?? "");
         const replaceAll = args.replace_all === true;
@@ -251,6 +266,7 @@ export async function runLocalTool(name: string, args: Record<string, unknown>, 
                 return JSON.stringify({ error: `occurrence_index must be an integer from 1 to ${occurrences}`, match_count: occurrences });
             }
             const updated = replaceOccurrence(content, oldStr, newStr, requestedIndex);
+            if (ctx.abortSignal?.aborted) { return JSON.stringify({ error: "interrupted (turn was cancelled before the edit)" }); }
             fs.writeFileSync(p, updated, "utf8");
             return JSON.stringify({ path: p, replaced: 1, occurrence_index: requestedIndex });
         }
@@ -272,6 +288,7 @@ export async function runLocalTool(name: string, args: Record<string, unknown>, 
         // a single occurrence (guaranteed here when !replaceAll) split/join is
         // equivalent and literal-safe, so use it for both paths.
         const updated = content.split(oldStr).join(newStr);
+        if (ctx.abortSignal?.aborted) { return JSON.stringify({ error: "interrupted (turn was cancelled before the edit)" }); }
         fs.writeFileSync(p, updated, "utf8");
         return JSON.stringify({ path: p, replaced: replaceAll ? occurrences : 1 });
     }

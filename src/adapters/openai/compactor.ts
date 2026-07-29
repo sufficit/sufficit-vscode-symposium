@@ -187,9 +187,13 @@ export class Compactor {
                 const lastUser = [...conv].reverse().find((m) => m.role === "user");
                 if (lastUser) { tail.unshift(lastUser); }
             }
-            const role = this.d.cfg.supportsDeveloperRole !== false ? "developer" : "system";
+            // The summary is REFERENCE ONLY (historical background), so it must
+            // NOT use the high-authority `developer` channel that would outrank the
+            // latest real user message on providers that weight developer above
+            // user. Always use `system` — a low-authority context channel — so the
+            // text's "reference only" contract and the role channel agree (defect 3.1).
             const synthetic: ChatMessage = {
-                role,
+                role: "system",
                 content: `${SUMMARY_PREFIX}${SUMMARY_BODY_INTRO}\n\n${summary}`,
             };
             const folded = middle.length;

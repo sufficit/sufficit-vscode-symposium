@@ -108,13 +108,20 @@ export async function runAiTool(name: string, args: Record<string, unknown>, ctx
                 // they can be listed in the Tasks panel and removed with it.
                 const type = String(args.type ?? "note");
                 const tags = args.tags ? String(args.tags) : "";
+                // Validate task types against the two allowed values so a confused
+                // agent emitting e.g. type:"task-note" doesn't pollute the panel
+                // with items that are neither work nor checkpoint and can never be
+                // cleared by task_complete (defect 2.2). Unknown task-* types are
+                // normalized to "note" (session-unscoped, won't appear in Tasks).
+                const ALLOWED_TASK_TYPES = new Set(["task-anchor", "task-checkpoint"]);
+                const effectiveType = type.startsWith("task") && !ALLOWED_TASK_TYPES.has(type) ? "note" : type;
                 // Session-bound types (tasks) are scoped via the native sessionId
                 // field + privacy level internal, so they never leak outside the
                 // session; no need for a symposium-session: tag.
-                const sessionScoped = ctx.sessionId && type.startsWith("task");
+                const sessionScoped = ctx.sessionId && effectiveType.startsWith("task");
                 try {
                     const id = await hub.save({
-                        type,
+                        type: effectiveType,
                         title: String(args.title ?? ""),
                         summary: String(args.summary ?? ""),
                         payload: args.payload ? String(args.payload) : undefined,

@@ -155,11 +155,20 @@ export function recoverPersistedQueue(messages: unknown[]): PendingMessage[] {
  */
 export class MessageDedup {
     private readonly seen = new Set<string>();
+    /** Cap to bound memory in a very long-lived session (defect 4.2). */
+    private static readonly MAX_SEEN = 5000;
+    private order: string[] = [];
     /** Records the id and returns true on first sight, false on a repeat. */
     accept(clientMessageId: string | undefined): boolean {
         if (!clientMessageId) { return true; }   // no id → not deduped
         if (this.seen.has(clientMessageId)) { return false; }
         this.seen.add(clientMessageId);
+        this.order.push(clientMessageId);
+        // Evict oldest beyond the cap so the set can't grow unbounded.
+        if (this.order.length > MessageDedup.MAX_SEEN) {
+            const oldest = this.order.shift();
+            if (oldest !== undefined) { this.seen.delete(oldest); }
+        }
         return true;
     }
     /** Whether an id has already been accepted (for introspection/tests). */

@@ -348,7 +348,15 @@ export class TurnRunner {
                     const isLm = isLmTool(unprefixedName);
                     const tier = isLm ? classifyLmTool(unprefixedName) : classifyTool(unprefixedName);
                     let result: string;
-                    if (tier !== "read" && needsApproval(this.d.options.permission, tier)) {
+                    // Shell escape guardrail (defect 6.1): the write-root containment
+                    // checks only the shell's cwd, NOT the command — so a shell is an
+                    // escape hatch when roots are set (redirection, git -C, curl|sh).
+                    // When containment is active, force approval for destructive tools
+                    // (shell) regardless of permission mode, so the user sees the
+                    // command before it runs unconstrained.
+                    const containmentActive = Array.isArray(this.d.options.allowedWriteRoots) && this.d.options.allowedWriteRoots.length > 0;
+                    const requiresApproval = tier !== "read" && (needsApproval(this.d.options.permission, tier) || (tier === "destructive" && containmentActive));
+                    if (requiresApproval) {
                         const approved = await this.d.requestApproval(tc.id, unprefixedName, friendlyToolDetail(unprefixedName, args), tier);
                         result = approved
                             ? await executeTurnTool({ name: unprefixedName, input: args, toolId: tc.id, hub: this.d.hub, options: this.d.options, sessionId: this.d.sessionId, backend: this.d.backend, shellMode: this.d.shellExecutionMode(), abortSignal: this.abort?.signal, emit: this.d.emit })

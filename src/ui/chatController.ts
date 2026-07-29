@@ -243,7 +243,12 @@ export class ChatController {
         // correction dispatches next — but UNLIKE steer, keep the existing queue
         // (steer clears it) and front-insert the redirect so it runs before any
         // already-queued work. The correction is not a separate "do later" intent.
+        // BUT: a redirect carrying a clear cancellation signal ("stop", "don't",
+        // "never", "cancel") invalidates the queued future work too — a stale
+        // queued task that re-arms cancelled work is the defect 1.1.
         if (mode === "redirect" && this.busy) {
+            const isCancel = /\b(stop|cancel|don'?t|never|pare|cancela|n[ãa]o)\b/i.test(msg.text);
+            if (isCancel) { this.queue.clear(); }
             this.queue.unshift(msg);
             this.session?.cancel();
             this.emitQueue();

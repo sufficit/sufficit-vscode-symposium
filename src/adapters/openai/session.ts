@@ -271,7 +271,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     private followupAnchor(): ChatMessage | undefined {
         if (!this.objective) { return undefined; }
         const lines: string[] = [
-            "[Continuous focus — your context window is small, so treat THIS as the source of truth for the current task]",
+            "[Continuous focus — your context window is small, so treat THIS as the source of truth for the current task. This YIELDS to the latest user message: if the user redirects, narrows, or cancels, follow their request, not this objective.]",
             "OBJECTIVE: " + this.objective,
         ];
         if (this.progress.length) {
@@ -279,9 +279,11 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             lines.push(`PROGRESS so far (${this.progress.length} steps; last ${recent.length}):`);
             for (const p of recent) { lines.push("  • " + p); }
         }
-        lines.push("GUIDANCE: Every tool call must move the OBJECTIVE forward — if a step doesn't, stop and reconsider. The moment the objective is met, STOP calling tools and reply to the user. If you've taken several steps without replying, lead your next message with a one-line status.");
-        const role = this.cfg.supportsDeveloperRole !== false ? "developer" : "system";
-        return { role, content: lines.join("\n") };
+        lines.push("GUIDANCE: Every tool call must move the OBJECTIVE forward — if a step doesn't, stop and reconsider. The moment the objective is met, STOP calling tools and reply to the user. If you've taken several steps without replying, lead your next message with a one-line status. But if the latest user message contradicts the OBJECTIVE (stop, don't do this now, just verify, change of subject), follow the user — this anchor is subordinate.");
+        // Use `system` (low authority) not `developer` so the anchor cannot
+        // outrank the latest real user message on providers that weight developer
+        // above user (defect 1.2).
+        return { role: "system", content: lines.join("\n") };
     }
 
     private headers(loginToken?: string | null): Record<string, string> {
@@ -364,7 +366,10 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         // later turn). The turnRunner reads it via getResumeTurnId before calling.
         const id = resumeTurnId ?? this.pendingResumeTurnId;
         this.pendingResumeTurnId = undefined;
-        if (typeof id === "string" && id.includes("/turn-")) {
+        // Validate the id belongs to THIS session and matches the expected format,
+        // not just any string containing "/turn-" (defect 4.3: a foreign id could
+        // hijack the logicalTurnId namespace via the untrusted webview retryOf).
+        if (typeof id === "string" && id.startsWith(this.sessionId + "/turn-")) {
             this.currentLogicalTurnId = id;
             return id;
         }
@@ -403,8 +408,14 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         // user message with no assistant reply. Sending another user message would
         // break role alternation (Anthropic-backed providers 400 on user→user).
         // Close the gap with a short assistant turn so the new user is valid.
+        // BUT: a Retry (resumeTurnId set) of a failed turn leaves the same user
+        // message dangling — re-pushing it would duplicate it in model context
+        // and the lossless ledger (defect 4.1). When retrying and the dangling
+        // last message is textually identical, reuse it instead of re-pushing.
         const last = this.messages[this.messages.length - 1];
-        if (last && last.role === "user") {
+        const lastText = last && typeof last.content === "string" ? last.content : "";
+        const isRetryReuse = typeof resumeTurnId === "string" && last && last.role === "user" && lastText === text;
+        if (last && last.role === "user" && !isRetryReuse) {
             this.messages.push({ role: "assistant", content: "(previous turn interrupted)" });
             this.led("assistant", "(previous turn interrupted)");
         }
@@ -420,21 +431,27 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         const userContent: string | ContentPart[] = imageParts.length
             ? [{ type: "text", text }, ...imageParts]
             : text;
-        this.messages.push({ role: "user", content: userContent });
-        const taskText = text.trim();
-        if (taskText.length >= 8 && !/^(continue|continuar|segue|prossiga|go on|keep going|ok|sim|yes|y)\b/i.test(taskText)) {
-            this.objective = taskText.slice(0, 600);
-            this.progress = [];
+        // A Retry of a failed turn reuses the dangling user message already in
+        // context + ledger (isRetryReuse). Don't push/append a second copy — the
+        // model and the lossless ledger must see the request exactly once, and a
+        // multi-retry loop must not compound duplicates (defect 4.1).
+        if (!isRetryReuse) {
+            this.messages.push({ role: "user", content: userContent });
+            const taskText = text.trim();
+            if (taskText.length >= 8 && !/^(continue|continuar|segue|prossiga|go on|keep going|ok|sim|yes|y)\b/i.test(taskText)) {
+                this.objective = taskText.slice(0, 600);
+                this.progress = [];
+            }
+            ledger.appendMessage(this.sessionId, {
+                role: "user",
+                content: imageParts.length ? `${text}\n[${imageParts.length} image(s) attached]` : text,
+                turn: this.turnSeq + 1,
+                // The user message anticipates the upcoming turn (bumpTurn runs in
+                // run()). Stamp the intent now so the row carries it even though the
+                // logicalTurnId is assigned when the turn actually starts.
+                ...(this.currentIntentId ? { intentId: this.currentIntentId } : {}),
+            });
         }
-        ledger.appendMessage(this.sessionId, {
-            role: "user",
-            content: imageParts.length ? `${text}\n[${imageParts.length} image(s) attached]` : text,
-            turn: this.turnSeq + 1,
-            // The user message anticipates the upcoming turn (bumpTurn runs in
-            // run()). Stamp the intent now so the row carries it even though the
-            // logicalTurnId is assigned when the turn actually starts.
-            ...(this.currentIntentId ? { intentId: this.currentIntentId } : {}),
-        });
         if (!this.title) { this.title = text.trim().slice(0, 60); }
         this.safePersist();
         void this.runner.run();

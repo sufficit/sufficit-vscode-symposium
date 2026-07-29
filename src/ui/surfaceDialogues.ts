@@ -284,6 +284,11 @@ export class SurfaceDialogues {
             const folders = vscode.workspace.workspaceFolders ?? [];
             if (folders.length) {
                 options = { ...options, allowedWriteRoots: folders.map((f) => f.uri.fsPath) };
+            } else {
+                // No workspace folder open → write containment is off. Surface a
+                // notice so the user knows the agent is unrestricted (defect 6.3):
+                // a silent unrestricted agent is a footgun.
+                this.d.post({ type: "event", event: { kind: "status-notice", text: "No workspace folder open — write-root containment is OFF. The agent can write to any path." } });
             }
         }
         const generation = ++this.generation;
