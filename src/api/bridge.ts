@@ -10,6 +10,8 @@ import { BridgePolicy, resolveBridgePolicy, isCwdAllowed, isHostAllowed, isLmToo
 import { decodeBridgePathSegment } from "./bridgeRoutes";
 import { removeBridgeAdvertisement, writeBridgeAdvertisement } from "./bridgeAdvertisement";
 import { getJoinedHostname } from "../net/tailnet";
+import { RelayClient } from "../net/relayClient";
+import { HubClient, getHubLoginToken } from "../sync/hubClient";
 import { loadBridgeTlsMaterial } from "./bridgeTls";
 import { serveBridgeStatic } from "./bridgeStatic";
 
@@ -35,6 +37,10 @@ export class RemoteBridge {
     private listening: { host: string; port: number } | undefined;
     private connection: { url: string; token: string; https: boolean } | undefined;
     private lastRejection: { at: string; reason: "allowedHosts"; receivedHost: string; allowedHosts: string[] } | undefined;
+    private relay: RelayClient | undefined;
+
+    /** The public URL assigned by the Sufficit relay, or undefined when not active. */
+    getRelayPublicUrl(): string | undefined { return this.relay?.getPublicUrl(); }
 
     /** The running bridge's URL/token, for surfaces that need to build a share link (e.g. the remote-access panel). Undefined while stopped. */
     getConnection(): { url: string; token: string; https: boolean } | undefined {
@@ -83,11 +89,41 @@ export class RemoteBridge {
             try {
                 writeBridgeAdvertisement(url, token);
             } catch (err) { this.log(`[bridge] bridge.json write failed: ${err}`); }
+            // Start the Sufficit relay (outbound WS → public URL) unless disabled.
+            // Lets any device scan the QR and reach this bridge without Tailscale.
+            void this.startRelay(port);
         });
         return url;
     }
 
+    /**
+     * Connects the Sufficit relay (outbound WS to the gateway) so the bridge is
+     * reachable via a public URL. Best-effort: failures (not logged in, gateway
+     * doesn't support relay yet) degrade silently — the tailnet/local URL still works.
+     */
+    private async startRelay(port: number): Promise<void> {
+        const relayMode = vscode.workspace.getConfiguration("symposium.bridge").get<string>("relay", "auto");
+        if (relayMode === "off") { return; }
+        const hub = new HubClient();
+        if (!hub.configured()) { return; }
+        const machineId = await import("../net/relayClient").then((m) => m.getMachineId());
+        const reg = await hub.registerRelay(machineId);
+        if (!reg?.ok || !reg.relayWsUrl) {
+            this.log("[bridge] relay not available (gateway doesn't support it yet or not logged in); using tailnet/local URL only");
+            return;
+        }
+        this.relay = new RelayClient({
+            relayUrl: reg.relayWsUrl,
+            bridgePort: port,
+            getToken: () => getHubLoginToken(),
+            log: (msg) => this.log(msg),
+        });
+        void this.relay.start();
+    }
+
     stop(): void {
+        this.relay?.stop();
+        this.relay = undefined;
         this.server?.close();
         this.server = undefined;
         this.listening = undefined;

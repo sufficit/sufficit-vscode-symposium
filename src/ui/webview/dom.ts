@@ -30,6 +30,7 @@ export const tipEl = document.getElementById("tip") as HTMLElement;
 export const copySessionBtn = document.getElementById("copySessionBtn") as HTMLButtonElement;
 export const presencePicker = document.getElementById("presencePicker") as HTMLButtonElement;
 export const configBtn = document.getElementById("configBtn") as HTMLButtonElement;
+export const remoteAccessBtn = document.getElementById("remoteAccessBtn") as HTMLButtonElement;
 export const sessionsPane = document.getElementById("sessionsPane") as HTMLElement;
 export const resizer = document.getElementById("resizer") as HTMLElement;
 export const progress = document.getElementById("progress") as HTMLElement;

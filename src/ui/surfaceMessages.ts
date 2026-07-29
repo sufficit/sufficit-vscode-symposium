@@ -90,6 +90,10 @@ export class SurfaceMessages {
                     await vscode.commands.executeCommand("symposium.logout");
                     return;
                 }
+                case "remote-access": {
+                    await vscode.commands.executeCommand("symposium.showRemoteAccess");
+                    return;
+                }
                 case "open-session": {
                     const sessions = await this.d.deps.listSessions();
                     const info = sessions.find((s) => s.sessionId === message.sessionId && s.backend === message.backend);

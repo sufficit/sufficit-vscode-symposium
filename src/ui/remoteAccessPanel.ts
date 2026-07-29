@@ -59,11 +59,17 @@ async function buildHtml(bridge: RemoteBridge): Promise<{ body: string; shareUrl
 
     const bound = new URL(conn.url);
     const thisHostname = getJoinedHostname();
-    const shareHost = thisHostname ?? bound.hostname;
-    const shareUrl = `${conn.https ? "https" : "http"}://${shareHost}:${bound.port}/pwa?token=${encodeURIComponent(conn.token)}`;
+    // Prefer the Sufficit relay public URL (works from any device, no app) over
+    // the tailnet hostname (needs the Tailscale app on the client).
+    const relayUrl = bridge.getRelayPublicUrl();
+    const shareUrl = relayUrl
+        ? `${relayUrl}/pwa?token=${encodeURIComponent(conn.token)}`
+        : `${conn.https ? "https" : "http"}://${thisHostname ?? bound.hostname}:${bound.port}/pwa?token=${encodeURIComponent(conn.token)}`;
 
     let statusLine: string;
-    if (!thisHostname) {
+    if (relayUrl) {
+        statusLine = `<p class="ok">Connected via Sufficit relay — this URL works from <b>any device</b> (scan the QR with a phone, no app needed).</p>`;
+    } else if (!thisHostname) {
         statusLine = `<p class="warn">Not joined to the Sufficit tailnet yet — this URL only works from ${escapeHtml(bound.hostname)} itself (log in to Sufficit to join automatically).</p>`;
     } else {
         const hub = new HubClient();

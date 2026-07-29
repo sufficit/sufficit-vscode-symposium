@@ -58,6 +58,14 @@ export interface SymposiumRemoteUrlResult {
     bridgePort?: number;
 }
 
+export interface RelayRegisterResult {
+    ok: boolean;
+    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium/relay). */
+    relayWsUrl?: string;
+    /** Public URL prefix for this machine (e.g. https://ai.sufficit.com.br/symposium/<machineId>). */
+    publicUrlPrefix?: string;
+}
+
 /**
  * Optional provider of a Sufficit Identity access token (from the logged-in
  * session). When set and it returns a token, the hub uses it as the Bearer
@@ -66,6 +74,12 @@ export interface SymposiumRemoteUrlResult {
 let loginTokenProvider: (() => Promise<string | null>) | undefined;
 export function setHubTokenProvider(fn: () => Promise<string | null>): void {
     loginTokenProvider = fn;
+}
+
+/** Returns the Sufficit login token from the registered provider, or null. */
+export async function getHubLoginToken(): Promise<string | null> {
+    if (!loginTokenProvider) { return null; }
+    try { return await loginTokenProvider(); } catch { return null; }
 }
 
 export class HubClient {
@@ -254,6 +268,30 @@ export class HubClient {
                 return null;
             }
             return (await res.json()) as SymposiumRemoteUrlResult;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Registers this machine for the Sufficit relay tunnel. Returns the WS URL
+     * to connect to and the public URL prefix, or null when the gateway doesn't
+     * support relaying (relay is a newer feature than tailnet join).
+     */
+    async registerRelay(machineId: string): Promise<RelayRegisterResult | null> {
+        if (!this.configured()) {
+            return null;
+        }
+        try {
+            const res = await fetch(`${this.base()}/api/symposium/relay/register`, {
+                method: "POST",
+                headers: { ...(await this.headers()), "content-type": "application/json" },
+                body: JSON.stringify({ machineId }),
+            });
+            if (!res.ok) {
+                return null;
+            }
+            return (await res.json()) as RelayRegisterResult;
         } catch {
             return null;
         }

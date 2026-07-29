@@ -14,7 +14,7 @@ import { openChoiceMenu, showToast, showCtx, showFileMenu, showTip, hideTip, hid
 import { attachments, activeFile, activeFileRange, activeFileDismissed, activeFilePreview, activeFilePinned, currentBackend, currentBackendName, agentLabels, activeModel, activeSessionId, busy, queued, loading, sessions, showArchived, bootstrapPath, setAttachments, setActiveFile, setActiveFileRange, setActiveFileDismissed, setActiveFilePreview, setActiveFilePinned, setCurrentBackend, setCurrentBackendName, setAgentLabels, setActiveModel, setActiveSessionId, setBusy, setQueued, setLoadingFlag, setSessions, setShowArchived, setSessionSearchTerm, setBootstrapPath, setSideMode, pendingSessionSwitch, setPendingSessionSwitch, conversationRows, commands, setConversationRows, setCommands, autonomyValue, setAutonomyValue, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPermissionModes, setPermissionValue, setPermissionDefault, setAiToolsAvailable, setAiToolsEnabled, setPendingSwitchAnchor } from "./state";
 import { allDigits, middleEllipsisPath, relWhen, relTime, bucket, fmtTokens, usageColor } from "./format";
 import { layout, nearBottom, autoScroll, scrollToBottom, updateScrollBtn, refreshEmpty, sideIsRight, lastAutoScroll } from "./scroll";
-import { root, log, input, chips, addContext, modelPicker, reasoningPicker, sendMode, sendBtn, status, sessionsList, chatTitle, sessionFilterBtn, sessionRefreshBtn, sessionSearch, listToggle, sendCaret, sendIcon, sendGroup, stopBtn, switchAgentBtn, tipEl, copySessionBtn, presencePicker, configBtn, sessionsPane, resizer, progress, composerEl, planEl, tasksEl, guardrailsEl, queuedEl, changedFiles, panelBody, panelTabs, attachedPanel, ctxMenu, statusbar, slash, addBrowserPage, bootStepsEl, bootHintEl } from "./dom";
+import { root, log, input, chips, addContext, modelPicker, reasoningPicker, sendMode, sendBtn, status, sessionsList, chatTitle, sessionFilterBtn, sessionRefreshBtn, sessionSearch, listToggle, sendCaret, sendIcon, sendGroup, stopBtn, switchAgentBtn, tipEl, copySessionBtn, presencePicker, configBtn, remoteAccessBtn, sessionsPane, resizer, progress, composerEl, planEl, tasksEl, guardrailsEl, queuedEl, changedFiles, panelBody, panelTabs, attachedPanel, ctxMenu, statusbar, slash, addBrowserPage, bootStepsEl, bootHintEl } from "./dom";
 import { renderMarkdown, inline, copyText } from "./markdown";
 import { ICONS, svgIcon, fileIcon } from "./icons";
 import { applyStaticI18n } from "./staticI18n";
@@ -298,6 +298,11 @@ import { applyStaticI18n } from "./staticI18n";
     if (addBrowserPage) {
         addBrowserPage.style.display = "none";   // shown only while a Simple Browser is open
         addBrowserPage.addEventListener("click", () => vscode.postMessage({ type: "attach-browser-page" }));
+    }
+
+    // Remote access: opens the QR panel so the user can scan and open on a phone.
+    if (remoteAccessBtn) {
+        remoteAccessBtn.addEventListener("click", () => vscode.postMessage({ type: "remote-access" }));
     }
 
     // Paste: images become attachments (written to a temp file by the
