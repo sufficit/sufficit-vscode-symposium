@@ -79,10 +79,7 @@ export class ChatPanel {
      *  is reflected immediately (not just in the sessions list). */
     static async reMetaActive(store: { customTitle: (id: string) => string | undefined }): Promise<void> {
         for (const panel of ChatPanel.panels) {
-            const sid = panel.surface.sessionId;
-            if (!sid) { continue; }
-            const title = store.customTitle(sid) ?? panel.surface.title;
-            panel.surface.post({ type: "meta", title });
+            panel.surface.reMetaActive(store);
         }
     }
 

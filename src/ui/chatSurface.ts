@@ -269,6 +269,15 @@ export class ChatSurface {
         });
     }
 
+    /** Re-pushes the active session's title to the webview (so a rename is
+     *  reflected in the chat header, not just the sessions list row). */
+    reMetaActive(store?: { customTitle: (id: string) => string | undefined }): void {
+        const sid = this.controller?.sessionId;
+        if (!sid || !this.controller) { return; }
+        const title = store?.customTitle(sid) ?? this.controller.title;
+        this.post({ type: "meta", title });
+    }
+
     /**
      * Unbinds the current dialogue from this surface WITHOUT stopping it: the
      * headless controller keeps running in the shared runtime (re-attached on
