@@ -297,6 +297,8 @@ export function renderConfigScript(dict: Record<string, string>): string {
             if (login) { login.onclick = () => vscode.postMessage({ type: "login" }); }
             const logout = document.getElementById("sufficit-logout");
             if (logout) { logout.onclick = () => vscode.postMessage({ type: "logout" }); }
+            const remote = document.getElementById("sufficit-remote-access");
+            if (remote) { remote.onclick = () => vscode.postMessage({ type: "remote-access" }); }
             return;
         }
         main.innerHTML = page(resourceList(active));

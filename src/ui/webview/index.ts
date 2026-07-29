@@ -229,18 +229,6 @@ import { applyStaticI18n } from "./staticI18n";
         recheck.addEventListener("click", () => { vscode.postMessage({ type: "recheck-shell-tools" }); ctxMenu.style.display = "none"; });
         list.appendChild(recheck);
 
-        // Remote access (QR code) — prominently placed so it's discoverable.
-        const sep2 = document.createElement("div"); sep2.className = "sep"; list.appendChild(sep2);
-        const remote = document.createElement("div"); remote.className = "mi";
-        const rt2 = document.createElement("span"); rt2.className = "tick";
-        const rlbl2 = document.createElement("span"); rlbl2.className = "milbl";
-        const rlt2 = document.createElement("span"); rlt2.className = "milbl-text"; rlt2.textContent = "📱 Remote Access (QR)";
-        const rld2 = document.createElement("span"); rld2.className = "milbl-desc"; rld2.textContent = "scan to open on your phone";
-        rlbl2.appendChild(rlt2); rlbl2.appendChild(rld2);
-        remote.appendChild(rt2); remote.appendChild(rlbl2);
-        remote.addEventListener("click", () => { vscode.postMessage({ type: "remote-access" }); ctxMenu.style.display = "none"; });
-        list.appendChild(remote);
-
         const open = document.createElement("div"); open.className = "mi";
         const t = document.createElement("span"); t.className = "tick";
         const lbl = document.createElement("span"); lbl.className = "milbl";

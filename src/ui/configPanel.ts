@@ -196,6 +196,9 @@ export class ConfigPanel {
                 await vscode.commands.executeCommand("symposium.logout");
                 await this.pushState();
                 return;
+            case "remote-access":
+                await vscode.commands.executeCommand("symposium.showRemoteAccess");
+                return;
             case "sync-pull": {
                 const r = await api.sync.pull();
                 this.report(this.tr("msg.sync.label.pull"), r);

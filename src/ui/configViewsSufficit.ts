@@ -38,6 +38,12 @@ export const configViewsSufficit = `
             '<textarea class="pref-text" data-key="symposium.chat.memoryInstruction" rows="5" placeholder="' + esc(t("config.prefs.memoryInstruction.placeholder")) + '">' + esc(p.memoryInstruction || "") + '</textarea>' +
             '</div>';
 
+        // --- Remote Access section ---
+        const remoteBody = '<div class="pref-block">' +
+            '<div class="desc">' + esc(t("config.sufficit.remote.desc")) + '</div>' +
+            '<div class="toolbar"><button id="sufficit-remote-access">' + esc(t("config.sufficit.remote.btn")) + '</button></div>' +
+            '</div>';
+
         // --- Vault section (real Sufficit vault: tools bound to secrets via credentialRef) ---
         let vaultBody;
         if (vaultBindings.length > 0) {
@@ -68,6 +74,7 @@ export const configViewsSufficit = `
             banner +
             section(t("config.sufficit.section.auth"), authBody) +
             section(t("config.sufficit.section.memory"), memBody) +
+            section(t("config.sufficit.section.remote"), remoteBody) +
             section(t("config.sufficit.section.vault"), vaultBody);
     }
 `;
