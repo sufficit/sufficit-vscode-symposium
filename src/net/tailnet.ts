@@ -14,7 +14,19 @@ import { HubClient } from "../sync/hubClient";
 function runTailscale(args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
         try {
-            const child = spawn("tailscale", args, { stdio: ["ignore", "pipe", "pipe"] });
+            const bin = process.platform === "win32" ? "tailscale.exe" : "/usr/bin/tailscale";
+            const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] });
+            child.on("error", () => {
+                // Fallback: try "tailscale" from PATH (may differ on some systems)
+                try {
+                    const child2 = spawn("tailscale", args, { stdio: ["ignore", "pipe", "pipe"] });
+                    child2.stdout.on("data", (d) => { stdout += String(d); });
+                    child2.stderr.on("data", (d) => { stderr += String(d); });
+                    child2.on("error", () => resolve({ code: null, stdout, stderr }));
+                    child2.on("exit", (code2) => resolve({ code: code2, stdout, stderr }));
+                } catch { resolve({ code: null, stdout, stderr }); }
+                return;
+            });
             let stdout = "";
             let stderr = "";
             child.stdout.on("data", (d) => { stdout += String(d); });
