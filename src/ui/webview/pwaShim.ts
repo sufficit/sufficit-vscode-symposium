@@ -25,15 +25,17 @@ const cfg: any = (window as any).__SYMPOSIUM__ ?? {};
 // When served via the Sufficit relay, the URL is /symposium/<machineId>/pwa/
 // and API calls must be prefixed with /symposium/<machineId> so they route
 // through the relay proxy to the local bridge. Detect the prefix from the path.
-const RELAY_BASE = (() => {
-    const mid = new URLSearchParams(location.search).get("machineId");
-    return mid ? "/symposium?machineId=" + encodeURIComponent(mid) + "&path=" : "";
-})();
+const MACHINE_ID = new URLSearchParams(location.search).get("machineId") || "local";
+const RELAY_BASE = MACHINE_ID !== "local"
+    ? "/symposium?machineId=" + encodeURIComponent(MACHINE_ID) + "&path="
+    : "";
 const BASE: string = RELAY_BASE || cfg.base || "";
 
-const LS_TOKEN = "symposium.bridge.token";
-const LS_ACTIVE = "symposium.pwa.activeSession";
-const LS_STATE = "symposium.pwa.state";
+// Namespace localStorage by machineId so different Symposium instances (different
+// workspaces on the same gateway) don't overwrite each other's token/session.
+const LS_TOKEN = "symposium.bridge.token." + MACHINE_ID;
+const LS_ACTIVE = "symposium.pwa.active." + MACHINE_ID;
+const LS_STATE = "symposium.pwa.state." + MACHINE_ID;
 
 function token(): string {
     const q = new URLSearchParams(location.search).get("token");
