@@ -310,7 +310,7 @@ export class ConfigPanel {
             bridgePort: bridgeCfg.get<number>("port", 47600),
             relayMode,
             relayMachineId: machineId,
-            relayPublicUrl: bridgeEnabled ? `https://ai.sufficit.com.br/symposium/${machineId}` : undefined,
+            relayPublicUrl: bridgeEnabled ? `https://ai.sufficit.com.br/symposium?machineId=${machineId}` : undefined,
             vpnConnected: !!vpnHostname,
             vpnHostname: vpnHostname ?? undefined,
         };

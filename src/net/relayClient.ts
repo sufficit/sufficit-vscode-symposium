@@ -133,7 +133,7 @@ export class RelayClient {
             this.scheduleReconnect();
             return;
         }
-        const url = `${this.opts.relayUrl}?machineId=${encodeURIComponent(this.machineId)}&token=${encodeURIComponent(token)}`;
+        const url = `${this.opts.relayUrl}&machineId=${encodeURIComponent(this.machineId)}&token=${encodeURIComponent(token)}`;
         this.log(`connecting to ${this.opts.relayUrl} (machineId=${this.machineId.slice(0, 8)}…)`);
         let ws: WebSocket;
         try {

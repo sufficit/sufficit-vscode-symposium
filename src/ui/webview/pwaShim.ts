@@ -25,11 +25,11 @@ const cfg: any = (window as any).__SYMPOSIUM__ ?? {};
 // When served via the Sufficit relay, the URL is /symposium/<machineId>/pwa/
 // and API calls must be prefixed with /symposium/<machineId> so they route
 // through the relay proxy to the local bridge. Detect the prefix from the path.
-const RELAY_PREFIX = (() => {
-    const m = location.pathname.match(/^(\/symposium\/[^/]+)/i);
-    return m ? m[1] : "";
+const RELAY_BASE = (() => {
+    const mid = new URLSearchParams(location.search).get("machineId");
+    return mid ? "/symposium?machineId=" + encodeURIComponent(mid) + "&path=" : "";
 })();
-const BASE: string = RELAY_PREFIX || cfg.base || "";
+const BASE: string = RELAY_BASE || cfg.base || "";
 
 const LS_TOKEN = "symposium.bridge.token";
 const LS_ACTIVE = "symposium.pwa.activeSession";
