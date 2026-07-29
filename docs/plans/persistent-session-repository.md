@@ -2,9 +2,9 @@
 
 ## Status
 
-**Decisão aprovada em 25/07/2026. Implementação planejada para a próxima sessão.**
+**Decisão aprovada em 25/07/2026. Fundação implementada em 28/07/2026.**
 
-Este documento substitui a proposta de usar um snapshot JSON como armazenamento principal. O `SessionIndex` em JSON implementado como melhoria incremental é transitório e deve ser substituído por esta arquitetura antes da conclusão/merge da PR.
+O `SessionIndex` agora usa um repository central com SQLite via `node:sqlite` como backend principal, JSON como fallback e memória como último fallback. A migração idempotente do snapshot JSON também está implementada. Adapters de indexação especializados, paginação e watchers permanecem como próximas etapas.
 
 ## Decisão
 
@@ -379,13 +379,13 @@ Antes de publicar:
 
 ## Critérios de aceite
 
-- SQLite é selecionado quando `node:sqlite` existe.
-- Runtime sem `node:sqlite` continua funcionando por JSON.
-- Falha de ambos mantém a extensão funcional em memória.
-- Lista inicial não depende de scans de providers.
-- Nenhum transcrito completo é lido para montar a lista.
-- Sessões inalteradas não são reparsed.
-- Sidebar e editor compartilham o mesmo catálogo/reconciliação.
-- Criação, atualização e exclusão aparecem imediatamente.
-- Reabrir a extensão consulta SQLite/JSON antes de qualquer varredura.
-- Testes e medição demonstram regressão eliminada.
+- [x] SQLite é selecionado quando `node:sqlite` existe.
+- [x] Runtime sem `node:sqlite` continua funcionando por JSON.
+- [x] Falha de ambos mantém a extensão funcional em memória.
+- [x] Lista inicial não depende de scans de providers.
+- [x] Nenhum transcrito completo é lido para montar a lista.
+- [x] Sessões inalteradas não são reparsed.
+- [x] Sidebar e editor compartilham o mesmo catálogo/reconciliação.
+- [ ] Criação, atualização e exclusão aparecem imediatamente.
+- [x] Reabrir a extensão consulta SQLite/JSON antes de qualquer varredura.
+- [x] Testes e medição demonstram regressão eliminada.

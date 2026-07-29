@@ -24,12 +24,12 @@ test("SessionIndex persists and reloads a portable snapshot", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-session-index-"));
     const transcript = path.join(dir, "one.jsonl");
     fs.writeFileSync(transcript, "{}\n");
-    const first = new SessionIndex({ storageDir: dir, adapters: [adapter("claude", async () => [session("one", transcript, 42)])] });
+    const first = new SessionIndex({ storageDir: dir, adapters: [adapter("claude", async () => [session("one", transcript, 42)])], disableSqlite: true });
     await first.reconcile();
     first.dispose();
 
     let scanned = 0;
-    const second = new SessionIndex({ storageDir: dir, adapters: [adapter("claude", async () => { scanned++; return []; })] });
+    const second = new SessionIndex({ storageDir: dir, adapters: [adapter("claude", async () => { scanned++; return []; })], disableSqlite: true });
     const cached = second.listCached();
     assert.equal(cached.length, 1);
     assert.equal(cached[0].sessionId, "one");
@@ -60,6 +60,18 @@ test("SessionIndex shares concurrent reconciliation and removes deleted provider
     assert.deepEqual(index.listCached(), []);
 });
 
+test("SessionIndex invalidation ignores an in-flight reconciliation result", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-session-index-invalidate-"));
+    let resolve!: (sessions: SessionInfo[]) => void;
+    const pending = new Promise<SessionInfo[]>((done) => { resolve = done; });
+    const index = new SessionIndex({ storageDir: dir, adapters: [adapter("claude", () => pending)], disableSqlite: true });
+    const reconciliation = index.reconcile();
+    index.invalidate();
+    resolve([session("stale")]);
+    await reconciliation;
+    assert.deepEqual(index.listCached(), []);
+});
+
 test("SessionIndex keeps last known-good rows when one provider fails", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-session-index-failure-"));
     let fail = false;
@@ -78,20 +90,20 @@ test("SessionIndex ignores incompatible or corrupt snapshots and rebuilds safely
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-session-index-migrate-"));
     const file = path.join(dir, "session-index.v1.json");
     fs.writeFileSync(file, JSON.stringify({ schemaVersion: 999, sessions: [session("stale")] }));
-    const index = new SessionIndex({ storageDir: dir, adapters: [adapter("claude", async () => [session("fresh")])] });
+    const index = new SessionIndex({ storageDir: dir, adapters: [adapter("claude", async () => [session("fresh")])], disableSqlite: true });
     assert.deepEqual(index.listCached(), []);
     await index.reconcile();
     assert.equal(index.listCached()[0].sessionId, "fresh");
 
     fs.writeFileSync(file, "not-json");
-    const corrupt = new SessionIndex({ storageDir: dir, adapters: [] });
+    const corrupt = new SessionIndex({ storageDir: dir, adapters: [], disableSqlite: true });
     assert.deepEqual(corrupt.listCached(), []);
 });
 
 test("SessionIndex passes cached provider rows to incremental scanners", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-session-index-incremental-"));
     const source = adapter("claude", async () => [session("one")]);
-    const first = new SessionIndex({ storageDir: dir, adapters: [source] });
+    const first = new SessionIndex({ storageDir: dir, adapters: [source], disableSqlite: true });
     await first.reconcile();
 
     let hinted: readonly SessionInfo[] = [];
@@ -100,7 +112,7 @@ test("SessionIndex passes cached provider rows to incremental scanners", async (
         hinted = cached;
         return [...cached, session("two", undefined, 2)];
     };
-    const second = new SessionIndex({ storageDir: dir, adapters: [incremental] });
+    const second = new SessionIndex({ storageDir: dir, adapters: [incremental], disableSqlite: true });
     await second.reconcile();
     assert.equal(hinted.length, 1);
     assert.equal(second.get("claude", "two")?.title, "two");
