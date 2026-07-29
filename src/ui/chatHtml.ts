@@ -49,6 +49,9 @@ export const chatBodyMarkup = /* html */ `<div id="root">
             <button id="headerNewSessionBtn" class="iconBtn" title="New session" aria-label="New session">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"><path d="M2.5 3.5h7a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H6l-2.5 2v-2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2Z"/><path d="M12 1v5M9.5 3.5h5" stroke-width="1.3" stroke-linecap="round"/></svg>
             </button>
+            <button id="remoteAccessBtn" class="iconBtn" title="Remote access — scan QR to open on your phone" aria-label="Remote access">
+                <svg viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1H2a1 1 0 0 0-1 1v4.5a1 1 0 0 0 1 1h4.5a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1Zm0 1v4.5H2V2h4.5ZM4 3.5h.5v.5H4v-.5ZM14 1H9.5a1 1 0 0 0-1 1v4.5a1 1 0 0 0 1 1H14a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1Zm0 1v4.5H9.5V2H14Zm-2 1.5h.5v.5H12v-.5ZM6.5 8.5H2a1 1 0 0 0-1 1V14a1 1 0 0 0 1 1h4.5a1 1 0 0 0 1-1V9.5a1 1 0 0 0-1-1Zm0 1V14H2V9.5h4.5ZM4 11h.5v.5H4V11ZM9 8.5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0v-6Zm5.5 0a.5.5 0 0 0-1 0V11H12a.5.5 0 0 0 0 1h1.5v3a.5.5 0 0 0 1 0v-6.5Z"/></svg>
+            </button>
         </div>
         <div id="logWrap">
             <div id="log"><div id="logBody"></div></div>
@@ -96,9 +99,6 @@ export const chatBodyMarkup = /* html */ `<div id="root">
                     </button>
                     <button id="configBtn" class="iconBtn" title="Tools & configuration" aria-label="Tools & configuration">
                         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 3a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 3Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Zm6 4.5a2 2 0 0 1 3.9-.5H14v1h-2.1A2 2 0 0 1 8 8Zm-6 .5h4.2a2 2 0 0 0 0-1H2v1Zm2 4.5a2 2 0 0 1 3.9-.5H14v1H7.9A2 2 0 0 1 4 13Zm-2 .5h1.2a2 2 0 0 0 0-1H2v1Z"/></svg>
-                    </button>
-                    <button id="remoteAccessBtn" class="iconBtn" title="Remote access — scan QR to open on your phone" aria-label="Remote access — scan QR to open on your phone">
-                        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3.5 1A1.5 1.5 0 0 0 2 2.5v3A1.5 1.5 0 0 0 3.5 7H5v1H3.5a.5.5 0 0 0 0 1H5v1H3.5a.5.5 0 0 0 0 1H5v.5A1.5 1.5 0 0 0 6.5 14h1a.5.5 0 0 0 0-1h-1a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 .5.5v1a.5.5 0 0 0 1 0v-1A1.5 1.5 0 0 0 13.5 2h-7A1.5 1.5 0 0 0 5 2.5V3H3.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 0 0-1h-1ZM3 3.5a.5.5 0 0 0-.5.5v2a.5.5 0 0 0 .5.5h2V3.5a.5.5 0 0 0-.5-.5H3Zm9.5 4A1.5 1.5 0 0 0 11 9v3.5a1.5 1.5 0 0 0 1.5 1.5h2a1.5 1.5 0 0 0 1.5-1.5V9a1.5 1.5 0 0 0-1.5-1.5h-2Zm0 1h2a.5.5 0 0 1 .5.5v3.5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1-.5-.5V9a.5.5 0 0 1 .5-.5ZM9 8a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5A.5.5 0 0 0 9 8Z"/></svg>
                     </button>
                     <button id="modelPicker" class="ctl menubtn" style="display:none" title="Model — change anytime; applies to the next message" aria-label="Model — change anytime; applies to the next message"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                     <button id="reasoningPicker" class="ctl menubtn" style="display:none" title="Reasoning effort — change anytime; applies to the next message" aria-label="Reasoning effort"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
