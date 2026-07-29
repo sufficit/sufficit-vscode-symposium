@@ -10,7 +10,7 @@ import { modelLabel, modelList, modelDefault, modelValue, reasoningList, reasoni
 import { scheduleLayout, scrollToBottom } from "./scroll";
 import { saved } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
-import { root, chatTitle, agentBadge, configBtn, copySessionBtn, modelPicker, reasoningPicker, sendMode, switchAgentBtn } from "./dom";
+import { root, chatTitle, agentBadge, configBtn, copySessionBtn, modelPicker, reasoningPicker, sendMode, switchAgentBtn, remoteAccessBtn } from "./dom";
 import { svgIcon } from "./icons";
 import { activeSessionId, setAgentLabels, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveSessionId, setAiToolsAvailable, setAiToolsEnabled, setBootstrapPath, setBusy, setCurrentBackend, setCurrentBackendName, setPermissionDefault, setPermissionModes, setPermissionValue, setSideMode } from "./state";
 
@@ -87,6 +87,8 @@ export function applyMeta(data: any): void {
     // Always shown (the `|| true` made the prior expression constant);
     // the config button is available regardless of permissionModes.
     configBtn.style.display = "";
+    // Remote access (QR) button — always visible so the user can find it.
+    if (remoteAccessBtn) { remoteAccessBtn.style.display = ""; }
     // Hand-off works for live chat dialogues and for terminal
     // sessions (whose transcript is read back from the CLI). Only
     // read-only live mirrors can't be handed off.
