@@ -75,12 +75,13 @@ export async function ensureTailnetJoined(hub: HubClient, log: (msg: string) => 
         log("[tailnet] `tailscale` CLI not found or not responding — remote access needs it installed separately.");
         return;
     }
-    if (status.BackendState === "Running" && status.Self?.Tags?.includes("tag:symposium-host")) {
-        // Cheap lookup just for the FQDN (allowedHosts needs the full name, not the bare
-        // tailscale hostname) — no preauthkey minted, no `tailscale up` re-run.
+    if (status.BackendState === "Running" && status.Self?.HostName) {
+        // A machine that joined the tailnet (even manually, without the tag)
+        // should still show as connected so the VPN status is accurate.
         const remote = await hub.resolveSymposiumRemoteUrl();
         joinedHostname = remote?.hostname ?? status.Self.HostName;
-        return; // already joined under the right identity — nothing to do
+        log("[tailnet] already connected as " + joinedHostname);
+        return;
     }
 
     const join = await hub.joinSymposiumTailnet();
