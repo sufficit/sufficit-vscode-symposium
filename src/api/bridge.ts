@@ -65,10 +65,22 @@ export class RemoteBridge {
         }
         const port = cfg.get<number>("port", 47600);
         const host = cfg.get<string>("host", "127.0.0.1");
+        // Workspace-persisted bridge token: stable across reloads so the PWA doesn't
+        // lose sync when the extension restarts. Falls back to a global setting,
+        // then to a workspace-persisted UUID generated on first run.
         let token = cfg.get<string>("token", "");
         if (!token) {
-            token = randomUUID();
-            this.log("[bridge] no token configured; generated ephemeral token (see ~/.symposium/bridge.json)");
+            const wsState = vscode.workspace.getConfiguration("symposium.bridge");
+            const wsToken = wsState.get<string>("_workspaceToken", "");
+            if (wsToken) {
+                token = wsToken;
+            } else {
+                token = randomUUID();
+                // Persist at workspace level so it survives reloads but is unique
+                // per workspace (different workspaces = different tokens = isolated).
+                void wsState.update("_workspaceToken", token, vscode.ConfigurationTarget.Workspace);
+                this.log("[bridge] generated workspace-persisted token (stable across reloads)");
+            }
         }
         if ((cfg.get<string[]>("allowedHosts", []) ?? []).length === 0 && !getJoinedHostname()) {
             this.log("[bridge] symposium.bridge.allowedHosts is empty — Host validation (anti DNS-rebinding) is not enforced; set it once you have a stable tunnel hostname.");
