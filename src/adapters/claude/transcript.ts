@@ -1,8 +1,8 @@
-import * as fs from "fs";
 import {
     diffCounts, editDiff, extractTodos,
     prettyJson, summarizeToolInput, toolFilePath,
 } from "../parse";
+import { JsonlMetadataCache, readJsonlPrefix } from "../jsonlPrefix";
 import { HistoryMessage } from "../types";
 import { ClaudeTaskTracker } from "./tasks";
 
@@ -138,13 +138,23 @@ export function parseTranscriptLine(line: string, taskTracker?: ClaudeTaskTracke
  * directory from a transcript. The cwd matters: `claude --resume` only finds
  * sessions that belong to the directory it is started in.
  */
-export async function readSessionMeta(file: string): Promise<{ title?: string; cwd?: string; gitBranch?: string; originSessionId?: string }> {
-    let content: string;
-    try {
-        content = await fs.promises.readFile(file, "utf8");
-    } catch {
-        return {};
-    }
+export interface ClaudeSessionMeta {
+    title?: string;
+    cwd?: string;
+    gitBranch?: string;
+    originSessionId?: string;
+}
+
+const claudeMetaCache = new JsonlMetadataCache<ClaudeSessionMeta>();
+const CLAUDE_META_PREFIX_BYTES = 512 * 1024;
+
+export async function readSessionMeta(file: string): Promise<ClaudeSessionMeta> {
+    return claudeMetaCache.get(file, async () => parseSessionMeta(
+        await readJsonlPrefix(file, CLAUDE_META_PREFIX_BYTES),
+    ));
+}
+
+function parseSessionMeta(content: string): ClaudeSessionMeta {
     let title: string | undefined;
     let cwd: string | undefined;
     let gitBranch: string | undefined;
