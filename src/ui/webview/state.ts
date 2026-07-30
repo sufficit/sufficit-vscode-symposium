@@ -22,7 +22,7 @@ export let activeModel = "";
 export let openInPref = "editor";
 export function setOpenInPref(v: string): void { openInPref = v; }
 export function getOpenInPref(): string { return openInPref; }
-let activeSessionId = "";
+export let activeSessionId = "";
 export let busy = false;
 export let queued = 0;
 export let loading = false;
