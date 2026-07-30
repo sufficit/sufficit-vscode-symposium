@@ -94,11 +94,26 @@ export class SurfaceMessages {
                     await vscode.commands.executeCommand("symposium.showRemoteAccess");
                     return;
                 }
+                case "open-session-editor": {
+                    const sessionsEditor = await this.d.deps.listSessions();
+                    const infoEditor = sessionsEditor.find((s) => s.sessionId === message.sessionId && s.backend === message.backend);
+                    if (infoEditor) {
+                        await vscode.commands.executeCommand("symposium.openSessionInEditor", infoEditor);
+                    }
+                    return;
+                }
                 case "open-session": {
                     const sessions = await this.d.deps.listSessions();
                     const info = sessions.find((s) => s.sessionId === message.sessionId && s.backend === message.backend);
                     if (info) {
-                        this.d.openSession(info);
+                        // Honor the "Open session in" preference: editor or sidebar.
+                        const openIn = vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor");
+                        if (openIn === "editor") {
+                            // openIn=editor: single click opens in the center editor tab.
+                            await vscode.commands.executeCommand("symposium.openSessionInEditor", info);
+                        } else {
+                            this.d.openSession(info);
+                        }
                     }
                     return;
                 }

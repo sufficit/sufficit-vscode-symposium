@@ -66,6 +66,7 @@ export type WebviewToHost =
     | { type: "account-logout" }
     | { type: "remote-access" }
     | { type: "open-session"; sessionId: string; backend: string }
+    | { type: "open-session-editor"; sessionId: string; backend: string }
     | { type: "paste-image"; mime: string; data: string }
     | { type: "stt-transcribe"; data: string; mime: string }
     | { type: "voice-start"; vad?: boolean }

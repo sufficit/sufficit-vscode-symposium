@@ -278,7 +278,7 @@ export class ChatSurface {
             const sessions = await this.deps.listSessions();
             const info = sessions.find((s) => s.sessionId === this.controller!.sessionId);
             const title = info?.title ?? this.controller!.title;
-            this.post({ type: "meta", title });
+            this.post({ type: "title-update", title });
         } catch {
             this.post({ type: "meta", title: this.controller.title });
         }

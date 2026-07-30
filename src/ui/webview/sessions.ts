@@ -352,6 +352,10 @@ export function renderSessionItem(s, depth, childCount) {
                 setLoading(true, "Loading session…");
                 vscode.postMessage({ type: "open-session", sessionId: s.sessionId, backend: s.backend });
             });
+            // Double-click: force open in editor tab (center), regardless of openIn pref.
+            el.addEventListener("dblclick", () => {
+                vscode.postMessage({ type: "open-session-editor", sessionId: s.sessionId, backend: s.backend });
+            });
         }
 
         // One "more" button opens the same menu as right-click.
