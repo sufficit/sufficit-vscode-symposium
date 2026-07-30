@@ -109,7 +109,10 @@ export class SurfaceMessages {
                         // Honor the "Open session in" preference: editor or sidebar.
                         const openIn = vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor");
                         if (openIn === "editor") {
-                            // openIn=editor: single click opens in the center editor tab.
+                            // openIn=editor: open in center tab, NOT in the sidebar.
+                            // Reset the sidebar's loading state (it was set optimistically
+                            // by the click handler before posting this message).
+                            this.d.post({ type: "loading", loading: false });
                             await vscode.commands.executeCommand("symposium.openSessionInEditor", info);
                         } else {
                             this.d.openSession(info);
