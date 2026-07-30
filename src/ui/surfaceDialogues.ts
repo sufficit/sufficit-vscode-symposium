@@ -169,6 +169,7 @@ export class SurfaceDialogues {
             chatOnly: this.d.chatOnly,
             whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
+            openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
         });
         this.d.activateUsage(adapter);
@@ -248,6 +249,7 @@ export class SurfaceDialogues {
             activeFilePreview: activeEditorContext().preview,
             whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
+            openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
         });
         this.d.activateUsage(adapter);
@@ -379,6 +381,7 @@ export class SurfaceDialogues {
             activeFilePreview: activeEditorContext().preview,
             whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
+            openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
         });
         this.d.activateUsage(adapter);

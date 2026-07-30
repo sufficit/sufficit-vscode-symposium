@@ -230,6 +230,7 @@ export function actionsFor(s) {
     if (cli) {
         list.push({ id: "open", icon: "terminal", label: "Resume in terminal" });
     }
+    list.push({ id: "openEditor", icon: "go-to-file", label: "Open in editor tab" });
     list.push({ id: "rename", icon: "rename", label: "Rename" });
     if (cli) {
         list.push({ id: "watch", icon: "eye", label: "Watch live (read-only)" });

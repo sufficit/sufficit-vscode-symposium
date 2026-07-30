@@ -348,9 +348,15 @@ export function renderSessionItem(s, depth, childCount) {
         if (!s.deleting) {
             body.addEventListener("click", () => {
                 root.classList.remove("listOpen");
-                setActiveSessionId(s.sessionId); renderSessions();
-                setLoading(true, "Loading session…");
-                vscode.postMessage({ type: "open-session", sessionId: s.sessionId, backend: s.backend });
+                // When openIn=editor, the session opens in the center tab — don't
+                // show loading in the sidebar or set active (keeps sidebar list-only).
+                if (getOpenInPref() === "editor") {
+                    vscode.postMessage({ type: "open-session", sessionId: s.sessionId, backend: s.backend });
+                } else {
+                    setActiveSessionId(s.sessionId); renderSessions();
+                    setLoading(true, "Loading session…");
+                    vscode.postMessage({ type: "open-session", sessionId: s.sessionId, backend: s.backend });
+                }
             });
             // Double-click: force open in editor tab (center), regardless of openIn pref.
             el.addEventListener("dblclick", () => {

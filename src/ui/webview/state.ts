@@ -19,7 +19,10 @@ export let currentBackend = "";
 export let currentBackendName = "";
 export let agentLabels: any = null;
 export let activeModel = "";
-export let activeSessionId = "";
+export let openInPref = "editor";
+export function setOpenInPref(v: string): void { openInPref = v; }
+export function getOpenInPref(): string { return openInPref; }
+let activeSessionId = "";
 export let busy = false;
 export let queued = 0;
 export let loading = false;

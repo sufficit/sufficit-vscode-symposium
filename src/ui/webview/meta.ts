@@ -12,12 +12,13 @@ import { saved } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
 import { root, chatTitle, agentBadge, configBtn, copySessionBtn, modelPicker, reasoningPicker, sendMode, switchAgentBtn, remoteAccessBtn } from "./dom";
 import { svgIcon } from "./icons";
-import { activeSessionId, setAgentLabels, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveSessionId, setAiToolsAvailable, setAiToolsEnabled, setBootstrapPath, setBusy, setCurrentBackend, setCurrentBackendName, setPermissionDefault, setPermissionModes, setPermissionValue, setSideMode } from "./state";
+import { activeSessionId, setAgentLabels, setOpenInPref, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveSessionId, setAiToolsAvailable, setAiToolsEnabled, setBootstrapPath, setBusy, setCurrentBackend, setCurrentBackendName, setPermissionDefault, setPermissionModes, setPermissionValue, setSideMode } from "./state";
 
 /** Apply a `meta` message payload (session resolved / re-meta). */
 export function applyMeta(data: any): void {
     setSideMode(data.sessionsSide || "auto");
     root.classList.toggle("dev-mode", !!data.devMode);
+    if (typeof data.openIn === "string") { setOpenInPref(data.openIn); }
     // Seed the default send mode once (don't override a saved choice).
     if (data.whenBusy && !(saved && saved.sendMode)) { sendMode.value = data.whenBusy; }
     // Apply the real busy state from the host (overrides any stale busy set by render log replay).
