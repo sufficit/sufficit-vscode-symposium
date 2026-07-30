@@ -215,11 +215,17 @@ export class ChatSurface {
             const snapshot = await usage.read(force);
             if (generation !== this.quotaGeneration || usage !== this.activeUsage) { return; }
             this.post({ type: "event", event: { kind: "quota", ...snapshot } });
-            this.post({ type: "quota-loading", loading: false, backend: usage.backend });
         } catch (error) {
             if (generation !== this.quotaGeneration || usage !== this.activeUsage) { return; }
             symposiumLog(`[quota] Failed to read local adapter usage: ${error instanceof Error ? error.message : String(error)}`);
             this.post({ type: "quota-loading", loading: false, backend: usage.backend, error: true });
+        } finally {
+            // ALWAYS turn off the loading spinner — even when the session changed
+            // during the await (generation mismatch) or an early return happened.
+            // Without this the spinner can get stuck forever.
+            if (generation === this.quotaGeneration && usage === this.activeUsage) {
+                this.post({ type: "quota-loading", loading: false, backend: usage.backend });
+            }
         }
     }
 
