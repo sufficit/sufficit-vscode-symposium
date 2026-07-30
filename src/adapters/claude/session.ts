@@ -385,7 +385,13 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
 
     cancel(): void {
         this.cancelled = true;   // mark so exit handler doesn't emit a crash error
-        this.child?.kill("SIGINT");
+        if (this.child) {
+            this.child.kill("SIGINT");
+            // Clear immediately so a rapid send() after steer (before the exit
+            // event fires) doesn't try to reuse the dying process — ensureStarted()
+            // will spawn fresh instead of writing to a dead stdin.
+            this.child = undefined;
+        }
     }
 
     dispose(): void {
