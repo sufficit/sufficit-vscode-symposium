@@ -36,9 +36,7 @@ export function createSessionRepository(options: SessionRepositoryFactoryOptions
 
 function defaultFactories(options: SessionRepositoryFactoryOptions): (() => SessionRepository)[] {
     const factories: (() => SessionRepository)[] = [];
-    // SQLite backend removed from this slice — memory + JSON only.
-    if (false) {
-    }
+    // SQLite backend not included in this build — memory + JSON only.
     factories.push(() => new JsonSessionRepository(options.storageDir));
     factories.push(() => new InMemorySessionRepository());
     return factories;

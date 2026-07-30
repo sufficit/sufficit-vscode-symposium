@@ -30,7 +30,7 @@ import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/
 export { symposiumLog } from "./extension/log";
 
 /** SessionIndex singleton (set during activate, read by configPanel). */
-export let sessionIndex: any;
+export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
 
 export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const output = vscode.window.createOutputChannel("Symposium");
@@ -212,6 +212,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     let lastReconcileAt = 0;
     const RECONCILE_INTERVAL_MS = 5_000;
     const rawSessions = (): Promise<SessionInfo[]> => {
+        if (!sessionIndex) { return Promise.resolve([]); }
         const cached = sessionIndex.listCached();
         if (indexPrimed) {
             if (Date.now() - lastReconcileAt >= RECONCILE_INTERVAL_MS) {
@@ -221,7 +222,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             return Promise.resolve(cached);
         }
         lastReconcileAt = Date.now();
-        return sessionIndex.reconcile().then((sessions: any) => {
+        return sessionIndex.reconcile().then((sessions: import("./adapters/types").SessionInfo[]) => {
             indexPrimed = true;
             return sessions;
         });
