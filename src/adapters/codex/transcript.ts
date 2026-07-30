@@ -1,4 +1,4 @@
-import * as fs from "fs";
+import { JsonlMetadataCache, readJsonlPrefix } from "../jsonlPrefix";
 
 /**
  * Codex sessions begin with injected scaffolding (AGENTS.md, IDE context,
@@ -63,13 +63,16 @@ export function inferCodexLineage(seedHistory: string, candidates: CodexLineageC
     return match ? match.lineageId || match.sessionId : undefined;
 }
 
+const codexMetaCache = new JsonlMetadataCache<CodexMeta>();
+const CODEX_META_PREFIX_BYTES = 2 * 1024 * 1024;
+
 export async function readCodexMeta(file: string): Promise<CodexMeta> {
-    let content: string;
-    try {
-        content = await fs.promises.readFile(file, "utf8");
-    } catch {
-        return {};
-    }
+    return codexMetaCache.get(file, async () => parseCodexMeta(
+        await readJsonlPrefix(file, CODEX_META_PREFIX_BYTES),
+    ));
+}
+
+function parseCodexMeta(content: string): CodexMeta {
     let id: string | undefined;
     let cwd: string | undefined;
     let title: string | undefined;
