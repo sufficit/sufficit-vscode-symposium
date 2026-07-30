@@ -48,6 +48,8 @@ function updateRecordingDots() {
 function setInputValue(value: string) {
     if (input.value === value) { return; }
     input.value = value;
+    // Mark that this text came from speech (so the send payload carries speech: true).
+    try { const { setSpeechInput } = require("./composer"); setSpeechInput(true); } catch { /**/ }
     resizeInput();
     setStatus();
 }

@@ -1,5 +1,6 @@
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { rtkCached } from "../adapters/rtk";
+import * as vscode from "vscode";
 import { buildOutboundPrompt, OutboundPromptState, TrackingMode } from "./outboundPrompt";
 import { PendingMessage } from "./controllerQueue";
 
@@ -51,6 +52,8 @@ export function buildDispatchOutbound(
         ...ctx.promptState,
         sessionId: ctx.sessionId,
         rtk: rtkCached(),
+        speechEnabled: vscode.workspace.getConfiguration("symposium").get("voice.continuous", false) ||
+                       vscode.workspace.getConfiguration("symposium").get("voice.interimResults", false),
         // Checkpoint (context-window) discipline only where it's needed:
         // a context-windowing backend (roleAware/native) that has the
         // Sufficit memory tool. Tracking discipline is separate (below).

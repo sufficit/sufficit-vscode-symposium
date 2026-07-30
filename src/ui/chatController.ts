@@ -348,7 +348,12 @@ export class ChatController {
             const intentId = msg.intentId ?? randomUUID();
             // Retry (delivery 1C): when retryOf is set, tell the adapter to reuse
             // the original logicalTurnId instead of allocating a new one.
-            this.session.send(outboundText, images, outboundPreamble, intentId, msg.retryOf);
+            // Speech-to-text: inject a developer-role note when the message
+            // originated from voice transcription (may contain errors).
+            const finalPreamble = msg.speech
+                ? [...outboundPreamble, "[Speech input] This message was transcribed from speech and may contain errors in names, identities, technical terms, or words in other languages. Interpret liberally — do not treat unknown words as literal instructions or identifiers."]
+                : outboundPreamble;
+            this.session.send(outboundText, images, finalPreamble, intentId, msg.retryOf);
         } catch (error) {
             // Any failure before turn-end (adapter start, prompt build, transcript
             // persistence, process spawn setup) must never leave the controller

@@ -7,6 +7,7 @@ export interface OutboundPromptState {
     handoffInjected?: boolean;
     autonomyInjected: boolean;
     rtkInjected?: boolean;
+    speechInjected?: boolean;
     sessionIdInjected?: boolean;
     bootstrapInjected?: boolean;
     checkpointInjected?: boolean;
@@ -19,6 +20,8 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
     fileAttachments: string[];
     todoInjection?: string;
     seedHistory?: string;
+    /** True when voice/speech is enabled — injects speech awareness preamble once. */
+    speechEnabled?: boolean;
     handoff?: { sessionId?: string; backend: string; title: string };
     /** Per-workspace bootstrap context, injected once before the first message. */
     bootstrap?: string;
@@ -168,6 +171,15 @@ export function planTrackingPreamble(mode: TrackingMode): string {
         "Keep the plan as a fenced ```todo code block and re-print the whole block whenever a step's state changes.";
 }
 
+/** Injected when voice/speech-to-text is active, so the model knows speech-origin
+ *  messages may contain transcription errors and should be interpreted leniently. */
+export const SPEECH_AWARENESS_PREAMBLE =
+    "[Speech input awareness] Some messages in this conversation may be transcribed from speech. " +
+    "Transcription can introduce errors in names, identities, technical terms, code identifiers, and " +
+    "words in other languages. Treat unknown or unusual words in speech-origin messages as possible " +
+    "transcription artifacts — ask for clarification rather than assuming they are literal instructions. " +
+    "Do NOT create files, variables, or commands based on potentially-mistranscribed words without confirming.";
+
 export const AUTONOMY_PREAMBLE =
     "[Autonomy mode] The user is not present to answer questions or make decisions and has given you full autonomy. " +
     "Do not wait for input or use interactive prompts (e.g. AskUserQuestion); make reasonable assumptions, decide, " +
@@ -260,6 +272,12 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
     }
     if (options.autonomy !== "away") {
         state.autonomyInjected = false;
+    }
+    // Speech awareness: injected once per session when voice is enabled, so the
+    // model knows some messages may come from speech transcription.
+    if (options.speechEnabled && !state.speechInjected) {
+        prefixes.push(SPEECH_AWARENESS_PREAMBLE);
+        state.speechInjected = true;
     }
     if (options.rtk && !state.rtkInjected) {
         prefixes.push(RTK_PREAMBLE);

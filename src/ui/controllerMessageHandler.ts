@@ -19,7 +19,7 @@ export async function handleControllerMessage(message: WebviewToHost, ctx: Contr
     switch (message.type) {
         case "send":
             ctx.onSend(
-                { clientMessageId: message.clientMessageId, intentId: message.intentId, retryOf: message.retryOf, text: message.text, attachments: message.attachments ?? [], model: message.model, reasoning: message.reasoning, permission: message.permission, autonomy: message.autonomy, interruptedBy: message.interruptedBy },
+                { clientMessageId: message.clientMessageId, intentId: message.intentId, retryOf: message.retryOf, speech: message.speech, text: message.text, attachments: message.attachments ?? [], model: message.model, reasoning: message.reasoning, permission: message.permission, autonomy: message.autonomy, interruptedBy: message.interruptedBy },
                 (message.mode as SendMode) ?? "send",
             );
             return true;

@@ -35,6 +35,8 @@ export interface PendingMessage {
      * the flow stopped, instead of a bare "continue" with no context.
      */
     interruptedBy?: string;
+    /** True when the text originated from speech-to-text (may have transcription errors). */
+    speech?: boolean;
 }
 
 /** FIFO queue for pending chat messages; assigns stable ids for webview edits. */

@@ -132,6 +132,7 @@ export type WebviewToHost =
           retryOf?: string;
           /** One-shot note on what error interrupted the previous turn (plain Retry only). */
           interruptedBy?: string;
+          speech?: boolean;
       }
     | { type: "cancel" }
     | { type: "queue-remove"; id: number }
