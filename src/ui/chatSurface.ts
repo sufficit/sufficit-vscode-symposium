@@ -272,15 +272,16 @@ export class ChatSurface {
     /** Re-pushes the active session's title to the webview (so a rename is
      *  reflected in the chat header, not just the sessions list row). */
     async reMetaActive(): Promise<void> {
-        if (!this.controller?.sessionId) { return; }
+        const controller = this.controller;
+        if (!controller?.sessionId) { return; }
         // Read the decorated title (includes custom renames) from the session list.
         try {
             const sessions = await this.deps.listSessions();
-            const info = sessions.find((s) => s.sessionId === this.controller!.sessionId);
-            const title = info?.title ?? this.controller!.title;
+            const info = sessions.find((s) => s.sessionId === controller.sessionId);
+            const title = info?.title ?? controller?.title ?? "";
             this.post({ type: "title-update", title });
         } catch {
-            this.post({ type: "meta", title: this.controller.title });
+            this.post({ type: "title-update", title: controller?.title ?? "" });
         }
     }
 
