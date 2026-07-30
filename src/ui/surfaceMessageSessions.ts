@@ -21,6 +21,7 @@ export async function handleSessionMessage(message: WebviewToHost, d: SurfaceMes
             }
             const command = {
                 open: "symposium.resumeInTerminal",
+                openEditor: "symposium.openSessionInEditor",
                 rename: "symposium.renameSession",
                 watch: "symposium.followSession",
                 archive: "symposium.archiveSession",
