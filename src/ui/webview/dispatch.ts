@@ -18,7 +18,7 @@ import { modelLabels, modelValue, modelList, modelDefault, setModelDefault, setM
 import { armStickyUserMessage, layout, refreshEmpty, scrollToBottom, nearBottom, autoScroll } from "./scroll";
 import { svgIcon } from "./icons";
 import { renderAgentPicker, hideAgentPicker } from "./agentPicker";
-import { log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge } from "./dom";
+import { log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge, chatTitle } from "./dom";
 import { sessions, busy, activeModel, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setBusy, setCommands, setConversationRows, setPendingSessionSwitch, setQueued, setSessions, setSideMode, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPendingSwitchAnchor } from "./state";
 
 let historyCycle = 0;
@@ -34,6 +34,7 @@ window.addEventListener("message", ({ data }) => {
         case "focus-input": { input.focus(); break; }
         case "agent-picker": { renderAgentPicker(Array.isArray(data.agents) ? data.agents : []); break; }
         case "meta": { applyMeta(data); break; }
+        case "title-update": { chatTitle.textContent = data.title || ""; break; }
         case "browser-state": {
             setBrowserOpen(!!data.open);
             break;
