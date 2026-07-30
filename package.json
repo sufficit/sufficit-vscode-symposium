@@ -977,6 +977,11 @@
           "default": "",
           "description": "Workspace-persisted bridge token (auto-generated; do not edit).",
           "scope": "workspace"
+        },
+        "symposium.chat.sessionCache": {
+          "type": "boolean",
+          "default": true,
+          "description": "Cache session metadata in memory for instant startup. Shows RAM usage in Preferences."
         }
       }
     }

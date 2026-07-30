@@ -277,7 +277,14 @@ export const configViews = `    function resourceList(kind) {
             section(t("config.prefs.section.developer"),
                 item(t("config.prefs.devMode.name"), t("config.prefs.devMode.desc"),
                     sel("symposium.chat.devMode", p.devMode ? "true" : "false",
-                        [{ v: "true", l: t("config.prefs.devMode.on") }, { v: "false", l: t("config.prefs.devMode.off") }]))
+                        [{ v: "true", l: t("config.prefs.devMode.on") }, { v: "false", l: t("config.prefs.devMode.off") }])) +
+                item('Session Cache', 'Caches session metadata in memory for instant startup. Disable to free RAM.',
+                    sel("symposium.chat.sessionCache", p.sessionCache ? "true" : "false",
+                        [{ v: "true", l: "On" }, { v: "false", l: "Off" }])) +
+                item('Cache Memory', (p.sessionCacheRam && p.sessionCacheRam > 0)
+                    ? (p.sessionCacheRam / 1024 / 1024).toFixed(1) + ' MB (' + (p.sessionCacheCount || 0) + ' sessions cached)'
+                    : 'Cache disabled or empty (0 MB)',
+                    '<span style="color:var(--sym-warn,#fbbf24)">read-only</span>')
             )
         );
     }
