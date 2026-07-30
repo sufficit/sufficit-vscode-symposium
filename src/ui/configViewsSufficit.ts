@@ -52,6 +52,13 @@ export const configViewsSufficit = `
         }
         // VPN status
         netBody += statusRow(t("config.sufficit.network.vpn"), ni.vpnConnected ? (ni.vpnHostname || 'connected') : 'disconnected', ni.vpnConnected);
+        // Session cache RAM
+        if (ni.sessionCacheCount !== undefined) {
+            const ram = ni.sessionCacheRam > 0
+                ? (ni.sessionCacheRam / 1024 / 1024).toFixed(1) + ' MB (' + ni.sessionCacheCount + ' sessions)'
+                : '0 MB';
+            netBody += statusRow('Cache RAM', ram, true);
+        }
         // Action buttons
         netBody += '<div class="toolbar" style="margin-top:8px">' +
             '<button id="sufficit-remote-access">' + esc(t("config.sufficit.remote.btn")) + '</button>' +

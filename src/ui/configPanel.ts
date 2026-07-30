@@ -305,7 +305,19 @@ export class ConfigPanel {
         const machineId = getMachineId();
         const bridgeEnabled = bridgeCfg.get<boolean>("enabled", false);
         const relayMode = bridgeCfg.get<string>("relay", "auto");
+        // Session cache RAM
+        let sessionCacheRam = 0;
+        let sessionCacheCount = 0;
+        try {
+            const mod = await import("../extension");
+            if (mod.sessionIndex) {
+                sessionCacheRam = mod.sessionIndex.memoryUsageBytes() ?? 0;
+                sessionCacheCount = mod.sessionIndex.listCached()?.length ?? 0;
+            }
+        } catch { /* not ready */ }
         const networkInfo = {
+            sessionCacheRam,
+            sessionCacheCount,
             bridgeEnabled,
             bridgePort: bridgeCfg.get<number>("port", 47600),
             relayMode,

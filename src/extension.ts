@@ -5,6 +5,7 @@ import { CopilotAdapter } from "./adapters/copilot";
 import { OpenAIAdapter, setOpenAITokenProvider } from "./adapters/openai";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
+import { SessionIndex } from "./sessions/index";
 import { LiveSessions } from "./sessions/runtime";
 import { SubagentManager } from "./sessions/subagents";
 import { setSubagentHost, setLiveTranscriptReader } from "./adapters/aiTools";
@@ -27,6 +28,9 @@ import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/
 
 // Re-exported so consumers (e.g. ui/chatSurface) can keep importing from here.
 export { symposiumLog } from "./extension/log";
+
+/** SessionIndex singleton (set during activate, read by configPanel). */
+export let sessionIndex: any;
 
 export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const output = vscode.window.createOutputChannel("Symposium");
@@ -197,11 +201,30 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // a live controller can't re-inject them mid-delete.
     const deleting = new Set<string>();
 
-    const rawSessions = async (): Promise<SessionInfo[]> => {
-        const all = await Promise.all(adapters.map((adapter) =>
-            adapter.listSessions().catch(() => [] as SessionInfo[])));
-        return all.flat()
-            .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
+    sessionIndex = new SessionIndex({
+        storageDir: context.globalStorageUri.fsPath,
+        adapters,
+        log: symposiumLog,
+        disableSqlite: true,
+    });
+    context.subscriptions.push(sessionIndex);
+    let indexPrimed = sessionIndex.listCached().length > 0;
+    let lastReconcileAt = 0;
+    const RECONCILE_INTERVAL_MS = 5_000;
+    const rawSessions = (): Promise<SessionInfo[]> => {
+        const cached = sessionIndex.listCached();
+        if (indexPrimed) {
+            if (Date.now() - lastReconcileAt >= RECONCILE_INTERVAL_MS) {
+                lastReconcileAt = Date.now();
+                void sessionIndex.reconcile();
+            }
+            return Promise.resolve(cached);
+        }
+        lastReconcileAt = Date.now();
+        return sessionIndex.reconcile().then((sessions: any) => {
+            indexPrimed = true;
+            return sessions;
+        });
     };
 
     const surfaceDeps = buildChatSurfaceDeps({ context, runtime, store, adapterByBackend, auth, deleting, rawSessions });
@@ -249,3 +272,4 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
 }
 
 export function deactivate(): void { }
+

@@ -34,6 +34,7 @@ export interface SurfaceMessagesDeps {
     markReady: () => void;
     refreshSessions: () => Promise<void>;
     refreshQuotas: (force?: boolean) => Promise<void>;
+    chatOnly: boolean;
     openSession: (info: SessionInfo) => void;
     /** Reveals this surface and focuses its composer after host UI detours. */
     restoreFocus: () => Promise<void>;
@@ -57,7 +58,7 @@ export class SurfaceMessages {
             switch (message?.type) {
                 case "ready": {
                     this.d.markReady();
-                    void this.d.refreshSessions();
+                    if (!this.d.chatOnly) { void this.d.refreshSessions(); }
                     void this.d.sync.pushAccount();
                     void this.d.sync.refreshTasks();
                     void this.d.sync.refreshGuardrails();
