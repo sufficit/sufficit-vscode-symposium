@@ -83,6 +83,26 @@ export function scrollToBottom(): void {
     snapToBottom();
     updateScrollBtn();
 }
+
+/** Keeps restored history pinned while remote-webview layout settles. */
+export function settleAtBottom(stillCurrent: () => boolean, done?: () => void): void {
+    const started = performance.now();
+    let stableFrames = 0;
+    let previousHeight = -1;
+    const step = (): void => {
+        if (!stillCurrent()) { return; }
+        const height = logScroller.scrollHeight;
+        scrollToBottom();
+        stableFrames = height === previousHeight ? stableFrames + 1 : 0;
+        previousHeight = height;
+        if (stableFrames >= 3 || performance.now() - started >= 750) {
+            done?.();
+            return;
+        }
+        requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+}
 // The pin follows the user's scroll: at the bottom → pinned, away → unpinned.
 // Ignore the scroll events our own snaps produce (they're always at-bottom
 // anyway, but the timestamp guard keeps a mid-frame unpin from a programmatic
