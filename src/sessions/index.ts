@@ -86,9 +86,16 @@ export class SessionIndex {
                 const cached = [...this.sessions.values()]
                     .filter((session) => session.backend === adapter.backend)
                     .map(fromStored);
-                const listed = adapter.listSessionsIncremental
-                    ? await adapter.listSessionsIncremental(cached)
-                    : await adapter.listSessions();
+                let listed: SessionInfo[];
+                try {
+                    listed = adapter.listSessionsIncremental
+                        ? await adapter.listSessionsIncremental(cached)
+                        : await adapter.listSessions();
+                } catch {
+                    listed = await adapter.listSessions().catch(() => []);
+                }
+                // Guard: if listSessions returned undefined/null, use empty array
+                if (!Array.isArray(listed)) { listed = []; }
                 return { backend: adapter.backend, listed: await Promise.all(listed.map(toStored)) };
             } catch (error) {
                 this.log(`[sessions] ${adapter.backend} reconciliation failed: ${error instanceof Error ? error.message : String(error)}`);
