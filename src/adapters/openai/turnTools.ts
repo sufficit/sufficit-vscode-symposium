@@ -13,6 +13,9 @@ export function buildTurnTools(hubConfigured: boolean, responses: boolean) {
     const memoryTools = hubConfigured ? (responses ? AI_TOOLS_RESPONSES : AI_TOOLS) : [];
     const localTools = responses ? LOCAL_TOOLS_RESPONSES : LOCAL_TOOLS;
     const subagentTools = getSubagentHost() ? (responses ? SUBAGENT_TOOLS_RESPONSES : SUBAGENT_TOOLS) : [];
+    // Only bridged `vscode.lm.tools` carry a local registry-name alias. Native
+    // tools (`shell`, filesystem, memory, subagents) retain their public names;
+    // provider-specific cloaks belong to sufficit-ai, not to this merge layer.
     const vscodeTools = responses ? lmToolDefsResponses() : lmToolDefs();
     return mergeToolDefinitions([
         ...memoryTools.map((tool) => ({ tool, source: "sym_" })),

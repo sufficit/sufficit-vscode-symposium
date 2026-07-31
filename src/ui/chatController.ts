@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { randomUUID } from "crypto";
-import { AgentAdapter, AgentEvent, AgentSession, SessionInfo, SessionStartOptions, TodoItem } from "../adapters/types";
-import { parseTodoFence, todosSummary } from "../adapters/todos";
+import { AgentAdapter, AgentSession, SessionInfo, SessionStartOptions, TodoItem } from "../adapters/types";
+import { todosSummary } from "../adapters/todos";
 import { type TrackingMode } from "./outboundPrompt";
 import { probeRtk } from "../adapters/rtk";
 import { HubClient } from "../sync/hubClient";
@@ -17,6 +17,8 @@ import { persistEmit as persistEmitFn, seedRenderLog as seedRenderLogFn } from "
 import { OutboundPromptState } from "./outboundPrompt";
 import { buildDispatchOutbound } from "./controllerDispatchPrompt";
 import { prepareDispatch } from "./controllerDispatchPrep";
+import { ControllerEventHandler } from "./controllerEventHandler";
+import { loadControllerHistory } from "./controllerHistory";
 
 /** Owns one live dialogue process; view switches only detach/replay the stream. */
 export class ChatController {
@@ -74,6 +76,16 @@ export class ChatController {
      * to the original for observability (delivery 1C).
      */
     private lastLogicalTurnId: string | undefined;
+    private readonly eventHandler = new ControllerEventHandler({
+        isBusy: () => this.busy, setBusy: (busy) => { this.busy = busy; },
+        armWatchdog: () => this.armWatchdog(), clearWatchdog: () => this.clearWatchdog(),
+        emit: (message) => this.emit(message), statusChanged: () => this.onStatusChange?.(),
+        recordChanged: (file, added, removed) => { this.changed.record(file, added, removed); this.emitChanged(); },
+        setTodos: (todos) => { this.lastTodos = todos; }, trackingMode: () => this.trackingMode,
+        markTurnFailed: () => { this.turnHadError = true; }, turnFailed: () => this.turnHadError,
+        setLogicalTurnId: (id) => { this.lastLogicalTurnId = id; }, takeQueued: () => this.queue.shift(),
+        emitQueue: () => this.emitQueue(), dispatch: (message) => { void this.dispatch(message); },
+    });
 
     constructor(
         private readonly adapter: AgentAdapter,
@@ -204,18 +216,7 @@ export class ChatController {
     }
 
     async loadHistory(info: SessionInfo): Promise<void> {
-        if (!this.adapter.history) {
-            return;
-        }
-        try {
-            const messages = await this.adapter.history(info);
-            this.emit({ type: "history", messages });
-        } catch (error) {
-            this.emit({
-                type: "event",
-                event: { kind: "error", message: `failed to load history: ${error instanceof Error ? error.message : error}` },
-            });
-        }
+        await loadControllerHistory(this.adapter, info, (message) => this.emit(message));
     }
 
     async handleMessage(message: WebviewToHost): Promise<boolean> {
@@ -314,7 +315,7 @@ export class ChatController {
             );
             if (!this.session) {
                 this.session = this.adapter.start(this.options);
-                this.session.on("event", (event: AgentEvent) => this.onEvent(event));
+                this.session.on("event", this.eventHandler.handle);
             }
             const { text: outboundText, preamble: outboundPreamble, trackingMode, images } = buildDispatchOutbound(
                 {
@@ -365,57 +366,6 @@ export class ChatController {
             this.clearWatchdog();
             this.onStatusChange?.();
             this.emit({ type: "event", event: { kind: "error", message: error instanceof Error ? error.message : String(error) } });
-        }
-    }
-
-    private onEvent(event: AgentEvent): void {
-        // Any backend activity proves the turn is alive — push the watchdog out.
-        if (this.busy) { this.armWatchdog(); }
-        this.emit({ type: "event", event });
-        if (event.kind === "session") {
-            this.onStatusChange?.();
-        }
-        // Track edited files here (authoritative, survives view switches).
-        if (event.kind === "tool-start" && event.path && (event.added != null || event.removed != null)) {
-            this.changed.record(event.path, event.added, event.removed);
-            this.emitChanged();
-        }
-        // Remember the latest native TodoWrite/update_plan state — see lastTodos.
-        if ((event.kind === "tool-start" || event.kind === "tool-end") && event.todos) {
-            this.lastTodos = event.todos;
-        }
-        // Fence mode only: a hub-tools session already tracks its plan via
-        // add_task/task_complete, so a stray ```todo block in its text (the
-        // model isn't instructed to emit one, but nothing stops it) must not
-        // also spawn a second, redundant plan-card.
-        if (event.kind === "text" && this.trackingMode === "fence") {
-            const todos = parseTodoFence(event.text);
-            if (todos) {
-                this.lastTodos = todos;
-                this.emit({ type: "event", event: { kind: "tool-start", toolName: "TodoWrite", detail: "", todos } });
-            }
-        }
-        if (event.kind === "error" && event.fatal !== false) {
-            this.turnHadError = true;
-        }
-        if (event.kind === "turn-start" && typeof event.logicalTurnId === "string") {
-            this.lastLogicalTurnId = event.logicalTurnId;
-        }
-        if (event.kind === "turn-end") {
-            this.busy = false;
-            this.clearWatchdog();
-            this.onStatusChange?.();
-            // A failed turn (fatal error just seen) must not auto-send whatever is
-            // queued next — that would look like a normal continuation instead of
-            // the failure it is. Leave the queue alone; the user chooses Retry or
-            // explicitly promotes/steers the queued item (see dispatch()'s catch).
-            if (!this.turnHadError) {
-                const next = this.queue.shift();
-                if (next) {
-                    this.emitQueue();
-                    void this.dispatch(next);
-                }
-            }
         }
     }
 

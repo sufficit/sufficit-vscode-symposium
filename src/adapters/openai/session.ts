@@ -1,22 +1,17 @@
 import { EventEmitter } from "events";
 import { randomUUID } from "crypto";
-import * as path from "path";
 import { AgentSession, SessionStartOptions } from "../types";
-import { contextWindowFor } from "../parse";
 import { HubClient } from "../../sync/hubClient";
-import { ALL_AI_TOOL_NAMES, ShellExecutionMode } from "../aiTools";
+import { ALL_AI_TOOL_NAMES } from "../aiTools";
 import * as ledger from "../../ledger";
 import { ChatMessage, ContentPart, OpenAIAdapterConfig } from "./types";
 import { readStored, writeStored } from "./store";
-import { getDiscoveredContext, getDiscoveredLabels, getDiscoveredModels } from "./models";
-import { buildHeaders, resolveAuthToken } from "./httpAuth";
-import { discoverModels as discoverModelsFromCatalog } from "./discovery";
 import { Compactor } from "./compactor";
 import { TurnRunner } from "./turnRunner";
 import { makeLogicalTurnId, parseTurnSeq } from "./turnId";
-import { RequestEstimate } from "./requestWindow";
 import { buildTimeGapNotice } from "./timeGapNotice";
 import { buildImageParts } from "./imageParts";
+import { buildFollowupAnchor, OpenAISessionRuntime } from "./sessionRuntime";
 
 /**
  * A direct OpenAI-compatible chat session (no CLI): streams /chat/completions
@@ -31,6 +26,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     /** Conversation lineage inherited at branch time (groups sidebar entries). */
     private lineageId: string | undefined;
     private readonly hub = new HubClient();
+    private readonly runtime: OpenAISessionRuntime;
     /**
      * Monotonic logical-turn sequence, stable across retries and reopen
      * (reconstructed from meta.json/ledger on resume, unlike the old turnNo
@@ -68,6 +64,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         private readonly options: SessionStartOptions,
     ) {
         super();
+        this.runtime = new OpenAISessionRuntime(this.cfg, this.options, this.backend);
         // Resume a stored session if asked, else start a fresh one.
         const resumed = options.resumeSessionId ? readStored(backend, options.resumeSessionId) : undefined;
         // Orphan recovery: if a resume was requested but the store file is
@@ -112,10 +109,10 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             getMessages: () => this.messages,
             getTurnNo: () => this.turnSeq,
             getLastInputTokens: () => this.lastInputTokens,
-            model: () => this.model(),
-            contextWindow: () => this.contextWindow(),
-            authToken: () => this.authToken(),
-            headers: (loginToken) => this.headers(loginToken),
+            model: () => this.runtime.model(),
+            contextWindow: () => this.runtime.contextWindow(),
+            authToken: () => this.runtime.authToken(),
+            headers: (loginToken) => this.runtime.headers(loginToken),
             emit: (event) => { this.emit("event", event); },
             safePersist: () => this.safePersist(),
         });
@@ -137,16 +134,16 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             getLastInputTokens: () => this.lastInputTokens,
             setLastInputTokens: (n) => { this.lastInputTokens = n; },
             emit: (event) => { this.emit("event", event); },
-            model: () => this.model(),
-            label: (id) => this.label(id),
-            contextWindow: () => this.contextWindow(),
-            headers: (loginToken) => this.headers(loginToken),
-            authToken: () => this.authToken(),
-            discoverModels: (loginToken) => this.discoverModels(loginToken),
-            followupAnchor: () => this.followupAnchor(),
-            emitRequestEstimate: (estimate) => this.emitRequestEstimate(estimate),
-            shellExecutionMode: () => this.shellExecutionMode(),
-            resolveToolPath: (p) => this.resolveToolPath(p),
+            model: () => this.runtime.model(),
+            label: (id) => this.runtime.label(id),
+            contextWindow: () => this.runtime.contextWindow(),
+            headers: (loginToken) => this.runtime.headers(loginToken),
+            authToken: () => this.runtime.authToken(),
+            discoverModels: (loginToken) => this.runtime.discoverModels(loginToken),
+            followupAnchor: () => buildFollowupAnchor(this.objective, this.progress),
+            emitRequestEstimate: (estimate) => this.emit("event", this.runtime.requestEstimateEvent(estimate)),
+            shellExecutionMode: () => this.runtime.shellExecutionMode(),
+            resolveToolPath: (p) => this.runtime.resolveToolPath(p),
             safePersist: () => this.safePersist(),
             led: (role, content, extra) => this.led(role, content, extra),
             maybeAutoCompact: (observedInputTokens) => this.compactor.maybeAutoCompact(observedInputTokens),
@@ -187,13 +184,13 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         // but the store file was never written, and listSessions() only scans the
         // store directory.
         if (!resumed) { this.safePersist(); }
-        queueMicrotask(() => this.emit("event", { kind: "session", sessionId: this.sessionId, model: this.model() }));
+        queueMicrotask(() => this.emit("event", { kind: "session", sessionId: this.sessionId, model: this.runtime.model() }));
     }
 
     private persist(): void {
         writeStored({
             id: this.sessionId, backend: this.backend, title: this.title,
-            cwd: this.options.cwd, model: this.model(), updatedAt: new Date().toISOString(),
+            cwd: this.options.cwd, model: this.runtime.model(), updatedAt: new Date().toISOString(),
             messages: this.messages, lineageId: this.lineageId,
         });
     }
@@ -212,97 +209,9 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     private ledgerMeta(): import("../../ledger").LedgerMeta {
         return {
             id: this.sessionId, backend: this.backend, title: this.title,
-            cwd: this.options.cwd, model: this.model(),
+            cwd: this.options.cwd, model: this.runtime.model(),
             reasoning: this.options.reasoning,
         };
-    }
-
-    private model(): string {
-        // Never invent a foreign default (e.g. gpt-4o-mini): fall back to the
-        // discovered models for this gateway, then empty (the user's picked model
-        // is applied per-message before send).
-        return this.options.model || this.cfg.model || this.cfg.models[0]
-            || getDiscoveredModels(this.cfg.baseUrl)?.[0] || "";
-    }
-
-    /** Friendly name for a model id, from discovery (falls back to the id). */
-    private label(id: string): string {
-        if (!id) { return ""; }
-        return getDiscoveredLabels(this.cfg.baseUrl)?.[id] ?? id;
-    }
-
-    /**
-     * Context window (tokens) for the active model, feeding the context monitor.
-     * Prefers the value the gateway's /models catalog advertised; falls back to
-     * the model-name heuristic (200k default, 1m variants) so the meter shows
-     * even before discovery resolves.
-     */
-    private contextWindow(): number {
-        const id = this.model();
-        return getDiscoveredContext(this.cfg.baseUrl)?.[id] || contextWindowFor(id);
-    }
-
-    /** Keep the context meter truthful while a request is in flight. */
-    private emitRequestEstimate(estimate: RequestEstimate): void {
-        const model = this.model();
-        this.emit("event", {
-            kind: "usage",
-            inputTokens: estimate.inputTokens,
-            outputTokens: 0,
-            totalTokens: estimate.inputTokens,
-            cacheRead: 0,
-            contextWindow: this.contextWindow(),
-            estimated: true,
-            requestChars: estimate.requestChars,
-            requestMessageCount: estimate.messageCount,
-            requestToolCount: estimate.toolCount,
-            model,
-            modelLabel: this.label(model),
-            requestedModel: model,
-        });
-    }
-
-    /**
-     * Continuous follow-up: a compact OBJECTIVE + PROGRESS + convergence block,
-     * appended to the TAIL of a windowed request (highest-attention position) so a
-     * small-context model keeps the thread across a long tool-loop. Request-only —
-     * never pushed into this.messages, so it stays fresh and doesn't bloat history.
-     */
-    private followupAnchor(): ChatMessage | undefined {
-        if (!this.objective) { return undefined; }
-        const lines: string[] = [
-            "[Continuous focus — your context window is small, so treat THIS as the source of truth for the current task. This YIELDS to the latest user message: if the user redirects, narrows, or cancels, follow their request, not this objective.]",
-            "OBJECTIVE: " + this.objective,
-        ];
-        if (this.progress.length) {
-            const recent = this.progress.slice(-6);
-            lines.push(`PROGRESS so far (${this.progress.length} steps; last ${recent.length}):`);
-            for (const p of recent) { lines.push("  • " + p); }
-        }
-        lines.push("GUIDANCE: Every tool call must move the OBJECTIVE forward — if a step doesn't, stop and reconsider. The moment the objective is met, STOP calling tools and reply to the user. If you've taken several steps without replying, lead your next message with a one-line status. But if the latest user message contradicts the OBJECTIVE (stop, don't do this now, just verify, change of subject), follow the user — this anchor is subordinate.");
-        // Use `system` (low authority) not `developer` so the anchor cannot
-        // outrank the latest real user message on providers that weight developer
-        // above user (defect 1.2).
-        return { role: "system", content: lines.join("\n") };
-    }
-
-    private headers(loginToken?: string | null): Record<string, string> {
-        return buildHeaders(this.cfg, loginToken);
-    }
-
-    /** Resolves the login token only when needed (no explicit auth configured). */
-    private async authToken(forceRefresh = false): Promise<string | null> {
-        return resolveAuthToken(this.cfg, forceRefresh);
-    }
-
-    /**
-     * Best-effort model discovery from <baseUrl>/models, populating the shared
-     * cache so `model()` can resolve a default. Used by run() when no model is
-     * selected, so the very first turn after a reload still finds a model.
-     * Skipped when models are pinned in settings (the configured list wins).
-     */
-    private async discoverModels(loginToken?: string | null): Promise<void> {
-        await discoverModelsFromCatalog(this.cfg, this.backend, loginToken);
     }
 
     /**
@@ -457,20 +366,6 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         void this.runner.run();
     }
 
-
-    private shellExecutionMode(): ShellExecutionMode {
-        // Per-conversation choice from the composer wins over static config,
-        // so the user can flip silent/inline/terminal without changing settings.
-        const cfg = this.cfg as { shellExecution?: string };
-        const v = String(this.options.execDisplay ?? cfg.shellExecution ?? "silent");
-        return v === "inline" || v === "terminal" ? v : "silent";
-    }
-
-    /** Resolves a tool's path argument to an absolute path against the session cwd. */
-    private resolveToolPath(p: unknown): string | undefined {
-        if (typeof p !== "string" || !p) { return undefined; }
-        return path.isAbsolute(p) ? p : path.resolve(this.options.cwd, p);
-    }
 
     cancel(): void {
         this.runner.cancel();

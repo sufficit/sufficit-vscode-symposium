@@ -8,6 +8,7 @@ const events = readFileSync(resolve(__dirname, "../../src/ui/webview/events.ts")
 const css = readFileSync(resolve(__dirname, "../../src/ui/webview/chat.css"), "utf8");
 const surface = readFileSync(resolve(__dirname, "../../src/ui/chatSurface.ts"), "utf8");
 const dialogues = readFileSync(resolve(__dirname, "../../src/ui/surfaceDialogues.ts"), "utf8");
+const dialogueTypes = readFileSync(resolve(__dirname, "../../src/ui/surfaceDialoguesTypes.ts"), "utf8");
 
 test("quota badge is available by pointer, keyboard focus, and click", () => {
     assert.match(statusbar, /addEventListener\("mouseenter"/);
@@ -60,7 +61,7 @@ test("chat surface asks only the active adapter usage singleton", () => {
     assert.match(surface, /generation !== this\.quotaGeneration/);
     assert.match(surface, /setInterval\(\(\) => void this\.refreshQuotas\(\), 60_000\)/);
     assert.match(surface, /type: "quota-loading"/);
-    assert.match(dialogues, /activateUsage: \(adapter: AgentAdapter\)/);
+    assert.match(dialogueTypes, /activateUsage: \(adapter: AgentAdapter\)/);
     assert.equal((dialogues.match(/this\.d\.activateUsage\(adapter\)/g) || []).length, 3);
 });
 

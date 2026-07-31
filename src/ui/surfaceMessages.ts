@@ -1,16 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as os from "os";
-import { FollowHandle, SessionInfo } from "../adapters/types";
 import { WebviewToHost } from "./protocol";
-import { ChatController } from "./chatController";
-import { TerminalSession } from "./terminalSession";
-import type { ChatSurfaceDeps } from "./chatSurface";
-import { SurfaceSync } from "./surfaceSync";
-import { SurfaceDialogues } from "./surfaceDialogues";
-import { BackendHandoff } from "./backendHandoff";
-import { ChangedFilesManager } from "./changedFiles";
-import { HubClient } from "../sync/hubClient";
 import { setTaskDone } from "../sync/tasks";
 import { removeGuardrail, clearSessionGuardrails } from "../sync/guardrails";
 import { probeRtk } from "../adapters/rtk";
@@ -19,6 +10,7 @@ import { handleFileMessage } from "./surfaceMessageFiles";
 import { handleChangedFilesMessage } from "./surfaceMessageChangedFiles";
 import { handleSessionMessage } from "./surfaceMessageSessions";
 import { symposiumLog } from "../extension";
+import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
 /**
  * Webview → host message router for a chat surface: the big switch that turns
@@ -26,28 +18,7 @@ import { symposiumLog } from "../extension";
  * Extracted from ChatSurface; session state stays surface-owned and is reached
  * here through getters/callbacks in the deps bag.
  */
-export interface SurfaceMessagesDeps {
-    webview: vscode.Webview;
-    deps: ChatSurfaceDeps;
-    post: (message: unknown) => void;
-    /** Marks the webview ready: flips ready, sends the host boot, flushes the queue. */
-    markReady: () => void;
-    refreshSessions: () => Promise<void>;
-    refreshQuotas: (force?: boolean) => Promise<void>;
-    chatOnly: boolean;
-    openSession: (info: SessionInfo) => void;
-    /** Reveals this surface and focuses its composer after host UI detours. */
-    restoreFocus: () => Promise<void>;
-    getController: () => ChatController | undefined;
-    getTerminalSession: () => TerminalSession | undefined;
-    getFollowHandle: () => FollowHandle | undefined;
-    getSendBlockedReason: () => SessionInfo["continuationBlockedReason"] | "live-follow" | undefined;
-    sync: SurfaceSync;
-    dialogues: SurfaceDialogues;
-    handoff: BackendHandoff;
-    changedFiles: ChangedFilesManager;
-    hub: HubClient;
-}
+export type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
 export class SurfaceMessages {
     constructor(private readonly d: SurfaceMessagesDeps) { }

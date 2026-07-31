@@ -15,37 +15,9 @@ import { AgentSession, SessionStartOptions } from "../types";
 import { claudeResumeSessionId } from "./resume";
 import { ClaudeTaskTracker } from "./tasks";
 import { imageBlock } from "./images";
-export interface ClaudeAdapterConfig {
-    executable: string;
-    /** Optional diagnostics sink (the Symposium output channel). */
-    log?: (message: string) => void;
-    model: string;
-    permissionMode: string;
-    env: Record<string, string>;
-    /** Add the Playwright MCP server (browser navigation tools) to the session. */
-    playwright?: boolean;
-    /** Extra MCP servers to expose, merged into the generated --mcp-config. */
-    mcpServers?: Record<string, unknown>;
-}
-/**
- * Maps the unified permission mode to Claude Code CLI's own native
- * --permission-mode flag. admin/plan reuse a real native mode 1:1 (safe:
- * neither one ever asks the CLI to prompt interactively). manager/user have
- * no safe native equivalent — Claude's own "acceptEdits"/"default" modes
- * expect to ask over stdin, which Symposium spawns headlessly and never
- * answers, so they'd hang on the first gated tool call. Until Claude's hook
- * system is wired up to reimplement that gate ourselves (matching what
- * turnRunner.ts already does for the openai adapter), manager/user clamp to
- * bypassPermissions and the caller shows a one-time notice explaining why.
- */
-function mapUnifiedToClaudeFlag(mode: string): { flag: string; unenforced: boolean } {
-    switch (mode) {
-        case "admin": return { flag: "bypassPermissions", unenforced: false };
-        case "plan": return { flag: "plan", unenforced: false };
-        case "manager": case "user": return { flag: "bypassPermissions", unenforced: true };
-        default: return { flag: mode, unenforced: false }; // legacy stored value (acceptEdits/bypassPermissions/plan)
-    }
-}
+import { ClaudeAdapterConfig, mapUnifiedToClaudeFlag } from "./sessionConfig";
+
+export type { ClaudeAdapterConfig } from "./sessionConfig";
 
 /**
  * Drives the Claude Code CLI through its bidirectional JSONL protocol:

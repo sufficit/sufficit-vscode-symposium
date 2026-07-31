@@ -1,10 +1,5 @@
-import { ChatMessage, OpenAIAdapterConfig } from "./types";
-import { SessionStartOptions } from "../types";
-import { HubClient } from "../../sync/hubClient";
-import {
-    filterTools, ShellExecutionMode,
-    classifyTool, classifyLmTool, needsApproval,
-} from "../aiTools";
+import { ChatMessage } from "./types";
+import { filterTools, classifyTool, classifyLmTool, needsApproval } from "../aiTools";
 import { isLmTool } from "../lmTools";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
@@ -12,9 +7,7 @@ import { diffCounts, editDiff } from "../parse";
 import { snapshots } from "../../snapshots";
 import { friendlyToolDetail, toolPath } from "./toolDetail";
 import { consumeStream } from "./streamConsume";
-import {
-    RequestEstimate, assessContextWindow, windowMessages, isWindowTruncated, estimateRequest, requestEstimateDiagnostic,
-} from "./requestWindow";
+import { assessContextWindow, windowMessages, isWindowTruncated, estimateRequest, requestEstimateDiagnostic } from "./requestWindow";
 import { compressMessages, CompressionManager, CompressionPreset } from "../../compression";
 import { stripSourcePrefix } from "./toolMerge";
 import { findToolHistoryIssues, materializeToolSafeHistory } from "./toolHistory";
@@ -22,6 +15,9 @@ import { makeAttemptId } from "./turnId";
 import { buildTurnTools, executeTurnTool } from "./turnTools";
 import { emitTurnUsage } from "./turnUsage";
 import { guardrailStopNotice, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress } from "./turnNotices";
+import { TurnRunnerDeps } from "./turnRunnerDeps";
+
+export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
 /**
  * One conversation turn for an OpenAISession: the streaming tool-call loop that
@@ -30,60 +26,6 @@ import { guardrailStopNotice, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutPro
  * in-flight AbortController so a cancel reaches the live request. Extracted from
  * OpenAISession; all session state is reached through the deps bag.
  */
-export interface TurnRunnerDeps {
-    cfg: OpenAIAdapterConfig;
-    options: SessionStartOptions;
-    sessionId: string;
-    backend: string;
-    hub: HubClient;
-    /** Live message array — appended to as the turn progresses. */
-    getMessages: () => ChatMessage[];
-    /** Live continuous-follow-up progress digest — pushed to per tool step. */
-    getProgress: () => string[];
-    /** @deprecated legacy in-memory turn counter; superseded by bumpTurn/getLogicalTurnId. */
-    bumpTurnNo: () => void;
-    /**
-     * Advances to the next logical turn and returns its stable logicalTurnId
-     * (sessionId/turn-<seq>), which survives retries and reopen. Replaces the
-     * reset-on-reopen bumpTurnNo.
-     */
-    bumpTurn: () => string;
-    /**
-     * Reuses `resumeTurnId` (when set) as the logicalTurnId for a RETRY instead
-     * of allocating a new one; falls back to bumpTurn when absent (delivery 1C).
-     */
-    resumeTurn: (resumeTurnId?: string) => string;
-    /** The logicalTurnId to reuse on a retry (set by send when retryOf is passed). */
-    getResumeTurnId?: () => string | undefined;
-    getTurnNo: () => number;
-    /** Stable id of the in-flight logical turn, or undefined between turns. */
-    getLogicalTurnId: () => string | undefined;
-    /** Intent id carried from the controller for the in-flight turn (no arbiter here). */
-    getIntentId: () => string | undefined;
-    getLastInputTokens: () => number;
-    setLastInputTokens: (n: number) => void;
-    emit: (event: Record<string, unknown>) => void;
-    model: () => string;
-    label: (id: string) => string;
-    contextWindow: () => number;
-    headers: (loginToken?: string | null) => Record<string, string>;
-    authToken: (forceRefresh?: boolean) => Promise<string | null>;
-    discoverModels: (loginToken?: string | null) => Promise<void>;
-    followupAnchor: () => ChatMessage | undefined;
-    emitRequestEstimate: (estimate: RequestEstimate) => void;
-    shellExecutionMode: () => ShellExecutionMode;
-    resolveToolPath: (p: unknown) => string | undefined;
-    safePersist: () => void;
-    led: (role: string, content: unknown, extra?: Record<string, unknown>) => void;
-    maybeAutoCompact: (observedInputTokens?: number) => Promise<boolean>;
-    /** Compacts now if symposium.openai.autoCompactOnTasksComplete is enabled
-     *  (a task_complete/TaskUpdate call just reported zero remaining tasks). */
-    compactOnTasksComplete: () => Promise<void>;
-    /** Inline approval gate (admin/manager/user modes) — resolves once the
-     *  webview answers the matching approval-request. */
-    requestApproval: (toolId: string, toolName: string, detail: string | undefined, tier: "write" | "destructive") => Promise<boolean>;
-}
-
 export class TurnRunner {
     private abort: AbortController | undefined;
     // Set when task_complete/TaskUpdate fires comfortably under the compaction

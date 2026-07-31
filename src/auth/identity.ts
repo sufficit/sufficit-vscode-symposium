@@ -1,5 +1,12 @@
 import * as vscode from "vscode";
 import { readFallbackToken, writeFallbackToken } from "./tokenStore";
+import {
+    Discovery, IDENTITY_FALLBACK_KEY as FALLBACK_KEY,
+    IDENTITY_PROFILE_KEY as PROFILE_KEY, IDENTITY_SECRET_KEY as SECRET_KEY,
+    StoredTokens, SufficitProfile,
+} from "./identityTypes";
+
+export type { SufficitProfile } from "./identityTypes";
 
 /**
  * Sufficit Identity login via OAuth 2.0 Device Authorization Grant against the
@@ -8,31 +15,6 @@ import { readFallbackToken, writeFallbackToken } from "./tokenStore";
  * SecretStorage (fallback file when no keyring); profile from /connect/userinfo.
  * Public client with device_code grant + openid/profile/email/offline_access.
  */
-
-export interface SufficitProfile {
-    sub?: string;
-    name?: string;
-    email?: string;
-    picture?: string;
-}
-
-interface StoredTokens {
-    accessToken: string;
-    refreshToken?: string;
-    idToken?: string;
-    expiresAtMs: number;
-}
-
-interface Discovery {
-    token_endpoint: string;
-    device_authorization_endpoint?: string;
-    userinfo_endpoint?: string;
-}
-
-const SECRET_KEY = "sufficit.identity.tokens";
-const PROFILE_KEY = "sufficit.identity.profile";
-/** Fallback token store key (globalState) when SecretStorage doesn't persist. */
-const FALLBACK_KEY = "sufficit.identity.tokens.fallback";
 
 export class SufficitAuth {
     private profileCache: SufficitProfile | undefined;

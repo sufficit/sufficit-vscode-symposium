@@ -102,7 +102,18 @@ function selectedTools(): readonly vscode.LanguageModelToolInformation[] {
     return out;
 }
 
-/** Reverse map (sanitized → real) rebuilt each call so it tracks the registry. */
+/**
+ * Reverse map (protocol-safe alias → real VS Code registry name), rebuilt on
+ * every call so it tracks `vscode.lm.tools` dynamically.
+ *
+ * Architecture boundary: this is not a provider cloak and does not duplicate
+ * sufficit-ai's provider normalization. The remote API only sees the alias and
+ * must return it unchanged; Symposium alone owns the VS Code registry and must
+ * recover the real name before calling `vscode.lm.invokeTool`. Native Symposium
+ * tools such as `shell` never pass through this map.
+ *
+ * See docs/ARCHITECTURE-tool-name-mapping-boundaries.md.
+ */
 function nameMap(): Map<string, string> {
     const map = new Map<string, string>();
     for (const t of selectedTools()) { map.set(sanitize(t.name), t.name); }

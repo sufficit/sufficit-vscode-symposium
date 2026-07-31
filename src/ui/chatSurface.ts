@@ -4,7 +4,6 @@ import { ChatController } from "./chatController";
 import { WebviewToHost, AgentPickerEntry } from "./protocol";
 import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
-import { LiveSessions } from "../sessions/runtime";
 import { symposiumLog } from "../extension";
 import { ChangedFilesManager } from "./changedFiles";
 import { BackendHandoff } from "./backendHandoff";
@@ -14,34 +13,9 @@ import { SurfaceMessages } from "./surfaceMessages";
 import { HubClient } from "../sync/hubClient";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
 import { pushVoicePreferences } from "./voicePreferences";
+import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
-export interface ChatSurfaceDeps {
-    adapterByBackend: Map<string, AgentAdapter>;
-    listSessions(): Promise<SessionInfo[]>;
-    cwdFor(info: SessionInfo): string;
-    runtime: LiveSessions;
-    /** Remembers the last active session so it can be restored next launch. */
-    lastActive: {
-        get(): { backend: string; sessionId: string } | undefined;
-        set(value: { backend: string; sessionId: string } | undefined): void;
-    };
-    /** Sufficit account for the sessions-pane footer (avatar + login/logout). */
-    account?: {
-        get(force?: boolean): Promise<{ name?: string; email?: string; picture?: string } | undefined>;
-        onDidChange: vscode.Event<void>;
-    };
-    /** Per-adapter model preferences: pinned list + default override. */
-    modelPrefs: {
-        getPinned(backend: string): string[];
-        setPinned(backend: string, models: string[]): void;
-        setDefault(backend: string, model: string | undefined): Thenable<void>;
-    };
-    /** Session metadata store (titles, archive, pin, parent relationships). */
-    store: {
-        setParent(sessionId: string, parentId: string | undefined): void;
-        setLineage(sessionId: string, lineageId: string | undefined): void;
-    };
-}
+export type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
 /**
  * Wires one webview (sidebar view or editor panel) to the chat machinery:
