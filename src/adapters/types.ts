@@ -27,17 +27,23 @@ export interface UsageQuotaWindow {
     label?: string;
     /** Percentage consumed, normalized to the inclusive 0..100 range. */
     usedPercent: number;
+    /** Percentage still available, when the provider reports it directly. */
+    remainingPercent?: number;
     /** Rolling-window duration when the provider reports it. */
     windowMinutes?: number;
     /** Absolute reset time as Unix milliseconds. */
     resetsAt?: number;
     /** Provider status such as allowed, warning, or rejected. */
     status?: string;
+    /** Provider-owned balance or limit detail shown below the progress bar. */
+    detail?: string;
 }
 
 export type AdapterQuotaSnapshot = {
     backend: AgentBackend;
     displayName?: string;
+    /** Aggregate health reported for a routed preset; independent of provider quotas. */
+    healthPercent?: number;
     plan?: string;
     limitName?: string;
     windows: UsageQuotaWindow[];
@@ -49,7 +55,7 @@ export type AdapterQuotaSnapshot = {
 export interface AdapterUsageProvider {
     readonly backend: AgentBackend;
     readonly displayName: string;
-    read(force?: boolean): Promise<AdapterQuotaSnapshot>;
+    read(force?: boolean, context?: { model?: string }): Promise<AdapterQuotaSnapshot>;
 }
 
 /** A normalized event emitted by any adapter while a turn is running. */

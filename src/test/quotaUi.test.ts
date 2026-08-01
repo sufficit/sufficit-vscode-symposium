@@ -7,6 +7,7 @@ const statusbar = readFileSync(resolve(__dirname, "../../src/ui/webview/statusba
 const events = readFileSync(resolve(__dirname, "../../src/ui/webview/events.ts"), "utf8");
 const css = readFileSync(resolve(__dirname, "../../src/ui/webview/chat.css"), "utf8");
 const surface = readFileSync(resolve(__dirname, "../../src/ui/chatSurface.ts"), "utf8");
+const surfaceContext = readFileSync(resolve(__dirname, "../../src/ui/chatSurfaceContext.ts"), "utf8");
 const dialogues = readFileSync(resolve(__dirname, "../../src/ui/surfaceDialogues.ts"), "utf8");
 const dialogueTypes = readFileSync(resolve(__dirname, "../../src/ui/surfaceDialoguesTypes.ts"), "utf8");
 
@@ -39,7 +40,17 @@ test("quota panel renders semantic dynamic progress bars", () => {
     assert.match(events, /ev\.kind === "quota"/);
     assert.match(statusbar, /setAttribute\("role", "progressbar"\)/);
     assert.match(statusbar, /quota\.windows/);
+    assert.match(statusbar, /% available/);
+    assert.match(statusbar, /window\.detail/);
     assert.doesNotMatch(statusbar, /"(?:five_hour|seven_day|primary|secondary)"/);
+});
+
+test("preset health stays aggregate and never renders provider quota rows", () => {
+    assert.match(statusbar, /snapshot\.healthPercent/);
+    assert.match(statusbar, /Preset health/);
+    assert.match(statusbar, /health != null \? 100 - health/);
+    assert.match(statusbar, /if \(health == null\)/);
+    assert.match(statusbar, /Sufficit preset health/);
 });
 
 test("quota badge renders only the current conversation adapter", () => {
@@ -57,7 +68,9 @@ test("quota badge renders only the current conversation adapter", () => {
 test("chat surface asks only the active adapter usage singleton", () => {
     assert.doesNotMatch(surface, /loadCachedAdapterQuotas/);
     assert.match(surface, /const usage = this\.activeUsage/);
-    assert.match(surface, /const snapshot = await usage\.read\(force\)/);
+    assert.match(surface, /const snapshot = await usage\.read\(force, \{ model \}\)/);
+    assert.match(surface, /presetQuotaLoadingEvent\(usage\)/);
+    assert.match(surfaceContext, /Reading usage for the selected preset/);
     assert.match(surface, /generation !== this\.quotaGeneration/);
     assert.match(surface, /setInterval\(\(\) => void this\.refreshQuotas\(\), 60_000\)/);
     assert.match(surface, /type: "quota-loading"/);

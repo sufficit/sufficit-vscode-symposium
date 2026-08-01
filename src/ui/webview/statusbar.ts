@@ -52,10 +52,11 @@ function primaryQuota() {
     return { quota: current, window: indexed[0].window };
 }
 
-function meter(percent, label, onOpen, className = "", displayedPercent = percent) {
+function meter(percent, label, onOpen, className = "", displayedPercent = percent, colorPercent = percent) {
     const hasValue = Number.isFinite(percent);
     const pct = hasValue ? Math.max(0, Math.min(100, Math.round(percent))) : 0;
-    const col = hasValue ? usageColor(pct) : "var(--vscode-descriptionForeground, currentColor)";
+    const risk = Number.isFinite(colorPercent) ? Math.max(0, Math.min(100, Math.round(colorPercent))) : pct;
+    const col = hasValue ? usageColor(risk) : "var(--vscode-descriptionForeground, currentColor)";
     const button = document.createElement("button");
     button.className = "tokenMeter" + (className ? " " + className : "");
     button.setAttribute("aria-label", label);
@@ -92,16 +93,21 @@ export function renderStatusbar(data) {
     }
     statusbar.appendChild(seg(null, data.backend + (data.permission && data.permission !== "default" ? " · " + data.permission : "")));
     if (data.reasoning && data.reasoning !== "default") statusbar.appendChild(seg(null, "effort: " + data.reasoning));
-    const quota = primaryQuota();
+    const snapshot = currentQuotaSnapshot(), quota = primaryQuota();
+    const health = Number.isFinite(snapshot.healthPercent) ? Math.max(0, Math.min(100, Number(snapshot.healthPercent))) : null;
     const hasContext = !!(lastUsage && lastUsage.contextWindow);
     const sp = document.createElement("span"); sp.className = "grow"; statusbar.appendChild(sp);
-    const pct = quota?.window.usedPercent;
-    const label = quota
+    const pct = health ?? quota?.window.usedPercent;
+    const remaining = quota?.window.remainingPercent;
+    const label = health != null
+        ? "Preset health " + Math.round(health) + "%" + (snapshot.state === "stale" ? " — cached data; live refresh failed" : "") + " — hover, focus, or click for details"
+        : quota
         ? "Adapter usage " + Math.round(pct) + "% used" +
-            (currentQuotaSnapshot().state === "stale" ? " — cached data; live refresh failed" : "") +
+            (Number.isFinite(remaining) ? ", " + Math.round(remaining) + "% available" : "") +
+            (snapshot.state === "stale" ? " — cached data; live refresh failed" : "") +
             " — hover, focus, or click for limits"
         : quotaLoading ? "Loading adapter usage limits" : "Adapter usage unavailable — click for details";
-    const quotaMeter = meter(pct, label, openQuotaPopover, "quotaMeter");
+    const quotaMeter = meter(pct, label, openQuotaPopover, "quotaMeter", pct, health != null ? 100 - health : pct);
     quotaMeter.setAttribute("aria-busy", String(quotaLoading));
     statusbar.appendChild(quotaMeter);
     if (hasContext) {
@@ -160,20 +166,23 @@ function backendLabel(backend) {
 export function openQuotaPopover(anchor) {
     const quota = currentQuotaSnapshot();
     const featured = primaryQuota();
+    const health = Number.isFinite(quota.healthPercent) ? Math.max(0, Math.min(100, Number(quota.healthPercent))) : null;
     ctxMenu.textContent = "";
     ctxMenu.classList.remove("sessionFiltersMenu");
     const box = document.createElement("div"); box.className = "usagePop quotaPop";
-    box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Adapter usage limits");
+    box.setAttribute("role", "dialog"); box.setAttribute("aria-label", health != null ? "Preset health" : "Adapter usage limits");
 
     const headRow = document.createElement("div"); headRow.className = "uHeadRow";
     const htx = document.createElement("div"); htx.className = "uHeadTxt";
-    const h = document.createElement("div"); h.className = "uHead"; h.textContent = "Usage limits"; htx.appendChild(h);
+    const h = document.createElement("div"); h.className = "uHead"; h.textContent = health != null ? "Preset health" : "Usage limits"; htx.appendChild(h);
     const sub = document.createElement("div"); sub.className = "uModel"; sub.textContent = quota.displayName || backendLabel(quota.backend); htx.appendChild(sub);
     const big = document.createElement("div"); big.className = "uPct";
-    big.textContent = featured ? Math.round(featured.window.usedPercent) + "%" : "—";
-    if (featured) { big.style.color = usageColor(featured.window.usedPercent); }
+    big.textContent = health != null ? Math.round(health) + "%" : featured ? Math.round(featured.window.usedPercent) + "%" : "—";
+    if (health != null) { big.style.color = usageColor(100 - health); }
+    else if (featured) { big.style.color = usageColor(featured.window.usedPercent); }
     headRow.appendChild(htx); headRow.appendChild(big); box.appendChild(headRow);
 
+    if (health == null) {
     const provider = document.createElement("section"); provider.className = "qProvider";
     const providerHead = document.createElement("div"); providerHead.className = "qProviderHead";
     const name = document.createElement("span"); name.className = "qProviderName"; name.textContent = quota.displayName || backendLabel(quota.backend);
@@ -182,7 +191,7 @@ export function openQuotaPopover(anchor) {
     providerHead.appendChild(name); if (meta.textContent) { providerHead.appendChild(meta); }
     provider.appendChild(providerHead);
 
-    if (quota.state === "stale") {
+    if (quota.state === "stale" || (quota.state === "ready" && quota.message)) {
         const warning = document.createElement("div"); warning.className = "qWarning";
         warning.setAttribute("role", "status");
         warning.textContent = quota.message || "Live refresh failed. These usage values may be out of date.";
@@ -199,7 +208,9 @@ export function openQuotaPopover(anchor) {
             const row = document.createElement("div"); row.className = "qWindow";
             const top = document.createElement("div"); top.className = "qWindowTop";
             const label = document.createElement("span"); label.className = "qWindowLabel"; label.textContent = windowLabel(window);
-            const value = document.createElement("span"); value.className = "qWindowValue"; value.textContent = Math.round(pct) + "% used";
+            const available = window.remainingPercent;
+            const value = document.createElement("span"); value.className = "qWindowValue";
+            value.textContent = Math.round(pct) + "% used" + (Number.isFinite(available) ? " · " + Math.round(available) + "% available" : "");
             top.appendChild(label); top.appendChild(value); row.appendChild(top);
             const bar = document.createElement("div"); bar.className = "qBar";
             bar.setAttribute("role", "progressbar"); bar.setAttribute("aria-label", (quota.displayName || backendLabel(quota.backend)) + " " + windowLabel(window));
@@ -207,15 +218,19 @@ export function openQuotaPopover(anchor) {
             const fill = document.createElement("div"); fill.className = "qFill"; fill.style.width = pct + "%"; fill.style.background = color;
             bar.appendChild(fill); row.appendChild(bar);
             const detail = document.createElement("div"); detail.className = "qWindowDetail";
-            detail.textContent = [resetLabel(window.resetsAt), window.status ? humanize(window.status) : ""].filter(Boolean).join(" · ");
+            detail.textContent = [window.detail || "", resetLabel(window.resetsAt), window.status ? humanize(window.status) : ""].filter(Boolean).join(" · ");
             row.appendChild(detail); provider.appendChild(row);
     }
     box.appendChild(provider);
+    } else if (quota.state === "stale" || quota.message) {
+        const warning = document.createElement("div"); warning.className = "qWarning"; warning.setAttribute("role", "status");
+        warning.textContent = quota.message || "Live refresh failed. This health value may be out of date."; box.appendChild(warning);
+    }
     const foot = document.createElement("div"); foot.className = "qFoot";
     const footText = document.createElement("span");
     footText.textContent = quotaLoading
-        ? "Refreshing this adapter…"
-        : quota.state === "stale" ? "Cached adapter data." : "Adapter-owned usage data.";
+        ? health != null ? "Refreshing preset health…" : "Refreshing this adapter…"
+        : quota.state === "stale" ? "Cached adapter data." : health != null ? "Sufficit preset health." : "Adapter-owned usage data.";
     const refresh = document.createElement("button"); refresh.className = "qRefresh"; refresh.type = "button"; refresh.textContent = quotaLoading ? "Refreshing…" : "Refresh"; refresh.disabled = quotaLoading;
     refresh.addEventListener("click", (event) => {
         event.stopPropagation();

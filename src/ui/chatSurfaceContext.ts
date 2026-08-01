@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
+import type { AdapterUsageProvider } from "../adapters/types";
 import { symposiumLog } from "../extension";
 
 export interface ActiveEditorContext {
@@ -17,6 +18,22 @@ export interface ActiveEditorContext {
 export interface AttachmentFile {
     path: string;
     name: string;
+}
+
+/** Empty snapshot used while a newly selected Sufficit preset is loading. */
+export function presetQuotaLoadingEvent(usage: AdapterUsageProvider): unknown {
+    return {
+        type: "event",
+        event: {
+            kind: "quota",
+            backend: usage.backend,
+            displayName: usage.displayName,
+            windows: [],
+            updatedAt: Date.now(),
+            state: "unavailable",
+            message: "Reading usage for the selected preset…",
+        },
+    };
 }
 
 /** Directory to run git in for a file — git discovers the enclosing repo upward. */

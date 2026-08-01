@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { AgentAdapter, SessionInfo } from "../../adapters/types";
 import { SessionStore } from "../../sessions/store";
 import { LiveSessions } from "../../sessions/runtime";
+import { SessionIndex } from "../../sessions/index";
 import { ChatPanel } from "../../ui/chatPanel";
 import { ChatSurfaceDeps } from "../../ui/chatSurface";
 import { ChatViewProvider } from "../../ui/chatView";
@@ -22,6 +23,7 @@ export interface CommandDeps {
     surfaceDeps: ChatSurfaceDeps;
     chatView: ChatViewProvider;
     runtime: LiveSessions;
+    sessionIndex: SessionIndex;
     store: SessionStore;
     api: SymposiumApi;
     auth: SufficitAuth;

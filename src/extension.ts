@@ -266,11 +266,10 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
 
     registerCommands({
         context, adapters, adapterByBackend, surfaceDeps, chatView,
-        runtime, store, api, auth, bridge, deleting, refreshAll, output,
+        runtime, sessionIndex, store, api, auth, bridge, deleting, refreshAll, output,
     });
 
     return api;
 }
 
 export function deactivate(): void { }
-

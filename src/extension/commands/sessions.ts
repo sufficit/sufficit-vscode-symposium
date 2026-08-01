@@ -10,7 +10,7 @@ import { CommandContext } from "./helpers";
 
 /** Open / follow / rename / archive / pin / delete session commands. */
 export function registerSessionCommands(ctx: CommandContext): void {
-    const { context, adapterByBackend, surfaceDeps, chatView, runtime, store, deleting, refreshAll, inEditor, infoOf } = ctx;
+    const { context, adapterByBackend, surfaceDeps, chatView, runtime, sessionIndex, store, deleting, refreshAll, inEditor, infoOf } = ctx;
 
     context.subscriptions.push(
         // Editor-title session history action. QuickPick gives the requested
@@ -159,6 +159,11 @@ export function registerSessionCommands(ctx: CommandContext): void {
             try {
                 snapshots.clearSession(info.sessionId);      // drop in-memory baselines
                 const residual = await adapter.deleteSession(info);
+                // The adapter removed the canonical transcript. Evict the stale
+                // catalog row before dropping its custom title; otherwise the
+                // cached row flashes back with a generic title until reconcile,
+                // making the user delete the same Claude session twice.
+                sessionIndex.forget(info.backend, info.sessionId);
                 await store.forget(info);
                 // Remove the session's tasks from Sufficit memory (soft-delete via
                 // expiry) — tasks are bound to the session id.

@@ -62,6 +62,22 @@ export class SessionIndex {
         this.generation++;
     }
 
+    /**
+     * Evicts a permanently deleted session immediately from memory and the
+     * persistent index. Incrementing the generation also prevents a provider
+     * scan that started before the physical scrub from restoring its stale row.
+     */
+    forget(backend: string, sessionId: string): void {
+        this.generation++;
+        if (!this.sessions.delete(keyOf({ backend, sessionId }))) { return; }
+        const remaining = [...this.sessions.values()].filter((session) => session.backend === backend);
+        try {
+            this.repository.replaceProvider(backend, remaining);
+        } catch (error) {
+            this.log(`[sessions] failed to persist deletion for ${backend}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
     /** Approximate memory used by the in-memory session catalog (bytes). */
     memoryUsageBytes(): number {
         let total = 0;

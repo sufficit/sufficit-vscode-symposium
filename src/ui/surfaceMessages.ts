@@ -165,6 +165,9 @@ export class SurfaceMessages {
                         }
                         // Notificar a webview que o modelo foi atualizado
                         this.d.post({ type: "session-model-updated", model: message.model });
+                        // Usage is scoped by Sufficit preset. Refresh immediately
+                        // so the footer never keeps the previous preset's balance.
+                        await this.d.refreshQuotas(true);
                     }
                     return;
                 }

@@ -30,6 +30,7 @@ import { OpenAISession } from "./session";
 import { PERMISSION_MODES } from "../aiTools";
 import { DEFAULT_REASONING_EFFORT } from "../reasoning";
 import { EmptyAdapterUsage } from "../quotaCache";
+import { SufficitPresetUsage } from "./presetUsage";
 
 export class OpenAIAdapter implements AgentAdapter {
     readonly usage: AdapterUsageProvider;
@@ -43,9 +44,13 @@ export class OpenAIAdapter implements AgentAdapter {
         readonly displayName: string,
         private readonly getConfig: () => OpenAIAdapterConfig,
     ) {
-        // One usage service per OpenAI-compatible adapter instance. It stays
-        // isolated from Codex/Claude CLI quota even when model names overlap.
-        this.usage = new EmptyAdapterUsage(this.backend, this.displayName);
+        // The built-in Sufficit adapter resolves account usage per selected
+        // preset. Custom OpenAI-compatible endpoints stay isolated and do not
+        // inherit a Sufficit-only admin route merely because their API shape is
+        // compatible.
+        this.usage = this.backend === "openai"
+            ? new SufficitPresetUsage(this.backend, this.displayName, this.getConfig)
+            : new EmptyAdapterUsage(this.backend, this.displayName);
     }
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {

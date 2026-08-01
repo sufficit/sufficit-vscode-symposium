@@ -11,7 +11,7 @@ import { SurfaceSync } from "./surfaceSync";
 import { SurfaceDialogues } from "./surfaceDialogues";
 import { SurfaceMessages } from "./surfaceMessages";
 import { HubClient } from "../sync/hubClient";
-import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
+import { activeEditorContext, isSimpleBrowserOpen, presetQuotaLoadingEvent } from "./chatSurfaceContext";
 import { pushVoicePreferences } from "./voicePreferences";
 import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
@@ -34,6 +34,7 @@ export class ChatSurface {
     private loggedIn = false;   // cached Sufficit login state (for system hints)
     private queue: unknown[] = [];
     private activeUsage: AdapterUsageProvider | undefined;
+    private activeQuotaModel: string | null | undefined;
     private quotaGeneration = 0;
     private quotaRefreshTimer: ReturnType<typeof setInterval> | undefined;
     private readonly hub = new HubClient();
@@ -177,6 +178,7 @@ export class ChatSurface {
 
     private activateUsage(adapter: AgentAdapter): void {
         this.activeUsage = adapter.usage;
+        this.activeQuotaModel = null;
         this.quotaGeneration++;
         void this.refreshQuotas();
     }
@@ -185,9 +187,13 @@ export class ChatSurface {
         const usage = this.activeUsage;
         if (!usage) { return; }
         const generation = this.quotaGeneration;
+        const model = this.controller?.getModel() || undefined;
+        if (usage.backend === "openai" && model !== this.activeQuotaModel) {
+            this.activeQuotaModel = model; this.post(presetQuotaLoadingEvent(usage));
+        }
         this.post({ type: "quota-loading", loading: true });
         try {
-            const snapshot = await usage.read(force);
+            const snapshot = await usage.read(force, { model });
             if (generation !== this.quotaGeneration || usage !== this.activeUsage) { return; }
             this.post({ type: "event", event: { kind: "quota", ...snapshot } });
         } catch (error) {
