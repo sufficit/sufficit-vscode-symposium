@@ -35,7 +35,7 @@ test("markdown.ts: file-path inline code is clickable and opens via the host", (
     assert.match(src, /vscode\.postMessage\(\{ type: "open-file", path: raw \}\)/);
 });
 
-test("surfaceMessages.ts: open-file resolves relative paths against the session cwd", () => {
+test("surfaceMessages.ts: open-file uses the shared local-resource resolver", () => {
     const src = readFileSync(resolve(__dirname, "../../src/ui/surfaceMessages.ts"), "utf8");
-    assert.match(src, /path\.isAbsolute\(raw\) \? raw : \(cwd \? path\.resolve\(cwd, raw\) : raw\)/);
+    assert.match(src, /resolveLocalResourcePath\(message\.path, cwd\)/);
 });

@@ -20,6 +20,7 @@ import { svgIcon } from "./icons";
 import { renderAgentPicker, hideAgentPicker } from "./agentPicker";
 import { log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge, chatTitle } from "./dom";
 import { sessions, busy, activeModel, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setBusy, setCommands, setConversationRows, setPendingSessionSwitch, setQueued, setSessions, setSideMode, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPendingSwitchAnchor } from "./state";
+import { resolveMarkdownImage } from "./markdown";
 
 let historyCycle = 0;
 
@@ -31,6 +32,10 @@ window.addEventListener("message", ({ data }) => {
             break;
         }
         case "setLang": { setLang(String(data.lang || "en")); applyStaticI18n(); break; }
+        case "markdown-image": {
+            resolveMarkdownImage(String(data.id || ""), typeof data.dataUrl === "string" ? data.dataUrl : undefined, typeof data.error === "string" ? data.error : undefined);
+            break;
+        }
         case "focus-input": { input.focus(); break; }
         case "agent-picker": { renderAgentPicker(Array.isArray(data.agents) ? data.agents : []); break; }
         case "meta": { applyMeta(data); break; }

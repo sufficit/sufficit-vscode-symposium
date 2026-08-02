@@ -99,6 +99,7 @@ export type WebviewToHost =
     | { type: "open-settings" }
     | { type: "inspect"; target: "context" | "request" }
     | { type: "open-file"; path: string }
+    | { type: "resolve-markdown-image"; id: string; path: string }
     | { type: "reorder-pinned"; ids?: string[] }
     | { type: "file-diff"; path: string }
     | { type: "file-approve"; path: string }

@@ -1,6 +1,4 @@
 import * as vscode from "vscode";
-import * as path from "path";
-import * as os from "os";
 import { WebviewToHost } from "./protocol";
 import { setTaskDone } from "../sync/tasks";
 import { removeGuardrail, clearSessionGuardrails } from "../sync/guardrails";
@@ -11,6 +9,8 @@ import { handleChangedFilesMessage } from "./surfaceMessageChangedFiles";
 import { handleSessionMessage } from "./surfaceMessageSessions";
 import { symposiumLog } from "../extension";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
+import { handleMarkdownImageMessage } from "./surfaceMessageMarkdown";
+import { resolveLocalResourcePath } from "./markdownImages";
 
 /**
  * Webview → host message router for a chat surface: the big switch that turns
@@ -288,20 +288,20 @@ export class SurfaceMessages {
                 }
                 case "open-file": {
                     if (typeof message.path === "string" && message.path.trim()) {
-                        // `~` isn't a real root — path.isAbsolute("~/x") is false,
-                        // so an unexpanded tilde would fall into the cwd-relative
-                        // branch below and resolve to a bogus <cwd>/~/x path.
-                        const raw = message.path.trim().replace(/^~(?=$|[/\\])/, os.homedir());
                         // Paths clicked from free-form message text (e.g. a
                         // file-path mention in an agent reply) are workspace-
-                        // relative; tool/attachment-sourced paths are already
-                        // absolute and pass through path.isAbsolute unchanged.
-                        const cwd = this.d.getController()?.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-                        const resolved = path.isAbsolute(raw) ? raw : (cwd ? path.resolve(cwd, raw) : raw);
+                        // relative. file: URIs and `~` need normalization too.
+                        const cwd = this.d.getController()?.cwd ?? this.d.getTerminalSession()?.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                        const resolved = resolveLocalResourcePath(message.path, cwd);
+                        if (!resolved) { return; }
                         // vscode.open handles text AND binary (images open in the
                         // image preview), unlike openTextDocument.
                         await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(resolved), { preview: true });
                     }
+                    return;
+                }
+                case "resolve-markdown-image": {
+                    await handleMarkdownImageMessage(message, this.d);
                     return;
                 }
                 case "reorder-pinned": {

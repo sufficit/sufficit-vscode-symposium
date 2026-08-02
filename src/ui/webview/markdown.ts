@@ -1,5 +1,13 @@
 // Extracted from the chat webview client. Pure DOM/string helpers (no shared state).
 import { vscode } from "./vscode";
+import {
+    inlineTokenRegex,
+    isExternalMarkdownLink,
+    isInlineMarkdownImage,
+    isLocalMarkdownTarget,
+    isRemoteMarkdownImage,
+    parseMarkdownLinkToken,
+} from "./markdownTokens";
 // ---- minimal, safe markdown → DOM (no innerHTML of untrusted text) ----
 export function renderMarkdown(container, src) {
     const lines = String(src).split("\n");
@@ -223,9 +231,97 @@ function looksLikeFilePath(s) {
     return /\/.*\.[A-Za-z][A-Za-z0-9]{1,9}$/.test(s);
 }
 
-// inline: **bold**, *italic*, `code`, [text](url) — builds text nodes safely
+interface PendingMarkdownImage {
+    image: HTMLImageElement;
+    fallback: HTMLElement;
+    detail: HTMLElement;
+    timer: ReturnType<typeof setTimeout>;
+}
+
+let markdownImageSequence = 0;
+const pendingMarkdownImages = new Map<string, PendingMarkdownImage>();
+
+/** Applies a host-resolved, CSP-safe local image preview to its waiting card. */
+export function resolveMarkdownImage(id: string, dataUrl?: string, error?: string): void {
+    const pending = pendingMarkdownImages.get(id);
+    if (!pending) { return; }
+    pendingMarkdownImages.delete(id);
+    clearTimeout(pending.timer);
+    if (dataUrl && isInlineMarkdownImage(dataUrl)) {
+        pending.image.src = dataUrl;
+        return;
+    }
+    pending.fallback.classList.add("error");
+    pending.detail.textContent = `${error || "Preview unavailable."} · Open image`;
+}
+
+function markdownImage(label: string, href: string): HTMLElement {
+    const local = isLocalMarkdownTarget(href);
+    const remote = isRemoteMarkdownImage(href);
+    const inlineData = isInlineMarkdownImage(href);
+    const figure = document.createElement("span"); figure.className = "mdImage";
+    const action = document.createElement(local ? "button" : remote ? "a" : "span");
+    action.className = "mdImageAction";
+    const accessibleLabel = label || "Image";
+    if (local) {
+        action.setAttribute("type", "button");
+        action.setAttribute("title", `Open ${href}`);
+        action.setAttribute("aria-label", `Open image: ${accessibleLabel}`);
+        action.addEventListener("click", () => vscode.postMessage({ type: "open-file", path: href }));
+    } else if (remote) {
+        action.setAttribute("href", href);
+        action.setAttribute("title", href);
+        action.setAttribute("rel", "noopener noreferrer");
+    }
+    const image = document.createElement("img");
+    image.alt = accessibleLabel; image.loading = "lazy"; image.hidden = true;
+    const fallback = document.createElement("span"); fallback.className = "mdImageFallback";
+    const name = document.createElement("strong"); name.textContent = accessibleLabel;
+    const detail = document.createElement("span"); detail.textContent = local ? "Loading preview…" : "Open image";
+    fallback.appendChild(name); fallback.appendChild(detail);
+    action.appendChild(image); action.appendChild(fallback); figure.appendChild(action);
+    image.addEventListener("load", () => { image.hidden = false; fallback.hidden = true; figure.classList.add("loaded"); });
+    image.addEventListener("error", () => {
+        image.hidden = true; fallback.hidden = false; fallback.classList.add("error");
+        detail.textContent = "Preview unavailable · Open image";
+    });
+    if (local) {
+        const id = `md-image-${++markdownImageSequence}`;
+        image.dataset.markdownImageId = id;
+        const timer = setTimeout(() => {
+            pendingMarkdownImages.delete(id);
+            fallback.classList.add("error"); detail.textContent = "Preview timed out · Open image";
+        }, 15_000);
+        pendingMarkdownImages.set(id, { image, fallback, detail, timer });
+        vscode.postMessage({ type: "resolve-markdown-image", id, path: href });
+    } else if (remote || inlineData) {
+        image.src = href;
+    } else {
+        fallback.classList.add("error"); detail.textContent = "Unsupported image destination";
+    }
+    if (label) { const caption = document.createElement("span"); caption.className = "mdImageCaption"; caption.textContent = label; figure.appendChild(caption); }
+    return figure;
+}
+
+function appendMarkdownLink(parent: HTMLElement, label: string, href: string): void {
+    if (!isExternalMarkdownLink(href) && !isLocalMarkdownTarget(href)) {
+        parent.appendChild(document.createTextNode(label)); return;
+    }
+    const anchor = document.createElement("a"); anchor.textContent = label;
+    if (isLocalMarkdownTarget(href)) {
+        anchor.href = "#"; anchor.className = "mdLocalLink"; anchor.title = `Open ${href}`;
+        anchor.addEventListener("click", (event) => {
+            event.preventDefault(); vscode.postMessage({ type: "open-file", path: href });
+        });
+    } else {
+        anchor.href = href; anchor.title = href; anchor.rel = "noopener noreferrer";
+    }
+    parent.appendChild(anchor);
+}
+
+// inline: images, links, **bold**, *italic*, `code` — builds text nodes safely
 export function inline(parent, text) {
-    const re = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+    const re = inlineTokenRegex();
     let last = 0; let m;
     while ((m = re.exec(text)) !== null) {
         if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
@@ -246,18 +342,10 @@ export function inline(parent, text) {
         else if (tok.startsWith("**")) { const e = document.createElement("strong"); e.textContent = tok.slice(2, -2); parent.appendChild(e); }
         else if (tok.startsWith("*")) { const e = document.createElement("em"); e.textContent = tok.slice(1, -1); parent.appendChild(e); }
         else {
-            const mm = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-            const label = mm[1];
-            const href = mm[2].trim();
-            if (/^(https?|mailto|file|vscode):/i.test(href)) {
-                const a = document.createElement("a");
-                a.textContent = label;
-                a.href = href;
-                a.title = href;
-                parent.appendChild(a);
-            } else {
-                parent.appendChild(document.createTextNode(label));
-            }
+            const link = parseMarkdownLinkToken(tok);
+            if (link?.image) { parent.appendChild(markdownImage(link.label, link.href)); }
+            else if (link) { appendMarkdownLink(parent, link.label, link.href); }
+            else { parent.appendChild(document.createTextNode(tok)); }
         }
         last = re.lastIndex;
     }
