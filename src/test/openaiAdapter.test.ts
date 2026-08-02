@@ -10,7 +10,7 @@ import { findToolHistoryIssues, materializeToolSafeHistory } from "../adapters/o
 import { ChatMessage } from "../adapters/openai/types";
 import { mergeToolDefinitions } from "../adapters/openai/toolMerge";
 import { consumeStream } from "../adapters/openai/streamConsume";
-import { REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress } from "../adapters/openai/turnNotices";
+import { activeRepeatedToolCallFingerprint, appendRepeatedToolCallFeedback, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress, toolCallBatchFingerprint } from "../adapters/openai/turnNotices";
 
 /** Builds a ReadableStream that emits the given SSE text as UTF-8 bytes. */
 function sseStream(body: string): ReadableStream<Uint8Array> {
@@ -291,6 +291,37 @@ test("repeated tool-call guard forgets occurrences outside its recent window", (
 
     assert.equal(repeatedToolCallWithoutProgress(recent, repeated), false);
     assert.equal(recent.filter((call) => call === repeated).length, 4);
+});
+
+test("repeated tool-call feedback is durable model context without exposing arguments", () => {
+    const signature = 'read_file:{"path":"/private/token.json"}';
+    const messages: ChatMessage[] = [
+        { role: "user", content: "inspect" },
+        {
+            role: "assistant", content: null,
+            tool_calls: [{ id: "call_1", type: "function", function: { name: "read_file", arguments: "{}" } }],
+        },
+        { role: "tool", tool_call_id: "call_1", name: "read_file", content: "result" },
+    ];
+    const feedback = appendRepeatedToolCallFeedback(messages, signature, ["read_file"], true);
+    assert.equal(feedback.role, "developer");
+    assert.match(String(feedback.content), /read_file call batch was requested 6 times/);
+    assert.doesNotMatch(String(feedback.content), /private|token\.json/);
+    assert.deepEqual(findToolHistoryIssues(messages), []);
+    messages.push({ role: "developer", content: "one-shot preamble" }, { role: "user", content: "continue" });
+    assert.equal(activeRepeatedToolCallFingerprint(messages), toolCallBatchFingerprint(signature));
+});
+
+test("repeated tool-call carryover expires after assistant progress", () => {
+    const signature = "read_file:{}";
+    const messages: ChatMessage[] = [];
+    appendRepeatedToolCallFeedback(messages, signature, ["read_file"], false);
+    assert.equal(messages[0].role, "system");
+    messages.push({ role: "user", content: "continue" });
+    messages.push({ role: "assistant", content: "Used the existing result." });
+    messages.push({ role: "user", content: "new task" });
+    assert.equal(activeRepeatedToolCallFingerprint(messages), undefined);
+    assert.notEqual(toolCallBatchFingerprint(signature), toolCallBatchFingerprint("read_file:{\"path\":\"other\"}"));
 });
 
 test("mergeToolDefinitions prefixes collisions without mutating shared tool defs", () => {

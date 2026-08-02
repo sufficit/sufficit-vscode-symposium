@@ -14,7 +14,7 @@ import { findToolHistoryIssues, materializeToolSafeHistory } from "./toolHistory
 import { makeAttemptId } from "./turnId";
 import { buildTurnTools, executeTurnTool } from "./turnTools";
 import { emitTurnUsage } from "./turnUsage";
-import { guardrailStopNotice, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress } from "./turnNotices";
+import { activeRepeatedToolCallFingerprint, appendRepeatedToolCallFeedback, guardrailStopNotice, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress, toolCallBatchFingerprint } from "./turnNotices";
 import { TurnRunnerDeps } from "./turnRunnerDeps";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
@@ -113,6 +113,7 @@ export class TurnRunner {
         let hitCap = !unlimited;   // cleared when the model finishes on its own
         let toolHistoryMaterializationNoticeEmitted = false;
         const recentCalls: string[] = [];
+        let blockedRepeatFingerprint = activeRepeatedToolCallFingerprint(messages);
         const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
         let noTextHops = 0;
         try {
@@ -257,13 +258,23 @@ export class TurnRunner {
                 }
 
                 const sig = toolCalls.map((tc) => `${tc.function.name}:${tc.function.arguments}`).join("|");
-                if (repeatedToolCallWithoutProgress(recentCalls, sig)) {
+                const repeatsPreviouslyBlockedCall = blockedRepeatFingerprint === toolCallBatchFingerprint(sig);
+                if (repeatsPreviouslyBlockedCall || repeatedToolCallWithoutProgress(recentCalls, sig)) {
+                    if (!repeatsPreviouslyBlockedCall) {
+                        const feedback = appendRepeatedToolCallFeedback(
+                            messages, sig, toolCalls.map((tc) => stripSourcePrefix(tc.function.name)),
+                            this.d.cfg.supportsDeveloperRole !== false,
+                        );
+                        this.d.led(feedback.role, feedback.content, { kind: "guardrail-feedback" });
+                        this.d.safePersist();
+                    }
                     this.d.emit(guardrailStopNotice(
                         `Stopped because the model repeated the same tool call ${REPEAT_TOOL_CALL_LIMIT} times without progress.`,
                     ));
                     hitCap = false;
                     break;
                 }
+                blockedRepeatFingerprint = undefined;
                 messages.push({ role: "assistant", content: text || null, tool_calls: toolCalls });
                 if (text) { this.d.led("assistant", text); }
                 this.d.safePersist();
