@@ -1,4 +1,6 @@
-export type SendMode = "send" | "queue" | "steer" | "redirect";
+import type { BusySendMode } from "./sendMode";
+
+export type SendMode = "send" | BusySendMode;
 
 export interface PendingMessage {
     id?: number;

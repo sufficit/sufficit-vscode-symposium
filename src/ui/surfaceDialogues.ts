@@ -8,6 +8,7 @@ import type { WebviewToHost } from "./protocol";
 import { restartFromMessage, retryLastMessage, editResend } from "./surfaceBranching";
 import { handleControllerEvent } from "./surfaceDialoguesAttach";
 import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
+import { DEFAULT_BUSY_SEND_MODE } from "./sendMode";
 
 /**
  * Dialogue lifecycle for a chat surface: opening a dialogue (new / resumed /
@@ -141,7 +142,7 @@ export class SurfaceDialogues {
             title: info.title,
             sessionsSide,
             chatOnly: this.d.chatOnly,
-            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
+            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", DEFAULT_BUSY_SEND_MODE),
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
             openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
@@ -221,7 +222,7 @@ export class SurfaceDialogues {
             activeFileStartColumn: activeEditorContext().startColumn,
             activeFileEndColumn: activeEditorContext().endColumn,
             activeFilePreview: activeEditorContext().preview,
-            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
+            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", DEFAULT_BUSY_SEND_MODE),
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
             openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
@@ -353,7 +354,7 @@ export class SurfaceDialogues {
             activeFileStartColumn: activeEditorContext().startColumn,
             activeFileEndColumn: activeEditorContext().endColumn,
             activeFilePreview: activeEditorContext().preview,
-            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", "queue"),
+            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", DEFAULT_BUSY_SEND_MODE),
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
             openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),

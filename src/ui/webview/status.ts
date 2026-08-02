@@ -3,6 +3,7 @@
 import { sendMode, sendGroup, sendIcon, sendBtn, sendCaret, stopBtn, status, modelPicker, reasoningPicker, progress, composerEl, composerBlockedNotice, root, input, addContext, addBrowserPage, micBtn, presencePicker } from "./dom";
 import { attachments, activeFile, activeFileDismissed, activeFilePinned, activeFilePreview, busy, queued, activeModel, loading, composerBlockedReason, setComposerBlockedReason, setLoadingFlag } from "./state";
 import { modelLabel, modelList, reasoningList } from "./models";
+import { normalizeBusySendMode } from "../sendMode";
 
 export const isMac = navigator.platform.indexOf("Mac") === 0;
 export const MOD = isMac ? "⌘" : "Ctrl";
@@ -56,7 +57,7 @@ export function hasSendableInput() {
 
 export function updateSendTitle() {
     if (composerBlockedReason) {
-        sendGroup.classList.remove("busy", "steer", "stopping");
+        sendGroup.classList.remove("busy", "redirect", "steer", "stopping");
         sendIcon.innerHTML = MODE_ICONS.send;
         sendBtn.disabled = true;
         sendBtn.title = composerBlockedReason;
@@ -65,25 +66,28 @@ export function updateSendTitle() {
         return;
     }
     // Idle: plain Send (paper plane). While a turn runs, the button reflects what
-    // the NEXT message will do — queue (clock) or steer (lightning) — per the
-    // selected mode. Clicking sends in that mode; Stop the running turn with Esc.
+    // the NEXT message will do — queue, redirect, or steer — per the selected
+    // mode. Interruption is never presented with the queue clock.
     const canSend = hasSendableInput();
     if (busy) {
-        const mode = ((sendMode as HTMLSelectElement).value === "steer") ? "steer" : "queue";
+        const mode = normalizeBusySendMode((sendMode as HTMLSelectElement).value);
         sendGroup.classList.add("busy");
         sendGroup.classList.toggle("steer", mode === "steer");
+        sendGroup.classList.toggle("redirect", mode === "redirect");
         sendIcon.innerHTML = MODE_ICONS[mode];
         (sendBtn as HTMLButtonElement).disabled = !canSend;
         (sendBtn as HTMLButtonElement).title = canSend
-            ? ((mode === "steer")
-                ? "Steer: interrupt the running turn and send now (Ctrl/Cmd+Enter) · Esc to stop"
-                : "Queue: send after the current turn finishes (Alt+Enter) · Esc to stop")
+            ? (mode === "steer"
+                ? "Steer: interrupt the running turn, clear the queue, and send now (Ctrl/Cmd+Enter) · Esc to stop"
+                : mode === "redirect"
+                  ? "Redirect: cancel the running turn and send the correction next · Esc to stop"
+                  : "Queue: send after the current turn finishes (Alt+Enter) · Esc to stop")
             : "Type a message to send · Esc to stop";
         sendCaret.style.display = "";
         stopBtn.style.display = "";
         return;
     }
-    sendGroup.classList.remove("busy", "steer", "stopping");
+    sendGroup.classList.remove("busy", "redirect", "steer", "stopping");
     sendIcon.innerHTML = MODE_ICONS.send;
     (sendBtn as HTMLButtonElement).disabled = !canSend;
     (sendBtn as HTMLButtonElement).title = canSend ? "Send (Enter)" : "Type a message to send";

@@ -1,6 +1,7 @@
-# AHP adoption implementation plan
+# PLAN — AHP adoption phases 1–6
 
-Status: Phase 0 complete; Phases 1–5 pending.
+Status: pending. Phase 0 is complete and archived as
+[`20260727-ahp-phase-0-foundation-complete.md`](activities/20260727-ahp-phase-0-foundation-complete.md).
 
 Protocol baseline: `@microsoft/agent-host-protocol@0.6.0` (exact-pinned).
 
@@ -29,10 +30,11 @@ boundary. AHP becomes the client-facing state and synchronization boundary.
 - Implementing every optional AHP channel before core session/chat
   interoperability is proven.
 
-## Current baseline
+## Completed prerequisite
 
 Phase 0 established the transport-independent channel primitive in
-`src/ahp/channelStore.ts`:
+`src/ahp/channelStore.ts`; its implementation record now lives in the activity
+linked above:
 
 - one monotonic server sequence across all channels;
 - pure channel reducers and host-authoritative snapshots;
@@ -439,4 +441,3 @@ AHP core adoption is complete when:
 - security, concurrency, accessibility and performance acceptance tests pass;
 - an independent AHP client interoperates with the advertised version;
 - README and architecture documentation reflect the shipped behavior.
-

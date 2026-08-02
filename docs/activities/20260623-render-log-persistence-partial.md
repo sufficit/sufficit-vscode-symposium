@@ -1,7 +1,9 @@
-# PLAN — persist the full render log (exact visual reload)
+# Activity — persistent render log and exact visual reload
 
 **Date:** 2026-06-23
-**Status:** in progress
+**Status:** persistence and replay implemented; remaining deletion cleanup and
+regression coverage extracted on 2026-08-01 to
+[`PLAN-session-local-artifact-cleanup.md`](../PLAN-session-local-artifact-cleanup.md).
 
 ## Problem
 
@@ -16,14 +18,14 @@ stream of render messages the webview consumes (and replays on view switch via
 `bindSink`). It is just never persisted, so a disposed/reopened controller (new
 process, or session opened from disk) starts with an empty log.
 
-## Goal
+## Delivered goal
 
 Persist the render log per session and replay it on reopen, so the conversation
 view is byte-for-byte what the user last saw, including all non-text elements.
 Fall back to the old `adapter.history()` reconstruction only when no render log
 exists (older sessions).
 
-## Design
+## Implemented design
 
 ### 1. `src/renderLog.ts` (new) — append-only render persistence
 Stored next to the ledger: `~/.symposium/ledger/<id>/render.jsonl`.
@@ -54,14 +56,27 @@ Stored next to the ledger: `~/.symposium/ledger/<id>/render.jsonl`.
   call `controller.seedRenderLog()` BEFORE `controller.attach(...)` so the
   replay shows the exact visual. Skip `loadHistory(info)` in that case.
 
-### 5. Cleanup
-- `removeRender(sessionId)` wherever the ledger/session is permanently deleted.
-
 ## Out of scope
 - Older sessions with no render log keep the lossy `adapter.history()` view.
 - Cross-machine sync of the render log (local-only, like the ledger).
 
-## Verification
-- `npm run lint`, `npm run compile`, `node --test` green.
-- Manual: run a tool-heavy turn, reload window, reopen the session → tool rows,
-  diffs, status notices and panels reappear exactly (not just text bubbles).
+## Audit evidence (2026-08-01)
+
+- `src/renderLog.ts` appends, reads and detects `render.jsonl` with line-size
+  protection.
+- `src/ui/renderStream.ts` persists emitted messages and seeds restored ones
+  without a second write.
+- `src/ui/controllerPersist.ts` flushes messages buffered before the provider
+  assigns a session id and restores the saved queue with the render stream.
+- `src/ui/surfaceDialogues.ts` seeds the visual before attaching the sink and
+  falls back to adapter history when no render log exists.
+- The implementation originally shipped in commit `1493a35`.
+
+## Gap found by the audit
+
+`removeRender(sessionId)` exists but has no caller. OpenAI happens to remove the
+whole Symposium ledger from inside its adapter, while Claude, Codex and Copilot
+delete only provider-owned artifacts. That leaves a backend-dependent privacy
+and storage gap in the common permanent-delete operation. Focused persistence,
+reopen and delete regression tests are also absent. The remaining plan linked
+above centralizes that work instead of leaving it in this completed activity.

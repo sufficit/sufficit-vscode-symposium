@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Sufficit Symposium",
   "description": "Symposium (\u03c3\u03c5\u03bc\u03c0\u03cc\u03c3\u03b9\u03bf\u03bd) \u2014 host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "2026.801.0",
+  "version": "2026.802.0",
   "publisher": "sufficit",
   "license": "MIT",
   "icon": "media/symposium-icon.png",
@@ -940,11 +940,11 @@
             "steer"
           ],
           "enumDescriptions": [
-            "Redirect: cancel the running turn and send the correction next, keeping the existing queue (default).",
-            "Queue the message and send it after the current turn (FIFO).",
+            "Redirect: cancel the running turn and send the correction next, keeping the existing queue.",
+            "Queue the message and send it after the current turn (FIFO, default).",
             "Interrupt the running turn, clear the queue, and send immediately."
           ],
-          "default": "redirect",
+          "default": "queue",
           "description": "What sending does WHILE a turn is running. When the agent is idle it always sends immediately, so this only applies when it's busy. Overridable per message with the dropdown next to the send button."
         },
         "symposium.chat.devMode": {

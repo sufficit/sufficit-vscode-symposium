@@ -1,8 +1,8 @@
-# PLAN — read_session reads live runtime (not just disk)
+# Activity — `read_session` reads the live runtime
 
 **Date:** 2026-06-23
 **Session:** 0ff7e86f-75c2-4639-b245-563dd42ddc23
-**Status:** in progress
+**Status:** complete; audited against the source on 2026-08-01.
 
 ## Problem
 
@@ -30,7 +30,7 @@ sees this.
 back to disk for sessions with no live controller. No regression for disk-only
 sessions.
 
-## Design
+## Implemented design
 
 Mirror the existing late-bound singleton pattern used for subagents
 (`setSubagentHost` / `getSubagentHost` in `aiTools/types.ts`). The low-level tool
@@ -90,3 +90,13 @@ context.subscriptions.push({ dispose: () => setLiveTranscriptReader(undefined) }
 - `npm run compile` clean (tsc + webview).
 - Manual: open a live session, agent calls `read_session` → returns the running
   transcript even before a ledger flush. Disk-only sessions still read from disk.
+
+## Audit evidence (2026-08-01)
+
+- `src/adapters/aiTools/types.ts` owns the late-bound `LiveTranscriptReader`.
+- `src/adapters/aiTools/localRun.ts` compares live and disk counts and keeps the
+  more complete transcript, including the resumed-session safeguard.
+- `src/sessions/runtime.ts` exposes `readTranscript`, and `src/extension.ts`
+  registers and disposes the reader.
+- `src/sessionReader.ts` includes `live` in `SessionDump.source`.
+- The implementation originally shipped in commit `8192f30`.

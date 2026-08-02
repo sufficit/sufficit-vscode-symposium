@@ -1,6 +1,7 @@
-# PLAN — Session hooks + per-workspace bootstrap
+# Activity — session-start hook and per-workspace bootstrap
 
-> Status: **in progress (2026-06-21)**. Repo: `sufficit-vscode-symposium`.
+> Status: **complete**; audited against the source on 2026-08-01.
+> Repo: `sufficit-vscode-symposium`.
 
 ## Goal
 
@@ -25,7 +26,7 @@ tool reference. Why:
 Reference would only win for huge/dynamic payloads; a workspace bootstrap is
 small + stable.
 
-## Design
+## Implemented design
 
 ### Bootstrap = a synced resource kind, scoped by workspace
 
@@ -75,3 +76,14 @@ handler) to open the file.
 `resolveSessionStartContext(cwd)` is the first lifecycle hook. Later events
 (pre-send, turn-end, session-open) can plug into the same surface. Out of scope
 for this slice.
+
+## Audit evidence (2026-08-01)
+
+- `src/config/root.ts` defines the `bootstrap` resource, workspace-key lookup
+  and `default.md` fallback.
+- `src/sync/sync.ts` maps the resource to `agent-bootstrap`.
+- `src/ui/surfaceDialogues.ts` resolves new-session bootstrap content and posts
+  its file link; the webview renders and opens that link.
+- `src/ui/outboundPrompt.ts` injects the content once, and
+  `src/test/outboundPrompt.test.ts` covers its ordering and one-shot behavior.
+- The implementation originally shipped in commit `4c7d532`.

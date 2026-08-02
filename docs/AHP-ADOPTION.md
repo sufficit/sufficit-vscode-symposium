@@ -7,7 +7,7 @@ Target protocol: AHP `0.6.0`, pinned through
 
 The implementation backlog, file-level work breakdown, validation gates and
 rollback points are tracked in
-[PLAN-AHP-ADOPTION.md](PLAN-AHP-ADOPTION.md).
+[PLAN-AHP-PHASES-1-6.md](PLAN-AHP-PHASES-1-6.md).
 
 ## Decision
 

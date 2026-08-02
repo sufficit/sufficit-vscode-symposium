@@ -1,14 +1,32 @@
 # PR #41 — Análise e Plano de Quebra em PRs Menores
 
+**Data da avaliação:** 2026-07-30
+**Status:** concluída; todo o valor selecionado foi integrado e o PR original foi fechado.
 **Autor do PR original:** Felipe Almeman (@zhiru)
 **Branch:** pr-41-eval
 **Objetivo:** Performance de startup — eliminar leitura de transcrições 100+ MB ao listar sessões
+
+## Resultado da avaliação
+
+| Recorte | Entrega | Evidência |
+|---|---|---|
+| PR-1 | leitura limitada de JSONL | `#42`, commit `d12b4be` |
+| PR-2 | descoberta incremental Claude/Codex | `#43`, commit `75c6934` |
+| PR-3 | simplificação dos adapters | `#44`, commit `28c1cee` |
+| PR-4 | correção de scroll no WSL | `#45`, commit `d83fe53` |
+| PR-5 | criação de chat sem aguardar probes | `#49`, commit `aca7590` |
+| PR-6 | abstração `SessionRepository` | `#46`, commit `58b7e7b` |
+| evolução posterior | `SessionIndex` e stale-while-revalidate | `#47`, commit `6b67f39` |
+| evolução posterior | preferência de cache e monitor de RAM | `#48`, commit `f7a151f` |
+
+O release `v2026.730.2` registrou o encerramento da avaliação: o PR #41 foi
+fechado depois que os recortes úteis foram integrados separadamente.
 
 ## Contexto
 
 No WSL/Windows, o Symposium congela por vários segundos ao abrir porque lista sessões
 lendo arquivos JSONL inteiros (3.8 GB de transcrições no total). O PR #41 resolve isso
-com 4 camadas independentes de otimização.
+com várias camadas independentes, organizadas abaixo em seis recortes iniciais.
 
 ## Análise por item
 
@@ -21,7 +39,7 @@ com 4 camadas independentes de otimização.
 nunca abrindo o arquivo inteiro. Termina sempre numa linha completa (não corta JSON).
 
 **Risco:** Baixo — função pura, sem efeitos colaterais.
-**Valor:** Muito alto — base de todas as otimas.
+**Valor:** Muito alto — base de todas as otimizações.
 **Dependências:** Nenhuma.
 
 ### PR-2: Claude/Codex `sessionDiscovery.ts` — Descoberta incremental (154 linhas)
@@ -96,13 +114,17 @@ com backends JSON e Memory (sem SQLite neste slice).
 **Valor:** Baixo agora (preparação para futuro).
 **Dependências:** Nenhuma direta.
 
-## Itens NÃO incluídos (fora de escopo)
+## Itens não incluídos no recorte inicial
 
 - `sqliteRepository.ts` — SQLite é complexidade desnecessária agora
 - `sessionIndex.ts` — índice persistente, draft, sem uso ainda
 - Testes — trazemos separadamente depois que o código estiver em main
 
-## Ordem recomendada de merge
+O `SessionIndex` foi reavaliado e entregue posteriormente nos PRs #47 e #48,
+sem alterar a decisão de não adotar SQLite. Os testes passaram a acompanhar a
+suíte padrão do repositório.
+
+## Ordem recomendada na avaliação
 
 1. PR-1 (jsonlPrefix) — independente
 2. PR-2 (sessionDiscovery) — depende de PR-1
