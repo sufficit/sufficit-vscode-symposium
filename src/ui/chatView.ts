@@ -86,6 +86,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.reveal();
     }
 
+    /** Keeps an unresolved picker current, or refreshes it if still visible. */
+    refreshAgentPicker(agents: AgentPickerEntry[]): void {
+        if (this.pending?.kind === "agentpick") {
+            this.pending.agents = agents;
+            return;
+        }
+        this.surface?.refreshAgentPicker(agents);
+    }
+
     async openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string; reasoning?: string }, title: string): Promise<void> {
         this.pending = { kind: "terminal", backend, options, title };
         await this.reveal();

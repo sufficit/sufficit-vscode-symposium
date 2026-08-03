@@ -132,6 +132,10 @@ export class ChatPanel {
         this.surface.showAgentPicker(agents);
     }
 
+    refreshAgentPicker(agents: import("./protocol").AgentPickerEntry[]): void {
+        this.surface.refreshAgentPicker(agents);
+    }
+
     openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string; reasoning?: string }, title: string): void {
         this.sessionId = options.resumeSessionId;
         if (ChatPanel.newChatPanel === this) { ChatPanel.newChatPanel = undefined; }

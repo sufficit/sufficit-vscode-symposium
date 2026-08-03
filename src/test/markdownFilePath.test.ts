@@ -10,7 +10,7 @@ import { resolve } from "node:path";
 
 function looksLikeFilePath(s: string): boolean {
     if (!s || /\s/.test(s) || s.includes("://")) return false;
-    return /\/.*\.[A-Za-z][A-Za-z0-9]{1,9}$/.test(s);
+    return /\/.*\.[A-Za-z][A-Za-z0-9]{1,9}(?::\d+(?::\d+)?|#L\d+(?:C\d+)?)?$/i.test(s);
 }
 
 test("looksLikeFilePath: matches real file-path mentions", () => {
@@ -18,6 +18,8 @@ test("looksLikeFilePath: matches real file-path mentions", () => {
     assert.equal(looksLikeFilePath("src/adapters/aiTools/run.ts"), true);
     assert.equal(looksLikeFilePath("./scripts/build.mjs"), true);
     assert.equal(looksLikeFilePath("/etc/nginx/nginx.conf"), true);
+    assert.equal(looksLikeFilePath("/work/src/main.ts:12:4"), true);
+    assert.equal(looksLikeFilePath("src/main.ts#L7C2"), true);
 });
 
 test("looksLikeFilePath: leaves non-paths alone (no false positives)", () => {
@@ -35,7 +37,9 @@ test("markdown.ts: file-path inline code is clickable and opens via the host", (
     assert.match(src, /vscode\.postMessage\(\{ type: "open-file", path: raw \}\)/);
 });
 
-test("surfaceMessages.ts: open-file uses the shared local-resource resolver", () => {
+test("surfaceMessages.ts: open-file resolves source locations before opening", () => {
     const src = readFileSync(resolve(__dirname, "../../src/ui/surfaceMessages.ts"), "utf8");
-    assert.match(src, /resolveLocalResourcePath\(message\.path, cwd\)/);
+    assert.match(src, /resolveLocalFileTarget\(message\.path, cwd\)/);
+    assert.match(src, /new vscode\.Range\(target\.line - 1/);
+    assert.match(src, /vscode\.Uri\.file\(target\.fsPath\)/);
 });

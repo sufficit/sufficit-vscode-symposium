@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
-import { loadMarkdownImage, resolveLocalResourcePath } from "../ui/markdownImages";
+import { loadMarkdownImage, resolveLocalFileTarget, resolveLocalResourcePath } from "../ui/markdownImages";
 import {
     inlineTokenRegex,
     isExternalMarkdownLink,
@@ -39,6 +39,21 @@ test("resolveLocalResourcePath handles relative paths and encoded file URIs", ()
     const local = path.join(os.tmpdir(), "image with spaces.png");
     assert.equal(resolveLocalResourcePath(pathToFileURL(local).href), local);
     assert.equal(resolveLocalResourcePath("https://example.com/a.png", "/work/project"), undefined);
+});
+
+test("resolveLocalFileTarget separates source locations from absolute and relative paths", () => {
+    assert.deepEqual(
+        resolveLocalFileTarget("/work/project/src/main.ts:12:4", "/ignored"),
+        { fsPath: path.normalize("/work/project/src/main.ts"), line: 12, column: 4 },
+    );
+    assert.deepEqual(
+        resolveLocalFileTarget("src/main.ts#L7C2", "/work/project"),
+        { fsPath: path.resolve("/work/project/src/main.ts"), line: 7, column: 2 },
+    );
+    assert.deepEqual(
+        resolveLocalFileTarget(pathToFileURL("/work/project/src/main.ts").href + ":3"),
+        { fsPath: path.normalize("/work/project/src/main.ts"), line: 3, column: undefined },
+    );
 });
 
 test("loadMarkdownImage reads allowed images and blocks traversal outside roots", async () => {

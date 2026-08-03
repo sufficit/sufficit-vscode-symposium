@@ -20,6 +20,13 @@ export interface MarkdownImageResult {
     error?: string;
 }
 
+export interface LocalFileTarget {
+    fsPath: string;
+    /** One-based line and column, matching Markdown link conventions. */
+    line?: number;
+    column?: number;
+}
+
 /** Resolves a Markdown file target without treating `file:` as a relative path. */
 export function resolveLocalResourcePath(raw: string, cwd?: string): string | undefined {
     let value = String(raw || "").trim();
@@ -35,6 +42,36 @@ export function resolveLocalResourcePath(raw: string, cwd?: string): string | un
     value = value.replace(/^~(?=$|[/\\])/, os.homedir());
     if (path.isAbsolute(value)) { return path.normalize(value); }
     return cwd ? path.resolve(cwd, value) : undefined;
+}
+
+/**
+ * Resolves a clickable file target and separates an optional source location.
+ * Agents conventionally emit `/absolute/file.ts:12[:4]` or `file.ts#L12C4`;
+ * those suffixes select an editor position and are not part of the filename.
+ */
+export function resolveLocalFileTarget(raw: string, cwd?: string): LocalFileTarget | undefined {
+    let value = String(raw || "").trim();
+    if (!value) { return undefined; }
+
+    let line: number | undefined;
+    let column: number | undefined;
+    const hashLocation = value.match(/^(.*)#L(\d+)(?:C(\d+))?$/i);
+    const colonLocation = hashLocation
+        ? undefined
+        : value.match(/^(.*):(\d+):(\d+)$/) ?? value.match(/^(.*):(\d+)$/);
+    const location = hashLocation ?? colonLocation;
+    if (location) {
+        value = location[1];
+        line = Number(location[2]);
+        column = location[3] ? Number(location[3]) : undefined;
+        if (!Number.isSafeInteger(line) || line < 1 ||
+            (column !== undefined && (!Number.isSafeInteger(column) || column < 1))) {
+            return undefined;
+        }
+    }
+
+    const fsPath = resolveLocalResourcePath(value, cwd);
+    return fsPath ? { fsPath, line, column } : undefined;
 }
 
 /** Reads a bounded raster image only when it resolves inside an allowed root. */

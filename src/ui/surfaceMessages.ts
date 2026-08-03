@@ -10,7 +10,7 @@ import { handleSessionMessage } from "./surfaceMessageSessions";
 import { symposiumLog } from "../extension";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 import { handleMarkdownImageMessage } from "./surfaceMessageMarkdown";
-import { resolveLocalResourcePath } from "./markdownImages";
+import { resolveLocalFileTarget } from "./markdownImages";
 
 /**
  * Webview → host message router for a chat surface: the big switch that turns
@@ -288,15 +288,17 @@ export class SurfaceMessages {
                 }
                 case "open-file": {
                     if (typeof message.path === "string" && message.path.trim()) {
-                        // Paths clicked from free-form message text (e.g. a
-                        // file-path mention in an agent reply) are workspace-
-                        // relative. file: URIs and `~` need normalization too.
+                        // Paths clicked from agent replies may be absolute or
+                        // workspace-relative. file: URIs and `~` are valid too.
                         const cwd = this.d.getController()?.cwd ?? this.d.getTerminalSession()?.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-                        const resolved = resolveLocalResourcePath(message.path, cwd);
-                        if (!resolved) { return; }
+                        const target = resolveLocalFileTarget(message.path, cwd);
+                        if (!target) { return; }
                         // vscode.open handles text AND binary (images open in the
                         // image preview), unlike openTextDocument.
-                        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(resolved), { preview: true });
+                        const selection = target.line
+                            ? new vscode.Range(target.line - 1, (target.column ?? 1) - 1, target.line - 1, (target.column ?? 1) - 1)
+                            : undefined;
+                        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(target.fsPath), { preview: true, selection });
                     }
                     return;
                 }

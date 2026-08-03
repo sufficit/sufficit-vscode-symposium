@@ -235,11 +235,10 @@ export class ChatSurface {
         this.dialogues.openTerminalDialogue(backend, options, title);
     }
 
-    /** Renders the in-chat "which agent joins the symposium?" picker (replaces
-     *  the native QuickPick). Selection comes back as a `pick-agent` message. */
-    showAgentPicker(agents: AgentPickerEntry[]): void {
-        this.post({ type: "agent-picker", agents });
-    }
+    /** Renders the in-chat agent picker; selection returns as `pick-agent`. */
+    showAgentPicker(agents: AgentPickerEntry[]): void { this.post({ type: "agent-picker", agents }); }
+    /** Refreshes probe results without reopening a picker the user already left. */
+    refreshAgentPicker(agents: AgentPickerEntry[]): void { this.post({ type: "agent-picker-update", agents }); }
 
     /** Symposium-level slash commands injected into every backend's autocomplete. */
     private readonly symposiumCommands: import("../adapters/types").SlashCommand[] = [

@@ -228,7 +228,7 @@ function codexTagStart(line) {
 
 function looksLikeFilePath(s) {
     if (!s || /\s/.test(s) || s.includes("://")) return false;
-    return /\/.*\.[A-Za-z][A-Za-z0-9]{1,9}$/.test(s);
+    return /\/.*\.[A-Za-z][A-Za-z0-9]{1,9}(?::\d+(?::\d+)?|#L\d+(?:C\d+)?)?$/i.test(s);
 }
 
 interface PendingMarkdownImage {

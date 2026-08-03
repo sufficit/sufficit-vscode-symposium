@@ -55,3 +55,9 @@ export function renderAgentPicker(agents: AgentEntry[]): void {
 
     root.classList.add("picking");
 }
+
+/** Applies an availability refresh only while this picker is still active. */
+export function refreshAgentPicker(agents: AgentEntry[]): void {
+    if (!root.classList.contains("picking")) { return; }
+    renderAgentPicker(agents);
+}

@@ -17,7 +17,7 @@ import { hideCtx, openChoiceMenu, showToast } from "./menus";
 import { modelLabels, modelValue, modelList, modelDefault, setModelDefault, setModelLabel, setModelLabels, setModelList, setModelValue, setPinnedModels, buildModelMenuOpts } from "./models";
 import { armStickyUserMessage, layout, refreshEmpty, scrollToBottom, settleAtBottom, nearBottom, autoScroll } from "./scroll";
 import { svgIcon } from "./icons";
-import { renderAgentPicker, hideAgentPicker } from "./agentPicker";
+import { renderAgentPicker, refreshAgentPicker, hideAgentPicker } from "./agentPicker";
 import { log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge, chatTitle } from "./dom";
 import { sessions, busy, activeModel, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setBusy, setCommands, setConversationRows, setPendingSessionSwitch, setQueued, setSessions, setSideMode, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPendingSwitchAnchor } from "./state";
 import { resolveMarkdownImage } from "./markdown";
@@ -38,6 +38,7 @@ window.addEventListener("message", ({ data }) => {
         }
         case "focus-input": { input.focus(); break; }
         case "agent-picker": { renderAgentPicker(Array.isArray(data.agents) ? data.agents : []); break; }
+        case "agent-picker-update": { refreshAgentPicker(Array.isArray(data.agents) ? data.agents : []); break; }
         case "meta": { applyMeta(data); break; }
         case "title-update": { chatTitle.textContent = data.title || ""; break; }
         case "browser-state": {

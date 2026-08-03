@@ -35,20 +35,16 @@ export function registerCreateCommands(ctx: CommandContext): void {
             installCmd: hasInstall ? CLI_INSTALL[adapter.backend].cmd : undefined,
         };
     }));
-    const refreshPicker = (show: (agents: import("../../ui/protocol").AgentPickerEntry[]) => void): void => {
-        show(initialAgentPickerEntries());
-        void collectAgentPickerEntries().then(show).catch(() => undefined);
-    };
-
     context.subscriptions.push(
         vscode.commands.registerCommand("symposium.newSession", () => {
             // Create/reveal the target synchronously. Availability updates arrive
             // later and never hold the VS Code command or webview creation open.
             if (inEditor()) {
                 const panel = ChatPanel.newSession(context, surfaceDeps, initialAgentPickerEntries());
-                void collectAgentPickerEntries().then((agents) => panel.showAgentPicker(agents)).catch(() => undefined);
+                void collectAgentPickerEntries().then((agents) => panel.refreshAgentPicker(agents)).catch(() => undefined);
             } else {
-                refreshPicker((agents) => { void chatView.showAgentPicker(agents); });
+                void chatView.showAgentPicker(initialAgentPickerEntries());
+                void collectAgentPickerEntries().then((agents) => chatView.refreshAgentPicker(agents)).catch(() => undefined);
             }
         }),
 
@@ -56,7 +52,7 @@ export function registerCreateCommands(ctx: CommandContext): void {
         // always create a separate, blank conversation tab immediately.
         vscode.commands.registerCommand("symposium.newEditorSession", () => {
             const panel = ChatPanel.newSession(context, surfaceDeps, initialAgentPickerEntries());
-            void collectAgentPickerEntries().then((agents) => panel.showAgentPicker(agents)).catch(() => undefined);
+            void collectAgentPickerEntries().then((agents) => panel.refreshAgentPicker(agents)).catch(() => undefined);
         }),
 
         // New session bound to a local agent-def: seeds the system prompt from the
