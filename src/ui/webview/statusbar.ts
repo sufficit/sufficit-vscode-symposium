@@ -7,6 +7,7 @@ import { modelLabel } from "./models";
 import { svgIcon } from "./icons";
 import { hideCtx } from "./menus";
 import { send } from "./composer";
+import { mergeQuotaSnapshot } from "../quotaSnapshot";
 
 let lastUsage = null, lastStatusData = {};
 let quotaLoading = false;
@@ -372,21 +373,7 @@ export function openUsagePopover(anchor) {
 export function setLastUsage(v) { lastUsage = v; }
 export function setLastQuota(v) {
     if (!v || typeof v.backend !== "string" || !Array.isArray(v.windows)) { return; }
-    const previous = quotaByBackend.get(v.backend);
-    // A stale/unavailable refresh replaces the old browser snapshot. Merging it
-    // would keep expired provider windows alive and make partial cached data
-    // look current (for example Claude's missing five-hour window).
-    const previousWindows = v.state === "ready" || v.state === "unavailable" || v.state === "stale"
-        ? []
-        : (previous?.windows || []);
-    const merged = new Map(previousWindows.map((window) => [window.id, window]));
-    for (const window of v.windows) { if (window?.id) { merged.set(window.id, window); } }
-    quotaByBackend.set(v.backend, {
-        ...previous,
-        ...v,
-        windows: [...merged.values()],
-        updatedAt: v.updatedAt || Date.now(),
-    });
+    quotaByBackend.set(v.backend, mergeQuotaSnapshot(quotaByBackend.get(v.backend), v));
     saveState({ adapterQuotas: [...quotaByBackend.values()] });
 }
 export function setQuotaLoading(value) { quotaLoading = !!value; }

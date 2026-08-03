@@ -291,7 +291,8 @@ export class SurfaceMessages {
                         // Paths clicked from agent replies may be absolute or
                         // workspace-relative. file: URIs and `~` are valid too.
                         const cwd = this.d.getController()?.cwd ?? this.d.getTerminalSession()?.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-                        const target = resolveLocalFileTarget(message.path, cwd);
+                        const workspaceRoots = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+                        const target = resolveLocalFileTarget(message.path, cwd, workspaceRoots);
                         if (!target) { return; }
                         // vscode.open handles text AND binary (images open in the
                         // image preview), unlike openTextDocument.

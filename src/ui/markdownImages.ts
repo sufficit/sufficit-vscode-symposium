@@ -49,7 +49,11 @@ export function resolveLocalResourcePath(raw: string, cwd?: string): string | un
  * Agents conventionally emit `/absolute/file.ts:12[:4]` or `file.ts#L12C4`;
  * those suffixes select an editor position and are not part of the filename.
  */
-export function resolveLocalFileTarget(raw: string, cwd?: string): LocalFileTarget | undefined {
+export function resolveLocalFileTarget(
+    raw: string,
+    cwd?: string,
+    workspaceRoots: readonly string[] = [],
+): LocalFileTarget | undefined {
     let value = String(raw || "").trim();
     if (!value) { return undefined; }
 
@@ -70,8 +74,21 @@ export function resolveLocalFileTarget(raw: string, cwd?: string): LocalFileTarg
         }
     }
 
-    const fsPath = resolveLocalResourcePath(value, cwd);
+    const fsPath = resolveWorkspaceQualifiedPath(value, workspaceRoots) ?? resolveLocalResourcePath(value, cwd);
     return fsPath ? { fsPath, line, column } : undefined;
+}
+
+/** Resolves `workspace-name/path` against the matching VS Code workspace root. */
+function resolveWorkspaceQualifiedPath(value: string, roots: readonly string[]): string | undefined {
+    if (/^file:/i.test(value) || /^~(?=$|[/\\])/.test(value) || path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value)) {
+        return undefined;
+    }
+    const [workspaceName, ...relativeParts] = value.split(/[\\/]/);
+    const candidates = roots
+        .filter((root) => path.basename(path.normalize(root)) === workspaceName)
+        .map((root) => ({ root, target: path.resolve(root, ...relativeParts) }))
+        .filter(({ root, target }) => isInside(root, target));
+    return candidates.find(({ target }) => fs.existsSync(target))?.target ?? candidates[0]?.target;
 }
 
 /** Reads a bounded raster image only when it resolves inside an allowed root. */

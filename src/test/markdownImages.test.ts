@@ -56,6 +56,17 @@ test("resolveLocalFileTarget separates source locations from absolute and relati
     );
 });
 
+test("resolveLocalFileTarget resolves a workspace-qualified path across multi-root workspaces", () => {
+    assert.deepEqual(
+        resolveLocalFileTarget(
+            "sufficit-base/src/Contacts/Address.cs:9",
+            "/mnt/workspaces/sufficit",
+            ["/mnt/workspaces/sufficit", "/mnt/sufficit/sufficit-base"],
+        ),
+        { fsPath: path.normalize("/mnt/sufficit/sufficit-base/src/Contacts/Address.cs"), line: 9, column: undefined },
+    );
+});
+
 test("loadMarkdownImage reads allowed images and blocks traversal outside roots", async () => {
     const base = await mkdtemp(path.join(os.tmpdir(), "symposium-md-image-"));
     const root = path.join(base, "workspace");

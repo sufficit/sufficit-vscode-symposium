@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { mergeQuotaSnapshot } from "../ui/quotaSnapshot";
 
 const statusbar = readFileSync(resolve(__dirname, "../../src/ui/webview/statusbar.ts"), "utf8");
 const events = readFileSync(resolve(__dirname, "../../src/ui/webview/events.ts"), "utf8");
@@ -32,8 +33,39 @@ test("context overflow remains numerically visible and never shows negative free
 test("stale Claude quota replaces ghost windows and explains the failed refresh", () => {
     assert.match(statusbar, /quota\.state === "stale"/);
     assert.match(statusbar, /Cached adapter data/);
-    assert.match(statusbar, /v\.state === "ready" \|\| v\.state === "unavailable" \|\| v\.state === "stale"/);
+    assert.match(statusbar, /mergeQuotaSnapshot/);
     assert.match(css, /\.quotaPop \.qWarning/);
+});
+
+test("ready Claude quota clears a stale authentication message and limit label", () => {
+    const current = mergeQuotaSnapshot({
+        backend: "claude",
+        displayName: "Claude",
+        plan: "Max",
+        limitName: "Limit reached",
+        windows: [{ id: "five_hour", usedPercent: 0 }],
+        updatedAt: 1,
+        state: "stale",
+        message: "Live Claude usage is unavailable because Claude Code is signed out.",
+    }, {
+        backend: "claude",
+        displayName: "Claude",
+        plan: "Max",
+        windows: [
+            { id: "five_hour", usedPercent: 21 },
+            { id: "seven_day", usedPercent: 2 },
+        ],
+        updatedAt: 2,
+        state: "ready",
+    });
+
+    assert.equal(current.state, "ready");
+    assert.equal("message" in current, false);
+    assert.equal("limitName" in current, false);
+    assert.deepEqual(current.windows.map(({ id, usedPercent }) => ({ id, usedPercent })), [
+        { id: "five_hour", usedPercent: 21 },
+        { id: "seven_day", usedPercent: 2 },
+    ]);
 });
 
 test("quota panel renders semantic dynamic progress bars", () => {

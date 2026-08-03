@@ -39,7 +39,7 @@ test("markdown.ts: file-path inline code is clickable and opens via the host", (
 
 test("surfaceMessages.ts: open-file resolves source locations before opening", () => {
     const src = readFileSync(resolve(__dirname, "../../src/ui/surfaceMessages.ts"), "utf8");
-    assert.match(src, /resolveLocalFileTarget\(message\.path, cwd\)/);
+    assert.match(src, /resolveLocalFileTarget\(message\.path, cwd, workspaceRoots\)/);
     assert.match(src, /new vscode\.Range\(target\.line - 1/);
     assert.match(src, /vscode\.Uri\.file\(target\.fsPath\)/);
 });
