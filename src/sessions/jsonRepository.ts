@@ -4,7 +4,7 @@ import { InMemorySessionRepository } from "./memoryRepository";
 import { StoredSession } from "./repository";
 
 export const JSON_INDEX_FILE = "session-index.v1.json";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 interface StoredIndex {
     schemaVersion: number;

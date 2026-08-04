@@ -1,4 +1,4 @@
-import { JsonlMetadataCache, readJsonlPrefix } from "../jsonlPrefix";
+import { JsonlMetadataCache, readJsonlPrefix, readJsonlTail } from "../jsonlPrefix";
 
 /**
  * Codex sessions begin with injected scaffolding (AGENTS.md, IDE context,
@@ -67,9 +67,13 @@ const codexMetaCache = new JsonlMetadataCache<CodexMeta>();
 const CODEX_META_PREFIX_BYTES = 2 * 1024 * 1024;
 
 export async function readCodexMeta(file: string): Promise<CodexMeta> {
-    return codexMetaCache.get(file, async () => parseCodexMeta(
-        await readJsonlPrefix(file, CODEX_META_PREFIX_BYTES),
-    ));
+    return codexMetaCache.get(file, async () => {
+        const [prefix, tail] = await Promise.all([
+            readJsonlPrefix(file, CODEX_META_PREFIX_BYTES),
+            readJsonlTail(file, CODEX_META_PREFIX_BYTES),
+        ]);
+        return parseCodexMeta(prefix === tail ? prefix : `${prefix}\n${tail}`);
+    });
 }
 
 function parseCodexMeta(content: string): CodexMeta {

@@ -21,6 +21,23 @@ test("Codex metadata restores the most recently used model from turn context", a
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("Codex metadata reads the latest model from the tail of a large rollout", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-codex-tail-model-"));
+    const file = path.join(dir, "rollout.jsonl");
+    const rows = [
+        JSON.stringify({ type: "session_meta", payload: { id: "thread-large", cwd: "/workspace" } }),
+        JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-sol" } }),
+        JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Large rollout" }] } }),
+        JSON.stringify({ type: "response_item", payload: { type: "reasoning", summary: [{ type: "summary_text", text: "x".repeat(2_200_000) }] } }),
+        JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna" } }),
+    ];
+    fs.writeFileSync(file, rows.join("\n"));
+
+    const meta = await readCodexMeta(file);
+    assert.equal(meta.model, "gpt-5.6-luna");
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("Codex metadata restores Symposium lineage from a seeded branch marker", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-codex-lineage-"));
     const file = path.join(dir, "rollout.jsonl");

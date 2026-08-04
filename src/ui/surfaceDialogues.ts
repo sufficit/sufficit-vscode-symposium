@@ -340,7 +340,7 @@ export class SurfaceDialogues {
             pinnedModels: this.d.deps.modelPrefs.getPinned(adapter.backend),
             // Last model used in this session (resume), so the picker restores it
             // instead of defaulting to the first discovered model.
-            sessionModel: info?.model ?? "",
+            sessionModel: controller.getModel() || info?.model || "",
             // Attach-browser-page button only shows when a Simple Browser is open.
             browserOpen: isSimpleBrowserOpen(),
             // Per-session tool gating for the native AI backend (undefined for CLIs).

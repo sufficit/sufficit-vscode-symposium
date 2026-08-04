@@ -9,6 +9,7 @@ const PARENTS_KEY = "symposium.sessionParents";
 const LINEAGES_KEY = "symposium.sessionLineages";
 const COMPRESSION_KEY = "symposium.sessionCompression";
 const TERMINAL_STATUS_KEY = "symposium.sessionTerminalStatus";
+const DELETED_KEY = "symposium.deletedSessions";
 
 /** Old keys were `backend:guid`; strip the backend prefix to the bare GUID. */
 function toGuid(key: string): string {
@@ -51,6 +52,7 @@ export class SessionStore {
 
     private compressionPresets: Record<string, string>;
     private terminalStatuses: Record<string, SessionTerminalStatus>;
+    private deleted: Set<string>;
 
     constructor(private readonly memento: vscode.Memento) {
         const rawTitles = memento.get<Record<string, string>>(TITLES_KEY, {});
@@ -62,6 +64,7 @@ export class SessionStore {
         this.lineages = migrateKeys(memento.get<Record<string, string>>(LINEAGES_KEY, {}));
         this.compressionPresets = memento.get<Record<string, string>>(COMPRESSION_KEY, {}) || {};
         this.terminalStatuses = memento.get<Record<string, SessionTerminalStatus>>(TERMINAL_STATUS_KEY, {}) || {};
+        this.deleted = new Set(migrateList(memento.get<string[]>(DELETED_KEY, [])));
         // Consolidate legacy `backend:guid` keys to the bare GUID on disk.
         if (Object.keys(rawTitles).some((k) => k.includes(":"))) {
             void memento.update(TITLES_KEY, this.titles);
@@ -156,6 +159,7 @@ export class SessionStore {
 
     /** Drops all stored metadata for a session (used after permanent delete). */
     async forget(info: SessionInfo): Promise<void> {
+        this.deleted.add(this.key(info));
         delete this.titles[this.key(info)];
         this.archived.delete(this.key(info));
         this.pinned = this.pinned.filter((p) => p !== this.key(info));
@@ -170,11 +174,13 @@ export class SessionStore {
         await this.memento.update(LINEAGES_KEY, this.lineages);
         await this.memento.update(COMPRESSION_KEY, this.compressionPresets);
         await this.memento.update(TERMINAL_STATUS_KEY, this.terminalStatuses);
+        await this.memento.update(DELETED_KEY, [...this.deleted]);
     }
 
     /** Applies titles, archived + pinned (with order), then filters by showArchived. */
     decorate(sessions: SessionInfo[], showArchived: boolean): SessionInfo[] {
         return sessions
+            .filter((s) => !this.deleted.has(this.key(s)))
             .map((s) => {
                 const pinIndex = this.pinned.indexOf(this.key(s));
                 return {

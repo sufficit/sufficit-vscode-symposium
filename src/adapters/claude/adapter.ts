@@ -186,6 +186,16 @@ export class ClaudeAdapter implements AgentAdapter {
                 return false;
             }
         });
+        // Claude can flush shutdown rows after its process receives SIGTERM.
+        // Remove any late recreation in a bounded grace period; the persisted
+        // deletion tombstone remains the final UI guard if an external Claude
+        // process keeps writing this session after the grace window.
+        if (transcript) {
+            for (const delay of [75, 225, 700]) {
+                await new Promise((resolve) => setTimeout(resolve, delay));
+                await fs.promises.rm(transcript, { force: true });
+            }
+        }
     }
 
     /**

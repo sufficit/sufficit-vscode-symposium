@@ -49,3 +49,14 @@ test("SessionStore persists a terminal warning across extension reloads", () => 
 
     assert.equal(restored[0].terminalStatus, "warning");
 });
+
+test("SessionStore tombstones a deleted session across extension reloads", async () => {
+    const memory = new MemoryMemento();
+    const info = session("deleted-session");
+    await new SessionStore(memory as unknown as vscode.Memento).forget(info);
+
+    const restored = new SessionStore(memory as unknown as vscode.Memento)
+        .decorate([info], true);
+
+    assert.deepEqual(restored, []);
+});
