@@ -101,7 +101,7 @@ export class SurfaceDialogues {
         }
         this.openDialogue(
             info.backend,
-            { cwd: this.d.deps.cwdFor(info), resumeSessionId: info.sessionId, lineageId: info.lineageId },
+            { cwd: this.d.deps.cwdFor(info), resumeSessionId: info.sessionId, model: info.model, lineageId: info.lineageId },
             info.title,
             info,
         );

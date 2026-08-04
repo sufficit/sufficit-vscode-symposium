@@ -59,10 +59,13 @@ export function applyMeta(data: any): void {
     // starting model: a resumed session restores its last-used model
     // (data.sessionModel), a new session honors the configured default
     // (data.modelDefault), and only then falls back to the first model.
-    if (!modelValue || (modelValue !== "default" && !modelList.includes(modelValue))) {
-        if (data.resumed && data.sessionModel) {
-            setModelValue(data.sessionModel);
-        } else if (modelDefault && (modelDefault === "default" || modelList.includes(modelDefault))) {
+    // A resumed session owns its last-used model. Reapply it even when the
+    // previous session exposed the same catalog; otherwise the picker keeps
+    // the prior session's value and silently lies about the active Codex model.
+    if (data.resumed && data.sessionModel) {
+        setModelValue(data.sessionModel);
+    } else if (!modelValue || (modelValue !== "default" && !modelList.includes(modelValue))) {
+        if (modelDefault && (modelDefault === "default" || modelList.includes(modelDefault))) {
             setModelValue(modelDefault);
         } else {
             setModelValue(modelList[0] || "");

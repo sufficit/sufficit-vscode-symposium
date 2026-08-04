@@ -2,6 +2,7 @@ import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { aiToolsForAgent } from "../adapters/aiTools/defs";
 import { SubagentHandle, SubagentHost, SubagentStatus } from "../adapters/aiTools/types";
 import { readAgentBackend, readAgentBody, readAgentModel, readAgentTools, agentExists } from "../config/root";
+import { resolveSubagentModel } from "./subagentModel";
 import { ChatController } from "../ui/chatController";
 import { LiveSessions } from "./runtime";
 
@@ -121,12 +122,11 @@ export class SubagentManager implements SubagentHost {
         if (!adapter) { return this.err("", agent, backend, `unknown backend '${backend}'`); }
 
         // Resolve model the same way (def pin / arg, wildcard-validated).
-        const defModel = readAgentModel(agent);
-        const reqModel = String(opts.model ?? "").trim();
-        const model = reqModel || firstConcrete(defModel) || undefined;
-        if (defModel && model && !matchAny(defModel, model)) {
-            return this.err("", agent, backend, `agent '${agent}' restricts model to '${defModel}'; '${model}' is not allowed`);
+        const modelResult = await resolveSubagentModel(adapter, readAgentModel(agent), String(opts.model ?? ""));
+        if (modelResult.error) {
+            return this.err("", agent, backend, `${modelResult.error}; refresh the model catalog or use a provider/model route`);
         }
+        const model = modelResult.model;
 
         const options: SessionStartOptions = {
             cwd: opts.cwd,
