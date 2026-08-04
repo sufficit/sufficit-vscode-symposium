@@ -1,5 +1,6 @@
 import type * as vscode from "vscode";
 import { SessionInfo } from "../adapters/types";
+import type { SessionTerminalStatus } from "../adapters/sessionInfo";
 
 const TITLES_KEY = "symposium.sessionTitles";
 const ARCHIVED_KEY = "symposium.archivedSessions";
@@ -7,6 +8,7 @@ const PINNED_KEY = "symposium.pinnedSessions";
 const PARENTS_KEY = "symposium.sessionParents";
 const LINEAGES_KEY = "symposium.sessionLineages";
 const COMPRESSION_KEY = "symposium.sessionCompression";
+const TERMINAL_STATUS_KEY = "symposium.sessionTerminalStatus";
 
 /** Old keys were `backend:guid`; strip the backend prefix to the bare GUID. */
 function toGuid(key: string): string {
@@ -48,6 +50,7 @@ export class SessionStore {
     private lineages: Record<string, string>;
 
     private compressionPresets: Record<string, string>;
+    private terminalStatuses: Record<string, SessionTerminalStatus>;
 
     constructor(private readonly memento: vscode.Memento) {
         const rawTitles = memento.get<Record<string, string>>(TITLES_KEY, {});
@@ -58,6 +61,7 @@ export class SessionStore {
         this.parents = migrateKeys(memento.get<Record<string, string>>(PARENTS_KEY, {}));
         this.lineages = migrateKeys(memento.get<Record<string, string>>(LINEAGES_KEY, {}));
         this.compressionPresets = memento.get<Record<string, string>>(COMPRESSION_KEY, {}) || {};
+        this.terminalStatuses = memento.get<Record<string, SessionTerminalStatus>>(TERMINAL_STATUS_KEY, {}) || {};
         // Consolidate legacy `backend:guid` keys to the bare GUID on disk.
         if (Object.keys(rawTitles).some((k) => k.includes(":"))) {
             void memento.update(TITLES_KEY, this.titles);
@@ -158,12 +162,14 @@ export class SessionStore {
         delete this.parents[this.key(info)];
         delete this.lineages[this.key(info)];
         delete this.compressionPresets[this.key(info)];
+        delete this.terminalStatuses[this.key(info)];
         await this.memento.update(TITLES_KEY, this.titles);
         await this.memento.update(ARCHIVED_KEY, [...this.archived]);
         await this.memento.update(PINNED_KEY, this.pinned);
         await this.memento.update(PARENTS_KEY, this.parents);
         await this.memento.update(LINEAGES_KEY, this.lineages);
         await this.memento.update(COMPRESSION_KEY, this.compressionPresets);
+        await this.memento.update(TERMINAL_STATUS_KEY, this.terminalStatuses);
     }
 
     /** Applies titles, archived + pinned (with order), then filters by showArchived. */
@@ -182,6 +188,7 @@ export class SessionStore {
                     parentId: this.parents[this.key(s)] ?? s.parentId,
                     lineageId: this.lineages[this.key(s)] ?? s.lineageId,
                     compressionPresetId: this.compressionPresets[this.key(s)],
+                    terminalStatus: this.terminalStatuses[this.key(s)] ?? s.terminalStatus,
                 };
             })
             .filter((s) => showArchived || !s.archived);
@@ -200,5 +207,13 @@ export class SessionStore {
             delete this.compressionPresets[this.key(info)];
         }
         await this.memento.update(COMPRESSION_KEY, this.compressionPresets);
+    }
+
+    /** Retains the last stopped warning/error so the sessions list survives reloads. */
+    setTerminalStatus(sessionId: string, status: SessionTerminalStatus | undefined): void {
+        if (status === this.terminalStatuses[sessionId]) { return; }
+        if (status) { this.terminalStatuses[sessionId] = status; }
+        else { delete this.terminalStatuses[sessionId]; }
+        void this.memento.update(TERMINAL_STATUS_KEY, this.terminalStatuses);
     }
 }

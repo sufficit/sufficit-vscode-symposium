@@ -38,7 +38,7 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
             }
             const disk = store.decorate(await rawSessions(), true)
                 .map((s) => {
-                    const status = runtime.statusFor(s.sessionId);
+                    const status = runtime.statusFor(s.sessionId) ?? s.terminalStatus;
                     const adapter = adapterByBackend.get(s.backend);
                     return { ...s, backendName: adapter?.displayName ?? s.backend, status };
                 });

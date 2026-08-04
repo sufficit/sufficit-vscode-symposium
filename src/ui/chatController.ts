@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { randomUUID } from "crypto";
-import { AgentAdapter, AgentSession, SessionInfo, SessionStartOptions, TodoItem } from "../adapters/types";
+import { AgentAdapter, AgentSession, SessionInfo, SessionStartOptions, TodoItem, type SessionTerminalStatus } from "../adapters/types";
 import { todosSummary } from "../adapters/todos";
 import { type TrackingMode } from "./outboundPrompt";
 import { probeRtk } from "../adapters/rtk";
@@ -29,7 +29,7 @@ export class ChatController {
     // queue on turn-end: a failed turn must never silently swallow a queued
     // message as if it were a normal continuation — the user gets to choose
     // Retry or explicitly promote/steer the queued item instead.
-    /** True when the most recent turn stopped with an error requiring attention. */ public attentionRequired = false;
+    /** Last terminal warning/error, cleared when a new turn starts. */ public attentionStatus: SessionTerminalStatus | undefined;
     private firstTitle = "";
     // One-shot outbound-prompt injection flags (policy/todo/seed/rtk/...),
     // read + written by buildDispatchOutbound() each dispatch() call.
@@ -82,7 +82,7 @@ export class ChatController {
         emit: (message) => this.emit(message), statusChanged: () => this.onStatusChange?.(),
         recordChanged: (file, added, removed) => { this.changed.record(file, added, removed); this.emitChanged(); },
         setTodos: (todos) => { this.lastTodos = todos; }, trackingMode: () => this.trackingMode,
-        markTurnFailed: () => { this.attentionRequired = true; }, turnFailed: () => this.attentionRequired,
+        markTurnFailed: () => { this.attentionStatus = "error"; }, markTurnWarning: () => { this.attentionStatus = "warning"; }, turnFailed: () => this.attentionStatus === "error",
         setLogicalTurnId: (id) => { this.lastLogicalTurnId = id; }, takeQueued: () => this.queue.shift(),
         emitQueue: () => this.emitQueue(), dispatch: (message) => { void this.dispatch(message); },
     });
@@ -127,7 +127,7 @@ export class ChatController {
         return {
             busy: () => this.busy,
             setBusy: (v) => { this.busy = v; },
-            markTurnFailed: () => { this.attentionRequired = true; },
+            markTurnFailed: () => { this.attentionStatus = "error"; },
             cancel: () => this.session?.cancel(),
             onStatusChange: () => this.onStatusChange?.(),
             emit: (m) => this.emit(m),
@@ -297,7 +297,7 @@ export class ChatController {
     private async dispatch(msg: PendingMessage): Promise<void> {
         // Gate concurrent sends before any awaited pre-dispatch work.
         this.busy = true;
-        this.attentionRequired = false;
+        this.attentionStatus = undefined;
         this.onStatusChange?.();
         try {
             await prepareDispatch(
@@ -363,7 +363,7 @@ export class ChatController {
             // normal continuation of a failed turn). Surface the error and stop;
             // the user chooses Retry or explicitly promotes/steers the queue.
             this.busy = false;
-            this.attentionRequired = true;
+            this.attentionStatus = "error";
             this.clearWatchdog();
             this.onStatusChange?.();
             this.emit({ type: "event", event: { kind: "error", message: error instanceof Error ? error.message : String(error) } });

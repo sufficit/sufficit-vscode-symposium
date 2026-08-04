@@ -321,6 +321,9 @@ export function renderSessionItem(s, depth, childCount) {
         } else if (s.status === "error") {
             statusLabel = t("sessions.status.error");
             const e = document.createElement("span"); e.className = "error"; e.title = statusLabel; statusDot.appendChild(e);
+        } else if (s.status === "warning") {
+            statusLabel = t("sessions.status.warning");
+            const w = document.createElement("span"); w.className = "warning"; w.title = statusLabel; statusDot.appendChild(w);
         } else if (s.status === "idle") {
             statusLabel = "Running session (idle)";
             const d = document.createElement("span"); d.className = "idle"; d.title = statusLabel; statusDot.appendChild(d);
@@ -347,7 +350,7 @@ export function renderSessionItem(s, depth, childCount) {
         if (s.deleting) {
             sub.textContent = "deleting…";
         } else {
-            const statusText = s.status === "working" ? "working… · " : (s.status === "idle" ? "live · " : (s.status === "error" ? t("sessions.status.error") + " · " : ""));
+            const statusText = s.status === "working" ? "working… · " : (s.status === "idle" ? "live · " : (s.status === "error" ? t("sessions.status.error") + " · " : (s.status === "warning" ? t("sessions.status.warning") + " · " : "")));
             sub.textContent = statusText + sessionBackendLabel(s) + (s.updatedAt ? " · " + relTime(s.updatedAt) : "");
         }
         sub.title = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";

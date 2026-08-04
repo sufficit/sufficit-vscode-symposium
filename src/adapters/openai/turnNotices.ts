@@ -101,7 +101,7 @@ export function activeRepeatedToolCallFingerprint(messages: ChatMessage[]): stri
  * transcript from attributing them to the assistant.
  */
 export function guardrailStopNotice(text: string): AgentEvent {
-    return { kind: "status-notice", severity: "warning", text };
+    return { kind: "status-notice", severity: "warning", text, terminal: true };
 }
 
 /** Reclassifies guardrail messages persisted by versions that emitted them as assistant text. */

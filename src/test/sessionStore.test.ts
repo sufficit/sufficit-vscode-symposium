@@ -37,3 +37,15 @@ test("SessionStore persists branch lineage across extension reloads", () => {
     assert.equal(restored[0].lineageId, parentId);
     assert.equal(restored[0].parentId, undefined);
 });
+
+test("SessionStore persists a terminal warning across extension reloads", () => {
+    const memory = new MemoryMemento();
+    const info = session("warning-session");
+    const store = new SessionStore(memory as unknown as vscode.Memento);
+    store.setTerminalStatus(info.sessionId, "warning");
+
+    const restored = new SessionStore(memory as unknown as vscode.Memento)
+        .decorate([info], true);
+
+    assert.equal(restored[0].terminalStatus, "warning");
+});

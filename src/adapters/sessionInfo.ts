@@ -1,7 +1,10 @@
 import type { AgentBackend } from "./types";
 
+/** Last terminal outcome that requires attention after a session stops. */
+export type SessionTerminalStatus = "warning" | "error";
+
 /** Live state shown by the sessions list. */
-export type SessionStatus = "working" | "idle" | "error";
+export type SessionStatus = "working" | "idle" | SessionTerminalStatus;
 
 /** A session known to a backend, listed in the sessions tree. */
 export interface SessionInfo {
@@ -28,6 +31,8 @@ export interface SessionInfo {
     pinIndex?: number;
     /** Live runtime status: a session with a running controller. */
     status?: SessionStatus;
+    /** Last warning/error outcome, retained when the extension reloads. */
+    terminalStatus?: SessionTerminalStatus;
     /** True while a permanent delete / scrub is in progress in the background. */
     deleting?: boolean;
     parentId?: string;

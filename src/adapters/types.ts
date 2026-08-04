@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 import type { SessionInfo } from "./sessionInfo";
 
-export type { SessionInfo } from "./sessionInfo";
+export type { SessionInfo, SessionTerminalStatus } from "./sessionInfo";
 
 /** Backend identifiers for the supported agent CLIs. */
 // Built-in backends are "claude" | "codex" | "copilot" | "openai"; custom
@@ -64,7 +64,7 @@ export type AgentEvent =
     | { kind: "text"; text: string; model?: string; modelLabel?: string }
     /** System-authored annotation, never assistant output.
      *  anchorIndex: conversation-row index to scroll to/highlight when clicked. */
-    | { kind: "status-notice"; text: string; severity?: SystemNoticeSeverity; anchorIndex?: number }
+    | { kind: "status-notice"; text: string; severity?: SystemNoticeSeverity; anchorIndex?: number; terminal?: boolean }
     | { kind: "thinking"; text: string }
     | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string; diff?: { old: string; new: string }[]; terminalName?: string }
     | { kind: "tool-output"; toolName?: string; toolId?: string; text: string }

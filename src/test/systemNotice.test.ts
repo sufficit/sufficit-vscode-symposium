@@ -11,6 +11,7 @@ test("OpenAI guardrail stops are system warnings, not assistant text", () => {
         kind: "status-notice",
         severity: "warning",
         text: "Stopped after repeated tool calls.",
+        terminal: true,
     });
 });
 
@@ -35,6 +36,7 @@ test("legacy persisted guardrail text is restored as a system warning", () => {
             kind: "status-notice",
             severity: "warning",
             text: "Stopped: the model repeated the same tool call 6 times without progress.",
+            terminal: true,
         },
     );
     assert.equal(legacyGuardrailStopNotice("A normal assistant reply"), null);

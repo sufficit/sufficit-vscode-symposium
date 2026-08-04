@@ -14,6 +14,7 @@ export interface ControllerEventBindings {
     setTodos: (todos: TodoItem[]) => void;
     trackingMode: () => TrackingMode | undefined;
     markTurnFailed: () => void;
+    markTurnWarning: () => void;
     setLogicalTurnId: (id: string) => void;
     takeQueued: () => PendingMessage | undefined;
     emitQueue: () => void;
@@ -44,6 +45,7 @@ export class ControllerEventHandler {
             }
         }
         if (event.kind === "error" && event.fatal !== false) { b.markTurnFailed(); }
+        if (event.kind === "status-notice" && event.terminal && event.severity === "warning") { b.markTurnWarning(); }
         if (event.kind === "turn-start") { b.setLogicalTurnId(event.logicalTurnId); }
         if (event.kind !== "turn-end") { return; }
         b.setBusy(false);

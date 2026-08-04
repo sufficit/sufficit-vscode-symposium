@@ -242,6 +242,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // Debounce status-driven refreshes (turns flip busy frequently).
     let statusTimer: ReturnType<typeof setTimeout> | undefined;
     notifyStatus = () => {
+        for (const live of runtime.liveInfos()) {
+            store.setTerminalStatus(live.sessionId, live.terminalStatus);
+        }
         if (statusTimer) {
             clearTimeout(statusTimer);
         }

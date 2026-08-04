@@ -1,6 +1,6 @@
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "../ui/chatController";
-import type { SessionStatus } from "../adapters/sessionInfo";
+import type { SessionStatus, SessionTerminalStatus } from "../adapters/sessionInfo";
 import { liveSessionStatus } from "./status";
 
 /**
@@ -60,13 +60,13 @@ export class LiveSessions {
     statusFor(sessionId: string): SessionStatus | undefined {
         const controller = this.findBySessionId(sessionId);
         if (controller) {
-            return liveSessionStatus(controller.isBusy, controller.attentionRequired);
+            return liveSessionStatus(controller.isBusy, controller.attentionStatus);
         }
         return this.followStatus.get(sessionId);
     }
 
     /** Live sessions for the list (incl. brand-new ones not yet on disk). */
-    liveInfos(): { backend: string; sessionId: string; title: string; cwd: string; status: SessionStatus; parentId?: string; lineageId?: string }[] {
+    liveInfos(): { backend: string; sessionId: string; title: string; cwd: string; status: SessionStatus; terminalStatus?: SessionTerminalStatus; parentId?: string; lineageId?: string }[] {
         const out = [];
         for (const [key, c] of this.controllers) {
             out.push({
@@ -74,7 +74,8 @@ export class LiveSessions {
                 sessionId: c.sessionId || key,
                 title: c.title,
                 cwd: c.cwd,
-                status: liveSessionStatus(c.isBusy, c.attentionRequired),
+                status: liveSessionStatus(c.isBusy, c.attentionStatus),
+                terminalStatus: c.attentionStatus,
                 parentId: c.parentId,
                 lineageId: c.lineageId,
             });
