@@ -306,16 +306,24 @@ export function renderSessionItem(s, depth, childCount) {
             el.addEventListener("drop", (e) => { e.preventDefault(); el.classList.remove("dropTarget"); dropPinnedOn(s.sessionId); });
         }
 
-        // Live status indicator: spinner = working, green dot = idle/live.
+        // Live status indicator: spinner = working, green dot = idle/live,
+        // red dot = the last turn stopped with an error requiring attention.
         // Subagent sessions (parentId != null) show robot icon for visual distinction.
         const statusDot = document.createElement("div");
         statusDot.className = "statusDot";
+        let statusLabel = "Stored session";
         if (s.deleting) {
-            const sp = document.createElement("span"); sp.className = "spinner"; sp.title = "Deleting…"; statusDot.appendChild(sp);
+            statusLabel = "Deleting session";
+            const sp = document.createElement("span"); sp.className = "spinner"; sp.title = statusLabel; statusDot.appendChild(sp);
         } else if (s.status === "working") {
-            const w = document.createElement("span"); w.className = "work"; w.title = "Agent working…"; statusDot.appendChild(w);
+            statusLabel = "Agent working";
+            const w = document.createElement("span"); w.className = "work"; w.title = statusLabel; statusDot.appendChild(w);
+        } else if (s.status === "error") {
+            statusLabel = t("sessions.status.error");
+            const e = document.createElement("span"); e.className = "error"; e.title = statusLabel; statusDot.appendChild(e);
         } else if (s.status === "idle") {
-            const d = document.createElement("span"); d.className = "idle"; d.title = "Running session (idle)"; statusDot.appendChild(d);
+            statusLabel = "Running session (idle)";
+            const d = document.createElement("span"); d.className = "idle"; d.title = statusLabel; statusDot.appendChild(d);
         } else {
             const ic = svgIcon(isSubagent ? "robot" : "chat");
             ic.classList.add("stored");
@@ -323,6 +331,7 @@ export function renderSessionItem(s, depth, childCount) {
             ic.setAttribute("aria-hidden", "true");
             statusDot.appendChild(ic);
         }
+        el.setAttribute("aria-label", `${s.title} — ${statusLabel}`);
 
         const body = document.createElement("div");
         body.className = "body";
@@ -338,7 +347,7 @@ export function renderSessionItem(s, depth, childCount) {
         if (s.deleting) {
             sub.textContent = "deleting…";
         } else {
-            const statusText = s.status === "working" ? "working… · " : (s.status === "idle" ? "live · " : "");
+            const statusText = s.status === "working" ? "working… · " : (s.status === "idle" ? "live · " : (s.status === "error" ? t("sessions.status.error") + " · " : ""));
             sub.textContent = statusText + sessionBackendLabel(s) + (s.updatedAt ? " · " + relTime(s.updatedAt) : "");
         }
         sub.title = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";

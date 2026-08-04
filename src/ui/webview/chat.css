@@ -351,6 +351,7 @@
     }
     .sessionItem .statusDot { width: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
     .sessionItem .statusDot .idle { width: 6px; height: 6px; border-radius: 50%; background: var(--vscode-charts-green, #89d185); opacity: 0.8; }
+    .sessionItem .statusDot .error { width: 7px; height: 7px; border-radius: 50%; background: var(--vscode-errorForeground, #f14c4c); }
     .sessionItem .statusDot .work {
         width: 11px; height: 11px; border-radius: 50%;
         border: 2px solid color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 30%, transparent);

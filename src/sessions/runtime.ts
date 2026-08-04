@@ -1,5 +1,7 @@
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "../ui/chatController";
+import type { SessionStatus } from "../adapters/sessionInfo";
+import { liveSessionStatus } from "./status";
 
 /**
  * Registry of live ChatControllers, owned at the extension level so an agent
@@ -55,16 +57,16 @@ export class LiveSessions {
      * Live status for a session id: a local controller's working/idle if one
      * exists, else the inferred status of a followed session, else undefined.
      */
-    statusFor(sessionId: string): "working" | "idle" | undefined {
+    statusFor(sessionId: string): SessionStatus | undefined {
         const controller = this.findBySessionId(sessionId);
         if (controller) {
-            return controller.isBusy ? "working" : "idle";
+            return liveSessionStatus(controller.isBusy, controller.attentionRequired);
         }
         return this.followStatus.get(sessionId);
     }
 
     /** Live sessions for the list (incl. brand-new ones not yet on disk). */
-    liveInfos(): { backend: string; sessionId: string; title: string; cwd: string; status: "working" | "idle"; parentId?: string; lineageId?: string }[] {
+    liveInfos(): { backend: string; sessionId: string; title: string; cwd: string; status: SessionStatus; parentId?: string; lineageId?: string }[] {
         const out = [];
         for (const [key, c] of this.controllers) {
             out.push({
@@ -72,7 +74,7 @@ export class LiveSessions {
                 sessionId: c.sessionId || key,
                 title: c.title,
                 cwd: c.cwd,
-                status: c.isBusy ? "working" as const : "idle" as const,
+                status: liveSessionStatus(c.isBusy, c.attentionRequired),
                 parentId: c.parentId,
                 lineageId: c.lineageId,
             });

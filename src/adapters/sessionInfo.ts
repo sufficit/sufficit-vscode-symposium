@@ -1,5 +1,8 @@
 import type { AgentBackend } from "./types";
 
+/** Live state shown by the sessions list. */
+export type SessionStatus = "working" | "idle" | "error";
+
 /** A session known to a backend, listed in the sessions tree. */
 export interface SessionInfo {
     backend: AgentBackend;
@@ -24,7 +27,7 @@ export interface SessionInfo {
     /** Order within the pinned group (0 = first). */
     pinIndex?: number;
     /** Live runtime status: a session with a running controller. */
-    status?: "working" | "idle";
+    status?: SessionStatus;
     /** True while a permanent delete / scrub is in progress in the background. */
     deleting?: boolean;
     parentId?: string;

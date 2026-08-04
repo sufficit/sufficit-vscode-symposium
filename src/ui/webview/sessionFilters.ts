@@ -44,6 +44,7 @@ export function matchesSessionFilters(s: any) {
     if (sessionStatusFilter.length) {
         const statusTags = new Set<string>();
         if (s.status === "working") { statusTags.add("working"); }
+        if (s.status === "error") { statusTags.add("error"); }
         if (s.status === "idle" || !s.status) { statusTags.add("idle"); }
         if (s.deleting) { statusTags.add("deleting"); }
         if (s.parentId) { statusTags.add("subagent"); }
@@ -165,6 +166,7 @@ export function openSessionsFilterMenu(anchorEl: HTMLElement) {
     appendFilterSection(t("sessions.filter.status"), [
         { label: t("sessions.status.working"), active: sessionStatusFilter.includes("working"), onToggle: () => toggleIn(sessionStatusFilter, "working", setSessionStatusFilter) },
         { label: t("sessions.status.idle"), active: sessionStatusFilter.includes("idle"), onToggle: () => toggleIn(sessionStatusFilter, "idle", setSessionStatusFilter) },
+        { label: t("sessions.status.error"), active: sessionStatusFilter.includes("error"), onToggle: () => toggleIn(sessionStatusFilter, "error", setSessionStatusFilter) },
         { label: t("sessions.status.subagent"), active: sessionStatusFilter.includes("subagent"), onToggle: () => toggleIn(sessionStatusFilter, "subagent", setSessionStatusFilter) },
         { label: t("sessions.status.deleting"), active: sessionStatusFilter.includes("deleting"), onToggle: () => toggleIn(sessionStatusFilter, "deleting", setSessionStatusFilter) },
     ]);

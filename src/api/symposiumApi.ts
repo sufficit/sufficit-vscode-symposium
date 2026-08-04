@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { LiveSessions } from "../sessions/runtime";
+import type { SessionStatus } from "../adapters/sessionInfo";
 import {
     createResource, deleteResource, importSkill, readAgentBody, readAgentTools, readState, readToolCredential,
     ResourceEntry, ResourceKind, rootDir, scanAll, scanForeignSkills, SyncState,
@@ -29,7 +30,7 @@ export interface ApiSessionInfo {
     sessionId: string;
     title: string;
     cwd: string;
-    status: "working" | "idle";
+    status: SessionStatus;
 }
 
 export type SendMode = "send" | "queue" | "steer";
@@ -50,7 +51,7 @@ export interface SymposiumApi {
         /** Live sessions (running or idle) currently managed by Symposium. */
         list(): ApiSessionInfo[];
         /** Live status for a session id. */
-        status(id: string): "working" | "idle" | undefined;
+        status(id: string): SessionStatus | undefined;
         /**
          * Starts a new headless session on a backend. Returns an address (the
          * registry key) usable with send/follow/interrupt immediately, before
