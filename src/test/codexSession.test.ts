@@ -60,7 +60,7 @@ test("Codex applies a model picker change to the next exec turn", () => {
 
 test("reasoning picker places the effective default without duplicating its level", () => {
     assert.deepEqual(
-        buildReasoningMenuOptions(["default", "minimal", "low", "medium", "high", "xhigh"], "medium"),
+        buildReasoningMenuOptions(["medium", "default", "high", "xhigh", "low", "minimal", "medium"], "medium"),
         [
             { value: "minimal", label: "minimal" },
             { value: "low", label: "low" },
