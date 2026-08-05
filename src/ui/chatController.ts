@@ -154,7 +154,7 @@ export class ChatController {
         this.session?.setModel?.(model);
     }
     /** Retorna o modelo atual da sessão. */
-    getModel(): string { return this.options.model || ""; }
+    getModel(): string { return this.session?.getModel?.() || this.options.model || ""; }
 
     /** Plain-text user/assistant exchange, for backend handoff. */
     transcript(): string { return transcriptText(this.stream.messages); }

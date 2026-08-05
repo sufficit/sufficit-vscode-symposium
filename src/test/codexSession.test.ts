@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { parseCodexModelCatalog } from "../adapters/codex/models";
 import { buildHttpMcpWrapperScript, codexWorkspaceArgs, mcpHttpWrapperPath } from "../adapters/codex/codexMcpConfig";
-import { codexModelArgs, codexPromptArgs } from "../adapters/codex/session";
+import { CodexSession, codexModelArgs, codexPromptArgs } from "../adapters/codex/session";
 import { looksInjected } from "../adapters/codex/transcript";
 import { buildReasoningMenuOptions } from "../ui/reasoningOptions";
 
@@ -56,6 +56,13 @@ test("Codex applies a model picker change to the next exec turn", () => {
     assert.deepEqual(codexModelArgs("gpt-5.6", "gpt-5.5-codex"), ["--model", "gpt-5.6"]);
     assert.deepEqual(codexModelArgs("default", "gpt-5.5-codex"), ["--model", "gpt-5.5-codex"]);
     assert.deepEqual(codexModelArgs(undefined, ""), []);
+});
+
+test("Codex exposes the latest effective model for session restoration", () => {
+    const session = new CodexSession({ executable: "codex", model: "gpt-5.6-sol", reasoning: "default", approvalPolicy: "admin", sandboxMode: "danger-full-access" }, { cwd: process.cwd(), model: "gpt-5.6-sol" });
+    (session as unknown as { handleLine(line: string): void }).handleLine(JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna" } }));
+    assert.equal(session.getModel(), "gpt-5.6-luna");
+    session.dispose();
 });
 
 test("reasoning picker places the effective default without duplicating its level", () => {

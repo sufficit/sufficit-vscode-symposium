@@ -55,6 +55,8 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.effectiveModel = this.options.model || this.config.model;
     }
 
+    getModel(): string { return this.effectiveModel || this.options.model || this.config.model; }
+
     send(text: string): void {
         // A mid-turn send must not leave two `codex exec` processes writing
         // the same rollout. Cancel the in-flight child before starting another.

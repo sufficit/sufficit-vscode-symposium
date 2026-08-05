@@ -290,6 +290,8 @@ export interface AgentSession extends EventEmitter {
      * request is intentionally left unchanged.
      */
     setModel?(model: string): void;
+    /** Effective model used by the latest backend turn, when available. */
+    getModel?(): string;
     /** Interrupt the current turn if the backend supports it. */
     cancel(): void;
     dispose(): void;

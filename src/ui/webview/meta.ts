@@ -13,6 +13,7 @@ import { bootComplete, bootStep, bootTimer } from "./boot";
 import { root, chatTitle, agentBadge, configBtn, copySessionBtn, modelPicker, reasoningPicker, sendMode, switchAgentBtn, remoteAccessBtn } from "./dom";
 import { svgIcon } from "./icons";
 import { activeSessionId, setAgentLabels, setOpenInPref, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveSessionId, setAiToolsAvailable, setAiToolsEnabled, setBootstrapPath, setBusy, setCurrentBackend, setCurrentBackendName, setPermissionDefault, setPermissionModes, setPermissionValue, setSideMode } from "./state";
+import { preserveSelectedModel } from "./modelCatalog";
 
 /** Apply a `meta` message payload (session resolved / re-meta). */
 export function applyMeta(data: any): void {
@@ -54,7 +55,7 @@ export function applyMeta(data: any): void {
     setModelDefault(data.modelDefault || "");
     setModelLabels(data.modelLabels || {});
     setReasoningDefault(data.reasoningDefault || "");
-    setModelList(data.models || []);
+    setModelList(preserveSelectedModel(data.models || [], data.resumed ? data.sessionModel || "" : ""));
     setPinnedModels(data.pinnedModels || []);
     // A resumed session owns its last-used model. A new session must start
     // from the configured default, even when the previous session selected a

@@ -21,6 +21,7 @@ import { renderAgentPicker, refreshAgentPicker, hideAgentPicker } from "./agentP
 import { log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge, chatTitle } from "./dom";
 import { sessions, busy, activeModel, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setBusy, setCommands, setConversationRows, setPendingSessionSwitch, setQueued, setSessions, setSideMode, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPendingSwitchAnchor } from "./state";
 import { resolveMarkdownImage } from "./markdown";
+import { preserveSelectedModel } from "./modelCatalog";
 
 let historyCycle = 0;
 
@@ -159,7 +160,7 @@ window.addEventListener("message", ({ data }) => {
             // the picker, keep the user's current pick if it survived, else
             // fall back to the first entry. Don't clobber an explicit
             // "default" selection.
-            const newList = data.models || [];
+            const newList = preserveSelectedModel(data.models || [], modelValue);
             if (newList.length) {
                 setModelList(newList);
                 setModelLabels(data.labels || modelLabels);
