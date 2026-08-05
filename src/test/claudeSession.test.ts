@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { ClaudeSession } from "../adapters/claude/session";
 import { claudeResumeSessionId } from "../adapters/claude/resume";
 import type { AgentEvent } from "../adapters/types";
@@ -60,6 +61,25 @@ test("Claude keeps normal session ids and titles unchanged", () => {
     );
     assert.equal(claudeResumeSessionId("my named session"), "my named session");
     assert.equal(claudeResumeSessionId("not-a-uuid/subagents/agent-123"), "not-a-uuid/subagents/agent-123");
+});
+
+test("Claude treats the interrupted result from steer as a normal turn end", () => {
+    const session = new ClaudeSession({ executable: "claude", model: "", permissionMode: "plan", env: {} }, { cwd: process.cwd() });
+    const events: AgentEvent[] = [];
+    session.on("event", (event: AgentEvent) => events.push(event));
+    const sourceChild = {} as ChildProcessWithoutNullStreams;
+    const internals = session as unknown as {
+        handleLine(line: string, sourceChild?: ChildProcessWithoutNullStreams): void;
+        cancelledChildren: WeakSet<ChildProcessWithoutNullStreams>;
+    };
+    const receive = internals.handleLine.bind(session);
+
+    internals.cancelledChildren.add(sourceChild);
+    receive(JSON.stringify({ type: "result", is_error: true, result: "Request ended before the agent could reply." }), sourceChild);
+
+    assert.equal(events.some((event) => event.kind === "error"), false);
+    assert.equal(events.at(-1)?.kind, "turn-end");
+    session.dispose();
 });
 
 test("Claude emits native TaskCreate/TaskUpdate snapshots for the plan panel", () => {

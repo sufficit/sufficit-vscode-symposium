@@ -36,7 +36,9 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     private streamedThinking = false; // got thinking_delta this turn (skip full block)
     private warnedRootBypass = false; // emitted the root+bypassPermissions notice once
     private warnedUnenforcedMode = false; // emitted the manager/user "not yet enforced" notice once
-    private cancelled = false;        // cancel() was called (steer) — suppress exit error
+    // Cancellation belongs to the child that received SIGINT. A new child may
+    // be spawned before the old one emits its final result/exit events.
+    private readonly cancelledChildren = new WeakSet<ChildProcessWithoutNullStreams>();
     private spawnedPermission = "";   // permission mode the live child was spawned with
     // Tool calls seen this turn with no matching tool_result yet. A backgrounded
     // Task/Agent call's own result can arrive well after the top-level "result"
@@ -155,13 +157,15 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         this.child = child;
 
         const rl = readline.createInterface({ input: child.stdout });
-        rl.on("line", (line) => this.handleLine(line));
+        rl.on("line", (line) => this.handleLine(line, child));
 
         let stderr = "";
         child.stderr.on("data", (chunk) => { stderr += String(chunk); });
         child.on("error", (error) => {
             this.config.log?.(`[claude] spawn error: ${error.message}`);
-            this.emit("event", { kind: "error", message: `claude spawn failed (${executable}): ${error.message}` });
+            if (!this.cancelledChildren.has(child)) {
+                this.emit("event", { kind: "error", message: `claude spawn failed (${executable}): ${error.message}` });
+            }
             // A failed spawn (notably ENOENT) does not reliably emit `exit`.
             // Drop the dead ChildProcess here so a later send can actually
             // spawn again instead of writing to its unusable stdin forever.
@@ -169,16 +173,18 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             this.turnActive = false;
             this.pendingToolIds.clear();
             this.deferredTurnEnd = undefined;
+            this.cancelledChildren.delete(child);
             this.emit("event", { kind: "turn-end" });
         });
         child.on("exit", (code) => {
+            const cancelled = this.cancelledChildren.has(child);
             // SIGINT from cancel/steer → exit code 130 (or null). Don't emit a
             // crash error; the queue will drain the steered message on turn-end.
-            if (!this.disposed && !this.cancelled && code !== 0 && code !== null) {
+            if (!this.disposed && !cancelled && code !== 0 && code !== null) {
                 const detail = stderr.trim().split("\n").slice(-3).join(" ");
                 this.emit("event", { kind: "error", message: `claude exited with code ${code}: ${detail}` });
             }
-            this.cancelled = false;   // reset for next spawn
+            this.cancelledChildren.delete(child);
             if (this.child === child) { this.child = undefined; }
             // The process ended (incl. SIGINT from cancel/steer) without a final
             // result event — close the turn so the UI unblocks and the queue runs.
@@ -192,7 +198,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         return child;
     }
 
-    private handleLine(line: string): void {
+    private handleLine(line: string, sourceChild?: ChildProcessWithoutNullStreams): void {
         if (!line.trim()) {
             return;
         }
@@ -297,7 +303,10 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             case "result": {
                 this.sessionId = typeof event.session_id === "string" ? event.session_id : this.sessionId;
                 this.streamedText = false; this.streamedThinking = false;   // next turn streams afresh
-                if (event.is_error) {
+                // Claude emits a normal is_error result when SIGINT interrupts
+                // a turn. It is not a failed request: the queued steer must be
+                // released by the following turn-end event.
+                if (event.is_error && !(sourceChild && this.cancelledChildren.has(sourceChild))) {
                     this.emit("event", { kind: "error", message: typeof event.result === "string" ? event.result : typeof event.subtype === "string" ? event.subtype : "unknown error" });
                 }
                 const u = typeof event.usage === "object" && event.usage !== null ? event.usage as Record<string, unknown> : (typeof event.message === "object" && event.message !== null ? (event.message as { usage?: unknown }).usage as Record<string, unknown> | undefined : undefined);
@@ -356,8 +365,8 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     }
 
     cancel(): void {
-        this.cancelled = true;   // mark so exit handler doesn't emit a crash error
         if (this.child) {
+            this.cancelledChildren.add(this.child); // suppress cancel result/exit errors
             this.child.kill("SIGINT");
             // Clear immediately so a rapid send() after steer (before the exit
             // event fires) doesn't try to reuse the dying process — ensureStarted()
