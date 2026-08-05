@@ -19,6 +19,7 @@ import { buildDispatchOutbound } from "./controllerDispatchPrompt";
 import { prepareDispatch } from "./controllerDispatchPrep";
 import { ControllerEventHandler } from "./controllerEventHandler";
 import { loadControllerHistory } from "./controllerHistory";
+import { stableSessionKey } from "./sessionIdentity";
 
 /** Owns one live dialogue process; view switches only detach/replay the stream. */
 export class ChatController {
@@ -90,19 +91,18 @@ export class ChatController {
     constructor(
         private readonly adapter: AgentAdapter,
         private readonly options: SessionStartOptions,
-        // Fired when the running/idle state changes, so the sessions list can
-        // update its per-session working indicator.
+        // Fired when the running/idle state changes.
         private readonly onStatusChange?: () => void,
     ) {
-        // Probe rtk once so the RTK preamble is only injected (costing tokens)
-        // when rtk is actually callable in the tool shell. Re-probeable from the UI.
+        // Probe rtk once so the preamble is only injected when callable.
         void probeRtk(options.cwd);
     }
 
-    /** The live session id, once the backend has reported it. */
     get sessionId(): string | undefined {
         return this.session?.sessionId ?? this.options.resumeSessionId;
     }
+
+    get sessionKey(): string | undefined { return stableSessionKey(this.options.resumeSessionId, this.session?.sessionId); }
 
     /** True while a turn is running (agent working). */
     get isBusy(): boolean {

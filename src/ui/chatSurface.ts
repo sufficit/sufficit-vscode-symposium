@@ -329,17 +329,11 @@ export class ChatSurface {
         if (tid) { this.deps.runtime.clearFollowStatus(tid); }
     }
 
-    /**
-     * The session shown here was deleted elsewhere: if it's the one currently
-     * open, tear the binding down and fall back to another session (or the empty
-     * state) so a deleted session can't stay open in the conversation pane.
-     */
+    /** Close the active pane when its session is deleted elsewhere. */
     sessionDeleted(sessionId: string): void {
-        if (this.sid() !== sessionId) { return; }
-        // The runtime already disposed the controller on delete; just drop refs.
-        this.controller = undefined;
-        this.detachTerminal();
-        this.detachFollow();
+        if (this.activeSessionId() !== sessionId) { return; }
+        // Detach surface-bound mirrors before runtime disposal.
+        this.detachActive();
         // Clear the pane to the empty state — do NOT auto-start a new dialogue
         // (that spawned a stray live "New session" on every delete). The next
         // send (or picking a session) starts one.
@@ -355,8 +349,11 @@ export class ChatSurface {
 
     /** Active session id (snapshots are keyed by it). */
     private sid(): string {
-        return this.controller?.sessionId ?? "";
+        return this.controller?.sessionKey ?? this.controller?.sessionId ?? "";
     }
+
+    /** Exact session currently rendered by this surface, including mirrors. */
+    private activeSessionId(): string { return this.sid() || this.terminalSession?.currentSessionId || this.followedSessionId || ""; }
 
     /**
      * Accepts a file's changes. The session snapshot baseline is dropped so it

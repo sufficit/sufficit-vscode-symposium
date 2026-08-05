@@ -151,10 +151,13 @@ export function registerSessionCommands(ctx: CommandContext): void {
                     return { ok: false, title: info.title };
                 }
             }
-            runtime.disposeBySessionId(info.sessionId); // stop it if running
             // Close the conversation pane now if it's showing this session.
+            // Do this before disposing the controller: a brand-new session has
+            // no resume id, so dispose() would erase the only in-memory id the
+            // surface can use to recognize the active pane.
             chatView.sessionDeleted(info.sessionId);
             ChatPanel.sessionDeleted(info.sessionId);
+            runtime.disposeBySessionId(info.sessionId); // stop it if running
             if (!silent) { refreshAll(); }
             try {
                 snapshots.clearSession(info.sessionId);      // drop in-memory baselines

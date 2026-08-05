@@ -352,7 +352,7 @@ export class SurfaceDialogues {
             busy: controller.isBusy,
             permissionModes: adapter.permissionModes?.() ?? [],
             permission: adapter.defaultPermission?.() ?? "default",
-            sessionId: controller.sessionId,
+            sessionId: controller.sessionKey ?? controller.sessionId,
             title,
             sessionsSide,
             chatOnly: this.d.chatOnly,
