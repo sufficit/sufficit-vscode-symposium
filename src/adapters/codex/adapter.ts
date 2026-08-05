@@ -7,7 +7,7 @@ import { resolveExecutable } from "../exec";
 import { scrubJsonlLines, scrubSqliteRows } from "../scrub";
 import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
 import { PERMISSION_MODES } from "../aiTools";
-import { DEFAULT_REASONING_EFFORT } from "../reasoning";
+import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../reasoning";
 import {
     AgentAdapter,
     AgentSession,
@@ -108,7 +108,12 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     start(options: SessionStartOptions): AgentSession {
-        return new CodexSession(this.getConfig(), options);
+        const config = this.getConfig();
+        const mappedConfig = { ...config, reasoning: nativeReasoning(REASONING_MAPS.codex, config.reasoning) };
+        const reasoning = options.reasoning === undefined
+            ? undefined
+            : nativeReasoning(REASONING_MAPS.codex, options.reasoning);
+        return new CodexSession(mappedConfig, reasoning === undefined ? options : { ...options, reasoning });
     }
 
     models(): string[] {
@@ -140,8 +145,10 @@ export class CodexAdapter implements AgentAdapter {
 
     // codex -c model_reasoning_effort="<level>" (0.139.0). "default" = omit.
     reasoningLevels(): string[] {
-        return ["default", "minimal", "low", "medium", "high"];
+        return ["default", ...Object.keys(REASONING_MAPS.codex)];
     }
+
+    reasoningMap(): Record<string, string> { return { ...REASONING_MAPS.codex }; }
 
     defaultReasoning(): string { return DEFAULT_REASONING_EFFORT.codex; }
 

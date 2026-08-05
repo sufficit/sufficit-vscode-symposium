@@ -1,5 +1,5 @@
 // meta case body extracted from dispatch.ts. Mechanical move; no behaviour change.
-import { renderChips, setBrowserOpen } from "./composer";
+import { renderChips, restoreComposerDraft, setBrowserOpen } from "./composer";
 import { append } from "./messages";
 import { startWorkingSet } from "./panels";
 import { t } from "./i18n";
@@ -16,6 +16,8 @@ import { activeSessionId, setAgentLabels, setOpenInPref, setActiveFile, setActiv
 
 /** Apply a `meta` message payload (session resolved / re-meta). */
 export function applyMeta(data: any): void {
+    const nextSessionId = data.sessionId || "";
+    const nextBackend = data.backend || "";
     setSideMode(data.sessionsSide || "auto");
     root.classList.toggle("dev-mode", !!data.devMode);
     if (typeof data.openIn === "string") { setOpenInPref(data.openIn); }
@@ -25,7 +27,7 @@ export function applyMeta(data: any): void {
     setBusy(!!data.busy);
     root.classList.toggle("chat-only", !!data.chatOnly);
     scheduleLayout();   // apply sessions-side after the host dimensions settle
-    setActiveSessionId(data.sessionId || "");
+    setActiveSessionId(nextSessionId);
     copySessionBtn.style.display = "inline-flex";   // a session surface is open
     clearTimeout(bootTimer); bootStep("host", null, "ok"); bootStep("session", "Session ready", "ok"); bootComplete();
     startWorkingSet(activeSessionId);   // bind edited-files set to this session
@@ -54,16 +56,17 @@ export function applyMeta(data: any): void {
     setReasoningDefault(data.reasoningDefault || "");
     setModelList(data.models || []);
     setPinnedModels(data.pinnedModels || []);
-    // Keep the user's chosen model across re-meta (e.g. edit-resend,
-    // handoff) when it's still offered. Otherwise pick the right
-    // starting model: a resumed session restores its last-used model
-    // (data.sessionModel), a new session honors the configured default
-    // (data.modelDefault), and only then falls back to the first model.
-    // A resumed session owns its last-used model. Reapply it even when the
-    // previous session exposed the same catalog; otherwise the picker keeps
-    // the prior session's value and silently lies about the active Codex model.
+    // A resumed session owns its last-used model. A new session must start
+    // from the configured default, even when the previous session selected a
+    // different model that is still present in the catalog.
     if (data.resumed && data.sessionModel) {
         setModelValue(data.sessionModel);
+    } else if (!data.resumed) {
+        setModelValue(
+            modelDefault && modelDefault !== "default" && modelList.includes(modelDefault)
+                ? modelDefault
+                : modelList[0] || "",
+        );
     } else if (!modelValue || (modelValue !== "default" && !modelList.includes(modelValue))) {
         if (modelDefault && (modelDefault === "default" || modelList.includes(modelDefault))) {
             setModelValue(modelDefault);
@@ -105,6 +108,7 @@ export function applyMeta(data: any): void {
         codexSubagentBlocked ? t("chat.composer.codexSubagent.placeholder") : t("chat.composer.placeholder"),
         t("chat.composer.placeholder"),
     );
+    restoreComposerDraft(nextBackend, nextSessionId);
     document.getElementById("composer").style.display = data.readOnly && !codexSubagentBlocked ? "none" : "flex";
     if (codexSubagentBlocked) {
         append("meta", blockedNotice);

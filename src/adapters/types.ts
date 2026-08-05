@@ -357,9 +357,11 @@ export interface AgentAdapter {
      * with a static model list omit it.
      */
     refreshModels?(force?: boolean): Promise<{ models: string[]; labels?: Record<string, string> }>;
-    /** Reasoning/thinking effort levels for the picker; first entry = CLI default (no flag). */
+    /** Canonical Symposium effort levels supported by this adapter; first entry = no override. */
     reasoningLevels?(): string[];
-    /** Effective effort used by the backend when no explicit picker override is sent. */
+    /** Maps canonical Symposium effort names to native CLI/API values. */
+    reasoningMap?(): Record<string, string>;
+    /** Effective canonical effort used by the backend when no explicit override is sent. */
     defaultReasoning?(): string;
     /** Permission/approval modes for the config menu (backend-specific). */
     permissionModes?(): string[];

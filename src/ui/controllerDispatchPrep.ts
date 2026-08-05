@@ -1,4 +1,5 @@
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
+import { nativeReasoning } from "../adapters/reasoning";
 import { HubClient } from "../sync/hubClient";
 import { fetchLatestCheckpoint } from "../sync/tasks";
 import { PendingMessage } from "./controllerQueue";
@@ -55,8 +56,9 @@ export async function prepareDispatch(ctx: DispatchPrepContext, msg: PendingMess
     if (msg.model && msg.model !== "default" && msg.model !== "auto") {
         ctx.options.model = msg.model;
     }
-    if (msg.reasoning && msg.reasoning !== "default") {
-        ctx.options.reasoning = msg.reasoning;
+    if (typeof msg.reasoning === "string") {
+        const map = ctx.adapter.reasoningMap?.();
+        ctx.options.reasoning = map ? nativeReasoning(map, msg.reasoning) : msg.reasoning;
     }
     if (msg.permission) {
         ctx.options.permission = msg.permission;

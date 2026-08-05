@@ -6,6 +6,7 @@ import { parseCodexModelCatalog } from "../adapters/codex/models";
 import { buildHttpMcpWrapperScript, codexWorkspaceArgs, mcpHttpWrapperPath } from "../adapters/codex/codexMcpConfig";
 import { codexModelArgs, codexPromptArgs } from "../adapters/codex/session";
 import { looksInjected } from "../adapters/codex/transcript";
+import { buildReasoningMenuOptions } from "../ui/reasoningOptions";
 
 test("HTTP MCP wrapper reads URL and headers from mcp.json at runtime", () => {
     const script = buildHttpMcpWrapperScript("/tmp/mcp.json", "sufficit'quoted");
@@ -55,6 +56,19 @@ test("Codex applies a model picker change to the next exec turn", () => {
     assert.deepEqual(codexModelArgs("gpt-5.6", "gpt-5.5-codex"), ["--model", "gpt-5.6"]);
     assert.deepEqual(codexModelArgs("default", "gpt-5.5-codex"), ["--model", "gpt-5.5-codex"]);
     assert.deepEqual(codexModelArgs(undefined, ""), []);
+});
+
+test("reasoning picker places the effective default without duplicating its level", () => {
+    assert.deepEqual(
+        buildReasoningMenuOptions(["default", "minimal", "low", "medium", "high", "xhigh"], "medium"),
+        [
+            { value: "minimal", label: "minimal" },
+            { value: "low", label: "low" },
+            { value: "default", label: "medium (default)" },
+            { value: "high", label: "high" },
+            { value: "xhigh", label: "xhigh" },
+        ],
+    );
 });
 
 test("Codex reads fresh and resumed prompts from stdin instead of argv", () => {

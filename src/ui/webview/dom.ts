@@ -25,6 +25,7 @@ export const sendCaret = document.getElementById("sendCaret") as HTMLButtonEleme
 export const sendIcon = document.getElementById("sendIcon") as HTMLElement;
 export const sendGroup = document.getElementById("sendGroup") as HTMLElement;
 export const stopBtn = document.getElementById("stopBtn") as HTMLButtonElement;
+export const cancelEditBtn = document.getElementById("cancelEdit") as HTMLButtonElement;
 export const switchAgentBtn = document.getElementById("switchAgentBtn") as HTMLButtonElement;
 export const tipEl = document.getElementById("tip") as HTMLElement;
 export const copySessionBtn = document.getElementById("copySessionBtn") as HTMLButtonElement;

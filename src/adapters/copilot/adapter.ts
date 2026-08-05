@@ -7,7 +7,7 @@ import { resolveExecutable } from "../exec";
 import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
 import { TODO_INJECTION } from "../todos";
 import { PERMISSION_MODES } from "../aiTools";
-import { DEFAULT_REASONING_EFFORT } from "../reasoning";
+import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../reasoning";
 import {
     AgentAdapter,
     AgentSession,
@@ -76,7 +76,10 @@ export class CopilotAdapter implements AgentAdapter {
     }
 
     start(options: SessionStartOptions): AgentSession {
-        return new CopilotSession(this.getConfig(), options);
+        const reasoning = options.reasoning === undefined
+            ? undefined
+            : nativeReasoning(REASONING_MAPS.copilot, options.reasoning);
+        return new CopilotSession(this.getConfig(), reasoning === undefined ? options : { ...options, reasoning });
     }
 
     models(): string[] {
@@ -152,8 +155,10 @@ export class CopilotAdapter implements AgentAdapter {
 
     // copilot --reasoning-effort <level> (1.0.61). "default" = omit.
     reasoningLevels(): string[] {
-        return ["default", "low", "medium", "high", "xhigh"];
+        return ["default", ...Object.keys(REASONING_MAPS.copilot)];
     }
+
+    reasoningMap(): Record<string, string> { return { ...REASONING_MAPS.copilot }; }
 
     defaultReasoning(): string { return DEFAULT_REASONING_EFFORT.copilot; }
 

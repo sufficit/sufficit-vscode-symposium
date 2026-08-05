@@ -2,7 +2,7 @@
   "name": "sufficit-vscode-symposium",
   "displayName": "Sufficit Symposium",
   "description": "Symposium (\u03c3\u03c5\u03bc\u03c0\u03cc\u03c3\u03b9\u03bf\u03bd) \u2014 host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "2026.803.5",
+  "version": "2026.803.6",
   "publisher": "sufficit",
   "license": "MIT",
   "icon": "media/symposium-icon.png",
@@ -695,8 +695,7 @@
             "low",
             "medium",
             "high",
-            "xhigh",
-            "max"
+            "xhigh"
           ],
           "default": "default",
           "description": "Default reasoning/thinking effort for Claude terminal sessions (claude --effort). 'default' omits the flag."
@@ -765,7 +764,8 @@
             "minimal",
             "low",
             "medium",
-            "high"
+            "high",
+            "xhigh"
           ],
           "default": "default",
           "description": "Default reasoning effort for Codex terminal sessions (codex -c model_reasoning_effort). 'default' omits it."
@@ -910,7 +910,8 @@
             "minimal",
             "low",
             "medium",
-            "high"
+            "high",
+            "xhigh"
           ],
           "default": "default",
           "description": "Default reasoning_effort for models that support it. 'default' omits the parameter."

@@ -9,6 +9,7 @@ import { restartFromMessage, retryLastMessage, editResend } from "./surfaceBranc
 import { handleControllerEvent } from "./surfaceDialoguesAttach";
 import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import { DEFAULT_BUSY_SEND_MODE } from "./sendMode";
+import { canonicalReasoning } from "../adapters/reasoning";
 
 /**
  * Dialogue lifecycle for a chat surface: opening a dialogue (new / resumed /
@@ -317,6 +318,8 @@ export class SurfaceDialogues {
 
         const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
         const configuredReasoning = vscode.workspace.getConfiguration("symposium." + adapter.backend).get<string>("reasoning", "default");
+        const reasoningMap = adapter.reasoningMap?.();
+        const canonicalConfiguredReasoning = reasoningMap ? canonicalReasoning(reasoningMap, configuredReasoning) : configuredReasoning;
         this.d.post({
             type: "meta",
             backend: adapter.backend,
@@ -334,7 +337,7 @@ export class SurfaceDialogues {
             // "default" means no explicit CLI/API override. Name the underlying
             // adapter default so the picker is informative (default (medium)).
             reasoningDefault: configuredReasoning !== "default"
-                ? configuredReasoning
+                ? canonicalConfiguredReasoning
                 : (adapter.defaultReasoning?.() ?? "default"),
             modelDefault: vscode.workspace.getConfiguration("symposium." + adapter.backend).get<string>("model", ""),
             pinnedModels: this.d.deps.modelPrefs.getPinned(adapter.backend),
@@ -349,7 +352,7 @@ export class SurfaceDialogues {
             busy: controller.isBusy,
             permissionModes: adapter.permissionModes?.() ?? [],
             permission: adapter.defaultPermission?.() ?? "default",
-            sessionId: options.resumeSessionId ?? "",
+            sessionId: controller.sessionId,
             title,
             sessionsSide,
             chatOnly: this.d.chatOnly,

@@ -4,6 +4,7 @@ import { vscode } from "./vscode";
 import { modelPicker, reasoningPicker } from "./dom";
 import { openChoiceMenu, hideCtx, showToast } from "./menus";
 import { currentBackend, currentBackendName, setPendingSwitchAnchor } from "./state";
+import { buildReasoningMenuOptions } from "../reasoningOptions";
 
 export let modelValue = "", reasoningValue = "default";
 export let modelList: any[] = [], reasoningList: any[] = [];
@@ -59,7 +60,9 @@ modelPicker.addEventListener("click", (ev) => {
 reasoningPicker.addEventListener("click", (ev) => {
     ev.stopPropagation();
     if ((reasoningPicker as HTMLButtonElement).disabled || !reasoningList.length) { return; }
-    openChoiceMenu(reasoningPicker, reasoningList.map((r) => ({ value: r, label: r === "default" ? defLabel(reasoningDefault) : r })), reasoningValue, (v: any) => { reasoningValue = v; setReasoningLabel(); });
+    const options = buildReasoningMenuOptions(reasoningList, reasoningDefault);
+    const current = reasoningValue === reasoningDefault && reasoningDefault !== "default" ? "default" : reasoningValue;
+    openChoiceMenu(reasoningPicker, options, current, (v: any) => { reasoningValue = v; setReasoningLabel(); });
 });
 
 export function setModelValue(v: any) { modelValue = v; }

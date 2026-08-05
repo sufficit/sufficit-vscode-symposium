@@ -28,7 +28,7 @@ import { discoverModels as discoverModelsFromCatalog } from "./discovery";
 import { resolveAuthToken } from "./httpAuth";
 import { OpenAISession } from "./session";
 import { PERMISSION_MODES } from "../aiTools";
-import { DEFAULT_REASONING_EFFORT } from "../reasoning";
+import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../reasoning";
 import { EmptyAdapterUsage } from "../quotaCache";
 import { SufficitPresetUsage } from "./presetUsage";
 
@@ -156,7 +156,10 @@ export class OpenAIAdapter implements AgentAdapter {
     }
 
     start(options: SessionStartOptions): AgentSession {
-        return new OpenAISession(this.backend, this.getConfig(), options);
+        const reasoning = options.reasoning === undefined
+            ? undefined
+            : nativeReasoning(REASONING_MAPS.openai, options.reasoning);
+        return new OpenAISession(this.backend, this.getConfig(), reasoning === undefined ? options : { ...options, reasoning });
     }
 
     /** API backend: takes one-shot app instructions as developer messages. */
@@ -256,8 +259,10 @@ export class OpenAIAdapter implements AgentAdapter {
 
     // Common OpenAI reasoning_effort values; "default" omits the param.
     reasoningLevels(): string[] {
-        return ["default", "minimal", "low", "medium", "high"];
+        return ["default", ...Object.keys(REASONING_MAPS.openai)];
     }
+
+    reasoningMap(): Record<string, string> { return { ...REASONING_MAPS.openai }; }
 
     defaultReasoning(): string { return DEFAULT_REASONING_EFFORT.openai; }
 

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { SUMMARY_PREFIX, SUMMARY_BODY_INTRO, renormalizeSummary } from "../adapters/openai/compactor";
+import { SUMMARY_PREFIX, SUMMARY_BODY_INTRO, hasNewMessagesSinceCompaction, renormalizeSummary } from "../adapters/openai/compactor";
 
 // --- Regressão entrega 0B: compactação é REFERENCE ONLY, não executável ---
 // O defeito: um summary imperativo ("Immediate next actions", pseudo tool calls)
@@ -17,6 +17,12 @@ test("summary prefix declares REFERENCE ONLY and latest-user-wins", () => {
     assert.match(body, /stop/i);
     assert.match(body, /undo|rollback/i);
     assert.match(body, /only document/i);
+});
+
+test("automatic compaction waits for new messages after a fold", () => {
+    assert.equal(hasNewMessagesSinceCompaction(-1, 8), true);
+    assert.equal(hasNewMessagesSinceCompaction(8, 8), false);
+    assert.equal(hasNewMessagesSinceCompaction(8, 9), true);
 });
 
 test("renormalizeSummary rewrites forbidden active/imperative headings into historical ones", () => {

@@ -107,6 +107,10 @@ export const chatBodyMarkup = /* html */ `<div id="root">
                     <span id="status"></span>
                     <span class="grow"></span>
                 </div>
+                <button id="cancelEdit" class="editCancel" title="Cancel edit" aria-label="Cancel edit" style="display:none">
+                    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="m4.1 3.4 4 4 4-4 .7.7-4 4 4 4-.7.7-4-4-4 4-.7-.7 4-4-4-4 .7-.7Z"/></svg>
+                    <span id="cancelEditLabel" class="editCancelLabel">Cancel edit</span>
+                </button>
                 <select id="sendMode" style="display:none">
                     <option value="queue">Queue</option>
                     <option value="redirect">Redirect</option>

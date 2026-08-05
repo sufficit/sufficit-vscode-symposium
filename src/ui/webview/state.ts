@@ -5,7 +5,7 @@
 // read-only, so reassignments go through setX). Arrays may still be mutated in
 // place (push/splice) without a setter. This lets the feature modules share
 // state without a single giant scope.
-import { saved } from "./vscode";
+import { saved, saveState } from "./vscode";
 
 const savedSessionFilters = ((saved && (saved as any).sessionFilters) || {}) as any;
 
@@ -45,6 +45,45 @@ export let permissionModes: any[] = [], permissionValue = "default", permissionD
 export let aiToolsAvailable: any[] = [], aiToolsEnabled: any[] = [];
 export let pendingSwitchAnchor: any = null;
 export let composerBlockedReason = "";
+
+export type ComposerDraft = {
+    text: string;
+    attachments: Array<{ path: string; name: string }>;
+};
+
+const MAX_COMPOSER_DRAFTS = 40;
+const storedComposerDrafts = saved && typeof saved.composerDrafts === "object" && saved.composerDrafts
+    ? saved.composerDrafts as Record<string, any>
+    : {};
+export let composerDrafts: Record<string, ComposerDraft> = Object.fromEntries(
+    Object.entries(storedComposerDrafts).flatMap(([key, value]) => {
+        if (!value || typeof value.text !== "string" || !Array.isArray(value.attachments)) { return []; }
+        const attachments = value.attachments
+            .filter((a: any) => a && typeof a.path === "string" && typeof a.name === "string")
+            .map((a: any) => ({ path: a.path, name: a.name }));
+        return [[key, { text: value.text, attachments } as ComposerDraft]];
+    }),
+);
+
+export function setComposerDraft(key: string, text: string, attachments: any[]): void {
+    if (!key) { return; }
+    delete composerDrafts[key];
+    const files = attachments
+        .filter((a) => a && typeof a.path === "string" && typeof a.name === "string")
+        .map((a) => ({ path: a.path, name: a.name }));
+    if (text || files.length) {
+        composerDrafts[key] = { text, attachments: files };
+    }
+    const keys = Object.keys(composerDrafts);
+    while (keys.length > MAX_COMPOSER_DRAFTS) {
+        delete composerDrafts[keys.shift() as string];
+    }
+    saveState({ composerDrafts });
+}
+
+export function getComposerDraft(key: string): ComposerDraft | undefined {
+    return key ? composerDrafts[key] : undefined;
+}
 
 export function setAttachments(v: any[]) { attachments = v; }
 export function setActiveFile(v: any) { activeFile = v; }

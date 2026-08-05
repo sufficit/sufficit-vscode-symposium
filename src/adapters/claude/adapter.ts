@@ -7,7 +7,7 @@ import { resolveExecutable } from "../exec";
 import { removeMatchingFiles, scrubJsonlLines } from "../scrub";
 import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
 import { PERMISSION_MODES } from "../aiTools";
-import { DEFAULT_REASONING_EFFORT } from "../reasoning";
+import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../reasoning";
 import {
     AgentAdapter,
     AgentSession,
@@ -55,7 +55,10 @@ export class ClaudeAdapter implements AgentAdapter {
     }
 
     start(options: SessionStartOptions): AgentSession {
-        return new ClaudeSession(this.getConfig(), options);
+        const reasoning = options.reasoning === undefined
+            ? undefined
+            : nativeReasoning(REASONING_MAPS.claude, options.reasoning);
+        return new ClaudeSession(this.getConfig(), reasoning === undefined ? options : { ...options, reasoning });
     }
 
     models(): string[] {
@@ -124,8 +127,10 @@ export class ClaudeAdapter implements AgentAdapter {
 
     // claude --effort <level> (2.1.177). "default" means: don't pass the flag.
     reasoningLevels(): string[] {
-        return ["default", "low", "medium", "high", "xhigh", "max"];
+        return ["default", ...Object.keys(REASONING_MAPS.claude)];
     }
+
+    reasoningMap(): Record<string, string> { return { ...REASONING_MAPS.claude }; }
 
     defaultReasoning(): string { return DEFAULT_REASONING_EFFORT.claude; }
 

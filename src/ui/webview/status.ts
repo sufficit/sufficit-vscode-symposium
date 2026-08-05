@@ -33,7 +33,6 @@ export function setComposerBlocked(reason: string, placeholder: string, defaultP
     setComposerBlockedReason(reason);
     composerEl.classList.toggle("blocked", blocked);
     input.disabled = blocked;
-    input.value = "";
     input.placeholder = blocked ? placeholder : defaultPlaceholder;
     input.setAttribute("aria-label", blocked ? reason : defaultPlaceholder);
     if (blocked) { input.setAttribute("aria-describedby", "composerBlockedNotice"); }

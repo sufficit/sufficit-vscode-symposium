@@ -1,7 +1,7 @@
 // Composer: input, send/edit/slash/paste, attachment chips. Listeners run on import.
 import { vscode, saved, saveState } from "./vscode";
-import { log, input, sendMode, sendBtn, sendGroup, sendCaret, stopBtn, chips, addContext, addBrowserPage, slash, composerEl, ctxMenu } from "./dom";
-import { attachments, activeFile, activeFileRange, activeFileDismissed, activeFilePreview, activeFilePinned, busy, currentBackend, conversationRows, commands, composerBlockedReason, setAttachments, setActiveFile, setActiveFileRange, setActiveFileDismissed, setActiveFilePreview, setActiveFilePinned, setBusy, setConversationRows, setCommands, autonomyValue, permissionValue } from "./state";
+import { log, input, sendMode, sendBtn, sendGroup, sendCaret, stopBtn, cancelEditBtn, chips, addContext, addBrowserPage, slash, composerEl, ctxMenu } from "./dom";
+import { attachments, activeFile, activeFileRange, activeFileDismissed, activeFilePreview, activeFilePinned, activeSessionId, busy, currentBackend, conversationRows, commands, composerBlockedReason, getComposerDraft, setAttachments, setActiveFile, setActiveFileRange, setActiveFileDismissed, setActiveFilePreview, setActiveFilePinned, setBusy, setConversationRows, setCommands, setComposerDraft, autonomyValue, permissionValue } from "./state";
 import { setStatus, updateSendTitle, MODE_LABELS, MODE_KBD, MODE_ICONS, MODE_DESC, isMac, MOD, ALT } from "./status";
 import { modelValue, reasoningValue } from "./models";
 import { showToast, hideCtx } from "./menus";
@@ -15,6 +15,29 @@ import { optimisticUserMessage } from "./messages";
 import { isVoiceRecording, isVoiceTranscribing, endDictationMode, stopVoiceRecording } from "./voice";
 
 export function activeFileSuffix() { return activeFileRange ? ":" + activeFileRange.start + "-" + activeFileRange.end : ""; }
+export function composerSessionKey(backend = currentBackend, sessionId = activeSessionId): string {
+    return sessionId ? backend + "::" + sessionId : "";
+}
+export function saveCurrentComposerDraft(): void {
+    setComposerDraft(composerSessionKey(), input.value, attachments);
+}
+export function restoreComposerDraft(backend: string, sessionId: string): void {
+    const draft = getComposerDraft(composerSessionKey(backend, sessionId));
+    input.value = draft?.text || "";
+    setAttachments((draft?.attachments || []).map((a) => ({ path: a.path, name: a.name })));
+    resizeInput();
+    renderChips();
+    setStatus();
+}
+export function clearComposer(): void {
+    editAnchor = null;
+    input.value = "";
+    setAttachments([]);
+    resizeInput();
+    markEditing();
+    renderChips();
+    setStatus();
+}
 sendMode.addEventListener("change", () => saveState({ sendMode: sendMode.value }));
 stopBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
@@ -88,6 +111,7 @@ export function renderChips() {
         chips.appendChild(makeChip(file.name, file.path, () => {
             setAttachments(attachments.filter((a) => a.path !== file.path));
             renderChips();
+            saveCurrentComposerDraft();
         }, false, file.path));
     }
     // Attached files are a panel tab now — refresh the strip so its count/icon
@@ -101,7 +125,8 @@ export function markEditing() {
         const i = Number(el.dataset.msgIndex || "-1");
         el.classList.toggle("willReplace", editAnchor != null && i >= editAnchor);
     });
-    document.getElementById("composer").classList.toggle("editing", editAnchor != null);
+    composerEl.classList.toggle("editing", editAnchor != null);
+    cancelEditBtn.style.display = editAnchor != null ? "inline-flex" : "none";
 }
 export function lastUserRow() {
     for (let i = conversationRows.length - 1; i >= 0; i--) {
@@ -114,6 +139,7 @@ export function beginEdit(idx, text) {
     input.value = text;
     resizeInput();
     markEditing();
+    saveCurrentComposerDraft();
     input.focus();
 }
 export function cancelEdit() {
@@ -121,7 +147,13 @@ export function cancelEdit() {
     editAnchor = null; input.value = "";
     resizeInput();
     markEditing();
+    saveCurrentComposerDraft();
 }
+cancelEditBtn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    cancelEdit();
+    input.focus();
+});
 // A voice recording is still active (e.g. local/whisper capture, which only
 // transcribes on stop — see voice.ts). Sending now would fire with whatever
 // happens to be in the input at this instant (usually empty/just the dots
@@ -212,6 +244,7 @@ export function send(modeOverride) {
     if (!busy && editFrom == null) { setBusy(true); }
     setAttachments([]);
     renderChips();
+    saveCurrentComposerDraft();
     setStatus();
 }
 let slashMatches = [];
@@ -275,6 +308,7 @@ input.addEventListener("keydown", (e) => {
 input.addEventListener("input", () => {
     resizeInput();
     updateSlash();
+    saveCurrentComposerDraft();
     setStatus();
 });
 setStatus();

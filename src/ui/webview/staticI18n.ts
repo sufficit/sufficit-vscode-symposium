@@ -70,6 +70,13 @@ export function applyStaticI18n(): void {
         sendMode.options[1].textContent = t("chat.sendmode.steer");
     }
     if (stopBtn) { stopBtn.title = t("chat.icon.stop.title"); stopBtn.setAttribute("aria-label", t("chat.icon.stop.aria")); }
+    const cancelEdit = document.getElementById("cancelEdit");
+    if (cancelEdit) {
+        cancelEdit.title = t("chat.icon.cancelEdit.title");
+        cancelEdit.setAttribute("aria-label", t("chat.icon.cancelEdit.aria"));
+        const label = cancelEdit.querySelector("#cancelEditLabel");
+        if (label) { label.textContent = t("chat.icon.cancelEdit.label"); }
+    }
     setT(sendBtn, "chat.icon.send");
     setT(sendCaret, "chat.icon.sendMode");
     if (chatTitle) { chatTitle.title = t("chat.copy.titleTooltip"); }

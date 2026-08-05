@@ -61,6 +61,11 @@ const IMPERATIVE_RESUME_LINES = /^\s*(resume exactly|continue exactly|next, (you
  */
 const EXECUTABLE_FENCE_LANGS = /^(sh|shell|bash|zsh|ts-node|ts|x-ts|js|javascript|typescript|python|py|powershell|ps1)\b/i;
 
+/** Automatic compaction must wait for new history after a successful fold. */
+export function hasNewMessagesSinceCompaction(lastCompactionMessageCount: number, currentMessageCount: number): boolean {
+    return lastCompactionMessageCount < 0 || lastCompactionMessageCount !== currentMessageCount;
+}
+
 /**
  * Hardens a model-produced summary so it cannot be read as authorization to act:
  * rewrites forbidden (imperative/active) headings into historical ones, strips
@@ -105,6 +110,7 @@ export interface CompactorDeps {
 
 export class Compactor {
     private compacting = false;
+    private lastCompactionMessageCount = -1;
 
     constructor(private readonly d: CompactorDeps) { }
 
@@ -115,6 +121,7 @@ export class Compactor {
      *  (fire-and-forget, so it never delays the turn finishing). */
     async maybeAutoCompact(observedInputTokens?: number): Promise<boolean> {
         if (this.compacting) { return false; }
+        if (!hasNewMessagesSinceCompaction(this.lastCompactionMessageCount, this.d.getMessages().length)) { return false; }
         const win = this.d.contextWindow();
         const inputTokens = observedInputTokens ?? this.d.getLastInputTokens();
         const assessment = assessContextWindow(inputTokens, win, this.d.cfg.autoCompactAt);
@@ -199,6 +206,11 @@ export class Compactor {
             const folded = middle.length;
             messages.length = 0;
             messages.push(...prefix, synthetic, ...tail);
+            // Do not immediately fold the same live history again. This is
+            // important for preflight: if the remaining tail itself is too
+            // large, repeated successful folds would otherwise spin forever
+            // without a new user/tool message to make progress.
+            this.lastCompactionMessageCount = messages.length;
             // Ledger marker (raw middle already committed by prior turns) + commit.
             ledger.appendMessage(this.d.sessionId, {
                 role: "system", kind: "compaction", content: summary, turn: this.d.getTurnNo(),

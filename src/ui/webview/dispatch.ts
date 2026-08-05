@@ -1,7 +1,7 @@
 // Inbound message dispatch from the extension host. Registers the listener on import.
 import { vscode } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
-import { renderChips, setBrowserOpen } from "./composer";
+import { clearComposer, renderChips, saveCurrentComposerDraft, setBrowserOpen } from "./composer";
 import { resizeInput } from "./inputSizing";
 import { applyMeta } from "./meta";
 import { applyEvent } from "./events";
@@ -69,6 +69,8 @@ window.addEventListener("message", ({ data }) => {
         case "clear": {
             historyCycle++; // invalidate a reveal already queued for the prior session
             hideAgentPicker();   // a session/dialogue is taking over the surface
+            saveCurrentComposerDraft();
+            clearComposer();
             setConversationRows([]);
             log.textContent = "";
             copySessionBtn.style.display = "none";
@@ -121,6 +123,7 @@ window.addEventListener("message", ({ data }) => {
                 }
                 renderChips();
             }
+            saveCurrentComposerDraft();
             break;
         }
         case "append": {
@@ -140,6 +143,7 @@ window.addEventListener("message", ({ data }) => {
             input.value = data.text || "";
             resizeInput();
             input.focus();
+            saveCurrentComposerDraft();
             break;
         }
         case "account": {
@@ -295,6 +299,7 @@ window.addEventListener("message", ({ data }) => {
                 if (!attachments.some((a) => a.path === file.path)) attachments.push(file);
             }
             renderChips();
+            saveCurrentComposerDraft();
             break;
         }
         case "changed-files": {
