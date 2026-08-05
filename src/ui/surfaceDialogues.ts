@@ -302,12 +302,9 @@ export class SurfaceDialogues {
             ? this.d.deps.runtime.findBySessionId(options.resumeSessionId)
             : undefined;
         const controller = existing ?? this.d.deps.runtime.create(adapter, options);
-        // Rehydrate the last terminal outcome before the resumed controller is
-        // exposed to the sessions list. A reload must not turn a persisted
-        // warning/error back into an apparently idle session.
-        if (!existing && info?.terminalStatus) {
-            controller.attentionStatus = info.terminalStatus;
-        }
+        // A persisted terminal outcome belongs to the previous interaction.
+        // Opening/resuming the session acknowledges it; only a failure from the
+        // current controller should produce the live red status indicator.
         // Restore the exact visual for a reopened session: seed the render log
         // (replayed when the sink binds below) so tool rows, diffs, status notices
         // and panels reappear — not just text. Skips lossy history reconstruction.

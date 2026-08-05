@@ -14,6 +14,7 @@ import { HubClient } from "../sync/hubClient";
 import { activeEditorContext, isSimpleBrowserOpen, presetQuotaLoadingEvent } from "./chatSurfaceContext";
 import { pushVoicePreferences } from "./voicePreferences";
 import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
+import { responseLanguageName } from "./outboundPrompt";
 
 export type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
@@ -283,10 +284,9 @@ export class ChatSurface {
 
         // 1) Language preference.
         const setting = cfg.get<string>("preferredLanguage", "").trim();
-        const lang = setting || vscode.env.language || "";
-        if (lang && !/^en(-|$)/i.test(lang)) {
-            hints.push(`The user prefers responses in "${lang}". This is a preference, not a strict requirement — use your best judgment.`);
-        }
+        const lang = setting || vscode.env.language || "en";
+        const responseLanguage = responseLanguageName(lang);
+        hints.push(`The user prefers responses in "${responseLanguage}". Unless the user explicitly requests another language for the current response, reply in ${responseLanguage}.`);
 
         // 2) User's manual system instruction (free text), when provided.
         const custom = cfg.get<string>("systemInstruction", "").trim();

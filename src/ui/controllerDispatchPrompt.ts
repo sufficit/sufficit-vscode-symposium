@@ -1,7 +1,7 @@
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { rtkCached } from "../adapters/rtk";
 import * as vscode from "vscode";
-import { buildOutboundPrompt, OutboundPromptState, TrackingMode } from "./outboundPrompt";
+import { buildOutboundPrompt, OutboundPromptState, responseLanguageName, TrackingMode } from "./outboundPrompt";
 import { PendingMessage } from "./controllerQueue";
 
 /** Context bag for building one turn's outbound prompt (see ChatController.dispatch). */
@@ -72,6 +72,11 @@ export function buildDispatchOutbound(
         guardrails: ctx.hubState.guardrails,
         pendingTasksSummary: ctx.pendingTasksSummary(),
         autonomy: msg.autonomy,
+        responseLanguage: responseLanguageName(
+            vscode.workspace.getConfiguration("symposium.chat").get<string>("preferredLanguage", "").trim()
+            || vscode.env.language
+            || "en",
+        ),
         asRoles: roleAware,
     });
     Object.assign(ctx.promptState, outbound.state);

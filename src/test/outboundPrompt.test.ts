@@ -8,7 +8,31 @@ import {
     handoffReferenceNote,
     SHELL_EXECUTION_PREAMBLE,
     planTrackingPreamble,
+    responseLanguageName,
+    responseLanguagePreamble,
 } from "../ui/outboundPrompt";
+
+test("response language is reasserted on every turn, including resumed sessions", () => {
+    assert.equal(responseLanguageName("en-US"), "English");
+    assert.equal(responseLanguageName("pt-BR"), "Portuguese (Brazil)");
+    const first = buildOutboundPrompt({
+        text: "Investigate",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: true,
+        seedInjected: true,
+        autonomyInjected: false,
+        responseLanguage: responseLanguageName("en-US"),
+    });
+    assert.ok(first.text.includes(responseLanguagePreamble("English")));
+    const second = buildOutboundPrompt({
+        text: "Continue",
+        fileAttachments: [],
+        ...first.state,
+        responseLanguage: responseLanguageName("en-US"),
+    });
+    assert.ok(second.text.includes(responseLanguagePreamble("English")));
+});
 
 test("buildOutboundPrompt keeps native shell guidance on every turn", () => {
     const first = buildOutboundPrompt({

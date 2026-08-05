@@ -108,6 +108,11 @@ export class LiveSessions {
         const controller = new ChatController(adapter, options, () => this.onChange?.());
         const key = options.resumeSessionId ?? `new-${++this.seq}`;
         this.controllers.set(key, controller);
+        // A resumed session may have a persisted terminal error in the store.
+        // Registering its live controller acknowledges that historical state;
+        // refresh the sessions list immediately so the row reflects the live
+        // controller instead of waiting for the next turn/status event.
+        this.onChange?.();
         return { key, controller };
     }
 

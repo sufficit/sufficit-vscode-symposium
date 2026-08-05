@@ -311,12 +311,12 @@ export function renderSessionItem(s, depth, childCount) {
         // Subagent sessions (parentId != null) show robot icon for visual distinction.
         const statusDot = document.createElement("div");
         statusDot.className = "statusDot";
-        let statusLabel = "Stored session";
+        let statusLabel = t("sessions.status.stored");
         if (s.deleting) {
-            statusLabel = "Deleting session";
+            statusLabel = t("sessions.status.deleting");
             const sp = document.createElement("span"); sp.className = "spinner"; sp.title = statusLabel; statusDot.appendChild(sp);
         } else if (s.status === "working") {
-            statusLabel = "Agent working";
+            statusLabel = t("sessions.status.working");
             const w = document.createElement("span"); w.className = "work"; w.title = statusLabel; statusDot.appendChild(w);
         } else if (s.status === "error") {
             statusLabel = t("sessions.status.error");
@@ -325,7 +325,7 @@ export function renderSessionItem(s, depth, childCount) {
             statusLabel = t("sessions.status.warning");
             const w = document.createElement("span"); w.className = "warning"; w.title = statusLabel; statusDot.appendChild(w);
         } else if (s.status === "idle") {
-            statusLabel = "Running session (idle)";
+            statusLabel = t("sessions.status.idle");
             const d = document.createElement("span"); d.className = "idle"; d.title = statusLabel; statusDot.appendChild(d);
         } else {
             const ic = svgIcon(isSubagent ? "robot" : "chat");
@@ -348,9 +348,9 @@ export function renderSessionItem(s, depth, childCount) {
         const sub = document.createElement("span");
         sub.className = "sub";
         if (s.deleting) {
-            sub.textContent = "deleting…";
+            sub.textContent = t("sessions.status.deleting") + "…";
         } else {
-            const statusText = s.status === "working" ? "working… · " : (s.status === "idle" ? "live · " : (s.status === "error" ? t("sessions.status.error") + " · " : (s.status === "warning" ? t("sessions.status.warning") + " · " : "")));
+            const statusText = s.status === "working" ? t("sessions.status.working") + "… · " : (s.status === "idle" ? t("sessions.status.idle") + " · " : (s.status === "error" ? t("sessions.status.error") + " · " : (s.status === "warning" ? t("sessions.status.warning") + " · " : "")));
             sub.textContent = statusText + sessionBackendLabel(s) + (s.updatedAt ? " · " + relTime(s.updatedAt) : "");
         }
         sub.title = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";

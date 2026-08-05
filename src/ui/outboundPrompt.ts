@@ -53,6 +53,8 @@ export interface BuildOutboundPromptOptions extends OutboundPromptState {
      */
     pendingTasksSummary?: string;
     autonomy?: string;
+    /** Effective response language, injected on every turn (including resumes). */
+    responseLanguage?: string;
     /** True when the backend can execute shell commands where rtk is useful. */
     rtk?: boolean;
     /**
@@ -185,6 +187,29 @@ export const AUTONOMY_PREAMBLE =
     "Do not wait for input or use interactive prompts (e.g. AskUserQuestion); make reasonable assumptions, decide, " +
     "and carry the task through end-to-end. Briefly state any assumptions and keep going.";
 
+const RESPONSE_LANGUAGE_NAMES: Record<string, string> = {
+    en: "English",
+    pt: "Portuguese (Brazil)",
+    es: "Spanish",
+    fr: "French",
+    de: "German",
+    it: "Italian",
+    ja: "Japanese",
+    zh: "Chinese (Simplified)",
+};
+
+/** Converts a VS Code/BCP-47 language tag into a stable model-facing label. */
+export function responseLanguageName(tag: string): string {
+    const raw = String(tag || "en").trim().toLowerCase().replace(/_/g, "-");
+    const base = raw.split("-", 1)[0] || "en";
+    return RESPONSE_LANGUAGE_NAMES[base] || raw || "English";
+}
+
+/** Reasserted every turn so resumed sessions cannot keep an obsolete language. */
+export function responseLanguagePreamble(language: string): string {
+    return `[Response language] Reply in ${language} by default. Do not switch to another language merely because the user's message uses it; switch only when the user explicitly requests another language for the current response.`;
+}
+
 /** Composes the outbound prompt with one-shot policy/context preambles. */
 export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text: string; preamble: string[]; state: OutboundPromptState } {
     let fullText = options.text;
@@ -272,6 +297,9 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): { text
     }
     if (options.autonomy !== "away") {
         state.autonomyInjected = false;
+    }
+    if (options.responseLanguage) {
+        prefixes.push(responseLanguagePreamble(options.responseLanguage));
     }
     // Speech awareness: injected once per session when voice is enabled, so the
     // model knows some messages may come from speech transcription.
