@@ -118,10 +118,51 @@ export interface CustomAdapterDef {
     supportsDeveloperRole?: boolean;
 }
 
+const BUILTIN_MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
+
 /** Reads the user's extra OpenAI-compatible adapters (symposium.adapters). */
 export function customAdapterDefs(): CustomAdapterDef[] {
     const arr = vscode.workspace.getConfiguration("symposium").get<CustomAdapterDef[]>("adapters", []);
     return Array.isArray(arr) ? arr.filter((a) => a && a.id && a.baseUrl) : [];
+}
+
+/** Reads the configured default model from the same store used by the adapter. */
+export function configuredModel(backend: string): string {
+    if (!BUILTIN_MODEL_BACKENDS.has(backend)) {
+        return customAdapterDefs().find((entry) => entry.id === backend)?.model ?? "";
+    }
+    return vscode.workspace.getConfiguration(`symposium.${backend}`).get<string>("model", "");
+}
+
+/**
+ * Persists a chat-picker default model. Custom adapters are entries in the
+ * shared `symposium.adapters` array; they do not have a `symposium.<id>`
+ * configuration namespace.
+ */
+export async function setConfiguredModel(
+    backend: string,
+    model: string | undefined,
+    target: vscode.ConfigurationTarget,
+): Promise<void> {
+    if (BUILTIN_MODEL_BACKENDS.has(backend)) {
+        await vscode.workspace.getConfiguration(`symposium.${backend}`)
+            .update("model", model || undefined, target);
+        return;
+    }
+
+    const config = vscode.workspace.getConfiguration("symposium");
+    const defs = config.get<CustomAdapterDef[]>("adapters", []);
+    const index = Array.isArray(defs) ? defs.findIndex((entry) => entry?.id === backend) : -1;
+    if (index < 0) { return; }
+
+    const next = defs.map((entry, i) => {
+        if (i !== index) { return entry; }
+        const updated = { ...entry };
+        const value = model?.trim();
+        if (value) { updated.model = value; } else { delete updated.model; }
+        return updated;
+    });
+    await config.update("adapters", next, target);
 }
 
 /**

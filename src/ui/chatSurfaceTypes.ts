@@ -18,6 +18,7 @@ export interface ChatSurfaceDeps {
     modelPrefs: {
         getPinned(backend: string): string[];
         setPinned(backend: string, models: string[]): void;
+        getDefault(backend: string): string;
         setDefault(backend: string, model: string | undefined): Thenable<void>;
     };
     store: {

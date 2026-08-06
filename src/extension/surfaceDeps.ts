@@ -5,6 +5,7 @@ import { SessionStore } from "../sessions/store";
 import { LiveSessions } from "../sessions/runtime";
 import { ChatSurfaceDeps } from "../ui/chatSurface";
 import { SufficitAuth } from "../auth/identity";
+import { configuredModel, setConfiguredModel } from "./config";
 
 export interface SurfaceDepsArgs {
     context: vscode.ExtensionContext;
@@ -73,6 +74,7 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                 context.workspaceState.get<string[]>(`symposium.pinnedModels.${backend}`, []),
             setPinned: (backend: string, models: string[]) =>
                 void context.workspaceState.update(`symposium.pinnedModels.${backend}`, models),
+            getDefault: (backend: string) => configuredModel(backend),
             setDefault: (backend: string, model: string | undefined) => {
                 // Prefer workspace-scoped settings so different projects can use different
                 // default models. Fall back to global when no workspace folder is open
@@ -80,8 +82,7 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                 const target = vscode.workspace.workspaceFolders?.length
                     ? vscode.ConfigurationTarget.Workspace
                     : vscode.ConfigurationTarget.Global;
-                return vscode.workspace.getConfiguration(`symposium.${backend}`).update(
-                    "model", model || undefined, target);
+                return setConfiguredModel(backend, model, target);
             },
         },
         store: {

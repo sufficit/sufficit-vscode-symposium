@@ -336,7 +336,10 @@ export class SurfaceDialogues {
             reasoningDefault: configuredReasoning !== "default"
                 ? canonicalConfiguredReasoning
                 : (adapter.defaultReasoning?.() ?? "default"),
-            modelDefault: vscode.workspace.getConfiguration("symposium." + adapter.backend).get<string>("model", ""),
+            // Built-in defaults live under symposium.<backend>.model; custom
+            // adapters keep theirs in symposium.adapters[].model. Read through
+            // the shared preference store so the picker reflects either kind.
+            modelDefault: this.d.deps.modelPrefs.getDefault(adapter.backend),
             pinnedModels: this.d.deps.modelPrefs.getPinned(adapter.backend),
             // Last model used in this session (resume), so the picker restores it
             // instead of defaulting to the first discovered model.
