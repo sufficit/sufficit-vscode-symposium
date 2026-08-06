@@ -40,6 +40,8 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     private currentIntentId: string | undefined;
     /** logicalTurnId to reuse for a Retry (set by send when resumeTurnId is passed); consumed once by resumeTurn(). */
     private pendingResumeTurnId: string | undefined;
+    /** True only while the last turn ended at the bounded tool-hop pause. */
+    private pausedForToolCap = false;
     // Continuous follow-up anchor (small-context guardrail). `objective` is the
     // current task (north star), updated on each substantive user turn; `progress`
     // is a rolling digest of tool steps taken on it. Re-injected fresh into every
@@ -149,6 +151,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             maybeAutoCompact: (observedInputTokens) => this.compactor.maybeAutoCompact(observedInputTokens),
             compactOnTasksComplete: () => this.compactOnTasksComplete(),
             requestApproval: (toolId, toolName, detail, tier) => this.requestApproval(toolId, toolName, detail, tier),
+            markPausedForContinuation: () => { this.pausedForToolCap = true; },
         });
         if (resumed) {
             this.messages.push(...resumed.messages); this.title = resumed.title;
@@ -302,6 +305,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             void this.compactor.compact("manual");
             return;
         }
+        this.pausedForToolCap = false;
         // Carry the controller-assigned intent id for the ledger rows of this
         // turn (no arbiter here — the controller decides; the adapter carries it).
         this.currentIntentId = intentId;
@@ -366,9 +370,12 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         void this.runner.run();
     }
 
-
-    cancel(): void {
-        this.runner.cancel();
+    cancel(): void { this.runner.cancel(); }
+    continueTurn(): void {
+        if (!this.pausedForToolCap) { return; }
+        this.pausedForToolCap = false;
+        this.pendingResumeTurnId = this.currentLogicalTurnId;
+        void this.runner.run();
     }
 
     dispose(): void {

@@ -169,7 +169,6 @@ export class ChatController {
     }
 
     get attached(): boolean { return this.stream.hasSink; }
-
     /** Retorna a sessão atual do AgentAdapter para acesso direto. */
     getSession(): AgentSession | undefined { return this.session; }
 
@@ -187,22 +186,22 @@ export class ChatController {
         return detach;
     }
 
-    /** Subscribes a read-only follower (remote viewer) to the render stream. */
     subscribe(observer: (message: unknown) => void): () => void { return this.stream.addObserver(observer); }
-
     private emit(message: unknown): void { this.stream.emit(message); }
 
-    /** Sends a message to this session programmatically (public API / bridge). */
     sendText(text: string, mode: SendMode = "send"): void { this.onSend({ text, attachments: [] }, mode); }
 
-    /** Interrupts the running turn, if any (public API / bridge). */
     interrupt(): void { this.session?.cancel(); }
+    continueTurn(): void {
+        const session = this.session;
+        if (this.busy || !session?.continueTurn) return;
+        this.busy = true;
+        this.attentionStatus = undefined; this.onStatusChange?.(); session.continueTurn();
+    }
 
-    /** Per-session tool gating (native AI backend only; undefined elsewhere). */
     aiToolsInfo(): { available: string[]; enabled: string[] } | undefined { return this.session?.aiTools?.(); }
 
     setAiTools(names: string[]): void { this.session?.setAiTools?.(names); }
-
     /** Persists newly-emitted render messages (see controllerPersist). */
     private persistEmit(message: unknown): void {
         persistEmitFn({ sessionId: () => this.sessionId, stream: this.stream, state: this.persistState }, message);
@@ -223,6 +222,7 @@ export class ChatController {
         return handleControllerMessage(message, {
             busy: () => this.busy,
             cancel: () => this.session?.cancel(),
+            continueTurn: () => this.continueTurn(),
             queue: this.queue,
             stream: this.stream,
             emitQueue: () => this.emitQueue(),

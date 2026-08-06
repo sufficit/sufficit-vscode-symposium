@@ -14,6 +14,7 @@ import { clearFailedAttemptForEdit } from "./errorEditRecovery";
 import { renderTodos, todoMark } from "./panels";
 import { configureThinkingRenderer, endThinkingStream } from "./thinking";
 import { createSystemNotice } from "./systemNotice";
+import { t } from "./i18n";
 import { presentTurnError } from "../errorPresentation";
 export { renderThinkBlock, streamThinkingDelta } from "./thinking";
 
@@ -143,13 +144,23 @@ export function confirmOptimisticMessage(clientMessageId) {
 // System status notice (e.g. a guardrail stop or compaction annotation).
 // It may be replayed with the visual log, but never becomes assistant output or
 // a conversation row used as model context.
-export function renderStatusNotice(text, anchorIndex, severity = "info") {
+export function renderStatusNotice(text, anchorIndex, severity = "info", action) {
     const stick = nearBottom();
     // Close any open tool-action group too: a notice fired mid tool-loop
     // (auth retry, mid-turn compaction) must not let the next tool-start
     // silently re-attach to the group that was open before this notice.
     endToolGroup(); endStream();
-    const el = createSystemNotice(text, severity, anchorIndex, scrollToMessageRow);
+    const noticeAction = action === "continue-tool-loop" ? {
+        label: t("chat.status.continue"),
+        ariaLabel: t("chat.status.continue.aria"),
+        onClick: (button) => {
+            button.disabled = true;
+            button.textContent = t("chat.status.continuing");
+            vscode.postMessage({ type: "continue" });
+        },
+    } : undefined;
+    const el = createSystemNotice(text, severity, anchorIndex, scrollToMessageRow, noticeAction);
+    if (noticeAction) { el.classList.add("statusNoticePaused"); }
     log.appendChild(el);
     autoScroll(stick);
     return el;

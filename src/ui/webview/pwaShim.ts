@@ -457,6 +457,11 @@ function route(msg: Msg): void {
         case "cancel":
             if (activeId) { void apiPost(`/sessions/${activeId}/interrupt`); }
             return;
+        case "continue":
+            // The browser bridge does not expose local adapter continuation yet.
+            // Keep this command local to the extension-host controller, where it
+            // can resume the in-memory tool loop without adding model context.
+            return;
         case "refresh-sessions":
             void refreshSessions();
             return;

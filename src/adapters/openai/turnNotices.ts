@@ -104,9 +104,22 @@ export function guardrailStopNotice(text: string): AgentEvent {
     return { kind: "status-notice", severity: "warning", text, terminal: true };
 }
 
+/** A bounded tool loop pause with a local action; no instruction is added to model history. */
+export function toolHopLimitNotice(maxHops: number): AgentEvent {
+    return {
+        kind: "status-notice",
+        severity: "warning",
+        text: `Paused after ${maxHops} tool steps. Continue to let the tool loop make the next request.`,
+        terminal: true,
+        action: "continue-tool-loop",
+    };
+}
+
 /** Reclassifies guardrail messages persisted by versions that emitted them as assistant text. */
 export function legacyGuardrailStopNotice(text: string): AgentEvent | null {
     const value = String(text ?? "").trim();
+    const paused = value.match(/^_\(paused after (\d+) tool steps?\s*[—-]\s*send ["']continue["'] to proceed\)_$/i);
+    if (paused) { return toolHopLimitNotice(Number(paused[1])); }
     if (!/^_\(stopped(?::|\s+after\b).*\)_$/i.test(value)) { return null; }
     let message = value.slice(2, -2).trim();
     message = message.charAt(0).toUpperCase() + message.slice(1);

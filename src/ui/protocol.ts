@@ -136,6 +136,8 @@ export type WebviewToHost =
           speech?: boolean;
       }
     | { type: "cancel" }
+    /** Releases a local tool-loop pause without creating a model-visible message. */
+    | { type: "continue" }
     | { type: "queue-remove"; id: number }
     | { type: "queue-edit"; id: number }
     | { type: "queue-promote"; id: number }
@@ -147,6 +149,7 @@ export type WebviewToHost =
 export type ControllerMessageType =
     | "send"
     | "cancel"
+    | "continue"
     | "queue-remove"
     | "queue-edit"
     | "queue-promote"

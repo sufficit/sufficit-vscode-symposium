@@ -64,7 +64,7 @@ export type AgentEvent =
     | { kind: "text"; text: string; model?: string; modelLabel?: string }
     /** System-authored annotation, never assistant output.
      *  anchorIndex: conversation-row index to scroll to/highlight when clicked. */
-    | { kind: "status-notice"; text: string; severity?: SystemNoticeSeverity; anchorIndex?: number; terminal?: boolean }
+    | { kind: "status-notice"; text: string; severity?: SystemNoticeSeverity; anchorIndex?: number; terminal?: boolean; action?: "continue-tool-loop" }
     | { kind: "thinking"; text: string }
     | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string; diff?: { old: string; new: string }[]; terminalName?: string }
     | { kind: "tool-output"; toolName?: string; toolId?: string; text: string }
@@ -294,6 +294,8 @@ export interface AgentSession extends EventEmitter {
     getModel?(): string;
     /** Interrupt the current turn if the backend supports it. */
     cancel(): void;
+    /** Resume a backend-owned pause without adding a user message to the model context. */
+    continueTurn?(): void;
     dispose(): void;
     /**
      * Per-session tool gating (native AI backend only). `aiTools()` reports the

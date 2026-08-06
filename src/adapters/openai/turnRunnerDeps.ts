@@ -39,4 +39,6 @@ export interface TurnRunnerDeps {
     maybeAutoCompact: (observedInputTokens?: number) => Promise<boolean>;
     compactOnTasksComplete: () => Promise<void>;
     requestApproval: (toolId: string, toolName: string, detail: string | undefined, tier: "write" | "destructive") => Promise<boolean>;
+    /** Marks a local pause whose continuation is initiated by the UI, not the model. */
+    markPausedForContinuation?: () => void;
 }

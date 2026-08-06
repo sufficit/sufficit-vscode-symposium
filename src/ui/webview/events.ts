@@ -26,12 +26,12 @@ export function applyEvent(ev: any): void {
     else if (ev.kind === "text") {
         const legacyNotice = legacyGuardrailStopNotice(ev.text);
         if (legacyNotice?.kind === "status-notice") {
-            renderStatusNotice(legacyNotice.text, legacyNotice.anchorIndex, legacyNotice.severity);
+            renderStatusNotice(legacyNotice.text, legacyNotice.anchorIndex, legacyNotice.severity, legacyNotice.action);
         } else {
             streamDelta(ev.text, ev.model);
         }
     }
-    else if (ev.kind === "status-notice") renderStatusNotice(ev.text, ev.anchorIndex, ev.severity);
+    else if (ev.kind === "status-notice") renderStatusNotice(ev.text, ev.anchorIndex, ev.severity, ev.action);
     else if (ev.kind === "tool-start") { endStream(); renderTool(ev.toolName, ev.detail || "", { toolId: ev.toolId, input: ev.input, added: ev.added, removed: ev.removed, todos: ev.todos, path: ev.path }); }
     else if (ev.kind === "tool-output") fillToolResult(ev.toolId, ev.text, false);
     else if (ev.kind === "tool-end") {

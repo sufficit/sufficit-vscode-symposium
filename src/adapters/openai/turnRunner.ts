@@ -14,7 +14,7 @@ import { findToolHistoryIssues, materializeToolSafeHistory } from "./toolHistory
 import { makeAttemptId } from "./turnId";
 import { buildTurnTools, executeTurnTool } from "./turnTools";
 import { emitTurnUsage } from "./turnUsage";
-import { activeRepeatedToolCallFingerprint, appendRepeatedToolCallFeedback, guardrailStopNotice, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress, toolCallBatchFingerprint } from "./turnNotices";
+import { activeRepeatedToolCallFingerprint, appendRepeatedToolCallFeedback, guardrailStopNotice, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress, toolCallBatchFingerprint, toolHopLimitNotice } from "./turnNotices";
 import { TurnRunnerDeps } from "./turnRunnerDeps";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
@@ -347,7 +347,8 @@ export class TurnRunner {
                 // loop again so the model can use the tool results
             }
             if (hitCap) {
-                this.d.emit({ kind: "text", text: `\n\n_(paused after ${maxHops} tool steps — send "continue" to proceed)_` });
+                this.d.emit(toolHopLimitNotice(maxHops));
+                this.d.markPausedForContinuation?.();
             }
         } catch (error) {
             if ((error as { name?: string })?.name !== "AbortError") {

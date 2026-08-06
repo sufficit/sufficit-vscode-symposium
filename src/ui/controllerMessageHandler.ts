@@ -6,6 +6,7 @@ import { RenderStream } from "./renderStream";
 export interface ControllerMessageContext {
     busy(): boolean;
     cancel(): void;
+    continueTurn(): void;
     queue: ChatQueue;
     stream: RenderStream;
     emitQueue(): void;
@@ -25,6 +26,9 @@ export async function handleControllerMessage(message: WebviewToHost, ctx: Contr
             return true;
         case "cancel":
             ctx.cancel();
+            return true;
+        case "continue":
+            ctx.continueTurn();
             return true;
         case "queue-remove":
             if (ctx.queue.remove(message.id)) { ctx.emitQueue(); }

@@ -32,13 +32,19 @@ function renderText(el, text) {
     if (last < value.length) { el.appendChild(document.createTextNode(value.slice(last))); }
 }
 
+export interface SystemNoticeAction {
+    label: string;
+    ariaLabel?: string;
+    onClick: (button: HTMLButtonElement) => void;
+}
+
 /** Builds a system-owned conversation event with an explicit semantic level. */
-export function createSystemNotice(text, severity = "info", anchorIndex = undefined, onAnchor: (index: number) => void = (_index) => {}) {
+export function createSystemNotice(text, severity = "info", anchorIndex = undefined, onAnchor: (index: number) => void = (_index) => {}, action?: SystemNoticeAction) {
     const level = severity === "warning" || severity === "error" ? severity : "info";
     const labelText = level === "warning" ? "Warning" : level === "error" ? "Error" : "System";
     const el = document.createElement("div");
     el.className = "msg statusNotice " + level;
-    el.setAttribute("role", level === "error" ? "alert" : "status");
+    el.setAttribute("role", level === "error" || action ? "alert" : "status");
     el.setAttribute("aria-label", "System " + labelText.toLowerCase());
 
     const icon = document.createElement("span");
@@ -66,6 +72,18 @@ export function createSystemNotice(text, severity = "info", anchorIndex = undefi
         btn.title = "Scroll to the message this is continuing";
         btn.addEventListener("click", () => onAnchor(anchorIndex));
         body.appendChild(btn);
+    }
+    if (action) {
+        const actions = document.createElement("div");
+        actions.className = "statusNoticeActions";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "statusNoticeAction";
+        button.textContent = action.label;
+        button.setAttribute("aria-label", action.ariaLabel ?? action.label);
+        button.addEventListener("click", () => action.onClick(button));
+        actions.appendChild(button);
+        content.appendChild(actions);
     }
     el.appendChild(icon);
     el.appendChild(content);

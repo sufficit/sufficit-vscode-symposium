@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { guardrailStopNotice, legacyGuardrailStopNotice } from "../adapters/openai/turnNotices";
+import { guardrailStopNotice, legacyGuardrailStopNotice, toolHopLimitNotice } from "../adapters/openai/turnNotices";
 import { transcriptMessages } from "../ui/controllerTranscript";
 
 test("OpenAI guardrail stops are system warnings, not assistant text", () => {
@@ -54,4 +54,33 @@ test("turn guardrails emit structured notices instead of markdown assistant mess
     assert.match(source, /guardrailStopNotice\(/);
     assert.doesNotMatch(source, /kind:\s*["']text["'][^\n]+stopped/i);
     assert.doesNotMatch(source, /_\(stopped:/i);
+});
+
+test("tool-hop cap exposes a local continuation action", () => {
+    assert.deepEqual(toolHopLimitNotice(200), {
+        kind: "status-notice",
+        severity: "warning",
+        text: "Paused after 200 tool steps. Continue to let the tool loop make the next request.",
+        terminal: true,
+        action: "continue-tool-loop",
+    });
+});
+
+test("legacy tool-hop pause is restored as an actionable system notice", () => {
+    assert.deepEqual(
+        legacyGuardrailStopNotice("\n\n_(paused after 200 tool steps — send \"continue\" to proceed)_"),
+        toolHopLimitNotice(200),
+    );
+});
+
+test("continuation stays a local controller command", () => {
+    const protocol = readFileSync("src/ui/protocol.ts", "utf8");
+    const handler = readFileSync("src/ui/controllerMessageHandler.ts", "utf8");
+    const session = readFileSync("src/adapters/openai/session.ts", "utf8");
+
+    assert.match(protocol, /type:\s*["']continue["']/);
+    assert.match(handler, /case\s*["']continue["'][\s\S]*?ctx\.continueTurn\(\)/);
+    assert.match(session, /continueTurn\(\):\s*void\s*\{[\s\S]*?void this\.runner\.run\(\)/);
+    assert.match(session, /pendingResumeTurnId\s*=\s*this\.currentLogicalTurnId/);
+    assert.doesNotMatch(session, /continueTurn\(\):[\s\S]*?this\.messages\.push/);
 });

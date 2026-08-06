@@ -561,7 +561,7 @@
     .msg.statusNotice {
         display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px;
         font-size: 0.88em; margin: 8px 0; padding: 7px 10px;
-        border-left: 2px solid var(--vscode-focusBorder, #007fd4);
+        border-left: 1px solid var(--vscode-focusBorder, #007fd4);
         border-radius: 0 4px 4px 0;
         background: color-mix(in srgb, var(--vscode-focusBorder, #007fd4) 8%, transparent);
         color: var(--vscode-foreground);
@@ -603,6 +603,20 @@
     .statusNoticeLink:hover {
         color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground, var(--vscode-focusBorder)));
     }
+    .statusNoticeActions { display: flex; gap: 8px; margin-top: 8px; }
+    .statusNoticeAction {
+        border: 1px solid var(--vscode-button-border, transparent);
+        border-radius: 3px;
+        padding: 3px 10px;
+        background: var(--vscode-button-background);
+        color: var(--vscode-button-foreground);
+        font: inherit;
+        font-size: 0.9em;
+        cursor: pointer;
+    }
+    .statusNoticeAction:hover { background: var(--vscode-button-hoverBackground); }
+    .statusNoticeAction:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
+    .statusNoticeAction:disabled { cursor: wait; opacity: 0.7; }
     /* Transient highlight when a status-notice's anchor link scrolls to a message. */
     .anchorFlash { animation: anchorFlash 1.6s ease-out; border-radius: 4px; }
     @keyframes anchorFlash {
