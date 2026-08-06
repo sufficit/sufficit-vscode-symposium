@@ -261,7 +261,10 @@ export class Compactor {
             const body = responses
                 ? { model: this.d.model(), input: toResponsesInput(reqMessages), stream: false }
                 : { model: this.d.model(), messages: reqMessages, stream: false };
-            const res = await fetch(url, { method: "POST", headers: this.d.headers(loginToken), body: JSON.stringify(body) });
+            const headers = this.d.headers(loginToken);
+            // Observability hint only: the gateway validates the JSON model independently.
+            headers["X-Sufficit-Requested-Model"] = this.d.model();
+            const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
             if (!res.ok) { return ""; }
             const json = await res.json() as unknown;
             if (responses) {

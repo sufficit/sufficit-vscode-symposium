@@ -189,7 +189,14 @@ export class TurnRunner {
                 ledger.recordRequest(this.d.sessionId, body, attemptId);
                 const requestStartedAt = Date.now();
                 const signal = this.abort.signal;
-                const post = (token: string | null | undefined) => fetch(url, { method: "POST", headers: this.d.headers(token), body: bodyJson, signal });
+                const post = (token: string | null | undefined) => {
+                    const headers = this.d.headers(token);
+                    // Lets the gateway activity page show the requested model before it has
+                    // buffered/bound a potentially very large request body. The server treats
+                    // this as an unverified hint and confirms the preset independently.
+                    headers["X-Sufficit-Requested-Model"] = this.d.model();
+                    return fetch(url, { method: "POST", headers, body: bodyJson, signal });
+                };
                 let res = await post(loginToken);
                 if (res.status === 401 && noExplicitAuth && loginToken) {
                     this.d.emit({ kind: "status-notice", text: "Sufficit AI authorization refreshed; retrying once." });
