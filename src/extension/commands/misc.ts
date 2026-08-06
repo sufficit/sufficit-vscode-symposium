@@ -3,6 +3,7 @@ import { ChatViewProvider } from "../../ui/chatView";
 import { ConfigPanel } from "../../ui/configPanel";
 import { RemoteAccessPanel } from "../../ui/remoteAccessPanel";
 import { SufficitAuthProvider } from "../../auth/provider";
+import { DEFAULT_IDENTITY_SCOPE } from "../../auth/identityScopes";
 import { seedExamples } from "../../config/seed";
 import { symposiumLog } from "../log";
 import { CommandContext } from "./helpers";
@@ -75,7 +76,7 @@ export function registerMiscCommands(ctx: CommandContext): void {
         vscode.commands.registerCommand("symposium.login", async () => {
             try {
                 const session = await vscode.authentication.getSession(
-                    SufficitAuthProvider.id, ["openid", "profile", "email", "offline_access"], { createIfNone: true });
+                    SufficitAuthProvider.id, DEFAULT_IDENTITY_SCOPE.split(" "), { createIfNone: true });
                 if (session) { void vscode.window.showInformationMessage(`Sufficit: signed in as ${session.account.label}.`); }
             } catch (err) {
                 void vscode.window.showErrorMessage(`Sufficit login failed: ${err instanceof Error ? err.message : err}`);

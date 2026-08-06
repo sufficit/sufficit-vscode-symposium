@@ -1,10 +1,14 @@
 import * as vscode from "vscode";
 import * as crypto from "crypto";
-import { readFallbackToken, writeFallbackToken } from "./tokenStore";
 import {
-    Discovery, IDENTITY_FALLBACK_KEY as FALLBACK_KEY,
-    IDENTITY_PROFILE_KEY as PROFILE_KEY, IDENTITY_SECRET_KEY as SECRET_KEY,
-    StoredTokens, SufficitProfile,
+    DEFAULT_IDENTITY_SCOPE,
+    normalizeIdentityScope,
+} from "./identityScopes";
+import { IdentityTokenManager, OAuthTokenResponse } from "./identityTokenManager";
+import {
+    Discovery,
+    IDENTITY_PROFILE_KEY as PROFILE_KEY,
+    SufficitProfile,
 } from "./identityTypes";
 
 export type { SufficitProfile } from "./identityTypes";
@@ -20,14 +24,9 @@ export class SufficitAuth {
     private profileCache: SufficitProfile | undefined;
     private readonly onChangeEmitter = new vscode.EventEmitter<void>();
     readonly onDidChange = this.onChangeEmitter.event;
-    // Guards the "session expired" notice against spamming.
-    private expiredNoticeShown = false;
     // Guards the "credentials not in keyring" notice (shown once per fallback login).
     private persistNoticeShown = false;
-    // Whether SecretStorage persists (probed once on first write, then cached).
-    private secretStoragePersists: boolean | undefined;
-
-    private refreshTimer?: ReturnType<typeof setTimeout>;
+    private readonly tokens: IdentityTokenManager;
 
     // PKCE state: one in-flight login at a time.
     private pendingPkce?: {
@@ -41,22 +40,26 @@ export class SufficitAuth {
     constructor(
         private readonly context: vscode.ExtensionContext,
         private readonly log: (msg: string) => void = () => { },
-    ) { }
-
-    // Silently refresh ~5 min before expiry so the token never lapses and the
-    // refresh token keeps sliding (avoids "expired, could not be renewed").
-    private scheduleRefresh(expiresAtMs: number): void {
-        if (this.refreshTimer) { clearTimeout(this.refreshTimer); }
-        this.refreshTimer = setTimeout(() => { void this.getAccessToken(); }, Math.max(10_000, expiresAtMs - Date.now() - 300_000));
+    ) {
+        this.tokens = new IdentityTokenManager({
+            context,
+            log,
+            discovery: () => this.discovery(),
+            clientId: () => this.clientId(),
+            scope: () => this.scope(),
+            onSessionCleared: () => {
+                this.profileCache = undefined;
+                this.onChangeEmitter.fire();
+            },
+        });
     }
 
     /** On activation: arm the silent-refresh timer if already logged in. */
     async startAutoRefresh(): Promise<void> {
-        const t = await this.readTokens();
-        if (t) { this.scheduleRefresh(t.expiresAtMs); }
+        await this.tokens.startAutoRefresh();
     }
 
-    dispose(): void { if (this.refreshTimer) { clearTimeout(this.refreshTimer); } }
+    dispose(): void { this.tokens.dispose(); }
 
     private cfg() {
         return vscode.workspace.getConfiguration("symposium.identity");
@@ -72,7 +75,7 @@ export class SufficitAuth {
         return v && v.trim() ? v : "sufficit-vscode-symposium";
     }
     private scope(): string {
-        return this.cfg().get<string>("scope", "openid profile email offline_access");
+        return normalizeIdentityScope(this.cfg().get<string>("scope", DEFAULT_IDENTITY_SCOPE));
     }
 
     private async discovery(): Promise<Discovery> {
@@ -85,7 +88,7 @@ export class SufficitAuth {
     }
 
     async isLoggedIn(): Promise<boolean> {
-        return (await this.readTokens()) !== undefined;
+        return this.tokens.isLoggedIn();
     }
 
     /**
@@ -211,13 +214,12 @@ export class SufficitAuth {
                 code_verifier: verifier,
             }).toString(),
         });
-        const tokenBody = await tokenRes.json() as { access_token?: string; refresh_token?: string; id_token?: string; expires_in?: number; error?: string; error_description?: string };
+        const tokenBody = await tokenRes.json() as OAuthTokenResponse & { error?: string; error_description?: string };
         if (!tokenRes.ok) {
             throw new Error(`PKCE token exchange failed: ${tokenBody.error_description ?? tokenBody.error ?? tokenRes.status}`);
         }
 
-        const tokens = this.toStored(tokenBody);
-        await this.writeTokens(tokens);
+        await this.tokens.storeResponse(tokenBody, this.scope());
         this.profileCache = undefined;
         const profile = await this.getProfile(true);
         this.onChangeEmitter.fire();
@@ -272,17 +274,17 @@ export class SufficitAuth {
 
         // 2. Poll the token endpoint until the user approves (or timeout).
         if (!dev.device_code) { return undefined; }
-        const tokens = await this.pollToken(disco.token_endpoint, clientId, dev.device_code, dev.interval ?? 5, dev.expires_in ?? 300);
-        if (!tokens) {
+        const tokenResponse = await this.pollToken(disco.token_endpoint, clientId, dev.device_code, dev.interval ?? 5, dev.expires_in ?? 300);
+        if (!tokenResponse) {
             return undefined;
         }
-        await this.writeTokens(tokens);
+        await this.tokens.storeResponse(tokenResponse, this.scope());
         this.profileCache = undefined;
         const profile = await this.getProfile(true);
         this.onChangeEmitter.fire();
         // No system keyring (code-server, container, snap): reassure once that the
         // login is saved to the globalState fallback and survives restarts.
-        if (this.secretStoragePersists === false && !this.persistNoticeShown) {
+        if (!await this.tokens.isSecretStorageWorking() && !this.persistNoticeShown) {
             this.persistNoticeShown = true;
             void vscode.window.showInformationMessage(
                 "Sufficit: login salvo. Este ambiente não tem chaveiro do sistema, então suas credenciais ficam no armazenamento local da extensão (mantidas entre reinícios, menos isoladas que um chaveiro).",
@@ -291,7 +293,7 @@ export class SufficitAuth {
         return profile;
     }
 
-    private async pollToken(tokenEndpoint: string, clientId: string, deviceCode: string, intervalSec: number, expiresInSec: number): Promise<StoredTokens | undefined> {
+    private async pollToken(tokenEndpoint: string, clientId: string, deviceCode: string, intervalSec: number, expiresInSec: number): Promise<OAuthTokenResponse | undefined> {
         const deadline = Date.now() + expiresInSec * 1000;
         let interval = intervalSec;
         return vscode.window.withProgress(
@@ -310,7 +312,7 @@ export class SufficitAuth {
                     });
                     const j = await res.json() as { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string; scope?: string; error?: string; error_description?: string };
                     if (res.ok) {
-                        return this.toStored(j);
+                        return j;
                     }
                     if (j.error === "authorization_pending") { continue; }
                     if (j.error === "slow_down") { interval += 5; continue; }
@@ -321,67 +323,10 @@ export class SufficitAuth {
             });
     }
 
-    private toStored(j: { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string; scope?: string; id_token?: string }): StoredTokens {
-        return {
-            accessToken: j.access_token ?? "",
-            refreshToken: j.refresh_token,
-            idToken: j.id_token,
-            expiresAtMs: Date.now() + ((j.expires_in ?? 3600) * 1000),
-        };
-    }
-
-    private async readTokens(): Promise<StoredTokens | undefined> {
-        const raw = await this.context.secrets.get(SECRET_KEY);
-        if (raw) {
-            try { return JSON.parse(raw) as StoredTokens; } catch { /* malformed */ }
-        }
-        // Fallback (keyring-less): globalStorage file (survives reload; globalState
-        // can be 0-byte on code-server), with globalState as secondary.
-        const fallback = readFallbackToken(this.context) ?? this.context.globalState.get<string>(FALLBACK_KEY);
-        if (fallback) {
-            try { return JSON.parse(fallback) as StoredTokens; } catch { /* malformed */ }
-        }
-        return undefined;
-    }
-    private async writeTokens(t: StoredTokens): Promise<void> {
-        const payload = JSON.stringify(t);
-        await this.context.secrets.store(SECRET_KEY, payload);
-        // Probe persistence once so the config banner can warn the user.
-        if (this.secretStoragePersists === undefined) {
-            const readBack = await this.context.secrets.get(SECRET_KEY);
-            // A same-session readback can't prove cross-reload persistence: in
-            // code-server (uiKind Web) SecretStorage is in-memory, so it lies here
-            // and the token vanishes on reload. Treat web as non-persistent so the
-            // token always lands in the globalState fallback (which survives reload).
-            this.secretStoragePersists = readBack === payload
-                && vscode.env.uiKind !== vscode.UIKind.Web;
-        }
-        if (this.secretStoragePersists) {
-            // Keep the fallback clean while the keyring works.
-            writeFallbackToken(this.context, undefined);
-            await this.context.globalState.update(FALLBACK_KEY, undefined);
-        } else {
-            // File fallback is the reliable one on code-server; globalState too.
-            writeFallbackToken(this.context, payload);
-            await this.context.globalState.update(FALLBACK_KEY, payload);
-        }
-        this.scheduleRefresh(t.expiresAtMs);   // keep the session alive proactively
-    }
-
     /** Whether SecretStorage persists across restarts (false on snap/code-server);
-     *  drives the config warning banner. Probed once, then cached. */
+     *  drives the config warning banner. */
     async isSecretStorageWorking(): Promise<boolean> {
-        if (this.secretStoragePersists === undefined) {
-            // Throwaway marker under a dedicated key (never SECRET_KEY). Web hosts
-            // are non-persistent (in-memory SecretStorage; same-session readback lies).
-            const probeKey = SECRET_KEY + ".probe";
-            const marker = "symposium-probe";
-            await this.context.secrets.store(probeKey, marker);
-            this.secretStoragePersists = (await this.context.secrets.get(probeKey)) === marker
-                && vscode.env.uiKind !== vscode.UIKind.Web;
-            await this.context.secrets.delete(probeKey);
-        }
-        return this.secretStoragePersists;
+        return this.tokens.isSecretStorageWorking();
     }
 
     /**
@@ -390,73 +335,7 @@ export class SufficitAuth {
      * cleared and the user is notified once, so callers never send a dead token.
      */
     async getAccessToken(forceRefresh = false): Promise<string | null> {
-        const t = await this.readTokens();
-        if (!t) { return null; }
-        if (!forceRefresh && Date.now() < t.expiresAtMs - 60_000) {
-            this.expiredNoticeShown = false;
-            return t.accessToken;
-        }
-        // Expired or server-rejected: serialize refresh so rotating refresh
-        // tokens are not spent twice. forceRefresh is used after an API 401.
-        const refreshed = await this.refreshOnce(forceRefresh);
-        if (refreshed) { return refreshed.accessToken; }
-        await this.clearExpiredSession();
-        return null;
-    }
-
-    private refreshInFlight?: Promise<StoredTokens | undefined>;
-    private async refreshOnce(forceRefresh = false): Promise<StoredTokens | undefined> {
-        if (this.refreshInFlight) { return this.refreshInFlight; }
-        this.refreshInFlight = (async () => {
-            // Re-read: another caller may have refreshed while we queued.
-            const cur = await this.readTokens();
-            if (!forceRefresh && cur && Date.now() < cur.expiresAtMs - 60_000) { return cur; }
-            const rt = cur?.refreshToken;
-            if (!rt) { return undefined; }
-            try {
-                const disco = await this.discovery();
-                const res = await fetch(disco.token_endpoint, {
-                    method: "POST",
-                    headers: { "content-type": "application/x-www-form-urlencoded" },
-                    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: rt, client_id: this.clientId() }).toString(),
-                });
-                if (res.ok) {
-                    const nt = this.toStored(await res.json() as { access_token?: string; expires_in?: number; refresh_token?: string; id_token?: string });
-                    await this.writeTokens(nt);
-                    this.expiredNoticeShown = false;
-                    return nt;
-                }
-                this.log(`[auth] refresh rejected: HTTP ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
-            } catch (err) {
-                this.log(`[auth] refresh failed: ${err}`);
-            }
-            return undefined;
-        })();
-        try { return await this.refreshInFlight; } finally { this.refreshInFlight = undefined; }
-    }
-
-    /** Clears tokens + profile and surfaces the "session expired" notice once. */
-    private async clearExpiredSession(): Promise<void> {
-        await this.context.secrets.delete(SECRET_KEY);
-        writeFallbackToken(this.context, undefined);
-        await this.context.globalState.update(FALLBACK_KEY, undefined);
-        const hadProfile = !!this.profileCache;
-        this.profileCache = undefined;
-        await this.context.globalState.update(PROFILE_KEY, undefined);
-        this.onChangeEmitter.fire();
-        if (hadProfile && !this.expiredNoticeShown) {
-            this.expiredNoticeShown = true;
-            void vscode.window
-                .showWarningMessage(
-                    "Sua sessão do Sufficit expirou e não pôde ser renovada automaticamente.",
-                    "Entrar novamente",
-                )
-                .then((choice) => {
-                    if (choice === "Entrar novamente") {
-                        void vscode.commands.executeCommand("symposium.login");
-                    }
-                });
-        }
+        return this.tokens.getAccessToken(forceRefresh);
     }
 
     async getProfile(force = false): Promise<SufficitProfile | undefined> {
@@ -506,11 +385,6 @@ export class SufficitAuth {
     }
 
     async logout(): Promise<void> {
-        await this.context.secrets.delete(SECRET_KEY);
-        writeFallbackToken(this.context, undefined);
-        await this.context.globalState.update(FALLBACK_KEY, undefined);
-        await this.context.globalState.update(PROFILE_KEY, undefined);
-        this.profileCache = undefined;
-        this.onChangeEmitter.fire();
+        await this.tokens.logout();
     }
 }

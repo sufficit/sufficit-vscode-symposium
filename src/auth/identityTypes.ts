@@ -9,6 +9,8 @@ export interface StoredTokens {
     accessToken: string;
     refreshToken?: string;
     idToken?: string;
+    /** OAuth scopes granted to this session; absent on legacy sessions. */
+    scope?: string;
     expiresAtMs: number;
 }
 

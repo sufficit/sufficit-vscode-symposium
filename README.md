@@ -154,6 +154,7 @@ Core settings are available under `Symposium` in VS Code settings.
 |---|---|
 | `symposium.openai.baseUrl` | OpenAI-compatible endpoint. Defaults to `https://ai.sufficit.com.br/openai/v1`. |
 | `symposium.identity.issuer` | Sufficit Identity issuer. Defaults to `https://identity.sufficit.com.br`. |
+| `symposium.identity.scope` | OAuth scopes requested at login. `roles` and `directives` are always included because Sufficit AI authorization requires them. |
 | `symposium.hub.url` | Sufficit memory/vault hub URL. |
 | `symposium.claude.executable` | Path to the `claude` binary. |
 | `symposium.claude.model` | Default Claude model for new sessions. |
