@@ -109,6 +109,19 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
 
     // Sufficit Identity login (tokens in SecretStorage; basis for memory/MCP).
     const auth = new SufficitAuth(context, symposiumLog);
+    // Register the vscode:// URI handler for PKCE auth-code callback (local desktop).
+    // The callback URI is vscode://sufficit.sufficit-vscode-symposium/callback.
+    context.subscriptions.push(
+        vscode.window.registerUriHandler({
+            handleUri(uri: vscode.Uri) {
+                const query: Record<string, string> = {};
+                for (const [key, value] of new URLSearchParams(uri.query)) {
+                    query[key] = value;
+                }
+                auth.handleRedirect(query);
+            },
+        }),
+    );
     context.subscriptions.push(auth.onDidChange(() => ConfigPanel.refresh()));
     context.subscriptions.push({ dispose: () => auth.dispose() });
     void auth.startAutoRefresh();   // silent token refresh so the session never lapses

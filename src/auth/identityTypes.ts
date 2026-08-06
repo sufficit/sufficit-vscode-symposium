@@ -14,6 +14,7 @@ export interface StoredTokens {
 
 export interface Discovery {
     token_endpoint: string;
+    authorization_endpoint?: string;
     device_authorization_endpoint?: string;
     userinfo_endpoint?: string;
 }

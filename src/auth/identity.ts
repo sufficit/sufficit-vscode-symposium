@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as crypto from "crypto";
 import { readFallbackToken, writeFallbackToken } from "./tokenStore";
 import {
     Discovery, IDENTITY_FALLBACK_KEY as FALLBACK_KEY,
@@ -9,11 +10,10 @@ import {
 export type { SufficitProfile } from "./identityTypes";
 
 /**
- * Sufficit Identity login via OAuth 2.0 Device Authorization Grant against the
- * Duende IdentityServer at identity.sufficit.com.br (device flow needs no
- * redirect URI — works in desktop VS Code and code-server). Tokens live in
- * SecretStorage (fallback file when no keyring); profile from /connect/userinfo.
- * Public client with device_code grant + openid/profile/email/offline_access.
+ * Sufficit Identity login. On local desktop VS Code, uses Authorization Code +
+ * PKCE with a vscode:// callback (no code to copy). Falls back to Device Flow
+ * on remote/SSH/WSL/DevContainer or code-server (where the vscode:// handler
+ * can't be reached by the browser).
  */
 
 export class SufficitAuth {
@@ -28,6 +28,15 @@ export class SufficitAuth {
     private secretStoragePersists: boolean | undefined;
 
     private refreshTimer?: ReturnType<typeof setTimeout>;
+
+    // PKCE state: one in-flight login at a time.
+    private pendingPkce?: {
+        verifier: string;
+        state: string;
+        resolve: (code: string) => void;
+        reject: (err: Error) => void;
+        timeout: ReturnType<typeof setTimeout>;
+    };
 
     constructor(
         private readonly context: vscode.ExtensionContext,
@@ -99,8 +108,124 @@ export class SufficitAuth {
         }
     }
 
-    /** Interactive device-code login. Returns the profile on success. */
+    /** Interactive login. Uses PKCE on local desktop, Device Flow on remote/web. */
     async login(): Promise<SufficitProfile | undefined> {
+        // Local desktop (not remote, not web): prefer PKCE Auth Code with
+        // vscode:// callback — seamless, no code to copy.
+        if (!vscode.env.remoteName && vscode.env.uiKind !== vscode.UIKind.Web) {
+            try {
+                return await this.loginWithPkce();
+            } catch (err) {
+                this.log(`[auth] PKCE login failed, falling back to device flow: ${err}`);
+                // Fall through to device flow on any PKCE error.
+            }
+        }
+        return this.loginWithDeviceFlow();
+    }
+
+    /**
+     * Called by the vscode:// URI handler when the browser redirects back
+     * after PKCE auth. Validates state and resolves the pending PKCE promise.
+     */
+    handleRedirect(query: Record<string, string>): void {
+        if (!this.pendingPkce) {
+            this.log("[auth] PKCE redirect received but no pending login.");
+            return;
+        }
+        const pkce = this.pendingPkce;
+        if (query.state !== pkce.state) {
+            this.log("[auth] PKCE redirect state mismatch — ignoring.");
+            return;
+        }
+        if (query.error) {
+            pkce.reject(new Error(query.error_description ?? query.error));
+            this.clearPendingPkce();
+            return;
+        }
+        if (!query.code) {
+            pkce.reject(new Error("PKCE redirect: missing authorization code."));
+            this.clearPendingPkce();
+            return;
+        }
+        pkce.resolve(query.code);
+    }
+
+    private clearPendingPkce(): void {
+        if (this.pendingPkce) {
+            clearTimeout(this.pendingPkce.timeout);
+            this.pendingPkce = undefined;
+        }
+    }
+
+    /**
+     * Authorization Code + PKCE login for local desktop VS Code.
+     * Opens the browser to the authorize endpoint; the vscode:// handler
+     * receives the callback automatically — no code to copy.
+     */
+    private async loginWithPkce(): Promise<SufficitProfile | undefined> {
+        const clientId = this.clientId();
+        if (!clientId) {
+            void vscode.window.showErrorMessage("Configure symposium.identity.clientId.");
+            return undefined;
+        }
+        const disco = await this.discovery();
+        if (!disco.authorization_endpoint) {
+            throw new Error("Identity does not advertise authorization_endpoint.");
+        }
+
+        // Generate PKCE pair (RFC 7636).
+        const verifier = crypto.randomBytes(32).toString("base64url");
+        const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+        const state = crypto.randomBytes(16).toString("base64url");
+        const redirectUri = `vscode://${vscode.env.uriScheme ?? "vscode"}.sufficit.sufficit-vscode-symposium/callback`;
+
+        // Build the authorization URL.
+        const authUrl = new URL(disco.authorization_endpoint);
+        authUrl.searchParams.set("response_type", "code");
+        authUrl.searchParams.set("client_id", clientId);
+        authUrl.searchParams.set("redirect_uri", redirectUri);
+        authUrl.searchParams.set("scope", this.scope());
+        authUrl.searchParams.set("code_challenge_method", "S256");
+        authUrl.searchParams.set("code_challenge", challenge);
+        authUrl.searchParams.set("state", state);
+
+        // Set up the callback promise (resolved by handleRedirect via the URI handler).
+        const authCode = await new Promise<string>((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.clearPendingPkce();
+                reject(new Error("PKCE login timed out (5 minutes)."));
+            }, 5 * 60 * 1000);
+
+            this.pendingPkce = { verifier, state, resolve, reject, timeout };
+        });
+
+        // Exchange the code for tokens.
+        const tokenRes = await fetch(disco.token_endpoint, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                grant_type: "authorization_code",
+                code: authCode,
+                redirect_uri: redirectUri,
+                client_id: clientId,
+                code_verifier: verifier,
+            }).toString(),
+        });
+        const tokenBody = await tokenRes.json() as { access_token?: string; refresh_token?: string; id_token?: string; expires_in?: number; error?: string; error_description?: string };
+        if (!tokenRes.ok) {
+            throw new Error(`PKCE token exchange failed: ${tokenBody.error_description ?? tokenBody.error ?? tokenRes.status}`);
+        }
+
+        const tokens = this.toStored(tokenBody);
+        await this.writeTokens(tokens);
+        this.profileCache = undefined;
+        const profile = await this.getProfile(true);
+        this.onChangeEmitter.fire();
+        return profile;
+    }
+
+    /** Device Flow login (remote/SSH/web fallback). */
+    private async loginWithDeviceFlow(): Promise<SufficitProfile | undefined> {
         const clientId = this.clientId();
         if (!clientId) {
             void vscode.window.showErrorMessage("Configure symposium.identity.clientId (client OAuth registrado no Sufficit Identity).");
