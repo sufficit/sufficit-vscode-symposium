@@ -134,7 +134,7 @@ export function optimisticUserMessage(clientMessageId, text) {
 
 export function confirmOptimisticMessage(clientMessageId) {
     if (!clientMessageId) { return null; }
-    const el = log.querySelector(`[data-client-message-id="${CSS.escape(clientMessageId)}"]`);
+    const el = log.querySelector(`[data-client-message-id="${CSS.escape(clientMessageId)}"]`) as HTMLElement | null;
     if (!el) { return null; }
     el.classList.remove("pendingConfirm");
     delete el.dataset.clientMessageId;
@@ -143,7 +143,7 @@ export function confirmOptimisticMessage(clientMessageId) {
 // System status notice (e.g. a guardrail stop or compaction annotation).
 // It may be replayed with the visual log, but never becomes assistant output or
 // a conversation row used as model context.
-export function renderStatusNotice(text, anchorIndex, severity) {
+export function renderStatusNotice(text, anchorIndex, severity = "info") {
     const stick = nearBottom();
     // Close any open tool-action group too: a notice fired mid tool-loop
     // (auth retry, mid-turn compaction) must not let the next tool-start
@@ -187,13 +187,21 @@ export function branchBanner(title, detail) {
 // Consecutive tool calls are gathered into one timeline group (a vertical
 // rail) with a summary header, so a turn's work reads as a single activity
 // block instead of a loose list of rows.
-let curToolGroup = null;
+type ToolGroupElement = HTMLDivElement & {
+    _body: HTMLDivElement;
+    _sum: HTMLSpanElement;
+    _n: number;
+    _add: number;
+    _del: number;
+};
+type MessageElement = HTMLDivElement & { _raw?: string };
+let curToolGroup: ToolGroupElement | null = null;
 export function endToolGroup() { curToolGroup = null; }
 configureThinkingRenderer({ closeToolGroup: endToolGroup });
 export function toolGroupBody() {
     if (curToolGroup) { return curToolGroup._body; }
     const stick = nearBottom();
-    const g = document.createElement("div"); g.className = "msg toolgroup";
+    const g = document.createElement("div") as ToolGroupElement; g.className = "msg toolgroup";
     const head = document.createElement("div"); head.className = "tghead";
     const chev = svgIcon("chevron"); chev.classList.add("tgchev");
     const sum = document.createElement("span"); sum.className = "tgsum";
@@ -222,10 +230,10 @@ export function bumpToolGroup(added, removed) {
 const BACKEND_NAMES = { claude: "Claude", codex: "Codex", copilot: "Copilot", openai: "Sufficit AI" };
 // Track last rendered assistant context to show role label only on change
 let lastMsgBackend = "", lastMsgModel = "";
-export function message(role, text, ts, model) {
+export function message(role, text, ts = undefined, model = undefined) {
     const stick = nearBottom();
     endToolGroup();
-    const wrap = document.createElement("div");
+    const wrap = document.createElement("div") as MessageElement;
     wrap.className = "msg " + role;
     wrap.dataset.role = role;
     wrap.dataset.msgIndex = String(conversationRows.length);

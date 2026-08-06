@@ -94,9 +94,9 @@ export function updateSendTitle() {
     stopBtn.style.display = "none";
 }
 
-export function setStatus() {
+export function setStatus(override?: string) {
     const q = queued > 0 ? " · " + queued + " queued" : "";
-    status.textContent = composerBlockedReason ? "" : (busy ? ("thinking..." + q) : (activeModel ? "model: " + modelLabel(activeModel) : ""));
+    status.textContent = composerBlockedReason ? "" : (override ?? (busy ? ("thinking..." + q) : (activeModel ? "model: " + modelLabel(activeModel) : "")));
     // The model menu remains useful with an empty catalog: it exposes Refresh
     // models and manual entry, which is how a new Sufficit installation recovers
     // after presets/login become available. Reasoning has no such fallback.

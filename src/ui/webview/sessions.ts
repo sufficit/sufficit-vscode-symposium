@@ -291,10 +291,11 @@ export function renderSessionItem(s, depth, childCount) {
         el.tabIndex = 0;
         el.setAttribute("role", "option");
         el.setAttribute("aria-selected", s.sessionId === activeSessionId ? "true" : "false");
+        const item = el as HTMLElement;
         el.addEventListener("keydown", (e) => {
             if (e.key === "Enter" || e.key === " ") { e.preventDefault(); body.click(); }
-            else if (e.key === "ArrowDown") { e.preventDefault(); const next = el.nextElementSibling; if (next && next.classList.contains("sessionItem")) { next.focus(); } else { const after = el.parentElement.querySelectorAll(".sessionItem"); const idx = Array.from(after).indexOf(el); if (idx + 1 < after.length) { after[idx + 1].focus(); } } }
-            else if (e.key === "ArrowUp") { e.preventDefault(); const prev = el.previousElementSibling; if (prev && prev.classList.contains("sessionItem")) { prev.focus(); } else { const all = el.parentElement.querySelectorAll(".sessionItem"); const idx = Array.from(all).indexOf(el); if (idx > 0) { all[idx - 1].focus(); } } }
+            else if (e.key === "ArrowDown") { e.preventDefault(); const next = item.nextElementSibling as HTMLElement | null; if (next?.classList.contains("sessionItem")) { next.focus(); } else { const after = item.parentElement?.querySelectorAll(".sessionItem") || []; const idx = Array.from(after).indexOf(item); if (idx + 1 < after.length) { (after[idx + 1] as HTMLElement).focus(); } } }
+            else if (e.key === "ArrowUp") { e.preventDefault(); const prev = item.previousElementSibling as HTMLElement | null; if (prev?.classList.contains("sessionItem")) { prev.focus(); } else { const all = item.parentElement?.querySelectorAll(".sessionItem") || []; const idx = Array.from(all).indexOf(item); if (idx > 0) { (all[idx - 1] as HTMLElement).focus(); } } }
         });
         // Pinned items reorder by drag-and-drop (the up/down menu still works).
         if (s.pinned) {

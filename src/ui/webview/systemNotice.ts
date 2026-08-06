@@ -33,7 +33,7 @@ function renderText(el, text) {
 }
 
 /** Builds a system-owned conversation event with an explicit semantic level. */
-export function createSystemNotice(text, severity, anchorIndex, onAnchor) {
+export function createSystemNotice(text, severity = "info", anchorIndex = undefined, onAnchor: (index: number) => void = (_index) => {}) {
     const level = severity === "warning" || severity === "error" ? severity : "info";
     const labelText = level === "warning" ? "Warning" : level === "error" ? "Error" : "System";
     const el = document.createElement("div");

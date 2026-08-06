@@ -1,8 +1,8 @@
 {
   "name": "sufficit-vscode-symposium",
   "displayName": "Sufficit Symposium",
-  "description": "Symposium (\u03c3\u03c5\u03bc\u03c0\u03cc\u03c3\u03b9\u03bf\u03bd) \u2014 host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-  "version": "2026.806.3",
+  "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
+  "version": "2026.806.4",
   "publisher": "sufficit",
   "license": "MIT",
   "icon": "media/symposium-icon.png",
@@ -222,12 +222,6 @@
           "group": "navigation@9"
         }
       ],
-      "scm/inputBox": [
-        {
-          "command": "symposium.generateCommitMessage",
-          "when": "scmProvider == git"
-        }
-      ],
       "scm/title": [
         {
           "command": "symposium.generateCommitMessage",
@@ -298,12 +292,12 @@
         "symposium.openai.autoCompactAt": {
           "type": "number",
           "default": 0.8,
-          "description": "Auto-compact the conversation when a request reaches this fraction (0\u20131) of the model's context window: older turns are summarized into one note (full transcript stays in the lossless ledger; tool outputs recoverable via read_session) so the live context shrinks. 0 disables auto-compaction (manual /compact still works)."
+          "description": "Auto-compact the conversation when a request reaches this fraction (0–1) of the model's context window: older turns are summarized into one note (full transcript stays in the lossless ledger; tool outputs recoverable via read_session) so the live context shrinks. 0 disables auto-compaction (manual /compact still works)."
         },
         "symposium.openai.autoCompactOnTasksComplete": {
           "type": "boolean",
           "default": true,
-          "description": "Auto-compact the conversation the moment the last pending session task is completed (task_complete/TaskUpdate reports zero remaining) \u2014 a natural end-of-work boundary, independent of the context-window percentage above."
+          "description": "Auto-compact the conversation the moment the last pending session task is completed (task_complete/TaskUpdate reports zero remaining) — a natural end-of-work boundary, independent of the context-window percentage above."
         },
         "symposium.openai.maxHistoryMessages": {
           "type": "number",
@@ -320,7 +314,7 @@
             "12h"
           ],
           "enumDescriptions": [
-            "Never mention elapsed time \u2014 the model is never told about real-world gaps between messages.",
+            "Never mention elapsed time — the model is never told about real-world gaps between messages.",
             "Note it once the gap since your last message is at least 5 minutes (default).",
             "Note it once the gap since your last message is at least 30 minutes.",
             "Note it once the gap since your last message is at least 2 hours.",
@@ -341,7 +335,7 @@
             "No approval needed for any activity (default).",
             "Approval needed only for destructive actions (e.g. shell commands); writes run immediately.",
             "Approval needed for every write action, not just destructive ones.",
-            "Read-only planning \u2014 the only write allowed is creating a new *.md document."
+            "Read-only planning — the only write allowed is creating a new *.md document."
           ],
           "default": "admin",
           "description": "Default permission mode for this session's composer (same 4 modes shared by every Symposium adapter; changeable per session from the composer's permission picker)."
@@ -409,7 +403,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Extra VS Code Language Model Tools to never bridge to the native 'Sufficit AI' backend (substring match on the tool name). Copilot's own memory tools (copilot_memory and *memory* tools, which write to Copilot's store \u2014 NOT the Sufficit memory) are always blocked regardless of this list."
+          "description": "Extra VS Code Language Model Tools to never bridge to the native 'Sufficit AI' backend (substring match on the tool name). Copilot's own memory tools (copilot_memory and *memory* tools, which write to Copilot's store — NOT the Sufficit memory) are always blocked regardless of this list."
         },
         "symposium.subagents.timeoutMs": {
           "type": "number",
@@ -480,7 +474,7 @@
         "symposium.voice.whisper.model": {
           "type": "string",
           "default": "base",
-          "description": "whisper.cpp model id (tiny, base, small, medium, large-v3-turbo, ...). Download it from Settings \u2192 Voice."
+          "description": "whisper.cpp model id (tiny, base, small, medium, large-v3-turbo, ...). Download it from Settings → Voice."
         },
         "symposium.voice.whisper.threads": {
           "type": "number",
@@ -555,7 +549,7 @@
         "symposium.voice.vosk.model": {
           "type": "string",
           "default": "vosk-model-small-pt-0.3",
-          "description": "Vosk model id. Download it from Settings \u2192 Voice."
+          "description": "Vosk model id. Download it from Settings → Voice."
         },
         "symposium.bridge.enabled": {
           "type": "boolean",
@@ -609,7 +603,7 @@
             "untrusted"
           ],
           "default": "acceptEdits",
-          "description": "Permission mode forced onto every session created via the remote bridge. bypassPermissions / never are deliberately not offered \u2014 a remote request must never run the agent's shell/edits unattended without approval."
+          "description": "Permission mode forced onto every session created via the remote bridge. bypassPermissions / never are deliberately not offered — a remote request must never run the agent's shell/edits unattended without approval."
         },
         "symposium.bridge.allowedLmTools": {
           "type": "array",
@@ -622,7 +616,7 @@
         "symposium.bridge.allowExecutableOverride": {
           "type": "boolean",
           "default": false,
-          "description": "Allow a remote caller to rewrite a backend's executable path. Off by default \u2014 it is a clean remote code-execution primitive."
+          "description": "Allow a remote caller to rewrite a backend's executable path. Off by default — it is a clean remote code-execution primitive."
         },
         "symposium.bridge.allowVaultResolve": {
           "type": "boolean",
@@ -660,12 +654,12 @@
           ],
           "enumDescriptions": [
             "No approval needed for any activity (default). Maps to claude --permission-mode bypassPermissions.",
-            "Not yet enforced for the Claude CLI \u2014 runs as admin until Claude's hook system is wired up for this.",
-            "Not yet enforced for the Claude CLI \u2014 runs as admin until Claude's hook system is wired up for this.",
+            "Not yet enforced for the Claude CLI — runs as admin until Claude's hook system is wired up for this.",
+            "Not yet enforced for the Claude CLI — runs as admin until Claude's hook system is wired up for this.",
             "Read-only planning. Maps to claude --permission-mode plan.",
             "Legacy value: Claude's own acceptEdits flag, passed through as-is.",
             "Legacy value: Claude's own bypassPermissions flag, passed through as-is.",
-            "Legacy value: claude's built-in default (interactive prompts) \u2014 not usable headlessly."
+            "Legacy value: claude's built-in default (interactive prompts) — not usable headlessly."
           ],
           "default": "admin",
           "description": "Default permission mode for this session's composer (same 4 modes shared by every Symposium adapter; changeable per session from the composer's permission picker)."
@@ -725,8 +719,8 @@
           ],
           "enumDescriptions": [
             "No approval needed for any activity (default). Runs with --sandbox danger-full-access.",
-            "Not yet enforced for the Codex CLI \u2014 runs as admin until Codex's approval protocol is wired up for this.",
-            "Not yet enforced for the Codex CLI \u2014 runs as admin until Codex's approval protocol is wired up for this.",
+            "Not yet enforced for the Codex CLI — runs as admin until Codex's approval protocol is wired up for this.",
+            "Not yet enforced for the Codex CLI — runs as admin until Codex's approval protocol is wired up for this.",
             "Read-only planning. Runs with --sandbox read-only.",
             "Legacy value: Codex's own untrusted approval_policy, passed through as-is (uses symposium.codex.sandboxMode).",
             "Legacy value: Codex's own on-failure approval_policy, passed through as-is (uses symposium.codex.sandboxMode).",
@@ -805,7 +799,7 @@
         "symposium.adapters": {
           "type": "array",
           "default": [],
-          "markdownDescription": "Extra OpenAI-compatible adapters. Each entry: `{ name, baseUrl, headers, apiKey, model, models, supportsDeveloperRole }`. `id` is auto-generated (GUID) on save if omitted \u2014 keeps sessions stable when you rename. Leave `models` empty to auto-discover from `GET <baseUrl>/models`. Set `supportsDeveloperRole: true` only for gateways that truly accept the OpenAI `developer` role; otherwise developer prompts are downgraded to `system`. Edit via 'Symposium: Edit Adapters (JSON)'.",
+          "markdownDescription": "Extra OpenAI-compatible adapters. Each entry: `{ name, baseUrl, headers, apiKey, model, models, supportsDeveloperRole }`. `id` is auto-generated (GUID) on save if omitted — keeps sessions stable when you rename. Leave `models` empty to auto-discover from `GET <baseUrl>/models`. Set `supportsDeveloperRole: true` only for gateways that truly accept the OpenAI `developer` role; otherwise developer prompts are downgraded to `system`. Edit via 'Symposium: Edit Adapters (JSON)'.",
           "items": {
             "type": "object",
             "required": [
@@ -929,7 +923,7 @@
         },
         "symposium.chat.memoryInstruction": {
           "type": "string",
-          "default": "Before asking the user for context you lack (infrastructure, servers, credentials, config, prior decisions) or saying you don't know, search Sufficit shared memory first: memory_search \u2192 memory_get_observations. Only ask the user if that comes up empty.",
+          "default": "Before asking the user for context you lack (infrastructure, servers, credentials, config, prior decisions) or saying you don't know, search Sufficit shared memory first: memory_search → memory_get_observations. Only ask the user if that comes up empty.",
           "editPresentation": "multilineText",
           "description": "Sufficit memory search hint injected into the system prompt for logged-in users. Clear the field to disable injection entirely."
         },
@@ -956,22 +950,22 @@
         "symposium.compression.defaultPresetId": {
           "type": "string",
           "default": "none",
-          "description": "ID do preset de compress\u00e3o padr\u00e3o para novas se\u00e7\u00f5es de chat."
+          "description": "ID do preset de compressão padrão para novas seções de chat."
         },
         "symposium.compression.presets": {
           "type": "array",
           "default": [],
-          "description": "Configura\u00e7\u00e3o customizada de presets de compress\u00e3o (JSON array de CompressionPreset). Use a tela de configura\u00e7\u00f5es para editar."
+          "description": "Configuração customizada de presets de compressão (JSON array de CompressionPreset). Use a tela de configurações para editar."
         },
         "symposium.compression.showSelector": {
           "type": "boolean",
           "default": true,
-          "description": "Mostra seletor de compress\u00e3o na interface de chat."
+          "description": "Mostra seletor de compressão na interface de chat."
         },
         "symposium.compression.showDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "Mostra diagn\u00f3stico de compress\u00e3o na barra de status."
+          "description": "Mostra diagnóstico de compressão na barra de status."
         },
         "symposium.bridge._workspaceToken": {
           "type": "string",

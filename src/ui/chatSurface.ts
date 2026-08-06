@@ -145,13 +145,15 @@ export class ChatSurface {
     }
 
     private post(message: unknown): void {
-        const msg = message as Record<string, unknown> | null;
-        symposiumLog(`[surface] -> webview: ${msg?.type ?? ""}${this.ready ? "" : " (queued)"}`);
-        if (this.ready) {
-            void this.webview.postMessage(message);
-        } else {
+        if (!this.ready) {
             this.queue.push(message);
+            return;
         }
+        void Promise.resolve(this.webview.postMessage(message)).then((delivered) => {
+            if (!delivered) { symposiumLog("[surface] webview rejected a message"); }
+        }, (error) => {
+            symposiumLog(`[surface] webview post failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
     }
 
     private onMessage(message: WebviewToHost): Promise<void> {

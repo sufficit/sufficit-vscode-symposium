@@ -25,6 +25,7 @@ import { registerCommands } from "./extension/commands";
 import { initSttStorage } from "./voice/sttService";
 import { initVscodeSpeechBridge } from "./voice/vscodeSpeechBridge";
 import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/codex/sufficitMcp";
+import { migrateLegacySettings } from "./extension/legacySettings";
 
 // Re-exported so consumers (e.g. ui/chatSurface) can keep importing from here.
 export { symposiumLog } from "./extension/log";
@@ -36,6 +37,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const output = vscode.window.createOutputChannel("Symposium");
     setSymposiumOutput(output);
     context.subscriptions.push(output);
+    void migrateLegacySettings().catch((error) => {
+        symposiumLog(`[settings] legacy migration failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
 
     // Local speech-to-text model storage (downloaded on demand under global storage).
     initSttStorage(context);

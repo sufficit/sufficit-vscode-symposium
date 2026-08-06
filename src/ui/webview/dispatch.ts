@@ -18,7 +18,7 @@ import { modelLabels, modelValue, modelList, modelDefault, setModelDefault, setM
 import { armStickyUserMessage, layout, refreshEmpty, scrollToBottom, settleAtBottom, nearBottom, autoScroll } from "./scroll";
 import { svgIcon } from "./icons";
 import { renderAgentPicker, refreshAgentPicker, hideAgentPicker } from "./agentPicker";
-import { log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge, chatTitle } from "./dom";
+import { root, log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge, chatTitle } from "./dom";
 import { sessions, busy, activeModel, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setBusy, setCommands, setConversationRows, setPendingSessionSwitch, setQueued, setSessions, setSideMode, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPendingSwitchAnchor } from "./state";
 import { resolveMarkdownImage } from "./markdown";
 import { preserveSelectedModel } from "./modelCatalog";

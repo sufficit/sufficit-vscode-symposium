@@ -10,7 +10,7 @@ const BOOT_ICONS = {
 };
 const bootSteps = new Map();
 let bootDone = false;
-export function renderBootStep(id, label, status, detail) {
+export function renderBootStep(id, label, status, detail = "") {
     if (!bootStepsEl) { return; }
     try {
         let row = bootSteps.get(id);
@@ -30,22 +30,22 @@ export function renderBootStep(id, label, status, detail) {
         row.className = "bootStep " + st;
         const ic = row.querySelector(".bsIcon");
         ic.innerHTML = st === "pending" ? '<span class="bsSpin"></span>' : (BOOT_ICONS[st] || "");
-    } catch (e) { /* best-effort — never block script init */ }
+    } catch (e) { console.error("[symposium boot] failed to render step", e); }
 }
-export function bootStep(id, label, status, detail) {
+export function bootStep(id, label, status, detail = "") {
     if (bootDone && status === "ok") { return; }
     renderBootStep(id, label, status, detail);
 }
 export function bootComplete() {
     if (bootDone) { return; }
     bootDone = true;
-    try { clearTimeout(bootForce); } catch (e) {}
+    clearTimeout(bootForce);
     root.classList.add("booted");
 }
 // Seed the steps we know about up front (extension confirms/overrides them).
-try { bootStep("host", t("chat.boot.step.host"), "pending"); } catch (e) {}
-try { bootStep("ui", t("chat.boot.step.ui"), "ok"); } catch (e) {}
-try { bootStep("session", t("chat.boot.step.session"), "pending"); } catch (e) {}
+try { bootStep("host", t("chat.boot.step.host"), "pending"); } catch (e) { console.error("[symposium boot] host step failed", e); }
+try { bootStep("ui", t("chat.boot.step.ui"), "ok"); } catch (e) { console.error("[symposium boot] ui step failed", e); }
+try { bootStep("session", t("chat.boot.step.session"), "pending"); } catch (e) { console.error("[symposium boot] session step failed", e); }
 // Safety: never trap the user behind the boot screen. After a short grace
 // period surface a warning; shortly after, force-reveal the UI even if the
 // extension never resolved the session (e.g. a backend's discovery hung).

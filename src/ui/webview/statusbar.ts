@@ -9,9 +9,10 @@ import { hideCtx } from "./menus";
 import { send } from "./composer";
 import { mergeQuotaSnapshot } from "../quotaSnapshot";
 
-let lastUsage = null, lastStatusData = {};
+let lastUsage = null;
+let lastStatusData: any = {};
 let quotaLoading = false;
-let lastTurn = {};            // { costUsd, durationMs } from the last turn-end
+let lastTurn: any = {};            // { costUsd, durationMs } from the last turn-end
 const quotaByBackend = new Map();
 for (const quota of Array.isArray(saved.adapterQuotas) ? saved.adapterQuotas : []) {
     if (quota && typeof quota.backend === "string" && Array.isArray(quota.windows)) {
@@ -77,12 +78,12 @@ function meter(percent, label, onOpen, className = "", displayedPercent = percen
     return button;
 }
 
-export function renderStatusbar(data) {
+export function renderStatusbar(data: any = {}) {
     lastStatusData = data || lastStatusData;
     data = lastStatusData;
     const quotaPopoverOpen = ctxMenu.style.display === "block" && !!ctxMenu.querySelector(".quotaPop");
     statusbar.textContent = "";
-    const seg = (iconName, text, title) => {
+    const seg = (iconName, text, title = "") => {
         const s = document.createElement("span"); s.className = "seg"; if (title) s.title = title;
         if (iconName) s.appendChild(svgIcon(iconName));
         s.appendChild(document.createTextNode(text));
@@ -259,7 +260,7 @@ export function openUsagePopover(anchor) {
     const box = document.createElement("div"); box.className = "usagePop";
     // One key/value line. opts: { sub, dot, note } — dot draws a legend swatch,
     // note is a dim suffix (e.g. a percentage), sub indents a breakdown row.
-    const row = (label, value, opts) => {
+    const row = (label, value, opts: any = {}) => {
         const o = opts || {};
         const r = document.createElement("div"); r.className = "uRow" + (o.sub ? " uSub" : "");
         const a = document.createElement("span"); a.className = "uLbl";

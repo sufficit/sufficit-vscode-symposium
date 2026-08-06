@@ -21,7 +21,13 @@ import { applyStaticI18n } from "./staticI18n";
     window.addEventListener("error", (e) => {
         const bh = document.getElementById("bootHint");
         if (bh) { bh.textContent = "❌ " + (e.message || "JS error") + " @" + (e.lineno || "?"); bh.style.color = "var(--vscode-errorForeground, #f14c4c)"; bh.style.opacity = "1"; }
-        try { if (typeof vscode !== "undefined") { vscode.postMessage({ type: "webview-error", message: (e.message || "error") + " @" + (e.lineno || "?") }); } } catch(_) {}
+        try {
+            if (typeof vscode !== "undefined") {
+                vscode.postMessage({ type: "webview-error", message: (e.message || "error") + " @" + (e.lineno || "?") });
+            }
+        } catch (reportError) {
+            console.error("[symposium webview] failed to report an error", reportError);
+        }
     });
 
 
@@ -316,19 +322,22 @@ import { applyStaticI18n } from "./staticI18n";
     // posts attachments-picked back, which adds the chips.
     const dragRelevant = (dt) => !!dt && Array.from(dt.types || []).some((t) => t === "Files" || t === "text/uri-list");
     ["dragenter", "dragover"].forEach((evName) => composerEl.addEventListener(evName, (e) => {
-        if (!dragRelevant(e.dataTransfer)) { return; }
+        const dragEvent = e as DragEvent;
+        if (!dragRelevant(dragEvent.dataTransfer)) { return; }
         e.preventDefault(); e.stopPropagation();
-        try { e.dataTransfer.dropEffect = "copy"; } catch (_) {}
+        if (dragEvent.dataTransfer) { dragEvent.dataTransfer.dropEffect = "copy"; }
         composerEl.classList.add("dragover");
     }));
     composerEl.addEventListener("dragleave", (e) => {
-        if (!composerEl.contains(e.relatedTarget)) { composerEl.classList.remove("dragover"); }
+        const related = e.relatedTarget as Node | null;
+        if (!related || !composerEl.contains(related)) { composerEl.classList.remove("dragover"); }
     });
     composerEl.addEventListener("drop", (e) => {
-        if (!e.dataTransfer) { return; }
+        const dropEvent = e as DragEvent;
+        if (!dropEvent.dataTransfer) { return; }
         e.preventDefault(); e.stopPropagation();
         composerEl.classList.remove("dragover");
-        const files = Array.from(e.dataTransfer.files || []);
+        const files = Array.from(dropEvent.dataTransfer.files || []);
         if (files.length) {
             const payloads = [];
             let pending = files.length;
@@ -341,12 +350,12 @@ import { applyStaticI18n } from "./staticI18n";
             });
             return;
         }
-        const uriList = e.dataTransfer.getData("text/uri-list");
+        const uriList = dropEvent.dataTransfer.getData("text/uri-list");
         if (uriList) {
             const uris = uriList.split(/\r?\n/).map((u) => u.trim()).filter((u) => u && u.charAt(0) !== "#");
             if (uris.length) { vscode.postMessage({ type: "drop-uris", uris }); return; }
         }
-        const plain = (e.dataTransfer.getData("text/plain") || "").trim();
+        const plain = (dropEvent.dataTransfer.getData("text/plain") || "").trim();
         if (plain && (plain.startsWith("file:") || plain.startsWith("/"))) {
             const uris = plain.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
                 .map((s) => (s.startsWith("file:") ? s : "file://" + s));

@@ -164,7 +164,7 @@ export function renderTool(name, detail, opts) {
     else if (detailText && !opts.path) { body.appendChild(toolSection(detailLabel(name), detailText)); }
     let resultSec = null;
     let resultText = "";
-    const showResult = (text, replace) => {
+    const showResult = (text, replace = false) => {
         if (!text) return;
         // Streaming adapters often send chunks via tool-output and then send
         // the same complete payload on tool-end. The final result replaces the
@@ -196,7 +196,7 @@ export function renderTool(name, detail, opts) {
     if (opts.toolId) { toolRows[opts.toolId] = { showResult, wrap, body }; }
     return wrap;
 }
-export function fillToolResult(toolId, result, final) {
+export function fillToolResult(toolId, result, final = false) {
     const rec = toolId && toolRows[toolId];
     if (rec) {
         rec.showResult(result, final);

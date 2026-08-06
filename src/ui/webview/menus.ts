@@ -8,8 +8,7 @@ import { copyText } from "./markdown";
 
 const CLI_BACKENDS: any = { claude: 1, codex: 1, copilot: 1 };
 
-export function openChoiceMenu(anchorEl, options, current, onPick, opts) {
-    opts = opts || {};
+export function openChoiceMenu(anchorEl, options, current, onPick, opts: any = {}) {
     ctxMenu.textContent = "";
     const wantSearch = opts.search || options.length >= 9;
 
@@ -208,14 +207,14 @@ export function hideTip() {
     tipTarget = null;
 }
 document.addEventListener("mouseover", (e) => {
-    const t = e.target.closest && e.target.closest("[title]");
+    const t = (e.target as HTMLElement | null)?.closest?.("[title]");
     if (t && t !== tipTarget) { showTip(t); }
 });
 document.addEventListener("mouseout", (e) => {
     if (tipTarget && !tipTarget.contains(e.relatedTarget)) { hideTip(); }
 });
 document.addEventListener("focusin", (e) => {
-    const t = e.target.closest && e.target.closest("[title]");
+    const t = (e.target as HTMLElement | null)?.closest?.("[title]");
     if (t) { showTip(t); }
 });
 document.addEventListener("focusout", () => hideTip());
@@ -292,7 +291,7 @@ document.addEventListener("click", hideCtx);
 // and NOT for programmatic auto-scroll of the log (new messages must not
 // close an open menu like the send-mode picker).
 document.addEventListener("scroll", (e) => {
-    if (ctxMenu.contains(e.target)) { return; }
+    if (e.target instanceof Node && ctxMenu.contains(e.target)) { return; }
     if (Date.now() - lastAutoScroll < 200) { return; }
     hideCtx();
 }, true);

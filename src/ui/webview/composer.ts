@@ -78,7 +78,8 @@ export function makeChip(label, fullPath, onRemove, active, openPath) {
     if (openPath) {
         chip.classList.add("clickable");
         chip.addEventListener("click", (e) => {
-            if (e.target && e.target.classList && e.target.classList.contains("x")) { return; }
+            const target = e.target as HTMLElement | null;
+            if (target?.classList.contains("x")) { return; }
             vscode.postMessage({ type: "open-file", path: openPath });
         });
     }
@@ -98,7 +99,8 @@ export function renderChips() {
             chip.classList.add("suggestChip");
             chip.title = activeFile + activeFileSuffix() + " — preview (clique para anexar ao contexto)";
             chip.addEventListener("click", (e) => {
-                if (e.target && e.target.classList && e.target.classList.contains("x")) { return; }
+                const target = e.target as HTMLElement | null;
+                if (target?.classList.contains("x")) { return; }
                 setActiveFilePinned(true); renderChips();
             });
         }
@@ -122,8 +124,9 @@ let editAnchor = null;
 let sendSeq = 0;
 export function markEditing() {
     log.querySelectorAll("[data-msg-index]").forEach((el) => {
-        const i = Number(el.dataset.msgIndex || "-1");
-        el.classList.toggle("willReplace", editAnchor != null && i >= editAnchor);
+        const item = el as HTMLElement;
+        const i = Number(item.dataset.msgIndex || "-1");
+        item.classList.toggle("willReplace", editAnchor != null && i >= editAnchor);
     });
     composerEl.classList.toggle("editing", editAnchor != null);
     cancelEditBtn.style.display = editAnchor != null ? "inline-flex" : "none";
@@ -176,7 +179,7 @@ window.addEventListener("symposium-voice-ended", () => {
 let lastInputWasSpeech = false;
 export function setSpeechInput(v: boolean): void { lastInputWasSpeech = v; }
 
-export function send(modeOverride) {
+export function send(modeOverride = "") {
     if (composerBlockedReason) { return; }
     if (isVoiceRecording()) {
         pendingVoiceSend = true;
