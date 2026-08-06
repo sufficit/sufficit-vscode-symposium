@@ -130,6 +130,7 @@ export class ChatSurface {
             if (e.affectsConfiguration("symposium.chat.devMode")) {
                 this.post({ type: "prefs", devMode: vscode.workspace.getConfiguration("symposium.chat").get<boolean>("devMode", false) });
             }
+            if (e.affectsConfiguration("symposium.chat.openIn")) { const openIn = vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor"); this.post({ type: "prefs", openIn, sessionsOnly: !this.chatOnly && openIn === "editor" }); }
             if (e.affectsConfiguration("symposium.voice") && this.ready) {
                 this.pushVoicePreferences();
             }
@@ -171,6 +172,7 @@ export class ChatSurface {
         void this.webview.postMessage({ type: "setLang", lang });
 
         this.pushVoicePreferences();
+        const openIn = vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor"); this.post({ type: "prefs", openIn, sessionsOnly: !this.chatOnly && openIn === "editor" });
 
         for (const queued of this.queue) {
             void this.webview.postMessage(queued);

@@ -227,6 +227,14 @@
         border-left: 1px solid var(--vscode-panel-border, #333);
     }
     #root.side-right #chatCol { order: 1; }
+    /* When sessions open in the center editor, the sidebar remains a useful
+       navigator but must not duplicate the conversation/composer. */
+    #root.sessions-only #chatCol,
+    #root.sessions-only #resizer { display: none; }
+    #root.sessions-only #sessionsPane {
+        flex: 1; width: auto; min-width: 0;
+        border-left: none; border-right: none;
+    }
     #root.narrow #sessionsPane { display: none; }
     #root.chat-only #sessionsPane { display: none; }
     #root.chat-only #listToggle { display: none; }
@@ -241,6 +249,9 @@
         display: flex; position: absolute; z-index: 10; height: 100vh;
         background: var(--vscode-editor-background);
         box-shadow: 0 0 12px rgba(0,0,0,0.4);
+    }
+    #root.narrow.sessions-only #sessionsPane {
+        display: flex; position: static; height: auto; box-shadow: none;
     }
     #sessionsHeader {
         display: flex; align-items: center; justify-content: space-between;

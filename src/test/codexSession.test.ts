@@ -60,8 +60,11 @@ test("Codex applies a model picker change to the next exec turn", () => {
 
 test("Codex exposes the latest effective model for session restoration", () => {
     const session = new CodexSession({ executable: "codex", model: "gpt-5.6-sol", reasoning: "default", approvalPolicy: "admin", sandboxMode: "danger-full-access" }, { cwd: process.cwd(), model: "gpt-5.6-sol" });
+    const events: unknown[] = [];
+    session.on("event", (event) => events.push(event));
     (session as unknown as { handleLine(line: string): void }).handleLine(JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna" } }));
     assert.equal(session.getModel(), "gpt-5.6-luna");
+    assert.deepEqual(events, [{ kind: "model", model: "gpt-5.6-luna" }]);
     session.dispose();
 });
 

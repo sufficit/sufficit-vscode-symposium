@@ -61,6 +61,7 @@ export interface AdapterUsageProvider {
 /** A normalized event emitted by any adapter while a turn is running. */
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
+    | { kind: "model"; model: string }
     | { kind: "text"; text: string; model?: string; modelLabel?: string }
     /** System-authored annotation, never assistant output.
      *  anchorIndex: conversation-row index to scroll to/highlight when clicked. */

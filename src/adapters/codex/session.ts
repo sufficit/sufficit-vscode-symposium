@@ -226,8 +226,9 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 break;
             case "turn_context": {
                 const payload = typeof event.payload === "object" && event.payload !== null ? event.payload as Record<string, unknown> : {};
-                if (typeof payload.model === "string" && payload.model) {
+                if (typeof payload.model === "string" && payload.model && payload.model !== this.effectiveModel) {
                     this.effectiveModel = payload.model;
+                    this.emit("event", { kind: "model", model: this.effectiveModel });
                 }
                 break;
             }

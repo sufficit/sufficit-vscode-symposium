@@ -27,6 +27,7 @@ export function applyMeta(data: any): void {
     // Apply the real busy state from the host (overrides any stale busy set by render log replay).
     setBusy(!!data.busy);
     root.classList.toggle("chat-only", !!data.chatOnly);
+    root.classList.toggle("sessions-only", data.openIn === "editor" && !data.chatOnly);
     scheduleLayout();   // apply sessions-side after the host dimensions settle
     setActiveSessionId(nextSessionId);
     copySessionBtn.style.display = "inline-flex";   // a session surface is open

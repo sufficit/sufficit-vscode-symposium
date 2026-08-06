@@ -6,7 +6,7 @@ import { renderStatusbar, setLastQuota, setLastTurn, setLastUsage, setSessionCos
 import { setStatus } from "./status";
 import { modelLabel, modelList, setModelLabel, setModelValue } from "./models";
 import { sendBtn } from "./dom";
-import { activeSessionId, agentLabels, currentBackend, currentBackendName, setActiveModel, setActiveSessionId, setAgentLabels, setBusy } from "./state";
+import { activeModel, activeSessionId, agentLabels, currentBackend, currentBackendName, queued, setActiveModel, setActiveSessionId, setAgentLabels, setBusy } from "./state";
 import { legacyGuardrailStopNotice } from "../../adapters/openai/turnNotices";
 
 /** Apply an `event` message payload (streaming turn events). */
@@ -39,7 +39,11 @@ export function applyEvent(ev: any): void {
         if (ev.todos) { renderTool("TodoWrite", "", { todos: ev.todos }); }
     }
     else if (ev.kind === "approval-request") renderApprovalRequest(ev.toolId, ev.toolName, ev.detail, ev.tier);
-    else if (ev.kind === "usage") { setLastUsage(ev); renderStatusbar({}); }
+    else if (ev.kind === "model") {
+        applyEffectiveModel(ev.model);
+        setStatus();
+    }
+    else if (ev.kind === "usage") { applyEffectiveModel(ev.model); setLastUsage(ev); renderStatusbar({}); }
     else if (ev.kind === "quota") { setLastQuota(ev); renderStatusbar({}); }
     else if (ev.kind === "error") {
         // The composer's send/stop button reflects ONLY the agent's
@@ -73,8 +77,17 @@ export function applyEvent(ev: any): void {
     }
     else if (ev.kind === "turn-end") {
         setBusy(false); sendBtn.disabled = false; setStatus();
+        if (!queued) { applyEffectiveModel(activeModel); }
         setLastTurn({ costUsd: ev.costUsd, durationMs: ev.durationMs });
         if (ev.costUsd) { setSessionCostUsd(sessionCostUsd + ev.costUsd); }
         append("meta", "—" + (ev.costUsd ? " $" + ev.costUsd.toFixed(4) : "") + (ev.durationMs ? " " + (ev.durationMs/1000).toFixed(1) + "s" : "") + " —");
     }
+}
+
+function applyEffectiveModel(model: unknown): void {
+    if (typeof model !== "string" || !model) { return; }
+    setActiveModel(model);
+    // A queued message already captured its own model. Keep that picker value
+    // until the queued turn starts; otherwise show the model actually used.
+    if (!queued) { setModelValue(model); setModelLabel(); }
 }

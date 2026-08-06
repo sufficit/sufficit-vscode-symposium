@@ -19,7 +19,7 @@ import { armStickyUserMessage, layout, refreshEmpty, scrollToBottom, settleAtBot
 import { svgIcon } from "./icons";
 import { renderAgentPicker, refreshAgentPicker, hideAgentPicker } from "./agentPicker";
 import { root, log, composerEl, status, switchAgentBtn, copySessionBtn, sendBtn, input, presencePicker, ctxMenu, modelPicker, agentBadge, chatTitle } from "./dom";
-import { sessions, busy, activeModel, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setBusy, setCommands, setConversationRows, setPendingSessionSwitch, setQueued, setSessions, setSideMode, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPendingSwitchAnchor } from "./state";
+import { sessions, busy, activeModel, attachments, activeFile, commands, conversationRows, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveModel, setBusy, setCommands, setConversationRows, setPendingSessionSwitch, setQueued, setSessions, setSideMode, setOpenInPref, pendingSessionSwitch, permissionModes, permissionValue, permissionDefault, aiToolsAvailable, aiToolsEnabled, pendingSwitchAnchor, setPendingSwitchAnchor } from "./state";
 import { resolveMarkdownImage } from "./markdown";
 import { preserveSelectedModel } from "./modelCatalog";
 
@@ -65,6 +65,10 @@ window.addEventListener("message", ({ data }) => {
             // Live preference updates (no reload needed), e.g. sessions side.
             if (typeof data.sessionsSide === "string") { setSideMode(data.sessionsSide); layout(); }
             if (typeof data.devMode === "boolean") { root.classList.toggle("dev-mode", data.devMode); }
+            if (typeof data.openIn === "string") {
+                setOpenInPref(data.openIn);
+                root.classList.toggle("sessions-only", typeof data.sessionsOnly === "boolean" ? data.sessionsOnly : data.openIn === "editor" && !root.classList.contains("chat-only"));
+            }
             break;
         }
         case "clear": {
