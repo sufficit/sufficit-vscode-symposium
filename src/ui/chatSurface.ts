@@ -303,12 +303,11 @@ export class ChatSurface {
         return hints.join("\n\n");
     }
 
-    /** Tears down an active transcript follow and drops its inferred status. */
+    /** Tears down the view follow while preserving the last live status. */
     private detachFollow(): void {
         this.followHandle?.dispose();
         this.followHandle = undefined;
         if (this.followedSessionId) {
-            this.deps.runtime.clearFollowStatus(this.followedSessionId);
             this.followedSessionId = undefined;
         }
     }
@@ -321,17 +320,18 @@ export class ChatSurface {
         this.detachFollow();
     }
 
-    /** Disposes the terminal session and drops its inferred follow status. */
+    /** Detaches the terminal mirror; the terminal process itself keeps running. */
     private detachTerminal(): void {
-        const tid = this.terminalSession?.currentSessionId;
         this.terminalSession?.dispose();
         this.terminalSession = undefined;
-        if (tid) { this.deps.runtime.clearFollowStatus(tid); }
     }
 
     /** Close the active pane when its session is deleted elsewhere. */
     sessionDeleted(sessionId: string): void {
         if (this.activeSessionId() !== sessionId) { return; }
+        // Deletion is the one lifecycle transition that must remove the
+        // last-known follow status; a normal section switch must preserve it.
+        this.deps.runtime.clearFollowStatus(sessionId);
         // Detach surface-bound mirrors before runtime disposal.
         this.detachActive();
         // Clear the pane to the empty state — do NOT auto-start a new dialogue

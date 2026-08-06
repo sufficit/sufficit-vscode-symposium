@@ -1,7 +1,7 @@
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "../ui/chatController";
 import type { SessionStatus, SessionTerminalStatus } from "../adapters/sessionInfo";
-import { liveSessionStatus } from "./status";
+import { FollowStatusRegistry, liveSessionStatus } from "./status";
 
 /**
  * Registry of live ChatControllers, owned at the extension level so an agent
@@ -12,9 +12,11 @@ import { liveSessionStatus } from "./status";
 export class LiveSessions {
     private readonly controllers = new Map<string, ChatController>();
     // Status inferred for sessions we only FOLLOW (mirrored from another
-    // process, no local controller). Keyed by session id; cleared when the
-    // follow ends. Used as a fallback by statusFor.
-    private readonly followStatus = new Map<string, "working" | "idle">();
+    // process, no local controller). Keyed by session id. The last observed
+    // value intentionally survives a surface detach: the terminal/process can
+    // keep running after its chat view is switched away. It is cleared only
+    // when the session is explicitly deleted or the follow is truly stopped.
+    private readonly followStatus = new FollowStatusRegistry();
     private seq = 0;
 
     /** `onChange` fires when any controller starts/stops working. */
@@ -30,7 +32,7 @@ export class LiveSessions {
         this.onChange?.();
     }
 
-    /** Drops a followed session's status (the follow ended). */
+    /** Drops a followed session's status when its lifecycle truly ends. */
     clearFollowStatus(sessionId: string): void {
         if (this.followStatus.delete(sessionId)) {
             this.onChange?.();
@@ -129,7 +131,9 @@ export class LiveSessions {
                 disposed = true;
             }
         }
-        return disposed;
+        const followDisposed = this.followStatus.delete(sessionId);
+        if (disposed || followDisposed) { this.onChange?.(); }
+        return disposed || followDisposed;
     }
 
     disposeAll(): void {
@@ -137,5 +141,6 @@ export class LiveSessions {
             controller.dispose();
         }
         this.controllers.clear();
+        this.followStatus.clear();
     }
 }
