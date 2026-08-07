@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import * as crypto from "crypto";
 import {
     DEFAULT_IDENTITY_SCOPE,
     normalizeIdentityScope,
@@ -10,6 +9,7 @@ import {
     IDENTITY_PROFILE_KEY as PROFILE_KEY,
     SufficitProfile,
 } from "./identityTypes";
+import { createPkceAuthorization } from "./identityOAuth";
 
 export type { SufficitProfile } from "./identityTypes";
 
@@ -151,6 +151,7 @@ export class SufficitAuth {
             return;
         }
         pkce.resolve(query.code);
+        this.clearPendingPkce();
     }
 
     private clearPendingPkce(): void {
@@ -158,6 +159,13 @@ export class SufficitAuth {
             clearTimeout(this.pendingPkce.timeout);
             this.pendingPkce = undefined;
         }
+    }
+
+    private rejectPendingPkce(error: Error): void {
+        const pending = this.pendingPkce;
+        if (!pending) { return; }
+        pending.reject(error);
+        this.clearPendingPkce();
     }
 
     /**
@@ -176,31 +184,32 @@ export class SufficitAuth {
             throw new Error("Identity does not advertise authorization_endpoint.");
         }
 
-        // Generate PKCE pair (RFC 7636).
-        const verifier = crypto.randomBytes(32).toString("base64url");
-        const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
-        const state = crypto.randomBytes(16).toString("base64url");
-        const redirectUri = `vscode://${vscode.env.uriScheme ?? "vscode"}.sufficit.sufficit-vscode-symposium/callback`;
-
-        // Build the authorization URL.
-        const authUrl = new URL(disco.authorization_endpoint);
-        authUrl.searchParams.set("response_type", "code");
-        authUrl.searchParams.set("client_id", clientId);
-        authUrl.searchParams.set("redirect_uri", redirectUri);
-        authUrl.searchParams.set("scope", this.scope());
-        authUrl.searchParams.set("code_challenge_method", "S256");
-        authUrl.searchParams.set("code_challenge", challenge);
-        authUrl.searchParams.set("state", state);
+        const pkce = createPkceAuthorization(
+            disco.authorization_endpoint, clientId, this.scope(), vscode.env.uriScheme,
+        );
+        const { verifier, state, redirectUri, url: authUrl } = pkce;
 
         // Set up the callback promise (resolved by handleRedirect via the URI handler).
-        const authCode = await new Promise<string>((resolve, reject) => {
+        const authCodePromise = new Promise<string>((resolve, reject) => {
             const timeout = setTimeout(() => {
-                this.clearPendingPkce();
-                reject(new Error("PKCE login timed out (5 minutes)."));
+                this.rejectPendingPkce(new Error("PKCE login timed out (5 minutes)."));
             }, 5 * 60 * 1000);
 
             this.pendingPkce = { verifier, state, resolve, reject, timeout };
         });
+
+        // The callback must be armed before opening the browser, otherwise a
+        // fast redirect can arrive before handleRedirect() has state to match.
+        try {
+            const opened = await vscode.env.openExternal(vscode.Uri.parse(authUrl.toString()));
+            if (!opened) {
+                this.rejectPendingPkce(new Error("Unable to open the Sufficit authorization page."));
+            }
+        } catch (error) {
+            this.rejectPendingPkce(error instanceof Error ? error : new Error(String(error)));
+        }
+        const authCode = await authCodePromise;
+        this.clearPendingPkce();
 
         // Exchange the code for tokens.
         const tokenRes = await fetch(disco.token_endpoint, {
