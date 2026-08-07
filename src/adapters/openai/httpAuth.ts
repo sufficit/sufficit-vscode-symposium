@@ -45,3 +45,19 @@ export async function resolveAuthToken(cfg: OpenAIAdapterConfig, forceRefresh = 
     if (hasAuth || cfg.apiKey || !provider) { return null; }
     try { return await provider(forceRefresh); } catch { return null; }
 }
+
+/**
+ * Native Sufficit authentication can recover both an expired token (401) and
+ * a scope-less token produced by an older Identity refresh path (403). Limit
+ * recovery to one caller-controlled retry and never touch explicit API keys or
+ * Authorization headers.
+ */
+export function shouldRefreshNativeAuthorization(
+    status: number,
+    noExplicitAuth: boolean,
+    loginToken: string | null | undefined,
+): boolean {
+    return noExplicitAuth
+        && Boolean(loginToken)
+        && (status === 401 || status === 403);
+}

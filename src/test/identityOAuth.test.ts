@@ -2,7 +2,10 @@ import * as assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
-import { buildHeaders } from "../adapters/openai/httpAuth";
+import {
+    buildHeaders,
+    shouldRefreshNativeAuthorization,
+} from "../adapters/openai/httpAuth";
 import { OpenAIAdapterConfig } from "../adapters/openai/types";
 import {
     buildPkceAuthorizationUrl,
@@ -59,6 +62,14 @@ test("Sufficit AI requests use the Identity token without overriding explicit au
 
     const apiKey = buildHeaders({ ...adapterConfig, apiKey: "api-key" }, "identity-token");
     assert.equal(apiKey.authorization, "Bearer api-key");
+});
+
+test("native Sufficit auth refreshes once for 401 and directive-related 403 responses", () => {
+    assert.equal(shouldRefreshNativeAuthorization(401, true, "token"), true);
+    assert.equal(shouldRefreshNativeAuthorization(403, true, "token"), true);
+    assert.equal(shouldRefreshNativeAuthorization(403, false, "token"), false);
+    assert.equal(shouldRefreshNativeAuthorization(403, true, null), false);
+    assert.equal(shouldRefreshNativeAuthorization(500, true, "token"), false);
 });
 
 test("desktop PKCE arms the callback before opening and awaiting the browser flow", () => {

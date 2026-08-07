@@ -16,6 +16,7 @@ import { buildTurnTools, executeTurnTool } from "./turnTools";
 import { emitTurnUsage } from "./turnUsage";
 import { activeRepeatedToolCallFingerprint, appendRepeatedToolCallFeedback, guardrailStopNotice, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress, toolCallBatchFingerprint, toolHopLimitNotice } from "./turnNotices";
 import { TurnRunnerDeps } from "./turnRunnerDeps";
+import { shouldRefreshNativeAuthorization } from "./httpAuth";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
@@ -198,10 +199,17 @@ export class TurnRunner {
                     return fetch(url, { method: "POST", headers, body: bodyJson, signal });
                 };
                 let res = await post(loginToken);
-                if (res.status === 401 && noExplicitAuth && loginToken) {
-                    this.d.emit({ kind: "status-notice", text: "Sufficit AI authorization refreshed; retrying once." });
-                    loginToken = await this.d.authToken(true);
-                    if (loginToken) { res = await post(loginToken); }
+                if (shouldRefreshNativeAuthorization(res.status, noExplicitAuth, loginToken)) {
+                    const refreshedToken = await this.d.authToken(true);
+                    if (refreshedToken) {
+                        // Drain the rejected response before reusing the pooled
+                        // connection. The model request was not dispatched on
+                        // 401/403, so this single retry cannot duplicate a turn.
+                        await res.arrayBuffer().catch(() => undefined);
+                        this.d.emit({ kind: "status-notice", text: "Sufficit AI authorization refreshed; retrying once." });
+                        loginToken = refreshedToken;
+                        res = await post(loginToken);
+                    }
                 }
                 const responseStartedAt = Date.now();
                 if (!res.ok || !res.body) {
