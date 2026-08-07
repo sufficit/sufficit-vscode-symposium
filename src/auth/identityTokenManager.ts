@@ -8,6 +8,7 @@ import {
     StoredTokens,
 } from "./identityTypes";
 import { hasRequestedIdentityScopes } from "./identityScopes";
+import { parseOAuthJson } from "./oauthHttp";
 
 export interface OAuthTokenResponse {
     access_token?: string;
@@ -182,7 +183,7 @@ export class IdentityTokenManager {
                 });
                 if (response.ok) {
                     const refreshed = await this.storeResponse(
-                        await response.json() as OAuthTokenResponse,
+                        await parseOAuthJson<OAuthTokenResponse>(response, "Sufficit refresh token endpoint"),
                         current.scope ?? this.options.scope(),
                     );
                     this.expiredNoticeShown = false;

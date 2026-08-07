@@ -10,6 +10,8 @@ import {
     SufficitProfile,
 } from "./identityTypes";
 import { createPkceAuthorization } from "./identityOAuth";
+import { pollDeviceToken } from "./identityDeviceFlow";
+import { parseOAuthJson } from "./oauthHttp";
 
 export type { SufficitProfile } from "./identityTypes";
 
@@ -84,7 +86,7 @@ export class SufficitAuth {
         if (!res.ok) {
             throw new Error(`discovery failed: ${res.status} (${url})`);
         }
-        return (await res.json()) as Discovery;
+        return parseOAuthJson<Discovery>(res, "Sufficit Identity discovery");
     }
 
     async isLoggedIn(): Promise<boolean> {
@@ -223,7 +225,9 @@ export class SufficitAuth {
                 code_verifier: verifier,
             }).toString(),
         });
-        const tokenBody = await tokenRes.json() as OAuthTokenResponse & { error?: string; error_description?: string };
+        const tokenBody = await parseOAuthJson<OAuthTokenResponse & { error?: string; error_description?: string }>(
+            tokenRes, "Sufficit PKCE token endpoint",
+        );
         if (!tokenRes.ok) {
             throw new Error(`PKCE token exchange failed: ${tokenBody.error_description ?? tokenBody.error ?? tokenRes.status}`);
         }
@@ -253,7 +257,9 @@ export class SufficitAuth {
             headers: { "content-type": "application/x-www-form-urlencoded" },
             body: new URLSearchParams({ client_id: clientId, scope: this.scope() }).toString(),
         });
-        const dev = await devRes.json() as { verification_uri_complete?: string; verification_uri?: string; user_code: string; error?: string; device_code?: string; interval?: number; expires_in?: number };
+        const dev = await parseOAuthJson<{ verification_uri_complete?: string; verification_uri?: string; user_code: string; error?: string; device_code?: string; interval?: number; expires_in?: number }>(
+            devRes, "Sufficit device authorization endpoint",
+        );
         if (!devRes.ok) {
             throw new Error(`device authorization failed: ${dev.error ?? devRes.status}`);
         }
@@ -283,7 +289,18 @@ export class SufficitAuth {
 
         // 2. Poll the token endpoint until the user approves (or timeout).
         if (!dev.device_code) { return undefined; }
-        const tokenResponse = await this.pollToken(disco.token_endpoint, clientId, dev.device_code, dev.interval ?? 5, dev.expires_in ?? 300);
+        const tokenResponse = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: "Sufficit: waiting for approval in the browser…", cancellable: true },
+            (_progress, token) => pollDeviceToken({
+                tokenEndpoint: disco.token_endpoint,
+                clientId,
+                deviceCode: dev.device_code!,
+                intervalSec: dev.interval ?? 5,
+                expiresInSec: dev.expires_in ?? 300,
+                isCancelled: () => token.isCancellationRequested,
+                log: this.log,
+            }),
+        );
         if (!tokenResponse) {
             return undefined;
         }
@@ -300,36 +317,6 @@ export class SufficitAuth {
             );
         }
         return profile;
-    }
-
-    private async pollToken(tokenEndpoint: string, clientId: string, deviceCode: string, intervalSec: number, expiresInSec: number): Promise<OAuthTokenResponse | undefined> {
-        const deadline = Date.now() + expiresInSec * 1000;
-        let interval = intervalSec;
-        return vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: "Sufficit: waiting for approval in the browser…", cancellable: true },
-            async (_p, token) => {
-                while (Date.now() < deadline && !token.isCancellationRequested) {
-                    await new Promise((r) => setTimeout(r, interval * 1000));
-                    const res = await fetch(tokenEndpoint, {
-                        method: "POST",
-                        headers: { "content-type": "application/x-www-form-urlencoded" },
-                        body: new URLSearchParams({
-                            grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-                            device_code: deviceCode,
-                            client_id: clientId,
-                        }).toString(),
-                    });
-                    const j = await res.json() as { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string; scope?: string; error?: string; error_description?: string };
-                    if (res.ok) {
-                        return j;
-                    }
-                    if (j.error === "authorization_pending") { continue; }
-                    if (j.error === "slow_down") { interval += 5; continue; }
-                    this.log(`[auth] device token error: ${j.error}`);
-                    throw new Error(j.error_description ?? j.error ?? "device login failed");
-                }
-                return undefined;
-            });
     }
 
     /** Whether SecretStorage persists across restarts (false on snap/code-server);
@@ -380,7 +367,9 @@ export class SufficitAuth {
             const disco = await this.discovery();
             const res = await fetch(disco.userinfo_endpoint ?? `${this.issuer()}/connect/userinfo`, { headers: { authorization: `Bearer ${token}` } });
             if (!res.ok) { return this.profileCache; }   // keep what we have on a transient failure
-            const j = await res.json() as { sub?: string; name?: string; preferred_username?: string; email?: string; picture?: string };
+            const j = await parseOAuthJson<{ sub?: string; name?: string; preferred_username?: string; email?: string; picture?: string }>(
+                res, "Sufficit userinfo endpoint",
+            );
             // Avatar comes from the Sufficit contact endpoint keyed by the user id.
             const picture = j.sub
                 ? `https://endpoints.sufficit.com.br/contact/avatar?contextid=${encodeURIComponent(j.sub)}`

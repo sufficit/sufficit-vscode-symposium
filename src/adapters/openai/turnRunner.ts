@@ -206,9 +206,13 @@ export class TurnRunner {
                 const responseStartedAt = Date.now();
                 if (!res.ok || !res.body) {
                     const detail = await res.text().catch(() => "");
+                    const requiredDirective = res.headers.get("x-sufficit-required-directive");
+                    const permissionDetail = requiredDirective
+                        ? `\nX-Sufficit-Required-Directive: ${requiredDirective}`
+                        : "";
                     const diagnostic = requestEstimateDiagnostic(estimate, this.d.contextWindow());
                     const retryable = res.status >= 500 || res.status === 429 || res.status === 408;
-                    this.d.emit({ kind: "error", message: `HTTP ${res.status} ${res.statusText} ${detail}\n${diagnostic}`.trim(), retryable });
+                    this.d.emit({ kind: "error", message: `HTTP ${res.status} ${res.statusText} ${detail}${permissionDetail}\n${diagnostic}`.trim(), retryable });
                     hitCap = false;
                     break;
                 }
