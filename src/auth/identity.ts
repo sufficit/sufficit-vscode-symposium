@@ -53,6 +53,12 @@ export class SufficitAuth {
                 this.profileCache = undefined;
                 this.onChangeEmitter.fire();
             },
+            onSessionChanged: () => {
+                this.profileCache = undefined;
+                void this.context.globalState.update(PROFILE_KEY, undefined).then(() => {
+                    this.onChangeEmitter.fire();
+                });
+            },
         });
     }
 
@@ -313,14 +319,15 @@ export class SufficitAuth {
         if (!await this.tokens.isSecretStorageWorking() && !this.persistNoticeShown) {
             this.persistNoticeShown = true;
             void vscode.window.showInformationMessage(
-                "Sufficit: login salvo. Este ambiente não tem chaveiro do sistema, então suas credenciais ficam no armazenamento local da extensão (mantidas entre reinícios, menos isoladas que um chaveiro).",
+                vscode.env.uiKind === vscode.UIKind.Web
+                    ? "Sufficit: login saved for this code-server account and shared across its browser windows. Credentials are protected by the server user's filesystem permissions."
+                    : "Sufficit: login saved in extension storage because this environment has no system keyring (persistent across restarts, but less isolated than a keyring).",
             );
         }
         return profile;
     }
 
-    /** Whether SecretStorage persists across restarts (false on snap/code-server);
-     *  drives the config warning banner. */
+    /** Whether SecretStorage persists across restarts. */
     async isSecretStorageWorking(): Promise<boolean> {
         return this.tokens.isSecretStorageWorking();
     }
@@ -336,6 +343,10 @@ export class SufficitAuth {
 
     async getProfile(force = false): Promise<SufficitProfile | undefined> {
         if (this.profileCache && !force) { return this.profileCache; }
+        // code-server tokens are server-shared; browser-local profiles are not authoritative.
+        if (!force && vscode.env.uiKind === vscode.UIKind.Web) {
+            return this.getProfile(true);
+        }
         // Instant restore after a window reload: a persisted profile lets the UI
         // show the logged-in account immediately. But only when the access token
         // is still usable — getAccessToken() refreshes on demand, and clears the
