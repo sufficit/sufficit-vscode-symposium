@@ -7,10 +7,7 @@ import {
 } from "../auth/identityScopes";
 
 test("default Identity scopes include authorization claims", () => {
-    assert.equal(
-        normalizeIdentityScope(),
-        "openid profile email roles directives offline_access",
-    );
+    assert.equal(normalizeIdentityScope(), "openid profile email roles directives offline_access");
     assert.equal(normalizeIdentityScope(), DEFAULT_IDENTITY_SCOPE);
 });
 
@@ -23,14 +20,8 @@ test("custom Identity scopes retain order and receive required authorization sco
 
 test("scope validation rejects legacy grants and accepts the upgraded grant", () => {
     assert.equal(
-        hasRequestedIdentityScopes(
-            "openid profile email offline_access",
-            DEFAULT_IDENTITY_SCOPE,
-        ),
+        hasRequestedIdentityScopes("openid profile email offline_access", DEFAULT_IDENTITY_SCOPE),
         false,
     );
-    assert.equal(
-        hasRequestedIdentityScopes(DEFAULT_IDENTITY_SCOPE, DEFAULT_IDENTITY_SCOPE),
-        true,
-    );
+    assert.equal(hasRequestedIdentityScopes(DEFAULT_IDENTITY_SCOPE, DEFAULT_IDENTITY_SCOPE), true);
 });

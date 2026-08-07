@@ -21,7 +21,9 @@ export function pushVoicePreferences(post: (message: unknown) => void): void {
     };
     post({ type: "setVoicePreferences", preferences });
 
-    if (!localSttRequested) { return; }
+    if (!localSttRequested) {
+        return;
+    }
     void isLocalSttReady().then((ready) => {
         if (ready) {
             post({ type: "setVoicePreferences", preferences: { ...preferences, localStt: true } });

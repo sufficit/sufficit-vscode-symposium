@@ -1,7 +1,8 @@
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
-import { ChatController } from "../ui/chatController";
+import { ChatController } from "../application/chatController";
 import type { SessionStatus, SessionTerminalStatus } from "../adapters/sessionInfo";
 import { FollowStatusRegistry, liveSessionStatus } from "./status";
+import type { ApplicationPorts } from "../application/ports";
 
 /**
  * Registry of live ChatControllers, owned at the extension level so an agent
@@ -20,14 +21,19 @@ export class LiveSessions {
     private seq = 0;
 
     /** `onChange` fires when any controller starts/stops working. */
-    constructor(private readonly onChange?: () => void) { }
+    constructor(
+        private readonly ports: ApplicationPorts,
+        private readonly onChange?: () => void,
+    ) {}
 
     /**
      * Records the inferred working/idle status of a followed session (one with
      * no local controller). Fires onChange so the sessions list re-renders.
      */
     setFollowStatus(sessionId: string, status: "working" | "idle"): void {
-        if (this.followStatus.get(sessionId) === status) { return; }
+        if (this.followStatus.get(sessionId) === status) {
+            return;
+        }
         this.followStatus.set(sessionId, status);
         this.onChange?.();
     }
@@ -68,7 +74,16 @@ export class LiveSessions {
     }
 
     /** Live sessions for the list (incl. brand-new ones not yet on disk). */
-    liveInfos(): { backend: string; sessionId: string; title: string; cwd: string; status: SessionStatus; terminalStatus?: SessionTerminalStatus; parentId?: string; lineageId?: string }[] {
+    liveInfos(): {
+        backend: string;
+        sessionId: string;
+        title: string;
+        cwd: string;
+        status: SessionStatus;
+        terminalStatus?: SessionTerminalStatus;
+        parentId?: string;
+        lineageId?: string;
+    }[] {
         const out = [];
         for (const [key, c] of this.controllers) {
             out.push({
@@ -90,10 +105,20 @@ export class LiveSessions {
      * freshest copy, available before any ledger/store flush. Undefined when no
      * controller is live for the id.
      */
-    readTranscript(sessionId: string): { backend?: string; title?: string; messages: { role: string; text: string }[] } | undefined {
+    readTranscript(
+        sessionId: string,
+    ):
+        | { backend?: string; title?: string; messages: { role: string; text: string }[] }
+        | undefined {
         const controller = this.findBySessionId(sessionId);
-        if (!controller) { return undefined; }
-        return { backend: controller.backend, title: controller.title, messages: controller.transcriptMessages() };
+        if (!controller) {
+            return undefined;
+        }
+        return {
+            backend: controller.backend,
+            title: controller.title,
+            messages: controller.transcriptMessages(),
+        };
     }
 
     /** Creates and registers a new controller. */
@@ -106,8 +131,13 @@ export class LiveSessions {
      * caller (public API / remote bridge) can address a brand-new session whose
      * backend id has not arrived yet.
      */
-    createWithKey(adapter: AgentAdapter, options: SessionStartOptions): { key: string; controller: ChatController } {
-        const controller = new ChatController(adapter, options, () => this.onChange?.());
+    createWithKey(
+        adapter: AgentAdapter,
+        options: SessionStartOptions,
+    ): { key: string; controller: ChatController } {
+        const controller = new ChatController(adapter, options, this.ports, () =>
+            this.onChange?.(),
+        );
         const key = options.resumeSessionId ?? `new-${++this.seq}`;
         this.controllers.set(key, controller);
         // A resumed session may have a persisted terminal error in the store.
@@ -132,7 +162,9 @@ export class LiveSessions {
             }
         }
         const followDisposed = this.followStatus.delete(sessionId);
-        if (disposed || followDisposed) { this.onChange?.(); }
+        if (disposed || followDisposed) {
+            this.onChange?.();
+        }
         return disposed || followDisposed;
     }
 

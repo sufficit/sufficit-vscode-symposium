@@ -26,12 +26,20 @@ export class ChangedFilesManager {
     private gitWatcher: vscode.FileSystemWatcher | undefined;
     private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
-    constructor(private readonly deps: ChangedFilesDeps, private readonly disposables: vscode.Disposable[]) {
+    constructor(
+        private readonly deps: ChangedFilesDeps,
+        private readonly disposables: vscode.Disposable[],
+    ) {
         // The debounce belongs to the surface lifecycle. If a panel is disposed
         // while a refresh is pending, do not let it post into the dead webview.
-        disposables.push({ dispose: () => {
-            if (this.refreshTimer) { clearTimeout(this.refreshTimer); this.refreshTimer = undefined; }
-        } });
+        disposables.push({
+            dispose: () => {
+                if (this.refreshTimer) {
+                    clearTimeout(this.refreshTimer);
+                    this.refreshTimer = undefined;
+                }
+            },
+        });
     }
 
     /**
@@ -52,14 +60,21 @@ export class ChangedFilesManager {
      * or the SCM view syncs back here.
      */
     async refresh(rawItems: { path: string; added: number; removed: number }[]): Promise<void> {
-        const gitItems = await changedFilesWithCounts(this.deps.getCwd()).catch(() => [] as { path: string; added: number; removed: number }[]);
+        const gitItems = await changedFilesWithCounts(this.deps.getCwd()).catch(
+            () => [] as { path: string; added: number; removed: number }[],
+        );
         const seen = new Set(gitItems.map((i) => i.path));
         const items = [...gitItems];
         // Tool-tracked files OUTSIDE any git repo: git can't see them, keep them.
         for (const it of rawItems) {
-            if (seen.has(it.path)) { continue; }
+            if (seen.has(it.path)) {
+                continue;
+            }
             const root = await gitRoot(path.dirname(it.path)).catch(() => undefined);
-            if (!root) { items.push(it); seen.add(it.path); }
+            if (!root) {
+                items.push(it);
+                seen.add(it.path);
+            }
         }
         this.deps.post({ type: "changed-files", items });
         this.ensureGitWatcher();
@@ -72,10 +87,14 @@ export class ChangedFilesManager {
 
     /** Watches workspace git indexes so external stage/unstage re-syncs the list. */
     private ensureGitWatcher(): void {
-        if (this.gitWatcher) { return; }
+        if (this.gitWatcher) {
+            return;
+        }
         this.gitWatcher = vscode.workspace.createFileSystemWatcher("**/.git/index");
         const onGit = () => {
-            if (this.refreshTimer) { clearTimeout(this.refreshTimer); }
+            if (this.refreshTimer) {
+                clearTimeout(this.refreshTimer);
+            }
             this.refreshTimer = setTimeout(() => this.refreshNow(), 250);
         };
         this.gitWatcher.onDidChange(onGit);
@@ -96,7 +115,9 @@ export class ChangedFilesManager {
             return rejectChange(repoCwd(filePath), filePath);
         }
         void vscode.window.showWarningMessage(
-            "No pre-edit snapshot for this file (edited before this session started) and it's not in a git repo, so it can't be reverted: " + filePath);
+            "No pre-edit snapshot for this file (edited before this session started) and it's not in a git repo, so it can't be reverted: " +
+                filePath,
+        );
         return false;
     }
 
@@ -105,7 +126,9 @@ export class ChangedFilesManager {
      * one, else the git HEAD version. New files with no baseline just open.
      */
     async openDiff(filePath: unknown): Promise<void> {
-        if (typeof filePath !== "string") { return; }
+        if (typeof filePath !== "string") {
+            return;
+        }
         const fileUri = vscode.Uri.file(filePath);
         const name = path.basename(filePath);
         let base: string | null | undefined = snapshots.baseline(this.deps.getSid(), filePath);
@@ -123,6 +146,10 @@ export class ChangedFilesManager {
         const baseFile = path.join(tmp, `base-${Date.now()}-${name}`);
         await fs.promises.writeFile(baseFile, base);
         await vscode.commands.executeCommand(
-            "vscode.diff", vscode.Uri.file(baseFile), fileUri, `${name} (${label})`);
+            "vscode.diff",
+            vscode.Uri.file(baseFile),
+            fileUri,
+            `${name} (${label})`,
+        );
     }
 }

@@ -3,31 +3,57 @@ import { TodoItem } from "./types";
 /** Normalizes the many status spellings the CLIs use to our three states. */
 function normStatus(s: unknown): TodoItem["status"] {
     const v = String(s ?? "").toLowerCase();
-    if (v === "completed" || v === "done" || v === "complete" || v === "[x]" || v === "x") { return "completed"; }
-    if (v === "in_progress" || v === "in-progress" || v === "active" || v === "doing" || v === "current" || v === "started") { return "in_progress"; }
+    if (v === "completed" || v === "done" || v === "complete" || v === "[x]" || v === "x") {
+        return "completed";
+    }
+    if (
+        v === "in_progress" ||
+        v === "in-progress" ||
+        v === "active" ||
+        v === "doing" ||
+        v === "current" ||
+        v === "started"
+    ) {
+        return "in_progress";
+    }
     return "pending";
 }
 
 /** Maps one raw item ({content|step|text|title|task}, {status|state}) to a TodoItem. */
 function toItem(raw: string | Record<string, unknown>): TodoItem | undefined {
-    if (raw == null) { return undefined; }
-    if (typeof raw === "string") { return { content: raw, status: "pending" }; }
+    if (raw == null) {
+        return undefined;
+    }
+    if (typeof raw === "string") {
+        return { content: raw, status: "pending" };
+    }
     const obj = raw as Record<string, unknown>;
     const content = obj.content ?? obj.step ?? obj.text ?? obj.title ?? obj.task ?? obj.name;
-    if (typeof content !== "string" || !content.trim()) { return undefined; }
+    if (typeof content !== "string" || !content.trim()) {
+        return undefined;
+    }
     const orderRaw = obj.order ?? obj.index ?? obj.number ?? obj.stepNumber ?? obj.step_number;
     const order = Number(orderRaw);
     // `codex exec --json` deliberately flattens update_plan's three states to
     // todo_list items shaped as { text, completed }. Preserve completed steps
     // here; the first remaining open item is promoted to in_progress below.
-    const status = typeof obj.completed === "boolean"
-        ? (obj.completed ? "completed" : "pending")
-        : normStatus(obj.status ?? obj.state);
-    return { content: String(content).trim(), status, ...(Number.isFinite(order) && order > 0 ? { order } : {}) };
+    const status =
+        typeof obj.completed === "boolean"
+            ? obj.completed
+                ? "completed"
+                : "pending"
+            : normStatus(obj.status ?? obj.state);
+    return {
+        content: String(content).trim(),
+        status,
+        ...(Number.isFinite(order) && order > 0 ? { order } : {}),
+    };
 }
 
 function toItems(arr: unknown): TodoItem[] | undefined {
-    if (!Array.isArray(arr)) { return undefined; }
+    if (!Array.isArray(arr)) {
+        return undefined;
+    }
     const out = arr.map(toItem).filter((x): x is TodoItem => !!x);
     return out.length ? out : undefined;
 }
@@ -39,18 +65,26 @@ function toItems(arr: unknown): TodoItem[] | undefined {
  * the panel and the next-turn reminder advance with the agent.
  */
 function recoverCodexTodoListCurrent(items: TodoItem[]): TodoItem[] {
-    if (items.some((item) => item.status === "in_progress")) { return items; }
+    if (items.some((item) => item.status === "in_progress")) {
+        return items;
+    }
     const current = items.findIndex((item) => item.status !== "completed");
     return current < 0
         ? items
-        : items.map((item, index) => index === current ? { ...item, status: "in_progress" } : item);
+        : items.map((item, index) =>
+              index === current ? { ...item, status: "in_progress" } : item,
+          );
 }
 
 function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
-    if (typeof value !== "string" || !value.trim()) { return undefined; }
+    if (typeof value !== "string" || !value.trim()) {
+        return undefined;
+    }
     try {
         const parsed = JSON.parse(value);
-        return typeof parsed === "object" && parsed !== null ? parsed as Record<string, unknown> : undefined;
+        return typeof parsed === "object" && parsed !== null
+            ? (parsed as Record<string, unknown>)
+            : undefined;
     } catch {
         return undefined;
     }
@@ -65,21 +99,34 @@ function parseJsonObject(value: unknown): Record<string, unknown> | undefined {
 function extractBalanced(text: string, openIdx: number): string | undefined {
     const open = text[openIdx];
     const close = open === "(" ? ")" : open === "[" ? "]" : open === "{" ? "}" : undefined;
-    if (!close) { return undefined; }
+    if (!close) {
+        return undefined;
+    }
     let depth = 0;
     let inString: string | null = null;
     for (let i = openIdx; i < text.length; i++) {
         const ch = text[i];
         if (inString) {
-            if (ch === "\\") { i++; continue; }
-            if (ch === inString) { inString = null; }
+            if (ch === "\\") {
+                i++;
+                continue;
+            }
+            if (ch === inString) {
+                inString = null;
+            }
             continue;
         }
-        if (ch === '"' || ch === "'" || ch === "`") { inString = ch; continue; }
-        if (ch === open) { depth++; }
-        else if (ch === close) {
+        if (ch === '"' || ch === "'" || ch === "`") {
+            inString = ch;
+            continue;
+        }
+        if (ch === open) {
+            depth++;
+        } else if (ch === close) {
             depth--;
-            if (depth === 0) { return text.slice(openIdx + 1, i); }
+            if (depth === 0) {
+                return text.slice(openIdx + 1, i);
+            }
         }
     }
     return undefined;
@@ -98,13 +145,23 @@ function splitTopLevelObjects(text: string): string[] {
     for (let i = 0; i < text.length; i++) {
         const ch = text[i];
         if (inString) {
-            if (ch === "\\") { i++; continue; }
-            if (ch === inString) { inString = null; }
+            if (ch === "\\") {
+                i++;
+                continue;
+            }
+            if (ch === inString) {
+                inString = null;
+            }
             continue;
         }
-        if (ch === '"' || ch === "'" || ch === "`") { inString = ch; continue; }
+        if (ch === '"' || ch === "'" || ch === "`") {
+            inString = ch;
+            continue;
+        }
         if (ch === "{" || ch === "[" || ch === "(") {
-            if (ch === "{" && depth === 0) { start = i; }
+            if (ch === "{" && depth === 0) {
+                start = i;
+            }
             depth++;
         } else if (ch === "}" || ch === "]" || ch === ")") {
             depth--;
@@ -121,7 +178,9 @@ function splitTopLevelObjects(text: string): string[] {
 function matchQuotedField(objText: string, keys: string[]): string | undefined {
     for (const key of keys) {
         const m = objText.match(new RegExp(`\\b${key}\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
-        if (m) { return m[1].replace(/\\(.)/g, "$1"); }
+        if (m) {
+            return m[1].replace(/\\(.)/g, "$1");
+        }
     }
     return undefined;
 }
@@ -141,36 +200,51 @@ function matchQuotedField(objText: string, keys: string[]): string | undefined {
 function parseExecUpdatePlanCall(source: string): TodoItem[] | undefined {
     const marker = "tools.update_plan(";
     const callIdx = source.indexOf(marker);
-    if (callIdx < 0) { return undefined; }
+    if (callIdx < 0) {
+        return undefined;
+    }
     const argsText = extractBalanced(source, callIdx + marker.length - 1);
-    if (argsText === undefined) { return undefined; }
+    if (argsText === undefined) {
+        return undefined;
+    }
     const arrayStart = argsText.indexOf("[");
-    if (arrayStart < 0) { return undefined; }
+    if (arrayStart < 0) {
+        return undefined;
+    }
     const arrayText = extractBalanced(argsText, arrayStart);
-    if (arrayText === undefined) { return undefined; }
+    if (arrayText === undefined) {
+        return undefined;
+    }
     const items: TodoItem[] = [];
     for (const objText of splitTopLevelObjects(arrayText)) {
         const content = matchQuotedField(objText, ["step", "content", "title", "text"]);
-        if (!content) { continue; }
+        if (!content) {
+            continue;
+        }
         items.push({ content, status: normStatus(matchQuotedField(objText, ["status", "state"])) });
     }
     return items.length ? items : undefined;
 }
 
 function todoToolName(toolName: string, input: unknown): string {
-    const obj = typeof input === "object" && input !== null ? input as Record<string, unknown> : {};
+    const obj =
+        typeof input === "object" && input !== null ? (input as Record<string, unknown>) : {};
     const inner = typeof obj.name === "string" ? obj.name : "";
     return String(inner || toolName || "").toLowerCase();
 }
 
 function todoPayload(input: unknown): unknown {
-    if (typeof input !== "object" || input === null) { return input; }
+    if (typeof input !== "object" || input === null) {
+        return input;
+    }
     const obj = input as Record<string, unknown>;
-    return parseJsonObject(obj.arguments)
-        ?? parseJsonObject(obj.input)
-        ?? (typeof obj.arguments === "object" && obj.arguments !== null ? obj.arguments : undefined)
-        ?? (typeof obj.input === "object" && obj.input !== null ? obj.input : undefined)
-        ?? input;
+    return (
+        parseJsonObject(obj.arguments) ??
+        parseJsonObject(obj.input) ??
+        (typeof obj.arguments === "object" && obj.arguments !== null ? obj.arguments : undefined) ??
+        (typeof obj.input === "object" && obj.input !== null ? obj.input : undefined) ??
+        input
+    );
 }
 
 /**
@@ -187,7 +261,9 @@ export function parseNativeTodos(toolName: string, input: unknown): TodoItem[] |
         const raw = (input as Record<string, unknown>).input;
         if (typeof raw === "string" && raw.includes("tools.update_plan(")) {
             const fromExec = parseExecUpdatePlanCall(raw);
-            if (fromExec) { return fromExec; }
+            if (fromExec) {
+                return fromExec;
+            }
         }
     }
     const name = todoToolName(toolName, input);
@@ -199,7 +275,9 @@ export function parseNativeTodos(toolName: string, input: unknown): TodoItem[] |
         return name.includes("todo_list") ? recoverCodexTodoListCurrent(fromKeys) : fromKeys;
     }
     // A bare array input on a clearly-named todo tool.
-    if (isTodoTool) { return toItems(payload); }
+    if (isTodoTool) {
+        return toItems(payload);
+    }
     return undefined;
 }
 
@@ -212,7 +290,9 @@ export function parseNativeTodos(toolName: string, input: unknown): TodoItem[] |
  */
 export function parseTodoFence(text: string): TodoItem[] | undefined {
     const m = String(text).match(/```(?:todo|plan|tasks)\s*\n([\s\S]*?)```/i);
-    if (!m) { return undefined; }
+    if (!m) {
+        return undefined;
+    }
     const items: TodoItem[] = [];
     for (const line of m[1].split("\n")) {
         // Supports both unordered and ordered task lines:
@@ -220,7 +300,9 @@ export function parseTodoFence(text: string): TodoItem[] | undefined {
         //   1. [ ] step
         //   2) [-] step
         const li = line.match(/^\s*(?:(\d+)[.)]\s*)?(?:[-*]\s*)?\[([ xX\-~/>])\]\s*(.+?)\s*$/);
-        if (!li) { continue; }
+        if (!li) {
+            continue;
+        }
         const order = li[1] ? Number(li[1]) : undefined;
         const mark = li[2].toLowerCase();
         const status: TodoItem["status"] =
@@ -248,9 +330,14 @@ export function parseTodoFence(text: string): TodoItem[] | undefined {
  */
 export function todosSummary(todos: TodoItem[]): string | undefined {
     const open = todos.filter((t) => t.status !== "completed");
-    if (open.length === 0) { return undefined; }
+    if (open.length === 0) {
+        return undefined;
+    }
     const current = open.find((t) => t.status === "in_progress") || open[0];
-    const upNext = open.filter((t) => t !== current).map((t) => `- ${t.content}`).join("\n");
+    const upNext = open
+        .filter((t) => t !== current)
+        .map((t) => `- ${t.content}`)
+        .join("\n");
     return (
         "[PLAN — current step marked below, still open from your own tracked plan. " +
         "This is CONTEXT, not an override: the LATEST USER MESSAGE is the source of truth. " +

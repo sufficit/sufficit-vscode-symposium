@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { editResend, retryLastMessage } from "../ui/surfaceBranching";
 import type { SurfaceDialoguesDeps } from "../ui/surfaceDialogues";
-import type { WebviewToHost } from "../ui/protocol";
+import type { WebviewToHost } from "../protocol/chat";
 
 function depsFor(controller: () => Record<string, unknown>): SurfaceDialoguesDeps {
     return {
@@ -15,14 +15,16 @@ test("plain retry resends the interrupted message with its timeout reason", () =
     let handled: WebviewToHost | undefined;
     const posted: unknown[] = [];
     const controller = {
-        transcriptMessages: () => [
-            { role: "user", text: "run the complete build" },
-        ],
-        handleMessage: (message: WebviewToHost) => { handled = message; },
+        transcriptMessages: () => [{ role: "user", text: "run the complete build" }],
+        handleMessage: (message: WebviewToHost) => {
+            handled = message;
+        },
     };
     const deps = {
         getController: () => controller,
-        post: (message: unknown) => { posted.push(message); },
+        post: (message: unknown) => {
+            posted.push(message);
+        },
     } as unknown as SurfaceDialoguesDeps;
     const reason = "Turn ended automatically: no activity from the agent for 5 minutes.";
 
@@ -31,14 +33,16 @@ test("plain retry resends the interrupted message with its timeout reason", () =
     assert.equal(handled?.type, "send");
     assert.equal(handled?.text, "run the complete build");
     assert.equal(handled?.interruptedBy, reason);
-    assert.deepEqual(posted, [{
-        type: "event",
-        event: {
-            kind: "status-notice",
-            text: `Continuing — told the model why: ${reason}`,
-            anchorIndex: 0,
+    assert.deepEqual(posted, [
+        {
+            type: "event",
+            event: {
+                kind: "status-notice",
+                text: `Continuing — told the model why: ${reason}`,
+                anchorIndex: 0,
+            },
         },
-    }]);
+    ]);
 });
 
 test("editResend retries unchanged Claude text in the same session", () => {
@@ -49,14 +53,23 @@ test("editResend retries unchanged Claude text in the same session", () => {
         cwd: "/repo",
         title: "Deploy",
         transcriptMessages: () => [{ role: "user", text: "deploy now" }],
-        handleMessage: (message: WebviewToHost) => { handled = message; },
+        handleMessage: (message: WebviewToHost) => {
+            handled = message;
+        },
     };
 
-    editResend(depsFor(() => controller), () => { opened++; }, 0, {
-        type: "send",
-        text: "deploy now",
-        editFrom: 0,
-    });
+    editResend(
+        depsFor(() => controller),
+        () => {
+            opened++;
+        },
+        0,
+        {
+            type: "send",
+            text: "deploy now",
+            editFrom: 0,
+        },
+    );
 
     assert.equal(opened, 0);
     assert.equal(handled?.type, "send");
@@ -75,21 +88,30 @@ test("editResend branches Claude when edited text changed", () => {
         transcriptMessages: () => [{ role: "user", text: "deploy now" }],
         transcriptMessagesUpTo: () => [],
         transcriptUpTo: () => undefined,
-        handleMessage: () => { oldHandled++; },
+        handleMessage: () => {
+            oldHandled++;
+        },
     };
     const newController = {
-        handleMessage: () => { newHandled++; },
+        handleMessage: () => {
+            newHandled++;
+        },
     };
     let current = oldController;
 
-    editResend(depsFor(() => current), () => {
-        opened++;
-        current = newController as typeof oldController;
-    }, 0, {
-        type: "send",
-        text: "deploy endpoints",
-        editFrom: 0,
-    });
+    editResend(
+        depsFor(() => current),
+        () => {
+            opened++;
+            current = newController as typeof oldController;
+        },
+        0,
+        {
+            type: "send",
+            text: "deploy endpoints",
+            editFrom: 0,
+        },
+    );
 
     assert.equal(opened, 1);
     assert.equal(oldHandled, 0);
@@ -120,10 +142,15 @@ test("editResend keeps a Codex branch in its parent conversation lineage", () =>
     const newController = { handleMessage: () => undefined };
     let current: Record<string, unknown> = oldController;
 
-    editResend(depsFor(() => current), (_backend, options) => {
-        openedOptions = options;
-        current = newController;
-    }, 2, { type: "send", text: "edited text", editFrom: 2 });
+    editResend(
+        depsFor(() => current),
+        (_backend, options) => {
+            openedOptions = options;
+            current = newController;
+        },
+        2,
+        { type: "send", text: "edited text", editFrom: 2 },
+    );
 
     assert.equal(openedOptions?.lineageId, parentId);
     assert.match(openedOptions?.seedHistory ?? "", new RegExp(`Parent session: ${parentId}`));
@@ -146,9 +173,18 @@ test("editResend preserves the root lineage when branching an existing branch", 
         handleMessage: () => undefined,
     };
 
-    editResend(depsFor(() => controller), (_backend, options) => { lineageId = options.lineageId; }, 0, {
-        type: "send", text: "new", editFrom: 0,
-    });
+    editResend(
+        depsFor(() => controller),
+        (_backend, options) => {
+            lineageId = options.lineageId;
+        },
+        0,
+        {
+            type: "send",
+            text: "new",
+            editFrom: 0,
+        },
+    );
 
     assert.equal(lineageId, rootId);
 });

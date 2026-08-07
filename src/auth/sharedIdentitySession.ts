@@ -17,10 +17,15 @@ export function parseStoredTokens(raw: string | undefined): StoredTokens | undef
     }
 }
 
-export function sameStoredTokenVersion(left: StoredTokens | undefined, right: StoredTokens | undefined): boolean {
-    return left?.accessToken === right?.accessToken
-        && left?.refreshToken === right?.refreshToken
-        && left?.expiresAtMs === right?.expiresAtMs;
+export function sameStoredTokenVersion(
+    left: StoredTokens | undefined,
+    right: StoredTokens | undefined,
+): boolean {
+    return (
+        left?.accessToken === right?.accessToken &&
+        left?.refreshToken === right?.refreshToken &&
+        left?.expiresAtMs === right?.expiresAtMs
+    );
 }
 
 /** Coordinates the authoritative server-side session used by code-server windows. */
@@ -33,13 +38,15 @@ export class SharedIdentitySession {
         private readonly context: vscode.ExtensionContext,
         private readonly store: SharedIdentityTokenStore,
         private readonly log: (message: string) => void,
-    ) { }
+    ) {}
 
     async read(): Promise<StoredTokens | undefined> {
         const shared = this.store.read();
         if (shared) {
             this.lastPayload = shared;
-            try { this.store.initialize(); } catch (error) {
+            try {
+                this.store.initialize();
+            } catch (error) {
                 this.log(`[auth] unable to initialize shared token metadata: ${error}`);
             }
             await this.cleanupLegacyBrowserStorage();
@@ -50,16 +57,21 @@ export class SharedIdentitySession {
             return undefined;
         }
 
-        const legacy = await this.context.secrets.get(SECRET_KEY)
-            ?? this.context.globalState.get<string>(FALLBACK_KEY);
+        const legacy =
+            (await this.context.secrets.get(SECRET_KEY)) ??
+            this.context.globalState.get<string>(FALLBACK_KEY);
         if (!legacy || !parseStoredTokens(legacy)) {
             return undefined;
         }
         try {
             const migrated = await this.store.withLock(() => {
                 const current = this.store.read();
-                if (current) { return current; }
-                if (this.store.isInitialized()) { return undefined; }
+                if (current) {
+                    return current;
+                }
+                if (this.store.isInitialized()) {
+                    return undefined;
+                }
                 this.store.write(legacy);
                 return legacy;
             });
@@ -83,7 +95,11 @@ export class SharedIdentitySession {
             this.lastPayload = payload;
             this.store.write(payload);
         };
-        if (lockHeld) { persist(); } else { await this.store.withLock(persist); }
+        if (lockHeld) {
+            persist();
+        } else {
+            await this.store.withLock(persist);
+        }
         await this.cleanupLegacyBrowserStorage();
     }
 
@@ -91,7 +107,9 @@ export class SharedIdentitySession {
         let cleared = false;
         await this.store.withLock(() => {
             const current = this.readCurrent();
-            if (expected && !sameStoredTokenVersion(expected, current)) { return; }
+            if (expected && !sameStoredTokenVersion(expected, current)) {
+                return;
+            }
             this.lastPayload = undefined;
             this.store.write(undefined);
             cleared = true;
@@ -107,7 +125,9 @@ export class SharedIdentitySession {
         this.watcher?.close();
         this.watcher = this.store.watch(() => {
             const payload = this.store.read();
-            if (payload === this.lastPayload) { return; }
+            if (payload === this.lastPayload) {
+                return;
+            }
             this.lastPayload = payload;
             listener(parseStoredTokens(payload));
         });
@@ -118,7 +138,9 @@ export class SharedIdentitySession {
     }
 
     private async cleanupLegacyBrowserStorage(): Promise<void> {
-        if (this.legacyCleanupDone) { return; }
+        if (this.legacyCleanupDone) {
+            return;
+        }
         this.legacyCleanupDone = true;
         await this.context.secrets.delete(SECRET_KEY);
         await this.context.globalState.update(FALLBACK_KEY, undefined);

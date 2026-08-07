@@ -13,5 +13,9 @@ export function writeBridgeAdvertisement(url: string, token: string): void {
 }
 
 export function removeBridgeAdvertisement(): void {
-    try { fs.rmSync(advertisementPath(), { force: true }); } catch { /* ignore */ }
+    try {
+        fs.rmSync(advertisementPath(), { force: true });
+    } catch {
+        /* ignore */
+    }
 }

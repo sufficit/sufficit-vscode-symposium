@@ -1,7 +1,15 @@
 import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
-import { listServers, deleteServer, importServersFromConfig, writeManifest, serverSubdir, readManifest, ServerManifest } from "../config/servers";
+import {
+    listServers,
+    deleteServer,
+    importServersFromConfig,
+    writeManifest,
+    serverSubdir,
+    readManifest,
+    ServerManifest,
+} from "../config/servers";
 import type { ConfigHandlerCtx, ConfigMessage, McpFormPayload } from "./configTypes";
 
 /**
@@ -12,28 +20,36 @@ import type { ConfigHandlerCtx, ConfigMessage, McpFormPayload } from "./configTy
  * Case bodies (and the saveMcpServer/parsePairs helpers) are moved verbatim
  * from ConfigPanel; only `this.X` was rewritten to `ctx.X`.
  */
-export async function handleMcpMessage(message: ConfigMessage, ctx: ConfigHandlerCtx): Promise<boolean> {
+export async function handleMcpMessage(
+    message: ConfigMessage,
+    ctx: ConfigHandlerCtx,
+): Promise<boolean> {
     switch (message.type) {
         case "import-mcp-servers": {
             const r = importServersFromConfig();
             void vscode.window.showInformationMessage(
                 r.serversCreated > 0
                     ? `${r.serversCreated} ${r.serversCreated === 1 ? "MCP server" : "MCP servers"} imported`
-                    : (r.serversSkipped > 0
-                        ? `${r.serversSkipped} ${r.serversSkipped === 1 ? "server" : "servers"} already exist`
-                        : "No MCP servers found in config files"));
+                    : r.serversSkipped > 0
+                      ? `${r.serversSkipped} ${r.serversSkipped === 1 ? "server" : "servers"} already exist`
+                      : "No MCP servers found in config files",
+            );
             await ctx.pushState();
             return true;
         }
         case "delete-mcp-server": {
             const serverName = message.payload?.name;
-            if (!serverName) { return true; }
+            if (!serverName) {
+                return true;
+            }
             const confirmed = await vscode.window.showWarningMessage(
                 `Are you sure you want to remove MCP server "${serverName}"?`,
                 "Delete",
-                "Cancel"
+                "Cancel",
             );
-            if (confirmed !== "Delete") { return true; }
+            if (confirmed !== "Delete") {
+                return true;
+            }
             const deleted = deleteServer(serverName);
             if (deleted) {
                 void vscode.window.showInformationMessage(`MCP server "${serverName}" deleted`);
@@ -47,8 +63,12 @@ export async function handleMcpMessage(message: ConfigMessage, ctx: ConfigHandle
         }
         case "open-mcp-item": {
             const { server, itemType, name } = message.payload ?? {};
-            if (!server || !itemType || !name) { return true; }
-            if (itemType !== "tools" && itemType !== "prompts" && itemType !== "resources") { return true; }
+            if (!server || !itemType || !name) {
+                return true;
+            }
+            if (itemType !== "tools" && itemType !== "prompts" && itemType !== "resources") {
+                return true;
+            }
             const ext = itemType === "resources" ? ".json" : ".md";
             const file = path.join(serverSubdir(server, itemType), name + ext);
             if (fs.existsSync(file)) {
@@ -64,9 +84,14 @@ export async function handleMcpMessage(message: ConfigMessage, ctx: ConfigHandle
 /** Parses "KEY=VALUE" pairs separated by newlines or commas (env + headers). */
 function parsePairs(raw: string): Record<string, string> {
     const out: Record<string, string> = {};
-    for (const pair of (raw || "").split(/[\n,]/).map((s) => s.trim()).filter(Boolean)) {
+    for (const pair of (raw || "")
+        .split(/[\n,]/)
+        .map((s) => s.trim())
+        .filter(Boolean)) {
         const eq = pair.indexOf("=");
-        if (eq > 0) { out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim(); }
+        if (eq > 0) {
+            out[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim();
+        }
     }
     return out;
 }
@@ -78,18 +103,27 @@ function parsePairs(raw: string): Record<string, string> {
  * form; unedited manifest fields (version/source/builtin) are preserved.
  */
 async function saveMcpServer(ctx: ConfigHandlerCtx, p?: McpFormPayload): Promise<void> {
-    if (!p) { return; }
+    if (!p) {
+        return;
+    }
     const editing = p.mode === "edit";
     const originalName = (p.originalName ?? "").trim();
     // Use the typed name (renaming is allowed on edit), falling back to the
     // original. Previously edit ignored p.name, so the server couldn't be renamed.
     const name = (p.name ?? (editing ? originalName : "")).trim();
-    if (!name) { void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.nameRequired")); return; }
+    if (!name) {
+        void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.nameRequired"));
+        return;
+    }
     const renamed = editing && originalName.toLowerCase() !== name.toLowerCase();
     if (!editing || renamed) {
-        if (!/^[\w.-]+$/.test(name)) { void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.nameInvalid")); return; }
+        if (!/^[\w.-]+$/.test(name)) {
+            void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.nameInvalid"));
+            return;
+        }
         if (listServers().some((s) => s.name.toLowerCase() === name.toLowerCase())) {
-            void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.nameExists")); return;
+            void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.nameExists"));
+            return;
         }
     }
     const transport: "stdio" | "sse" = p.transport === "sse" ? "sse" : "stdio";
@@ -103,29 +137,55 @@ async function saveMcpServer(ctx: ConfigHandlerCtx, p?: McpFormPayload): Promise
 
     if (transport === "stdio") {
         const command = (p.command ?? "").trim();
-        if (!command) { void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.commandRequired")); return; }
+        if (!command) {
+            void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.commandRequired"));
+            return;
+        }
         manifest.command = command;
         const args = (p.args ?? "").trim() ? (p.args as string).trim().split(/\s+/) : [];
-        if (args.length) { manifest.args = args; } else { delete manifest.args; }
+        if (args.length) {
+            manifest.args = args;
+        } else {
+            delete manifest.args;
+        }
         const env = parsePairs(p.env ?? "");
-        if (Object.keys(env).length) { manifest.env = env; } else { delete manifest.env; }
+        if (Object.keys(env).length) {
+            manifest.env = env;
+        } else {
+            delete manifest.env;
+        }
         delete manifest.url;
         delete manifest.headers;
     } else {
         const url = (p.url ?? "").trim();
-        if (!url) { void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.urlRequired")); return; }
-        try { new URL(url); } catch { void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.urlInvalid")); return; }
+        if (!url) {
+            void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.urlRequired"));
+            return;
+        }
+        try {
+            new URL(url);
+        } catch {
+            void vscode.window.showWarningMessage(ctx.tr("msg.addMcp.urlInvalid"));
+            return;
+        }
         manifest.url = url;
         const headers = parsePairs(p.headers ?? "");
-        if (Object.keys(headers).length) { manifest.headers = headers; } else { delete manifest.headers; }
+        if (Object.keys(headers).length) {
+            manifest.headers = headers;
+        } else {
+            delete manifest.headers;
+        }
         delete manifest.command;
         delete manifest.args;
         delete manifest.env;
     }
 
     writeManifest(name, manifest);
-    if (renamed) { deleteServer(originalName); }   // drop the old-named manifest
+    if (renamed) {
+        deleteServer(originalName);
+    } // drop the old-named manifest
     await ctx.pushState();
     void vscode.window.showInformationMessage(
-        ctx.tr(editing ? "msg.editMcp.updated" : "msg.addMcp.created", { name }));
+        ctx.tr(editing ? "msg.editMcp.updated" : "msg.addMcp.created", { name }),
+    );
 }

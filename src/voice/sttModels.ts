@@ -53,47 +53,66 @@ export interface DownloadProgress {
 const DOWNLOAD_IDLE_TIMEOUT_MS = 30_000;
 
 /** Streams a URL to a file, following redirects, reporting progress. */
-function httpDownload(url: string, dest: string, onProgress: (p: DownloadProgress) => void): Promise<void> {
+function httpDownload(
+    url: string,
+    dest: string,
+    onProgress: (p: DownloadProgress) => void,
+): Promise<void> {
     return new Promise((resolve, reject) => {
         let out: fs.WriteStream | undefined;
         const fail = (e: Error) => {
             if (out) {
                 out.destroy();
                 out = undefined;
-                try { fs.unlinkSync(dest); } catch { /* ignore */ }
+                try {
+                    fs.unlinkSync(dest);
+                } catch {
+                    /* ignore */
+                }
             }
             reject(e);
         };
         const get = (target: string, redirectsLeft: number) => {
-            const req = https.get(target, { headers: { "User-Agent": "symposium-vscode" } }, (res) => {
-                const status = res.statusCode ?? 0;
-                if (status >= 300 && status < 400 && res.headers.location) {
-                    res.resume();
-                    if (redirectsLeft <= 0) { fail(new Error("Too many redirects")); return; }
-                    const next = new URL(res.headers.location, target).toString();
-                    get(next, redirectsLeft - 1);
-                    return;
-                }
-                if (status !== 200) {
-                    res.resume();
-                    fail(new Error(`HTTP ${status} for ${target}`));
-                    return;
-                }
-                const total = Number(res.headers["content-length"] || 0);
-                let received = 0;
-                const file = fs.createWriteStream(dest);
-                out = file;
-                res.on("data", (chunk: Buffer) => {
-                    received += chunk.length;
-                    onProgress({ received, total, ratio: total > 0 ? received / total : -1 });
-                });
-                res.pipe(file);
-                file.on("finish", () => file.close(() => resolve()));
-                file.on("error", (e) => fail(e));
-                res.on("error", (e) => fail(e));
-            });
+            const req = https.get(
+                target,
+                { headers: { "User-Agent": "symposium-vscode" } },
+                (res) => {
+                    const status = res.statusCode ?? 0;
+                    if (status >= 300 && status < 400 && res.headers.location) {
+                        res.resume();
+                        if (redirectsLeft <= 0) {
+                            fail(new Error("Too many redirects"));
+                            return;
+                        }
+                        const next = new URL(res.headers.location, target).toString();
+                        get(next, redirectsLeft - 1);
+                        return;
+                    }
+                    if (status !== 200) {
+                        res.resume();
+                        fail(new Error(`HTTP ${status} for ${target}`));
+                        return;
+                    }
+                    const total = Number(res.headers["content-length"] || 0);
+                    let received = 0;
+                    const file = fs.createWriteStream(dest);
+                    out = file;
+                    res.on("data", (chunk: Buffer) => {
+                        received += chunk.length;
+                        onProgress({ received, total, ratio: total > 0 ? received / total : -1 });
+                    });
+                    res.pipe(file);
+                    file.on("finish", () => file.close(() => resolve()));
+                    file.on("error", (e) => fail(e));
+                    res.on("error", (e) => fail(e));
+                },
+            );
             req.setTimeout(DOWNLOAD_IDLE_TIMEOUT_MS, () => {
-                req.destroy(new Error(`Download stalled (no data for ${DOWNLOAD_IDLE_TIMEOUT_MS / 1000}s): ${target}`));
+                req.destroy(
+                    new Error(
+                        `Download stalled (no data for ${DOWNLOAD_IDLE_TIMEOUT_MS / 1000}s): ${target}`,
+                    ),
+                );
             });
             req.on("error", (e) => fail(e));
         };
@@ -106,9 +125,14 @@ function unzip(zipPath: string, targetDir: string): Promise<void> {
     return new Promise((resolve, reject) => {
         fs.mkdirSync(targetDir, { recursive: true });
         const child = spawn("unzip", ["-o", zipPath, "-d", targetDir], { stdio: "ignore" });
-        child.on("error", (e) => reject(new Error(`unzip failed (${e.message}). Install 'unzip' or extract manually.`)));
+        child.on("error", (e) =>
+            reject(new Error(`unzip failed (${e.message}). Install 'unzip' or extract manually.`)),
+        );
         child.on("close", (code) => {
-            if (code !== 0) { reject(new Error(`unzip exited with code ${code}`)); return; }
+            if (code !== 0) {
+                reject(new Error(`unzip exited with code ${code}`));
+                return;
+            }
             // Vosk archives contain a single top-level folder; lift its contents up.
             try {
                 const entries = fs.readdirSync(targetDir);
@@ -121,7 +145,9 @@ function unzip(zipPath: string, targetDir: string): Promise<void> {
                         fs.rmdirSync(inner);
                     }
                 }
-            } catch { /* leave structure as extracted */ }
+            } catch {
+                /* leave structure as extracted */
+            }
             resolve();
         });
     });
@@ -137,7 +163,9 @@ export async function downloadModel(
     onProgress: (p: DownloadProgress) => void,
 ): Promise<string> {
     const spec = findModel(modelId);
-    if (!spec) { throw new Error(`Unknown model: ${modelId}`); }
+    if (!spec) {
+        throw new Error(`Unknown model: ${modelId}`);
+    }
     const dir = engineDir(root, spec.engine);
     fs.mkdirSync(dir, { recursive: true });
     const finalPath = modelPath(spec, root);
@@ -153,16 +181,24 @@ export async function downloadModel(
     const tmpZip = path.join(dir, spec.id + ".zip");
     await httpDownload(spec.url, tmpZip, onProgress);
     await unzip(tmpZip, finalPath);
-    try { fs.unlinkSync(tmpZip); } catch { /* ignore */ }
+    try {
+        fs.unlinkSync(tmpZip);
+    } catch {
+        /* ignore */
+    }
     return finalPath;
 }
 
 /** Removes an installed model (file or directory). Returns true if anything was removed. */
 export function deleteModel(modelId: string, root: string): boolean {
     const spec = findModel(modelId);
-    if (!spec) { return false; }
+    if (!spec) {
+        return false;
+    }
     const p = modelPath(spec, root);
-    if (!fs.existsSync(p)) { return false; }
+    if (!fs.existsSync(p)) {
+        return false;
+    }
     fs.rmSync(p, { recursive: true, force: true });
     return true;
 }

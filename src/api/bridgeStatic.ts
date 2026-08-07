@@ -4,8 +4,11 @@ import * as path from "path";
 import { renderPwaHtml } from "../ui/pwaHtml";
 
 const PWA_MIME: Record<string, string> = {
-    ".js": "text/javascript", ".css": "text/css", ".map": "application/json",
-    ".webmanifest": "application/manifest+json", ".svg": "image/svg+xml",
+    ".js": "text/javascript",
+    ".css": "text/css",
+    ".map": "application/json",
+    ".webmanifest": "application/manifest+json",
+    ".svg": "image/svg+xml",
 };
 
 /** Serves the bundled PWA client — the bridge's `GET /pwa/*` route. */
@@ -24,7 +27,9 @@ export function serveBridgeStatic(rel: string, res: http.ServerResponse): void {
     }
     try {
         const body = fs.readFileSync(file);
-        res.writeHead(200, { "Content-Type": PWA_MIME[path.extname(file)] ?? "application/octet-stream" });
+        res.writeHead(200, {
+            "Content-Type": PWA_MIME[path.extname(file)] ?? "application/octet-stream",
+        });
         res.end(body);
     } catch {
         res.writeHead(404, { "Content-Type": "application/json" });

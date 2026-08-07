@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { presentTurnError } from "../ui/errorPresentation";
 
 test("all-backends-exhausted 503 has a concise actionable system summary", () => {
-    const raw = 'HTTP 503 Service Unavailable {"error":{"message":"responses failed: All AI backends exhausted","code":"ai_backends_exhausted"}}';
+    const raw =
+        'HTTP 503 Service Unavailable {"error":{"message":"responses failed: All AI backends exhausted","code":"ai_backends_exhausted"}}';
     const out = presentTurnError(raw, true);
 
     assert.match(out.summary, /HTTP 503/);

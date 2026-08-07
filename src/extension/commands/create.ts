@@ -2,49 +2,78 @@ import * as cp from "child_process";
 import * as vscode from "vscode";
 import { SessionInfo, SessionStartOptions } from "../../adapters/types";
 import { ChatPanel } from "../../ui/chatPanel";
-import { scanKind, readAgentBody, readAgentBootstrap, readAgentModel, readAgentTools } from "../../config/root";
+import { scanKind } from "../../config/root";
+import {
+    readAgentBody,
+    readAgentBootstrap,
+    readAgentModel,
+    readAgentTools,
+} from "../../config/agentFrontmatter";
 import { aiToolsForAgent } from "../../adapters/aiTools";
 import { defaultCwd } from "../config";
 import { CLI_BACKENDS, CLI_INSTALL, promptInstallCli } from "../cli";
-import { resolveModelPin } from "../models";
+import { resolveModelPin } from "../../application/modelSelection";
 import { CommandContext } from "./helpers";
 
 /** New-session, agent-session, terminal- and persistent-session commands. */
 export function registerCreateCommands(ctx: CommandContext): void {
-    const { context, adapters, surfaceDeps, chatView, inEditor, startTerminal, persistGet, persistAdd, tmuxAlive, infoOf } = ctx;
+    const {
+        context,
+        adapters,
+        surfaceDeps,
+        chatView,
+        inEditor,
+        startTerminal,
+        persistGet,
+        persistAdd,
+        tmuxAlive,
+        infoOf,
+    } = ctx;
 
     // Opening a tab must not wait for four CLI/API availability probes. Render
     // configured adapters immediately, then replace the picker as probes finish.
     // This matches Claude/Codex: create the surface first; discover capabilities
     // asynchronously rather than putting process/network work on the click path.
-    const initialAgentPickerEntries = (): import("../../ui/protocol").AgentPickerEntry[] => adapters.map((adapter) => ({
-        backend: adapter.backend,
-        name: adapter.displayName ?? adapter.backend,
-        version: "checking availability…",
-        ok: true,
-    }));
-    const collectAgentPickerEntries = () => Promise.all(adapters.map(async (adapter) => {
-        const probe = await adapter.available();
-        const isEnoent = !probe.ok && /ENOENT|not found/i.test(probe.error ?? "");
-        const hasInstall = isEnoent && !!CLI_INSTALL[adapter.backend];
-        return {
+    const initialAgentPickerEntries = (): import("../../protocol/chat").AgentPickerEntry[] =>
+        adapters.map((adapter) => ({
             backend: adapter.backend,
             name: adapter.displayName ?? adapter.backend,
-            version: probe.ok ? (probe.version ?? "") : `unavailable: ${probe.error}`,
-            ok: probe.ok,
-            installCmd: hasInstall ? CLI_INSTALL[adapter.backend].cmd : undefined,
-        };
-    }));
+            version: "checking availability…",
+            ok: true,
+        }));
+    const collectAgentPickerEntries = () =>
+        Promise.all(
+            adapters.map(async (adapter) => {
+                const probe = await adapter.available();
+                const isEnoent = !probe.ok && /ENOENT|not found/i.test(probe.error ?? "");
+                const hasInstall = isEnoent && !!CLI_INSTALL[adapter.backend];
+                return {
+                    backend: adapter.backend,
+                    name: adapter.displayName ?? adapter.backend,
+                    version: probe.ok ? (probe.version ?? "") : `unavailable: ${probe.error}`,
+                    ok: probe.ok,
+                    installCmd: hasInstall ? CLI_INSTALL[adapter.backend].cmd : undefined,
+                };
+            }),
+        );
     context.subscriptions.push(
         vscode.commands.registerCommand("symposium.newSession", () => {
             // Create/reveal the target synchronously. Availability updates arrive
             // later and never hold the VS Code command or webview creation open.
             if (inEditor()) {
-                const panel = ChatPanel.newSession(context, surfaceDeps, initialAgentPickerEntries());
-                void collectAgentPickerEntries().then((agents) => panel.refreshAgentPicker(agents)).catch(() => undefined);
+                const panel = ChatPanel.newSession(
+                    context,
+                    surfaceDeps,
+                    initialAgentPickerEntries(),
+                );
+                void collectAgentPickerEntries()
+                    .then((agents) => panel.refreshAgentPicker(agents))
+                    .catch(() => undefined);
             } else {
                 void chatView.showAgentPicker(initialAgentPickerEntries());
-                void collectAgentPickerEntries().then((agents) => chatView.refreshAgentPicker(agents)).catch(() => undefined);
+                void collectAgentPickerEntries()
+                    .then((agents) => chatView.refreshAgentPicker(agents))
+                    .catch(() => undefined);
             }
         }),
 
@@ -52,7 +81,9 @@ export function registerCreateCommands(ctx: CommandContext): void {
         // always create a separate, blank conversation tab immediately.
         vscode.commands.registerCommand("symposium.newEditorSession", () => {
             const panel = ChatPanel.newSession(context, surfaceDeps, initialAgentPickerEntries());
-            void collectAgentPickerEntries().then((agents) => panel.refreshAgentPicker(agents)).catch(() => undefined);
+            void collectAgentPickerEntries()
+                .then((agents) => panel.refreshAgentPicker(agents))
+                .catch(() => undefined);
         }),
 
         // New session bound to a local agent-def: seeds the system prompt from the
@@ -60,25 +91,41 @@ export function registerCreateCommands(ctx: CommandContext): void {
         vscode.commands.registerCommand("symposium.newAgentSession", async () => {
             const agents = scanKind("agent").filter((a) => readAgentBootstrap(a.name) !== false);
             if (agents.length === 0) {
-                void vscode.window.showWarningMessage("No eligible agent in ~/.symposium/repo/agents. Use Seed/Import or create one in Configuration.");
+                void vscode.window.showWarningMessage(
+                    "No eligible agent in ~/.symposium/repo/agents. Use Seed/Import or create one in Configuration.",
+                );
                 return;
             }
             const agent = await vscode.window.showQuickPick(
                 agents.map((a) => ({ label: a.name, description: a.description, name: a.name })),
-                { placeHolder: "Which agent?" });
+                { placeHolder: "Which agent?" },
+            );
             if (!agent) {
                 return;
             }
-            const picks = await Promise.all(adapters.map(async (adapter) => {
-                const probe = await adapter.available();
-                return { label: adapter.displayName ?? adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, adapter, ok: probe.ok };
-            }));
-            const choice = await vscode.window.showQuickPick(picks, { placeHolder: `Backend for "${agent.name}"` });
+            const picks = await Promise.all(
+                adapters.map(async (adapter) => {
+                    const probe = await adapter.available();
+                    return {
+                        label: adapter.displayName ?? adapter.backend,
+                        description: probe.ok ? probe.version : `unavailable: ${probe.error}`,
+                        adapter,
+                        ok: probe.ok,
+                    };
+                }),
+            );
+            const choice = await vscode.window.showQuickPick(picks, {
+                placeHolder: `Backend for "${agent.name}"`,
+            });
             if (!choice) {
                 return;
             }
             if (!choice.ok) {
-                void promptInstallCli(choice.adapter.backend, choice.label, choice.description ?? "");
+                void promptInstallCli(
+                    choice.adapter.backend,
+                    choice.label,
+                    choice.description ?? "",
+                );
                 return;
             }
             const model = await resolveModelPin(choice.adapter, readAgentModel(agent.name));
@@ -97,7 +144,11 @@ export function registerCreateCommands(ctx: CommandContext): void {
             options.toolsDeclared = tools;
             options.toolsAllowed = allowedTools;
             if (inEditor()) {
-                ChatPanel.show(context, surfaceDeps).openDialogue(choice.adapter.backend, options, title);
+                ChatPanel.show(context, surfaceDeps).openDialogue(
+                    choice.adapter.backend,
+                    options,
+                    title,
+                );
             } else {
                 void chatView.openDialogue(choice.adapter.backend, options, title);
             }
@@ -106,13 +157,23 @@ export function registerCreateCommands(ctx: CommandContext): void {
         vscode.commands.registerCommand("symposium.newTerminalSession", async () => {
             // Terminal sessions are CLI-only; the OpenAI adapter has no executable.
             const cliAdapters = adapters.filter((a) => CLI_BACKENDS.has(a.backend));
-            const picks = await Promise.all(cliAdapters.map(async (adapter) => {
-                const probe = await adapter.available();
-                return { label: adapter.displayName ?? adapter.backend, description: probe.ok ? probe.version : `unavailable: ${probe.error}`, backend: adapter.backend, ok: probe.ok };
-            }));
-            const choice = await vscode.window.showQuickPick(picks.filter((p) => p.ok), {
-                placeHolder: "Launch which agent in a terminal session?",
-            });
+            const picks = await Promise.all(
+                cliAdapters.map(async (adapter) => {
+                    const probe = await adapter.available();
+                    return {
+                        label: adapter.displayName ?? adapter.backend,
+                        description: probe.ok ? probe.version : `unavailable: ${probe.error}`,
+                        backend: adapter.backend,
+                        ok: probe.ok,
+                    };
+                }),
+            );
+            const choice = await vscode.window.showQuickPick(
+                picks.filter((p) => p.ok),
+                {
+                    placeHolder: "Launch which agent in a terminal session?",
+                },
+            );
             if (!choice) {
                 return;
             }
@@ -120,10 +181,17 @@ export function registerCreateCommands(ctx: CommandContext): void {
             startTerminal(choice.backend, { cwd }, "Terminal session");
         }),
 
-        vscode.commands.registerCommand("symposium.resumeInTerminal", (item: { info?: SessionInfo } | SessionInfo) => {
-            const info = infoOf(item);
-            startTerminal(info.backend, { cwd: surfaceDeps.cwdFor(info), resumeSessionId: info.sessionId }, info.title);
-        }),
+        vscode.commands.registerCommand(
+            "symposium.resumeInTerminal",
+            (item: { info?: SessionInfo } | SessionInfo) => {
+                const info = infoOf(item);
+                startTerminal(
+                    info.backend,
+                    { cwd: surfaceDeps.cwdFor(info), resumeSessionId: info.sessionId },
+                    info.title,
+                );
+            },
+        ),
 
         vscode.commands.registerCommand("symposium.newPersistentSession", async () => {
             const hasTmux = await new Promise<boolean>((r) => {
@@ -132,16 +200,30 @@ export function registerCreateCommands(ctx: CommandContext): void {
                 c.on("exit", (code) => r(code === 0));
             });
             if (!hasTmux) {
-                void vscode.window.showWarningMessage("tmux is not installed — persistent sessions need tmux (the agent runs inside a detached tmux session so it survives VS Code closing).");
+                void vscode.window.showWarningMessage(
+                    "tmux is not installed — persistent sessions need tmux (the agent runs inside a detached tmux session so it survives VS Code closing).",
+                );
                 return;
             }
-            const picks = await Promise.all(adapters.filter((a) => CLI_BACKENDS.has(a.backend)).map(async (a) => {
-                const p = await a.available();
-                return { label: a.backend, description: p.ok ? p.version : `unavailable: ${p.error}`, backend: a.backend, ok: p.ok };
-            }));
-            const choice = await vscode.window.showQuickPick(picks.filter((p) => p.ok), {
-                placeHolder: "Launch which agent as a PERSISTENT (tmux) session?",
-            });
+            const picks = await Promise.all(
+                adapters
+                    .filter((a) => CLI_BACKENDS.has(a.backend))
+                    .map(async (a) => {
+                        const p = await a.available();
+                        return {
+                            label: a.backend,
+                            description: p.ok ? p.version : `unavailable: ${p.error}`,
+                            backend: a.backend,
+                            ok: p.ok,
+                        };
+                    }),
+            );
+            const choice = await vscode.window.showQuickPick(
+                picks.filter((p) => p.ok),
+                {
+                    placeHolder: "Launch which agent as a PERSISTENT (tmux) session?",
+                },
+            );
             if (!choice) {
                 return;
             }
@@ -165,18 +247,28 @@ export function registerCreateCommands(ctx: CommandContext): void {
                 await context.workspaceState.update(ctx.persistKey, alive);
             }
             if (!alive.length) {
-                void vscode.window.showInformationMessage("No live persistent (tmux) sessions to reattach.");
+                void vscode.window.showInformationMessage(
+                    "No live persistent (tmux) sessions to reattach.",
+                );
                 return;
             }
             const choice = await vscode.window.showQuickPick(
-                alive.map((e) => ({ label: e.title, description: `${e.backend} · ${e.tmuxName}`, entry: e })),
+                alive.map((e) => ({
+                    label: e.title,
+                    description: `${e.backend} · ${e.tmuxName}`,
+                    entry: e,
+                })),
                 { placeHolder: "Reattach a live persistent session" },
             );
             if (!choice) {
                 return;
             }
             // Re-running `tmux new-session -A -s <name>` attaches to the live process.
-            startTerminal(choice.entry.backend, { cwd: choice.entry.cwd, tmuxName: choice.entry.tmuxName }, choice.entry.title);
+            startTerminal(
+                choice.entry.backend,
+                { cwd: choice.entry.cwd, tmuxName: choice.entry.tmuxName },
+                choice.entry.title,
+            );
         }),
     );
 }

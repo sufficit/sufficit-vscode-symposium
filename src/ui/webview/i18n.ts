@@ -68,13 +68,16 @@ const EN: Dict = {
     "chat.icon.scrollBottom": "Go to the bottom",
     "chat.panel.attached": "Attached to context",
     "chat.composer.placeholder": "Ask the agent…  (Enter sends · Shift+Enter newline)",
-    "chat.composer.codexSubagent.placeholder": "Codex subagent session — direct replies are unavailable",
-    "chat.composer.codexSubagent.notice": "This session was created by another Codex agent. Codex only allows the parent agent to continue it.",
+    "chat.composer.codexSubagent.placeholder":
+        "Codex subagent session — direct replies are unavailable",
+    "chat.composer.codexSubagent.notice":
+        "This session was created by another Codex agent. Codex only allows the parent agent to continue it.",
     "chat.icon.attachFiles": "Attach files",
     "chat.icon.attachBrowser": "Attach the browser page to the context",
     "chat.icon.config": "Tools & configuration",
     "chat.picker.model.tooltip": "Model — change anytime; applies to the next message",
-    "chat.picker.reasoning.tooltip": "Reasoning effort — change anytime; applies to the next message",
+    "chat.picker.reasoning.tooltip":
+        "Reasoning effort — change anytime; applies to the next message",
     "chat.picker.reasoning.aria": "Reasoning effort",
     "chat.picker.presence.tooltip": "Presence — can be changed any time",
     "chat.picker.exec.tooltip": "Shell execution display",
@@ -171,13 +174,16 @@ const PT_BR: Dict = {
     "chat.icon.scrollBottom": "Ir para o final",
     "chat.panel.attached": "Anexado ao contexto",
     "chat.composer.placeholder": "Pergunte ao agente…  (Enter envia · Shift+Enter nova linha)",
-    "chat.composer.codexSubagent.placeholder": "Sessão de subagente do Codex — respostas diretas indisponíveis",
-    "chat.composer.codexSubagent.notice": "Esta sessão foi criada por outro agente do Codex. Por uma limitação do Codex, somente o agente pai pode continuá-la.",
+    "chat.composer.codexSubagent.placeholder":
+        "Sessão de subagente do Codex — respostas diretas indisponíveis",
+    "chat.composer.codexSubagent.notice":
+        "Esta sessão foi criada por outro agente do Codex. Por uma limitação do Codex, somente o agente pai pode continuá-la.",
     "chat.icon.attachFiles": "Anexar arquivos",
     "chat.icon.attachBrowser": "Anexar a página do navegador ao contexto",
     "chat.icon.config": "Ferramentas e configuração",
     "chat.picker.model.tooltip": "Modelo — altere a qualquer momento; aplica-se à próxima mensagem",
-    "chat.picker.reasoning.tooltip": "Esforço de raciocínio — altere a qualquer momento; aplica-se à próxima mensagem",
+    "chat.picker.reasoning.tooltip":
+        "Esforço de raciocínio — altere a qualquer momento; aplica-se à próxima mensagem",
     "chat.picker.reasoning.aria": "Esforço de raciocínio",
     "chat.picker.presence.tooltip": "Presença — pode ser alterada a qualquer momento",
     "chat.picker.exec.tooltip": "Exibição de execução do shell",
@@ -211,10 +217,11 @@ const PT_BR: Dict = {
     "chat.boot.step.ui": "Carregando interface",
     "chat.boot.step.session": "Preparando sessão",
     "chat.boot.timedOut": "tempo esgotado",
-    "chat.boot.slowHint": "Demorando mais que o esperado — veja Saída › Symposium para diagnósticos.",
+    "chat.boot.slowHint":
+        "Demorando mais que o esperado — veja Saída › Symposium para diagnósticos.",
 };
 
-const DICTS: Record<string, Dict> = { "en": EN, "pt-br": PT_BR };
+const DICTS: Record<string, Dict> = { en: EN, "pt-br": PT_BR };
 
 let lang = "en";
 
@@ -228,7 +235,9 @@ export function setLang(l: string): void {
 export function t(key: string, vars?: Record<string, string | number>): string {
     let s = (DICTS[lang] && DICTS[lang][key]) || EN[key] || key;
     if (vars) {
-        for (const k of Object.keys(vars)) { s = s.split("{" + k + "}").join(String(vars[k])); }
+        for (const k of Object.keys(vars)) {
+            s = s.split("{" + k + "}").join(String(vars[k]));
+        }
     }
     return s;
 }

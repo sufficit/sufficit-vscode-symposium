@@ -3,9 +3,18 @@ import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { LiveSessions } from "../sessions/runtime";
 import type { SessionStatus } from "../adapters/sessionInfo";
 import {
-    createResource, deleteResource, importSkill, readAgentBody, readAgentTools, readState, readToolCredential,
-    ResourceEntry, ResourceKind, rootDir, scanAll, scanForeignSkills, SyncState,
+    createResource,
+    deleteResource,
+    importSkill,
+    readState,
+    ResourceEntry,
+    ResourceKind,
+    rootDir,
+    scanAll,
+    scanForeignSkills,
+    SyncState,
 } from "../config/root";
+import { readAgentBody, readAgentTools, readToolCredential } from "../config/agentFrontmatter";
 import { aiToolsForAgent } from "../adapters/aiTools";
 import { importAgents } from "../config/importAgents";
 import { importTools, importInstructions } from "../config/importResources";
@@ -13,9 +22,7 @@ import { seedExamples } from "../config/seed";
 import { symposiumLog } from "../extension/log";
 import { HubClient } from "../sync/hubClient";
 import { SyncEngine, SyncResult } from "../sync/sync";
-import {
-    BackendsApi, createBackendsApi,
-} from "./backendConfig";
+import { BackendsApi, createBackendsApi } from "./backendConfig";
 import { createSettingsApi, SettingsApi } from "./settingsApi";
 
 // Re-export the public types of the extracted backend/settings slices so that
@@ -58,7 +65,16 @@ export interface SymposiumApi {
          * the backend reports its own session id. When `tools` are given, their
          * vault secrets are resolved and injected into the process env at spawn.
          */
-        create(backend: string, options: { cwd: string; model?: string; tools?: string[]; agent?: string; permission?: string }): Promise<string | undefined>;
+        create(
+            backend: string,
+            options: {
+                cwd: string;
+                model?: string;
+                tools?: string[];
+                agent?: string;
+                permission?: string;
+            },
+        ): Promise<string | undefined>;
         /** Sends a message to a session. `steer` interrupts the running turn. */
         send(id: string, text: string, mode?: SendMode): boolean;
         /** Interrupts the running turn, if any. */
@@ -86,7 +102,17 @@ export interface SymposiumApi {
         /** Lists importable skill bundles from Claude/Codex dirs. */
         scanForeignSkills(): { source: string; name: string; description: string; path: string }[];
         /** Copies the given skill bundle dirs into repo/skills/. */
-        importSkills(srcDirs: string[], overwrite?: boolean, onProgress?: (progress: { current: number; total: number; imported: number; skipped: number; errors: number }) => void): Promise<{ imported: number; skipped: number; errors: string[] }>;
+        importSkills(
+            srcDirs: string[],
+            overwrite?: boolean,
+            onProgress?: (progress: {
+                current: number;
+                total: number;
+                imported: number;
+                skipped: number;
+                errors: number;
+            }) => void,
+        ): Promise<{ imported: number; skipped: number; errors: string[] }>;
         /** Local storage root (~/.symposium by default). */
         root(): string;
     };
@@ -114,7 +140,9 @@ export interface SymposiumApi {
          * + credentialEnv, fetches the secret). Returns the env map plus the refs
          * that could not be resolved (unknown/expired/offline).
          */
-        resolveToolEnv(toolNames: string[]): Promise<{ env: Record<string, string>; missing: string[] }>;
+        resolveToolEnv(
+            toolNames: string[],
+        ): Promise<{ env: Record<string, string>; missing: string[] }>;
     };
 
     settings: SettingsApi;
@@ -140,9 +168,15 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
 
     // Derives a conventional env var name from a vault reference when the tool
     // does not declare credentialEnv (e.g. "anthropic/api_key" → ANTHROPIC_API_KEY).
-    const deriveEnv = (ref: string) => ref.replace(/[^a-zA-Z0-9]+/g, "_").toUpperCase().replace(/^_+|_+$/g, "");
+    const deriveEnv = (ref: string) =>
+        ref
+            .replace(/[^a-zA-Z0-9]+/g, "_")
+            .toUpperCase()
+            .replace(/^_+|_+$/g, "");
 
-    const resolveToolEnv = async (toolNames: string[]): Promise<{ env: Record<string, string>; missing: string[] }> => {
+    const resolveToolEnv = async (
+        toolNames: string[],
+    ): Promise<{ env: Record<string, string>; missing: string[] }> => {
         const env: Record<string, string> = {};
         const missing: string[] = [];
         for (const name of toolNames) {
@@ -172,19 +206,25 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                     return undefined;
                 }
                 const opts: SessionStartOptions = { cwd: options.cwd, model: options.model };
-                if (options.permission) { opts.permission = options.permission; }
+                if (options.permission) {
+                    opts.permission = options.permission;
+                }
                 if (options.tools && options.tools.length > 0) {
                     const { env, missing } = await resolveToolEnv(options.tools);
                     opts.env = env;
                     if (missing.length > 0) {
-                        symposiumLog(`sessions.create(${backend}): unresolved tool secrets: ${missing.join(", ")}`);
+                        symposiumLog(
+                            `sessions.create(${backend}): unresolved tool secrets: ${missing.join(", ")}`,
+                        );
                     }
                 }
                 // Bind agent-def: gate AI tools + seed the developer prompt.
                 if (options.agent) {
                     opts.aiTools = aiToolsForAgent(readAgentTools(options.agent));
                     const dp = readAgentBody(options.agent);
-                    if (dp) { opts.developerPrompt = dp; }
+                    if (dp) {
+                        opts.developerPrompt = dp;
+                    }
                 }
                 return deps.live.createWithKey(adapter, opts).key;
             },
@@ -220,14 +260,25 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
             importInstructions: () => importInstructions(),
             scanForeignSkills: () => scanForeignSkills(),
             importSkills: async (srcDirs, overwrite, onProgress) => {
-                let imported = 0, skipped = 0;
+                let imported = 0,
+                    skipped = 0;
                 const errors: string[] = [];
                 for (const [index, dir] of srcDirs.entries()) {
                     const r = importSkill(dir, overwrite);
-                    if (r.status === "imported") { imported++; }
-                    else if (r.status === "skipped") { skipped++; }
-                    else { errors.push(r.name); }
-                    onProgress?.({ current: index + 1, total: srcDirs.length, imported, skipped, errors: errors.length });
+                    if (r.status === "imported") {
+                        imported++;
+                    } else if (r.status === "skipped") {
+                        skipped++;
+                    } else {
+                        errors.push(r.name);
+                    }
+                    onProgress?.({
+                        current: index + 1,
+                        total: srcDirs.length,
+                        imported,
+                        skipped,
+                        errors: errors.length,
+                    });
                     // Give the webview renderer a turn to paint progress before
                     // copying a potentially large next skill bundle.
                     await new Promise<void>((resolve) => setTimeout(resolve, 0));

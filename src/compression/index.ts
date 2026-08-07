@@ -9,9 +9,7 @@
  */
 
 import type { ChatMessage } from "../adapters/openai/types";
-import type {
-    CompressionStrategyType,
-} from "./types";
+import type { CompressionStrategyType } from "./types";
 
 export { CompressionManager } from "./manager";
 export {
@@ -45,7 +43,7 @@ export {
 export async function compressionWebhook(
     messages: unknown[],
     presetId: string = "none",
-    maxTokens?: number
+    maxTokens?: number,
 ): Promise<unknown[]> {
     // Importar os tipos de mensagem do OpenAI
     const { compressMessages: compress } = await import("./webhook");

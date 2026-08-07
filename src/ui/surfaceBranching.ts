@@ -1,6 +1,6 @@
 import type { SessionInfo, SessionStartOptions } from "../adapters/types";
 import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
-import type { WebviewToHost } from "./protocol";
+import type { WebviewToHost } from "../protocol/chat";
 
 /**
  * Branch flows for a chat surface: restart-from-message and edit-and-resend.
@@ -46,10 +46,14 @@ function buildSeedHistory(
         ? ` Parent session: ${relation.parentId}; lineage: ${relation.lineageId || relation.parentId}.`
         : "";
     if (!transcript) {
-        return reference ? `[Conversation restarted from its first message.]${reference}` : undefined;
+        return reference
+            ? `[Conversation restarted from its first message.]${reference}`
+            : undefined;
     }
-    return `[Conversation continued from an earlier point.]${reference} Treat the conversation below as the complete history so far.\n\n` +
-        `=== Conversation so far ===\n${transcript}\n=== End of conversation so far ===`;
+    return (
+        `[Conversation continued from an earlier point.]${reference} Treat the conversation below as the complete history so far.\n\n` +
+        `=== Conversation so far ===\n${transcript}\n=== End of conversation so far ===`
+    );
 }
 
 function sameTextRetry(backend: string, original: string | undefined, edited: string): boolean {
@@ -70,14 +74,24 @@ function sameTextRetry(backend: string, original: string | undefined, edited: st
  * already copes with a dangling unanswered user message from the failed turn
  * (e.g. the openai adapter's "(previous turn interrupted)" filler).
  */
-export function retryLastMessage(d: SurfaceDialoguesDeps, index: number, errorMessage?: string): void {
+export function retryLastMessage(
+    d: SurfaceDialoguesDeps,
+    index: number,
+    errorMessage?: string,
+): void {
     const from = d.getController();
-    if (!from || !Number.isInteger(index) || index < 0) { return; }
+    if (!from || !Number.isInteger(index) || index < 0) {
+        return;
+    }
     const transcriptMessages = from.transcriptMessages();
     const adjustedIndex = Math.min(index, transcriptMessages.length - 1);
-    if (adjustedIndex < 0) { return; }
+    if (adjustedIndex < 0) {
+        return;
+    }
     const original = transcriptMessages[adjustedIndex];
-    if (!original || original.role !== "user") { return; }
+    if (!original || original.role !== "user") {
+        return;
+    }
     // Tell the model WHY it's being nudged to continue — otherwise a bare
     // resend looks like the user just said "continue" for no reason. Passed
     // in from the webview's click (not captured host-side): an in-memory
@@ -90,14 +104,27 @@ export function retryLastMessage(d: SurfaceDialoguesDeps, index: number, errorMe
         // model sees but never renders as a chat bubble, so without this the
         // user has no way to tell it was actually sent. anchorIndex links back
         // to the original message instead of rendering a duplicate bubble.
-        d.post({ type: "event", event: { kind: "status-notice", text: `Continuing — told the model why: ${interruptedBy}`, anchorIndex: adjustedIndex } });
+        d.post({
+            type: "event",
+            event: {
+                kind: "status-notice",
+                text: `Continuing — told the model why: ${interruptedBy}`,
+                anchorIndex: adjustedIndex,
+            },
+        });
     }
     // Delivery 1C: tell the adapter to REUSE the failed turn's logicalTurnId
     // (when available) so the retry is attributable to the original turn — not a
     // new logical turn with a duplicate user message. Falls back to a fresh turn
     // when the id is unknown (e.g. after a reload).
     const retryOf = from.lastTurnId;
-    void from.handleMessage({ type: "send", text: original.text, mode: "send", interruptedBy, retryOf } as WebviewToHost);
+    void from.handleMessage({
+        type: "send",
+        text: original.text,
+        mode: "send",
+        interruptedBy,
+        retryOf,
+    } as WebviewToHost);
 }
 
 /**
@@ -200,7 +227,7 @@ export function editResend(
         void from.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
         return;
     }
-    const keepTo = adjustedIndex - 1;   // exclude the message being edited
+    const keepTo = adjustedIndex - 1; // exclude the message being edited
     const messages = from.transcriptMessagesUpTo(keepTo);
     const transcript = from.transcriptUpTo(keepTo);
     const lineageId = inheritedLineage(from);
@@ -212,11 +239,23 @@ export function editResend(
     void d.getController()?.handleMessage({
         type: "send",
         text: sendMsg.text,
-        attachments: "attachments" in sendMsg && Array.isArray(sendMsg.attachments) ? sendMsg.attachments : [],
+        attachments:
+            "attachments" in sendMsg && Array.isArray(sendMsg.attachments)
+                ? sendMsg.attachments
+                : [],
         model: "model" in sendMsg && typeof sendMsg.model === "string" ? sendMsg.model : undefined,
-        reasoning: "reasoning" in sendMsg && typeof sendMsg.reasoning === "string" ? sendMsg.reasoning : undefined,
-        permission: "permission" in sendMsg && typeof sendMsg.permission === "string" ? sendMsg.permission : undefined,
-        autonomy: "autonomy" in sendMsg && typeof sendMsg.autonomy === "string" ? sendMsg.autonomy : undefined,
+        reasoning:
+            "reasoning" in sendMsg && typeof sendMsg.reasoning === "string"
+                ? sendMsg.reasoning
+                : undefined,
+        permission:
+            "permission" in sendMsg && typeof sendMsg.permission === "string"
+                ? sendMsg.permission
+                : undefined,
+        autonomy:
+            "autonomy" in sendMsg && typeof sendMsg.autonomy === "string"
+                ? sendMsg.autonomy
+                : undefined,
         mode: "send",
     });
 }

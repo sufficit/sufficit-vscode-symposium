@@ -36,7 +36,11 @@ const isTask = (type: unknown): boolean => String(type ?? "").startsWith("task")
 const isWorkItem = (type: unknown): boolean => String(type ?? "") === TASK_ANCHOR;
 /** A task-checkpoint: observed historical state, never executable work. */
 const isCheckpoint = (type: unknown): boolean => String(type ?? "") === TASK_CHECKPOINT;
-const hasTag = (tags: unknown, tag: string): boolean => String(tags ?? "").split(",").map((t) => t.trim()).includes(tag);
+const hasTag = (tags: unknown, tag: string): boolean =>
+    String(tags ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .includes(tag);
 
 /**
  * Recent-create cache, keyed by session: the hub's search index
@@ -50,7 +54,11 @@ const hasTag = (tags: unknown, tag: string): boolean => String(tags ?? "").split
  * completed. A time limit is incorrect here: long-running plans can outlive it
  * while the index is still stale, producing a false allTasksComplete result.
  */
-interface RecentTask { id: string; title: string; done: boolean; }
+interface RecentTask {
+    id: string;
+    title: string;
+    done: boolean;
+}
 const recentBySession = new Map<string, RecentTask[]>();
 
 /** Records a just-created task so it survives a search-index lag window. */
@@ -63,7 +71,9 @@ export function rememberTaskCreated(sessionId: string, id: string, title: string
 /** Marks a recently-created task done, so it stops padding "remaining". */
 export function rememberTaskDone(sessionId: string, id: string): void {
     const entry = recentBySession.get(sessionId)?.find((t) => t.id === id);
-    if (entry) { entry.done = true; }
+    if (entry) {
+        entry.done = true;
+    }
 }
 
 /**
@@ -79,7 +89,9 @@ const batchesBySession = new Map<string, string[][]>();
 
 /** Records one add_task call's ids, in the order given, as a cascade batch. */
 export function rememberTaskBatch(sessionId: string, ids: string[]): void {
-    if (ids.length < 2) { return; }   // nothing to cascade for a single-task batch
+    if (ids.length < 2) {
+        return;
+    } // nothing to cascade for a single-task batch
     const list = batchesBySession.get(sessionId) ?? [];
     list.push([...ids]);
     batchesBySession.set(sessionId, list);
@@ -88,11 +100,17 @@ export function rememberTaskBatch(sessionId: string, ids: string[]): void {
 /** Ids that precede `id` in its batch (if any), earliest first. */
 export function priorInBatch(sessionId: string, id: string): string[] {
     const batches = batchesBySession.get(sessionId);
-    if (!batches) { return []; }
+    if (!batches) {
+        return [];
+    }
     for (const batch of batches) {
         const idx = batch.indexOf(id);
-        if (idx > 0) { return batch.slice(0, idx); }
-        if (idx === 0) { return []; }
+        if (idx > 0) {
+            return batch.slice(0, idx);
+        }
+        if (idx === 0) {
+            return [];
+        }
     }
     return [];
 }
@@ -110,27 +128,62 @@ export function priorInBatch(sessionId: string, id: string): string[] {
  * for the intent path (prompt reminder + task_complete's next-step).
  */
 export async function fetchSessionTasks(hub: HubClient, sessionId: string): Promise<TaskItem[]> {
-    if (!hub.configured() || !sessionId) { return []; }
+    if (!hub.configured() || !sessionId) {
+        return [];
+    }
     // Search is scoped to the session by the native sessionId field on the
     // server; keep only task-type records for this session, newest first.
     const recs = await hub.searchMemory({ limit: 100, sessionId });
-    const fromSearch = (recs as Array<{ type: string; sessionId?: string; tags?: string | string[]; id: unknown; title?: string; summary?: string; createdAtUtc?: string | number }>)
+    const fromSearch = (
+        recs as Array<{
+            type: string;
+            sessionId?: string;
+            tags?: string | string[];
+            id: unknown;
+            title?: string;
+            summary?: string;
+            createdAtUtc?: string | number;
+        }>
+    )
         .filter((r) => isTask(r.type) && (r.sessionId ?? "") === sessionId)
-        .sort((a, b) => Date.parse(String(b.createdAtUtc || "0")) - Date.parse(String(a.createdAtUtc || "0")))
+        .sort(
+            (a, b) =>
+                Date.parse(String(b.createdAtUtc || "0")) -
+                Date.parse(String(a.createdAtUtc || "0")),
+        )
         .slice(0, 30)
-        .map((r) => ({ id: String(r.id), type: r.type, title: r.title ?? "", summary: r.summary ?? "", ts: String(r.createdAtUtc || ""), tags: Array.isArray(r.tags) ? r.tags.join(",") : r.tags ?? "", done: hasTag(r.tags, DONE_TAG) }));
+        .map((r) => ({
+            id: String(r.id),
+            type: r.type,
+            title: r.title ?? "",
+            summary: r.summary ?? "",
+            ts: String(r.createdAtUtc || ""),
+            tags: Array.isArray(r.tags) ? r.tags.join(",") : (r.tags ?? ""),
+            done: hasTag(r.tags, DONE_TAG),
+        }));
     const knownIds = new Set(fromSearch.map((t) => t.id));
     const recent = recentBySession.get(sessionId) ?? [];
     const ghosts = recent
         .filter((t) => !knownIds.has(t.id))
         .filter((t) => !t.done)
-        .map((t): TaskItem => ({ id: t.id, type: "task-anchor", title: t.title, summary: t.title, done: false }));
+        .map(
+            (t): TaskItem => ({
+                id: t.id,
+                type: "task-anchor",
+                title: t.title,
+                summary: t.title,
+                done: false,
+            }),
+        );
     // Once search observes an id, it is authoritative. Keep only unresolved
     // pending creates; completed entries and indexed entries no longer need the
     // local protection. This prevents stale ghosts without a time-based race.
     const unresolved = recent.filter((t) => !t.done && !knownIds.has(t.id));
-    if (unresolved.length) { recentBySession.set(sessionId, unresolved); }
-    else { recentBySession.delete(sessionId); }
+    if (unresolved.length) {
+        recentBySession.set(sessionId, unresolved);
+    } else {
+        recentBySession.delete(sessionId);
+    }
     return [...fromSearch, ...ghosts];
 }
 
@@ -144,7 +197,10 @@ export async function fetchSessionTasks(hub: HubClient, sessionId: string): Prom
  * because observed state is not work to be done. This is the core separation
  * between "what I observed/did" and "what I should do".
  */
-export async function fetchPendingWorkItems(hub: HubClient, sessionId: string): Promise<TaskItem[]> {
+export async function fetchPendingWorkItems(
+    hub: HubClient,
+    sessionId: string,
+): Promise<TaskItem[]> {
     const all = await fetchSessionTasks(hub, sessionId);
     return all.filter((t) => isWorkItem(t.type) && !t.done);
 }
@@ -155,24 +211,42 @@ export async function fetchPendingWorkItems(hub: HubClient, sessionId: string): 
  * the read for resume context: the latest checkpoint anchors "where things
  * stand" without being confused with a pending task.
  */
-export async function fetchSessionCheckpoints(hub: HubClient, sessionId: string): Promise<TaskItem[]> {
+export async function fetchSessionCheckpoints(
+    hub: HubClient,
+    sessionId: string,
+): Promise<TaskItem[]> {
     const all = await fetchSessionTasks(hub, sessionId);
     return all.filter((t) => isCheckpoint(t.type));
 }
 
 /** Sets/clears a task's completed state (DONE_TAG). User- or agent-driven. */
-export async function setTaskDone(hub: HubClient, id: string, done: boolean, completionSummary?: string): Promise<boolean> {
-    if (!hub.configured() || !id) { return false; }
+export async function setTaskDone(
+    hub: HubClient,
+    id: string,
+    done: boolean,
+    completionSummary?: string,
+): Promise<boolean> {
+    if (!hub.configured() || !id) {
+        return false;
+    }
     // Direct upsert: save is id-based. Append or remove DONE_TAG without
     // spreading stale API fields back into the payload.
     try {
         const [obs] = await hub.getByIds([id]);
         const existing = obs ? String(obs.tags ?? "") : "";
-        const tags = existing.split(",").map((t) => t.trim()).filter(Boolean).filter((t) => t !== DONE_TAG);
-        if (done) { tags.push(DONE_TAG); }
+        const tags = existing
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .filter((t) => t !== DONE_TAG);
+        if (done) {
+            tags.push(DONE_TAG);
+        }
         const baseSummary = obs?.summary || "";
         const summary = completionSummary?.trim()
-            ? (baseSummary ? `${baseSummary}\n\nCompleted: ${completionSummary.trim()}` : `Completed: ${completionSummary.trim()}`)
+            ? baseSummary
+                ? `${baseSummary}\n\nCompleted: ${completionSummary.trim()}`
+                : `Completed: ${completionSummary.trim()}`
             : baseSummary;
         // Preserve the observation's existing type verbatim. The fallback only
         // applies when the record is missing its type: defaulting a task being
@@ -183,11 +257,17 @@ export async function setTaskDone(hub: HubClient, id: string, done: boolean, com
         const type = obs?.type || TASK_ANCHOR;
         await hub.save({ id, type, title: obs?.title || "task", summary, tags: tags.join(",") });
         return true;
-    } catch { return false; }
+    } catch {
+        return false;
+    }
 }
 
 /** Marks a task observation completed by adding the DONE_TAG (idempotent). */
-export async function markTaskDone(hub: HubClient, id: string, completionSummary?: string): Promise<boolean> {
+export async function markTaskDone(
+    hub: HubClient,
+    id: string,
+    completionSummary?: string,
+): Promise<boolean> {
     // Delegate to setTaskDone which preserves existing tags (including the
     // critical symposium-session:xxx tag). A blind upsert with only DONE_TAG
     // wipes the session tag → fetchSessionTasks filter can never find the task
@@ -204,7 +284,10 @@ export async function markTaskDone(hub: HubClient, id: string, completionSummary
  * exactly the confusion between "what I observed/did" and "what I should do".
  * Returns undefined when the session has no checkpoint yet.
  */
-export async function fetchLatestCheckpoint(hub: HubClient, sessionId: string): Promise<TaskItem | undefined> {
+export async function fetchLatestCheckpoint(
+    hub: HubClient,
+    sessionId: string,
+): Promise<TaskItem | undefined> {
     const checkpoints = await fetchSessionCheckpoints(hub, sessionId);
     return checkpoints[0];
 }
@@ -212,15 +295,27 @@ export async function fetchLatestCheckpoint(hub: HubClient, sessionId: string): 
 /** Expires (soft-deletes) every task observation bound to a session. Returns count. */
 export async function expireSessionTasks(hub: HubClient, sessionId: string): Promise<number> {
     recentBySession.delete(sessionId);
-    if (!hub.configured() || !sessionId) { return 0; }
+    if (!hub.configured() || !sessionId) {
+        return 0;
+    }
     const recs = await hub.searchMemory({ limit: 200, sessionId });
-    const ids = (recs as Array<{ type: string; sessionId?: string; id: unknown }>).filter((r) => isTask(r.type) && (r.sessionId ?? "") === sessionId).map((r) => String(r.id)).filter(Boolean);
-    if (!ids.length) { return 0; }
+    const ids = (recs as Array<{ type: string; sessionId?: string; id: unknown }>)
+        .filter((r) => isTask(r.type) && (r.sessionId ?? "") === sessionId)
+        .map((r) => String(r.id))
+        .filter(Boolean);
+    if (!ids.length) {
+        return 0;
+    }
     const full = await hub.getByIds(ids);
     const past = new Date(Date.now() - 1000).toISOString();
     let n = 0;
     for (const o of full as Array<Observation>) {
-        try { await hub.save({ ...o, expiresAtUtc: past }); n++; } catch { /* best-effort */ }
+        try {
+            await hub.save({ ...o, expiresAtUtc: past });
+            n++;
+        } catch {
+            /* best-effort */
+        }
     }
     return n;
 }

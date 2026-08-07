@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parseCodexModelCatalog } from "../adapters/codex/models";
-import { buildHttpMcpWrapperScript, codexWorkspaceArgs, mcpHttpWrapperPath } from "../adapters/codex/codexMcpConfig";
+import {
+    buildHttpMcpWrapperScript,
+    codexWorkspaceArgs,
+    mcpHttpWrapperPath,
+} from "../adapters/codex/codexMcpConfig";
 import { CodexSession, codexModelArgs, codexPromptArgs } from "../adapters/codex/session";
 import { looksInjected } from "../adapters/codex/transcript";
 import { buildReasoningMenuOptions } from "../ui/reasoningOptions";
@@ -30,20 +34,35 @@ test("Codex workspace args add writable VS Code workspace roots", () => {
     const cwd = path.resolve("/workspace/main");
     const extra = path.resolve("/mnt/sufficit");
 
-    assert.deepEqual(
-        codexWorkspaceArgs(cwd, [cwd, extra, extra, "relative"]),
-        ["--cd", cwd, "--add-dir", extra],
-    );
+    assert.deepEqual(codexWorkspaceArgs(cwd, [cwd, extra, extra, "relative"]), [
+        "--cd",
+        cwd,
+        "--add-dir",
+        extra,
+    ]);
 });
 
 test("Codex model catalog uses CLI metadata without model-name hardcoding", () => {
-    const result = parseCodexModelCatalog({
-        models: [
-            { slug: "hidden-model", display_name: "Hidden", visibility: "hide", priority: 1 },
-            { slug: "zeta-agent", display_name: "Zeta Agent", visibility: "list", priority: 20 },
-            { slug: "alpha-agent", display_name: "Alpha Agent", visibility: "list", priority: 10 },
-        ],
-    }, "configured-model");
+    const result = parseCodexModelCatalog(
+        {
+            models: [
+                { slug: "hidden-model", display_name: "Hidden", visibility: "hide", priority: 1 },
+                {
+                    slug: "zeta-agent",
+                    display_name: "Zeta Agent",
+                    visibility: "list",
+                    priority: 20,
+                },
+                {
+                    slug: "alpha-agent",
+                    display_name: "Alpha Agent",
+                    visibility: "list",
+                    priority: 10,
+                },
+            ],
+        },
+        "configured-model",
+    );
 
     assert.deepEqual(result.models, ["configured-model", "alpha-agent", "zeta-agent"]);
     assert.deepEqual(result.labels, {
@@ -59,10 +78,21 @@ test("Codex applies a model picker change to the next exec turn", () => {
 });
 
 test("Codex exposes the latest effective model for session restoration", () => {
-    const session = new CodexSession({ executable: "codex", model: "gpt-5.6-sol", reasoning: "default", approvalPolicy: "admin", sandboxMode: "danger-full-access" }, { cwd: process.cwd(), model: "gpt-5.6-sol" });
+    const session = new CodexSession(
+        {
+            executable: "codex",
+            model: "gpt-5.6-sol",
+            reasoning: "default",
+            approvalPolicy: "admin",
+            sandboxMode: "danger-full-access",
+        },
+        { cwd: process.cwd(), model: "gpt-5.6-sol" },
+    );
     const events: unknown[] = [];
     session.on("event", (event) => events.push(event));
-    (session as unknown as { handleLine(line: string): void }).handleLine(JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna" } }));
+    (session as unknown as { handleLine(line: string): void }).handleLine(
+        JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna" } }),
+    );
     assert.equal(session.getModel(), "gpt-5.6-luna");
     assert.deepEqual(events, [{ kind: "model", model: "gpt-5.6-luna" }]);
     session.dispose();
@@ -70,7 +100,10 @@ test("Codex exposes the latest effective model for session restoration", () => {
 
 test("reasoning picker places the effective default without duplicating its level", () => {
     assert.deepEqual(
-        buildReasoningMenuOptions(["medium", "default", "high", "xhigh", "low", "minimal", "medium"], "medium"),
+        buildReasoningMenuOptions(
+            ["medium", "default", "high", "xhigh", "low", "minimal", "medium"],
+            "medium",
+        ),
         [
             { value: "minimal", label: "minimal" },
             { value: "low", label: "low" },

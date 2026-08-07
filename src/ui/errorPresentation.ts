@@ -21,8 +21,12 @@ function requiredDirectives(message: string): string[] {
             values.push(match[1]);
         }
     }
-    const header = /X-Sufficit-Required-Directive\s*:\s*([A-Za-z][A-Za-z0-9_.:-]{0,63})/i.exec(message)?.[1];
-    if (header) { values.push(header); }
+    const header = /X-Sufficit-Required-Directive\s*:\s*([A-Za-z][A-Za-z0-9_.:-]{0,63})/i.exec(
+        message,
+    )?.[1];
+    if (header) {
+        values.push(header);
+    }
     if (values.length === 0 && /\bAI\s*control\s+(?:access|directive)\b/i.test(message)) {
         values.push("AIControl");
     }
@@ -35,20 +39,28 @@ function requiredDirectives(message: string): string[] {
  * expandable technical-details section and on the Retry hand-off.
  */
 export function presentTurnError(message: unknown, retryable?: boolean): ErrorPresentation {
-    const detail = String(message ?? "").trim() || "The request ended without an error detail from the backend.";
+    const detail =
+        String(message ?? "").trim() ||
+        "The request ended without an error detail from the backend.";
     const status = httpStatus(detail);
-    const retry = retryable === true
-        ? " You may retry the same message; Symposium will not retry automatically."
-        : " Retry is unavailable for this response; update the request or configuration before sending again.";
+    const retry =
+        retryable === true
+            ? " You may retry the same message; Symposium will not retry automatically."
+            : " Retry is unavailable for this response; update the request or configuration before sending again.";
 
     if (status === 503 && /ai_backends_exhausted|all ai backends exhausted/i.test(detail)) {
         return {
-            summary: "The AI provider could not complete this request (HTTP 503: all configured backends were unavailable)." + retry,
+            summary:
+                "The AI provider could not complete this request (HTTP 503: all configured backends were unavailable)." +
+                retry,
             detail,
         };
     }
     if (status === 503) {
-        return { summary: "The AI provider is temporarily unavailable (HTTP 503)." + retry, detail };
+        return {
+            summary: "The AI provider is temporarily unavailable (HTTP 503)." + retry,
+            detail,
+        };
     }
     if (status === 429) {
         return { summary: "The AI provider is rate-limiting requests (HTTP 429)." + retry, detail };
@@ -57,19 +69,25 @@ export function presentTurnError(message: unknown, retryable?: boolean): ErrorPr
         return { summary: `The request timed out (HTTP ${status}).` + retry, detail };
     }
     if (status === 401) {
-        return { summary: "Authentication was rejected by the provider (HTTP 401). Sign in again before resending the message.", detail };
+        return {
+            summary:
+                "Authentication was rejected by the provider (HTTP 401). Sign in again before resending the message.",
+            detail,
+        };
     }
     if (status === 403) {
         const directives = requiredDirectives(detail);
-        const permission = directives.length === 1
-            ? ` Required directive: ${directives[0]}.`
-            : directives.length > 1
-                ? ` Required directives: ${directives.join(", ")}.`
-                : " The provider did not identify the required directive.";
+        const permission =
+            directives.length === 1
+                ? ` Required directive: ${directives[0]}.`
+                : directives.length > 1
+                  ? ` Required directives: ${directives.join(", ")}.`
+                  : " The provider did not identify the required directive.";
         return {
-            summary: "Your account is signed in, but it does not have permission for this request (HTTP 403)."
-                + permission
-                + " Ask an administrator to grant access, then resend the message.",
+            summary:
+                "Your account is signed in, but it does not have permission for this request (HTTP 403)." +
+                permission +
+                " Ask an administrator to grant access, then resend the message.",
             detail,
         };
     }

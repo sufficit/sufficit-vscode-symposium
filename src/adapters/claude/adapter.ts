@@ -6,7 +6,7 @@ import { builtinCommands } from "../builtins";
 import { resolveExecutable } from "../exec";
 import { removeMatchingFiles, scrubJsonlLines } from "../scrub";
 import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
-import { PERMISSION_MODES } from "../aiTools";
+import { PERMISSION_MODES } from "../aiTools/permissionTiers";
 import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../reasoning";
 import {
     AgentAdapter,
@@ -31,18 +31,23 @@ export class ClaudeAdapter implements AgentAdapter {
     readonly backend = "claude" as const;
     readonly usage = claudeUsage;
 
-    constructor(private readonly getConfig: () => ClaudeAdapterConfig) { }
+    constructor(private readonly getConfig: () => ClaudeAdapterConfig) {}
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
         return new Promise((resolve) => {
-            const child = spawn(resolveExecutable(this.getConfig().executable), ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
+            const child = spawn(resolveExecutable(this.getConfig().executable), ["--version"], {
+                stdio: ["ignore", "pipe", "pipe"],
+            });
             let out = "";
-            child.stdout.on("data", (chunk) => { out += String(chunk); });
+            child.stdout.on("data", (chunk) => {
+                out += String(chunk);
+            });
             child.on("error", (error) => resolve({ ok: false, error: error.message }));
             child.on("exit", (code) =>
                 code === 0
                     ? resolve({ ok: true, version: out.trim() })
-                    : resolve({ ok: false, error: `exit code ${code}` }));
+                    : resolve({ ok: false, error: `exit code ${code}` }),
+            );
         });
     }
 
@@ -55,10 +60,14 @@ export class ClaudeAdapter implements AgentAdapter {
     }
 
     start(options: SessionStartOptions): AgentSession {
-        const reasoning = options.reasoning === undefined
-            ? undefined
-            : nativeReasoning(REASONING_MAPS.claude, options.reasoning);
-        return new ClaudeSession(this.getConfig(), reasoning === undefined ? options : { ...options, reasoning });
+        const reasoning =
+            options.reasoning === undefined
+                ? undefined
+                : nativeReasoning(REASONING_MAPS.claude, options.reasoning);
+        return new ClaudeSession(
+            this.getConfig(),
+            reasoning === undefined ? options : { ...options, reasoning },
+        );
     }
 
     models(): string[] {
@@ -80,59 +89,96 @@ export class ClaudeAdapter implements AgentAdapter {
     async refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
         const cfg = this.getConfig();
         const apiKey = cfg.env?.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
-        const baseUrl = (cfg.env?.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
+        const baseUrl = (
+            cfg.env?.ANTHROPIC_BASE_URL ||
+            process.env.ANTHROPIC_BASE_URL ||
+            "https://api.anthropic.com"
+        ).replace(/\/+$/, "");
 
         // OAuth bearer (Claude Code login) as a fallback so model discovery works
         // for users authenticated via the CLI without a separate API key.
         const bearer = apiKey ? "" : await claudeOAuthToken();
         if (!apiKey && !bearer) {
-            cfg.log?.("[claude] no ANTHROPIC_API_KEY or Claude Code login — using file cache for models");
+            cfg.log?.(
+                "[claude] no ANTHROPIC_API_KEY or Claude Code login — using file cache for models",
+            );
             return { models: this.models(), labels: getCached("claude")?.labels ?? {} };
         }
 
         const cached = getCached("claude");
         try {
             const headers: Record<string, string> = { "anthropic-version": "2023-06-01" };
-            if (apiKey) { headers["x-api-key"] = apiKey; }
-            else { headers["authorization"] = `Bearer ${bearer}`; }
+            if (apiKey) {
+                headers["x-api-key"] = apiKey;
+            } else {
+                headers["authorization"] = `Bearer ${bearer}`;
+            }
             const res = await fetch(`${baseUrl}/v1/models`, { headers });
-            if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
-            const json = await res.json() as { data?: unknown[] };
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const json = (await res.json()) as { data?: unknown[] };
             const raw = json?.data ?? [];
             const models: string[] = [];
             const labels: Record<string, string> = {};
             for (const m of raw) {
-                if (typeof m !== "object" || m === null) { continue; }
+                if (typeof m !== "object" || m === null) {
+                    continue;
+                }
                 const id = "id" in m && typeof m.id === "string" ? m.id : "";
-                if (!id) { continue; }
+                if (!id) {
+                    continue;
+                }
                 models.push(id);
-                const name = "display_name" in m && typeof m.display_name === "string" ? m.display_name : undefined;
-                if (name && name !== id) { labels[id] = name; }
+                const name =
+                    "display_name" in m && typeof m.display_name === "string"
+                        ? m.display_name
+                        : undefined;
+                if (name && name !== id) {
+                    labels[id] = name;
+                }
             }
             if (models.length) {
-                const entry: ModelCacheEntry = { models, labels, lastUpdate: new Date().toISOString() };
+                const entry: ModelCacheEntry = {
+                    models,
+                    labels,
+                    lastUpdate: new Date().toISOString(),
+                };
                 setCached("claude", entry);
                 cfg.log?.(`[claude] refreshed ${models.length} models from Anthropic API`);
                 const configured = cfg.model;
-                return { models: [...new Set([...(configured ? [configured] : []), ...models])], labels };
+                return {
+                    models: [...new Set([...(configured ? [configured] : []), ...models])],
+                    labels,
+                };
             }
         } catch (err: unknown) {
-            cfg.log?.(`[claude] model refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+            cfg.log?.(
+                `[claude] model refresh failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
         }
         return { models: this.models(), labels: cached?.labels ?? {} };
     }
 
-    hasNativeTodo(): boolean { return true; }   // TaskCreate/TaskUpdate (previously TodoWrite)
-    supportsImages(): boolean { return true; }
+    hasNativeTodo(): boolean {
+        return true;
+    } // TaskCreate/TaskUpdate (previously TodoWrite)
+    supportsImages(): boolean {
+        return true;
+    }
 
     // claude --effort <level> (2.1.177). "default" means: don't pass the flag.
     reasoningLevels(): string[] {
         return ["default", ...Object.keys(REASONING_MAPS.claude)];
     }
 
-    reasoningMap(): Record<string, string> { return { ...REASONING_MAPS.claude }; }
+    reasoningMap(): Record<string, string> {
+        return { ...REASONING_MAPS.claude };
+    }
 
-    defaultReasoning(): string { return DEFAULT_REASONING_EFFORT.claude; }
+    defaultReasoning(): string {
+        return DEFAULT_REASONING_EFFORT.claude;
+    }
 
     // Unified modes shared with every adapter's picker. admin/plan map 1:1 to
     // real native --permission-mode flags (session.ts's mapUnifiedToClaudeFlag);
@@ -158,7 +204,10 @@ export class ClaudeAdapter implements AgentAdapter {
             ...pluginRoots.map((r) => loadSlashCommands(r)),
         ]);
         const version = (await this.available()).version;
-        return mergeCommands(builtinCommands("claude", version, this.getConfig().log), discovered.flat());
+        return mergeCommands(
+            builtinCommands("claude", version, this.getConfig().log),
+            discovered.flat(),
+        );
     }
 
     /**
@@ -176,7 +225,7 @@ export class ClaudeAdapter implements AgentAdapter {
         const root = path.join(home, ".claude");
         const id = info.sessionId;
 
-        const transcript = info.transcriptPath ?? await this.findTranscript(id);
+        const transcript = info.transcriptPath ?? (await this.findTranscript(id));
         if (transcript) {
             await fs.promises.rm(transcript, { force: true });
         }
@@ -208,7 +257,7 @@ export class ClaudeAdapter implements AgentAdapter {
      * reduced to one line per tool call; meta/system entries are skipped.
      */
     async history(info: SessionInfo): Promise<HistoryMessage[]> {
-        const file = info.transcriptPath ?? await this.findTranscript(info.sessionId);
+        const file = info.transcriptPath ?? (await this.findTranscript(info.sessionId));
         if (!file) {
             return [];
         }

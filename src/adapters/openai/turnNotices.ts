@@ -118,12 +118,20 @@ export function toolHopLimitNotice(maxHops: number): AgentEvent {
 /** Reclassifies guardrail messages persisted by versions that emitted them as assistant text. */
 export function legacyGuardrailStopNotice(text: string): AgentEvent | null {
     const value = String(text ?? "").trim();
-    const paused = value.match(/^_\(paused after (\d+) tool steps?\s*[—-]\s*send ["']continue["'] to proceed\)_$/i);
-    if (paused) { return toolHopLimitNotice(Number(paused[1])); }
-    if (!/^_\(stopped(?::|\s+after\b).*\)_$/i.test(value)) { return null; }
+    const paused = value.match(
+        /^_\(paused after (\d+) tool steps?\s*[—-]\s*send ["']continue["'] to proceed\)_$/i,
+    );
+    if (paused) {
+        return toolHopLimitNotice(Number(paused[1]));
+    }
+    if (!/^_\(stopped(?::|\s+after\b).*\)_$/i.test(value)) {
+        return null;
+    }
     let message = value.slice(2, -2).trim();
     message = message.charAt(0).toUpperCase() + message.slice(1);
     message = message.replace(/\b(\d+)x\b/g, "$1 times");
-    if (!/[.!?]$/.test(message)) { message += "."; }
+    if (!/[.!?]$/.test(message)) {
+        message += ".";
+    }
     return guardrailStopNotice(message);
 }

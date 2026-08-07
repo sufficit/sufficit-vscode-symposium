@@ -13,14 +13,26 @@ export function resolvePath(cwd: string, p: string): string {
 
 function firstShellWord(command: string): string {
     const trimmed = command.trim();
-    if (!trimmed) { return ""; }
+    if (!trimmed) {
+        return "";
+    }
     const m = trimmed.match(/^([A-Za-z0-9_./-]+)/);
     return m ? path.basename(m[1]) : "";
 }
 
 function nativeShell(): { file: string; args: string[] } {
     if (process.platform === "win32") {
-        return { file: "powershell.exe", args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command"] };
+        return {
+            file: "powershell.exe",
+            args: [
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+            ],
+        };
     }
     return { file: "bash", args: ["-lc"] };
 }
@@ -28,43 +40,92 @@ function nativeShell(): { file: string; args: string[] } {
 async function commandExists(cmd: string, cwd: string): Promise<boolean> {
     return new Promise((resolve) => {
         const shell = nativeShell();
-        const probe = process.platform === "win32"
-            ? `$found = Get-Command -Name '${cmd.replace(/'/g, "''")}' -ErrorAction SilentlyContinue; if ($null -ne $found) { exit 0 } else { exit 1 }`
-            : `command -v ${cmd} >/dev/null 2>&1`;
-        execFile(shell.file, [...shell.args, probe], { cwd, env: process.env }, (err) => resolve(!err));
+        const probe =
+            process.platform === "win32"
+                ? `$found = Get-Command -Name '${cmd.replace(/'/g, "''")}' -ErrorAction SilentlyContinue; if ($null -ne $found) { exit 0 } else { exit 1 }`
+                : `command -v ${cmd} >/dev/null 2>&1`;
+        execFile(shell.file, [...shell.args, probe], { cwd, env: process.env }, (err) =>
+            resolve(!err),
+        );
     });
 }
 
 export async function canUseRtk(command: string, cwd: string): Promise<boolean> {
     const c = command.trim();
-    if (!c || c.startsWith("rtk ")) { return false; }
+    if (!c || c.startsWith("rtk ")) {
+        return false;
+    }
     // Avoid changing semantics for compound/interactive shell snippets. The
     // policy prompt tells the model to use rtk explicitly for these when safe.
-    if (/\n|\||&&|\|\||;|<<|>|<|\$\(|`/.test(c)) { return false; }
+    if (/\n|\||&&|\|\||;|<<|>|<|\$\(|`/.test(c)) {
+        return false;
+    }
     const word = firstShellWord(c);
     const supported = new Set([
-        "git", "gh", "ls", "find", "rg", "grep", "cat", "head", "tail",
-        "npm", "pnpm", "yarn", "bun", "vitest", "jest", "pytest", "go",
-        "cargo", "tsc", "eslint", "biome", "prettier", "ruff", "golangci-lint",
-        "docker", "kubectl", "curl", "wget",
+        "git",
+        "gh",
+        "ls",
+        "find",
+        "rg",
+        "grep",
+        "cat",
+        "head",
+        "tail",
+        "npm",
+        "pnpm",
+        "yarn",
+        "bun",
+        "vitest",
+        "jest",
+        "pytest",
+        "go",
+        "cargo",
+        "tsc",
+        "eslint",
+        "biome",
+        "prettier",
+        "ruff",
+        "golangci-lint",
+        "docker",
+        "kubectl",
+        "curl",
+        "wget",
     ]);
-    if (!supported.has(word)) { return false; }
+    if (!supported.has(word)) {
+        return false;
+    }
     return commandExists("rtk", cwd);
 }
 
 /** Runs a shell command, capturing combined output. Never throws. */
-export function runShell(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink, abortSignal?: AbortSignal): Promise<{ stdout: string; code: number }> {
+export function runShell(
+    command: string,
+    cwd: string,
+    timeoutMs: number,
+    progress?: ToolProgressSink,
+    abortSignal?: AbortSignal,
+): Promise<{ stdout: string; code: number }> {
     return new Promise((resolve) => {
         const shell = nativeShell();
         const child = spawn(shell.file, [...shell.args, command], { cwd, env: process.env });
         let out = "";
         let done = false;
         const terminate = () => {
-            try { child.kill("SIGTERM"); } catch { /* ignore */ }
+            try {
+                child.kill("SIGTERM");
+            } catch {
+                /* ignore */
+            }
             // Some commands ignore SIGTERM; without escalation the promise can
             // stay pending forever because it resolves only on child close.
             setTimeout(() => {
-                if (!done) { try { child.kill("SIGKILL"); } catch { /* ignore */ } }
+                if (!done) {
+                    try {
+                        child.kill("SIGKILL");
+                    } catch {
+                        /* ignore */
+                    }
+                }
             }, 2000);
         };
         const timer = setTimeout(() => {
@@ -76,14 +137,19 @@ export function runShell(command: string, cwd: string, timeoutMs: number, progre
         const push = (chunk: Buffer | string) => {
             const text = String(chunk);
             out += text;
-            if (out.length > 120000) { out = out.slice(out.length - 120000); }
+            if (out.length > 120000) {
+                out = out.slice(out.length - 120000);
+            }
             progress?.onData?.(text);
         };
         child.stdout?.on("data", push);
         child.stderr?.on("data", push);
-        child.on("error", (err) => { push(String(err.message)); });
+        child.on("error", (err) => {
+            push(String(err.message));
+        });
         child.on("close", (code) => {
-            done = true; clearTimeout(timer);
+            done = true;
+            clearTimeout(timer);
             resolve({ stdout: out.slice(0, 30000), code: typeof code === "number" ? code : 1 });
         });
 
@@ -116,7 +182,9 @@ function terminalNameFor(id: string): string {
 
 /** Resolve Git Bash to the absolute path required by VS Code shellPath. */
 function windowsBashPath(): string | undefined {
-    if (process.platform !== "win32") { return undefined; }
+    if (process.platform !== "win32") {
+        return undefined;
+    }
     const candidates = [
         process.env.GIT_BASH,
         process.env.GIT_BASH_PATH,
@@ -125,14 +193,23 @@ function windowsBashPath(): string | undefined {
         path.join(process.env.LOCALAPPDATA ?? "", "Programs", "Git", "bin", "bash.exe"),
     ].filter((candidate): candidate is string => Boolean(candidate));
     for (const candidate of candidates) {
-        if (fs.existsSync(candidate)) { return candidate; }
+        if (fs.existsSync(candidate)) {
+            return candidate;
+        }
     }
     // Git Bash may be installed outside the conventional directories. `where`
     // consults the same PATH that lets the non-visible shell runner spawn bash.
     try {
-        const found = String(execFileSync("where.exe", ["bash.exe"], {
-            encoding: "utf8", windowsHide: true, timeout: 1500,
-        })).split(/\r?\n/).map((p) => p.trim()).find((p) => p && fs.existsSync(p));
+        const found = String(
+            execFileSync("where.exe", ["bash.exe"], {
+                encoding: "utf8",
+                windowsHide: true,
+                timeout: 1500,
+            }),
+        )
+            .split(/\r?\n/)
+            .map((p) => p.trim())
+            .find((p) => p && fs.existsSync(p));
         return found;
     } catch {
         return undefined;
@@ -141,7 +218,9 @@ function windowsBashPath(): string | undefined {
 
 export function normalizeTerminalId(raw: unknown): string | undefined {
     const id = String(raw ?? "").trim();
-    if (!id) { return undefined; }
+    if (!id) {
+        return undefined;
+    }
     return id.replace(/[^a-zA-Z0-9_.:-]/g, "_").slice(0, 80) || undefined;
 }
 
@@ -153,7 +232,10 @@ function terminalHandleFor(requestedId: string | undefined, cwd: string): Termin
             // Reusing that stale handle accepts sendText() but nothing runs, so
             // the polling loop waits until a synthetic timeout. Only reuse live
             // terminals that still appear in the current terminal registry.
-            if (existing.terminal.exitStatus === undefined && vscode.window.terminals.includes(existing.terminal)) {
+            if (
+                existing.terminal.exitStatus === undefined &&
+                vscode.window.terminals.includes(existing.terminal)
+            ) {
                 return existing;
             }
             TERMINALS.delete(requestedId);
@@ -168,9 +250,11 @@ function terminalHandleFor(requestedId: string | undefined, cwd: string): Termin
     // state. The native shell runner already depends on `bash`, so use that
     // same shell for the visible-terminal mode as well.
     const bashPath = windowsBashPath();
-    const terminal = vscode.window.createTerminal(process.platform === "win32"
-        ? { name, cwd, shellPath: bashPath ?? "bash.exe", shellArgs: ["--noprofile", "--norc"] }
-        : { name, cwd });
+    const terminal = vscode.window.createTerminal(
+        process.platform === "win32"
+            ? { name, cwd, shellPath: bashPath ?? "bash.exe", shellArgs: ["--noprofile", "--norc"] }
+            : { name, cwd },
+    );
     const handle = { id, name, terminal, cwd };
     TERMINALS.set(id, handle);
     return handle;
@@ -180,7 +264,14 @@ function shellQuote(value: string): string {
     return `'${String(value).replace(/'/g, `'"'"'`)}'`;
 }
 
-export async function runShellInTerminal(command: string, cwd: string, timeoutMs: number, progress?: ToolProgressSink, terminalId?: string, abortSignal?: AbortSignal): Promise<{ stdout: string; code: number; terminal_id: string; reused: boolean }> {
+export async function runShellInTerminal(
+    command: string,
+    cwd: string,
+    timeoutMs: number,
+    progress?: ToolProgressSink,
+    terminalId?: string,
+    abortSignal?: AbortSignal,
+): Promise<{ stdout: string; code: number; terminal_id: string; reused: boolean }> {
     const prior = terminalId ? TERMINALS.get(terminalId) : undefined;
     if (process.platform === "win32" && !windowsBashPath()) {
         return {
@@ -204,11 +295,13 @@ export async function runShellInTerminal(command: string, cwd: string, timeoutMs
             cancelled = true;
             try {
                 // Send Ctrl+C to interrupt the running command
-                term.sendText('\x03', false);
-                progress?.onData?.('\n[Symposium] command cancelled by user; interrupting...\n');
-            } catch { /* ignore */ }
+                term.sendText("\x03", false);
+                progress?.onData?.("\n[Symposium] command cancelled by user; interrupting...\n");
+            } catch {
+                /* ignore */
+            }
         };
-        abortSignal.addEventListener('abort', abortHandler, { once: true });
+        abortSignal.addEventListener("abort", abortHandler, { once: true });
     }
 
     // Run the command ONCE in the visible terminal. We tee output to a temp file
@@ -224,10 +317,15 @@ export async function runShellInTerminal(command: string, cwd: string, timeoutMs
     // preserved verbatim, then run it capturing its real exit status.
     const cmdFile = path.join(dir, "command.sh");
     fs.writeFileSync(cmdFile, command + "\n", "utf8");
-    const wrapped =
-        `{ bash ${shellQuote(cmdFile)}; printf '%s' "$?" > ${shellQuote(codeFile)}; } 2>&1 | tee -a ${shellQuote(outFile)}`;
+    const wrapped = `{ bash ${shellQuote(cmdFile)}; printf '%s' "$?" > ${shellQuote(codeFile)}; } 2>&1 | tee -a ${shellQuote(outFile)}`;
     term.sendText(wrapped);
-    const cleanup = () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ } };
+    const cleanup = () => {
+        try {
+            fs.rmSync(dir, { recursive: true, force: true });
+        } catch {
+            /* ignore */
+        }
+    };
 
     const started = Date.now();
     let lastLen = 0;
@@ -253,12 +351,25 @@ export async function runShellInTerminal(command: string, cwd: string, timeoutMs
             term.sendText("\u0003");
             const data = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : "";
             cleanup();
-            return { stdout: (data + `\n[Symposium] command timed out after ${timeoutMs}ms`).slice(0, 30000), code: 124, terminal_id: handle.id, reused: existed };
+            return {
+                stdout: (data + `\n[Symposium] command timed out after ${timeoutMs}ms`).slice(
+                    0,
+                    30000,
+                ),
+                code: 124,
+                terminal_id: handle.id,
+                reused: existed,
+            };
         }
         if (cancelled) {
             const data = fs.existsSync(outFile) ? fs.readFileSync(outFile, "utf8") : "";
             cleanup();
-            return { stdout: (data + `\n[Symposium] command cancelled by user`).slice(0, 30000), code: 130, terminal_id: handle.id, reused: existed };
+            return {
+                stdout: (data + `\n[Symposium] command cancelled by user`).slice(0, 30000),
+                code: 130,
+                terminal_id: handle.id,
+                reused: existed,
+            };
         }
         await new Promise((r) => setTimeout(r, 250));
     }

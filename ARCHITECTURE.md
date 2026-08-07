@@ -1,111 +1,113 @@
 # Symposium — Architecture
 
-Host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex
-CLI, GitHub Copilot CLI, and OpenAI-compatible HTTP backends like Sufficit AI)
-inside VS Code. No runtime dependencies — VS Code API + Node only.
+Symposium hosts persistent dialogue sessions for Claude Code, Codex CLI,
+GitHub Copilot CLI and OpenAI-compatible HTTP providers. The extension has no
+runtime npm dependencies: VS Code and Node provide the runtime platform.
 
-## Layers
+## Dependency direction
 
+```text
+extension/                  composition and VS Code command registration
+    |
+    +--> infrastructure/    concrete implementations of application ports
+    |
+    +--> ui/                VS Code panels, views and webview hosts
+             |
+             v
+application/                dialogue/session orchestration and use cases
+    |
+    +--> sessions/          repositories, discovery and live-session registry
+    |
+    +--> adapters/          normalized agent and provider contracts
+    |
+    v
+protocol/                   closed shared host/webview contracts
 ```
-adapters/            AgentAdapter + AgentSession contract, one per backend
-  claude/codex/copilot   CLI-backed (spawn, stream-json / JSONL)
-  openai                 HTTP-backed (chat completions OR responses), multi-instance
-  todos / builtins / skills / scrub / exec   shared adapter helpers
-ahp/
-  channelStore        transport-independent authoritative channel state,
-                      global sequencing, snapshots and reconnect replay
-sessions/
-  runtime (LiveSessions)  registry of live ChatControllers (survive view switches)
-  store (SessionStore)    per-session metadata in globalState (titles/archived/pinned)
-ui/
-  chatController     per-session state: stream coalescing, queue, injections
-                     (todo/autonomy), edited-files tracking, snapshot coordination
-  chatSurface        wires ONE webview to the machinery (ready handshake, git
-                     filtering, active-file context, message routing)
-  chatHtml           the chat VIEW (HTML+CSS+JS in one template literal) ⚠ large
-  chatPanel/chatView editor-panel and sidebar hosts of a ChatSurface
-  configPanel/configHtml   dynamic config webview (backends, resources, sync)
-  terminalSession    terminal-backed sessions (visible CLI, driven by sendText)
-api/
-  symposiumApi       public facade over running state (sessions/backends/resources)
-  bridge             optional remote control (HTTP + SSE), off by default
-config/ root + seed  ~/.symposium vendor-neutral knowledge (agents/skills/tools)
-sync/ hubClient+sync  pull/push against the sufficit-ai memory/vault hub
-git.ts               diff/approve/reject + pendingChanges (two-way git sync)
-snapshots.ts         per-session pre-edit baselines for revert without git
-```
+
+Supporting namespaces such as `auth/`, `compression/`, `config/`, `sync/`
+and `voice/` expose focused capabilities used by the composition root and
+application layer.
+
+The executable architecture check enforces these boundaries:
+
+- application and session orchestration cannot import presentation modules;
+- application and protocol modules cannot import `vscode`;
+- adapters cannot import UI or the extension composition root;
+- protocol contracts cannot depend on application, adapters, sessions or UI;
+- every production module must be reachable from a supported entrypoint;
+- relative-import dependency cycles are rejected.
+
+The architecture baseline is intentionally empty. New cycles, boundary
+violations and unreachable modules fail `npm run check:architecture`.
+
+## Application ports
+
+`application/ports.ts` defines the environment needed by the orchestration
+layer:
+
+- extension state and secret storage;
+- child-process execution;
+- clock and timers;
+- configuration and locale;
+- file selection;
+- identifier generation.
+
+`infrastructure/vscode/applicationPorts.ts` is the production adapter. Tests
+can supply deterministic in-memory implementations without importing VS Code.
+This keeps `ChatController` and its collaborators portable and testable.
+
+## Session lifetime
+
+`sessions/runtime.ts` owns the live `ChatController` registry. A controller
+owns one normalized `AgentSession`, remains alive while surfaces detach or
+switch, and is disposed only by explicit deletion or extension shutdown.
+
+`application/chatController.ts` coordinates queueing, steering, transcript
+replay, status, changed files and persistence through smaller collaborators.
+Presentation state stays in `ui/`; provider-specific behavior stays behind the
+`AgentAdapter` and `AgentSession` contracts.
+
+Session metadata (title, archive and pinning) is stored in VS Code global state.
+OpenAI-compatible transcripts are stored below
+`~/.symposium/sessions/<backend>/<id>.json`. Agent resources live below
+`~/.symposium/repo`.
+
+## UI and protocol
+
+`ui/chatPanel.ts` and `ui/chatView.ts` host the same `ChatSurface` in an
+editor tab or sidebar. Browser code is authored as TypeScript under
+`ui/webview/`, bundled by esbuild, and communicates through
+`protocol/chat.ts`.
+
+Host and browser messages must use typed protocol contracts. The browser state
+is session-local: drafts, attachments, selected model and reasoning effort are
+restored when a user returns to a session rather than leaking across sessions.
+
+## Adapter boundary
+
+Claude, Codex, Copilot and OpenAI implementations normalize provider output into
+`AgentEvent` values. The application layer does not parse provider wire
+formats. Model selection is shared through `application/modelSelection.ts`
+rather than the extension composition namespace.
+
+## Verification
+
+`npm run verify` is the local and CI contract. It runs formatting, lint,
+extension-host and webview typechecks, tests, generated-code checks,
+engineering/architecture guardrails and compilation.
+
+`npm run verify:package` additionally builds the VSIX and validates its exact
+content allowlist and size budgets.
+
+Source files have a hard 400-line target, functions target at most 80 lines and
+estimated decision complexity targets 15. These limits are executable
+guardrails, not documentation-only conventions. `check:size` blocks files above
+the hard limit; `check:complexity` keeps the complete target inventory visible
+without a named exception baseline, and `check:complexity:strict` is the
+zero-tolerance burn-down check.
 
 ## AHP direction
 
-Symposium is adopting the
-[Agent Host Protocol](docs/AHP-ADOPTION.md) as its client-facing state and
-synchronization layer. `AgentAdapter` remains the downstream agent boundary;
-AHP sits above `LiveSessions` so the webview, PWA and future external clients
-can share one host-authoritative session. Phase 0 adds the channel store without
-changing the current render path.
-
-## Key flows
-
-- **Session lifetime**: `runtime.create(adapter, options)` → `ChatController`
-  owns the `AgentSession`; the controller keeps running when the view switches
-  (detach/attach + replay log). Only explicit delete/dispose stops it.
-- **Agent hand-off**: `ChatSurface.switchBackend(target)` reconstructs the
-  current dialogue from the controller's render log (`transcript()` /
-  `transcriptMessages()`), opens a fresh session on `target` in the same
-  surface seeded with that text (`SessionStartOptions.seedHistory`, injected
-  once before the first user message), and replays the visible exchange as
-  `carried` history so it reads as one continuous conversation. The source
-  controller is only detached (keeps running). Continuity is a seeded context
-  prefix, not a native cross-backend resume (each backend owns its own ids).
-- **Streaming**: adapters emit normalized `AgentEvent`s; the webview coalesces
-  consecutive `text` deltas into one assistant message (Claude uses
-  `--include-partial-messages`; OpenAI streams SSE deltas).
-- **Edited files**: controller is the source of truth (survives switches); the
-  surface filters it against live `git status` (staged → hidden, unstage →
-  reappears) and pushes `changed-files` to the webview.
-- **Revert**: snapshot (pre-edit baseline captured by the adapter) is primary;
-  git restore is the fallback. Approve = `git add`.
-- **GUID everywhere**: session id (UUID) is the canonical, backend-agnostic key
-  (store, snapshots, persistence, future memory linking).
-
-## Persistence map
-
-| What | Where |
-|------|-------|
-| titles / archived / pinned order | `globalState` (SessionStore) |
-| pre-edit snapshots | in-memory (per session, cleared on delete) |
-| OpenAI/API transcripts | `~/.symposium/sessions/<backend>/<id>.json` |
-| agents/skills/tools/instructions | `~/.symposium/repo` |
-| extra adapters / settings | `settings.json` (`symposium.*`) |
-
-## Known debt (see review 2026-06-15; refresh 2026-06-21; namespace pass 2026-06-22)
-
-The 2026-06-22 namespace pass (see
-`docs/activities/20260622002801-namespace-restructure.md`, Phase 0+1) added a CI-enforced 400-line guard (`scripts/check-file-size.mjs`) and split
-every adapter (`claude`/`codex`/`copilot`/`openai`), `aiTools`, and `extension.ts`
-into folder modules behind barrels — all source files are now ≤400 lines except a
-tracked EXEMPT set (the webview blobs below, plus `chatSurface`, `chatController`,
-and `openai/session` which carry the live turn/view flow and are deferred to a
-phase verified under a running Extension Host / F5).
-
-The 2026-06-21 architecture pass (see `docs/PLAN-architecture-refactor.md`)
-closed several of these. Remaining items need a running Extension Host to verify.
-
-1. **OPEN.** The webview client (`chatClient.ts`, ~2.3k lines) + styles
-   (`chatStyles.ts`) ship as template-literal strings — untyped, escape-prone.
-   Highest-priority refactor: extract to real modules, esbuild-bundle into
-   `media/`, load via `asWebviewUri`, and import `ui/protocol.ts`.
-2. **PARTLY RESOLVED.** The webview↔extension protocol now has a single source of
-   truth in `ui/protocol.ts` (`WebviewToHost` discriminated union); the host
-   (`chatSurface`/`chatController`) is typed against it. The webview side becomes
-   typed once it is extracted (item 1).
-3. **RESOLVED.** A `node --test` suite exists (parse, todos, snapshots, openai
-   adapter, outbound prompt, git) — 45 tests, run in CI.
-4. **WON'T DO.** `AgentAdapter`'s granular optional capability methods are typed
-   and documented; collapsing into one `capabilities()` is high-churn/low-gain.
-5. **OPEN.** `ChatController` / `ChatSurface` concentrate many responsibilities;
-   split incrementally alongside item 1.
-
-Also added 2026-06-21: ESLint (flat config) + Prettier + CI lint gate, hardened
-`tsconfig`, full English-only i18n pass, and typed agent/model fields on the
-adapter contract (removing `as any` escape hatches).
+The transport-independent authoritative channel store in `ahp/channelStore.ts`
+provides sequencing, snapshots and replay for the gradual Agent Host Protocol
+adoption described in [docs/AHP-ADOPTION.md](docs/AHP-ADOPTION.md).

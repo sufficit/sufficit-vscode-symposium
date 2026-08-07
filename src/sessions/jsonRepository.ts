@@ -35,9 +35,13 @@ export class JsonSessionRepository extends InMemorySessionRepository {
     private load(): void {
         try {
             const parsed = JSON.parse(fs.readFileSync(this.file, "utf8")) as StoredIndex;
-            if (parsed.schemaVersion !== SCHEMA_VERSION || !Array.isArray(parsed.sessions)) { return; }
+            if (parsed.schemaVersion !== SCHEMA_VERSION || !Array.isArray(parsed.sessions)) {
+                return;
+            }
             super.replaceAll(parsed.sessions.filter(validStoredSession));
-        } catch { /* absent or corrupt snapshots rebuild safely */ }
+        } catch {
+            /* absent or corrupt snapshots rebuild safely */
+        }
     }
 
     private persist(): void {
@@ -52,15 +56,23 @@ export class JsonSessionRepository extends InMemorySessionRepository {
             fs.writeFileSync(temp, JSON.stringify(snapshot), "utf8");
             fs.renameSync(temp, this.file);
         } finally {
-            try { fs.unlinkSync(temp); } catch { /* already renamed */ }
+            try {
+                fs.unlinkSync(temp);
+            } catch {
+                /* already renamed */
+            }
         }
     }
 }
 
 function validStoredSession(value: unknown): value is StoredSession {
-    if (!value || typeof value !== "object") { return false; }
+    if (!value || typeof value !== "object") {
+        return false;
+    }
     const item = value as Partial<StoredSession>;
-    return typeof item.backend === "string"
-        && typeof item.sessionId === "string"
-        && typeof item.title === "string";
+    return (
+        typeof item.backend === "string" &&
+        typeof item.sessionId === "string" &&
+        typeof item.title === "string"
+    );
 }

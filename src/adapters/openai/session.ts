@@ -1,17 +1,17 @@
 import { EventEmitter } from "events";
-import { randomUUID } from "crypto";
 import { AgentSession, SessionStartOptions } from "../types";
 import { HubClient } from "../../sync/hubClient";
-import { ALL_AI_TOOL_NAMES } from "../aiTools";
+import { ALL_AI_TOOL_NAMES } from "../aiTools/defs";
 import * as ledger from "../../ledger";
 import { ChatMessage, ContentPart, OpenAIAdapterConfig } from "./types";
-import { readStored, writeStored } from "./store";
+import { writeStored } from "./store";
 import { Compactor } from "./compactor";
 import { TurnRunner } from "./turnRunner";
-import { makeLogicalTurnId, parseTurnSeq } from "./turnId";
+import { makeLogicalTurnId } from "./turnId";
 import { buildTimeGapNotice } from "./timeGapNotice";
 import { buildImageParts } from "./imageParts";
 import { buildFollowupAnchor, OpenAISessionRuntime } from "./sessionRuntime";
+import { restoreOpenAISession } from "./sessionRestore";
 
 /**
  * A direct OpenAI-compatible chat session (no CLI): streams /chat/completions
@@ -67,44 +67,17 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     ) {
         super();
         this.runtime = new OpenAISessionRuntime(this.cfg, this.options, this.backend);
-        // Resume a stored session if asked, else start a fresh one.
-        const resumed = options.resumeSessionId ? readStored(backend, options.resumeSessionId) : undefined;
-        // Orphan recovery: if a resume was requested but the store file is
-        // missing, keep the requested id (don't generate a new one!) and try to
-        // reconstruct messages from the ledger so the session reappears intact.
-        if (!resumed && options.resumeSessionId && ledger.hasLedger(options.resumeSessionId)) {
-            this.sessionId = options.resumeSessionId;
-            for (const m of ledger.readMessages(this.sessionId)) {
-                if (m.role === "user" || m.role === "assistant") {
-                    const text = typeof m.content === "string" ? m.content : "";
-                    if (text) { this.messages.push({ role: m.role, content: text }); }
-                }
-            }
-            if (!this.title && this.messages.length) {
-                const firstUser = this.messages.find((m) => m.role === "user");
-                if (firstUser) { this.title = (typeof firstUser.content === "string" ? firstUser.content : "").trim().slice(0, 60); }
-            }
-        } else {
-            this.sessionId = resumed?.id ?? randomUUID();
-        }
-        // Lineage: an explicit branch option wins; else inherit the resumed
-        // session's lineage; else this session starts a fresh conversation.
-        this.lineageId = options.lineageId ?? resumed?.lineageId;
-        // Reconstruct the monotonic logical-turn sequence so reopening does NOT
-        // restart turn numbering at 0. Prefer the persisted nextTurnSeq in
-        // meta.json (canonical); fall back to the max seq embedded in the
-        // ledger's logicalTurnId fields so even a hand-restored/partial ledger
-        // converges. A brand-new session leaves turnSeq at 0.
-        if (ledger.hasLedger(this.sessionId)) {
-            const meta = ledger.readMeta(this.sessionId);
-            const fromMeta = typeof meta?.nextTurnSeq === "number" ? meta.nextTurnSeq - 1 : 0;
-            let fromLedger = 0;
-            for (const m of ledger.readMessages(this.sessionId)) {
-                const seq = parseTurnSeq(m.logicalTurnId as string | undefined);
-                if (seq && seq > fromLedger) { fromLedger = seq; }
-            }
-            this.turnSeq = Math.max(fromMeta, fromLedger);
-        }
+        const restored = restoreOpenAISession(
+            backend,
+            options,
+            this.cfg.model,
+            this.cfg.supportsDeveloperRole !== false,
+        );
+        this.sessionId = restored.sessionId;
+        this.messages.push(...restored.messages);
+        this.title = restored.title;
+        this.lineageId = restored.lineageId;
+        this.turnSeq = restored.turnSeq;
         this.compactor = new Compactor({
             cfg: this.cfg,
             sessionId: this.sessionId,
@@ -115,7 +88,9 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             contextWindow: () => this.runtime.contextWindow(),
             authToken: () => this.runtime.authToken(),
             headers: (loginToken) => this.runtime.headers(loginToken),
-            emit: (event) => { this.emit("event", event); },
+            emit: (event) => {
+                this.emit("event", event);
+            },
             safePersist: () => this.safePersist(),
         });
         this.runner = new TurnRunner({
@@ -126,7 +101,9 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             hub: this.hub,
             getMessages: () => this.messages,
             getProgress: () => this.progress,
-            bumpTurnNo: () => { this.bumpTurn(); },
+            bumpTurnNo: () => {
+                this.bumpTurn();
+            },
             bumpTurn: () => this.bumpTurn(),
             resumeTurn: (id) => this.resumeTurn(id),
             getResumeTurnId: () => this.pendingResumeTurnId,
@@ -134,8 +111,12 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             getLogicalTurnId: () => this.currentLogicalTurnId,
             getIntentId: () => this.currentIntentId,
             getLastInputTokens: () => this.lastInputTokens,
-            setLastInputTokens: (n) => { this.lastInputTokens = n; },
-            emit: (event) => { this.emit("event", event); },
+            setLastInputTokens: (n) => {
+                this.lastInputTokens = n;
+            },
+            emit: (event) => {
+                this.emit("event", event);
+            },
             model: () => this.runtime.model(),
             label: (id) => this.runtime.label(id),
             contextWindow: () => this.runtime.contextWindow(),
@@ -143,42 +124,20 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             authToken: () => this.runtime.authToken(),
             discoverModels: (loginToken) => this.runtime.discoverModels(loginToken),
             followupAnchor: () => buildFollowupAnchor(this.objective, this.progress),
-            emitRequestEstimate: (estimate) => this.emit("event", this.runtime.requestEstimateEvent(estimate)),
+            emitRequestEstimate: (estimate) =>
+                this.emit("event", this.runtime.requestEstimateEvent(estimate)),
             shellExecutionMode: () => this.runtime.shellExecutionMode(),
             resolveToolPath: (p) => this.runtime.resolveToolPath(p),
             safePersist: () => this.safePersist(),
             led: (role, content, extra) => this.led(role, content, extra),
-            maybeAutoCompact: (observedInputTokens) => this.compactor.maybeAutoCompact(observedInputTokens),
+            maybeAutoCompact: (observedInputTokens) =>
+                this.compactor.maybeAutoCompact(observedInputTokens),
             compactOnTasksComplete: () => this.compactOnTasksComplete(),
-            requestApproval: (toolId, toolName, detail, tier) => this.requestApproval(toolId, toolName, detail, tier),
-            markPausedForContinuation: () => { this.pausedForToolCap = true; },
-        });
-        if (resumed) {
-            this.messages.push(...resumed.messages); this.title = resumed.title;
-            // Restore the model last used in this session (unless the caller
-            // explicitly overrode it), so reopening keeps the same model.
-            if (!this.options.model && resumed.model) { this.options.model = resumed.model; }
-        } else {
-            if (options.systemPrompt) {
-                this.messages.push({ role: "system", content: options.systemPrompt });
-            }
-            if (options.developerPrompt) {
-                const developerRole = this.cfg.supportsDeveloperRole !== false;
-                this.messages.push({
-                    role: developerRole ? "developer" : "system",
-                    content: options.developerPrompt,
-                });
-            }
-        }
-        // Initialise the lossless git-backed ledger for this session and seed
-        // it with any resumed messages (best-effort; never blocks the session).
-        void ledger.ensureLedger(this.sessionId, this.ledgerMeta()).then(() => {
-            if (resumed && !ledger.readMessages(this.sessionId).length) {
-                for (const m of this.messages) {
-                    ledger.appendMessage(this.sessionId, { role: m.role, content: m.content, turn: 0 });
-                }
-                void ledger.commitTurn(this.sessionId, "resume — seeded from store");
-            }
+            requestApproval: (toolId, toolName, detail, tier) =>
+                this.requestApproval(toolId, toolName, detail, tier),
+            markPausedForContinuation: () => {
+                this.pausedForToolCap = true;
+            },
         });
         // For a brand-new (non-resumed) session, persist the store file NOW so
         // the session is visible in listSessions() immediately — before the first
@@ -186,15 +145,28 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         // new dialogue (but before sending) loses the session: the ledger exists
         // but the store file was never written, and listSessions() only scans the
         // store directory.
-        if (!resumed) { this.safePersist(); }
-        queueMicrotask(() => this.emit("event", { kind: "session", sessionId: this.sessionId, model: this.runtime.model() }));
+        if (!restored.resumed) {
+            this.safePersist();
+        }
+        queueMicrotask(() =>
+            this.emit("event", {
+                kind: "session",
+                sessionId: this.sessionId,
+                model: this.runtime.model(),
+            }),
+        );
     }
 
     private persist(): void {
         writeStored({
-            id: this.sessionId, backend: this.backend, title: this.title,
-            cwd: this.options.cwd, model: this.runtime.model(), updatedAt: new Date().toISOString(),
-            messages: this.messages, lineageId: this.lineageId,
+            id: this.sessionId,
+            backend: this.backend,
+            title: this.title,
+            cwd: this.options.cwd,
+            model: this.runtime.model(),
+            updatedAt: new Date().toISOString(),
+            messages: this.messages,
+            lineageId: this.lineageId,
         });
     }
 
@@ -202,19 +174,16 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         try {
             this.persist();
         } catch (error) {
-            this.emit("event", { kind: "error", message: `failed to persist session: ${error instanceof Error ? error.message : String(error)}` });
+            this.emit("event", {
+                kind: "error",
+                message: `failed to persist session: ${error instanceof Error ? error.message : String(error)}`,
+            });
         }
     }
 
     /** Conversation lineage (groups sidebar entries; undefined = own lineage). */
-    get lineage(): string | undefined { return this.lineageId; }
-
-    private ledgerMeta(): import("../../ledger").LedgerMeta {
-        return {
-            id: this.sessionId, backend: this.backend, title: this.title,
-            cwd: this.options.cwd, model: this.runtime.model(),
-            reasoning: this.options.reasoning,
-        };
+    get lineage(): string | undefined {
+        return this.lineageId;
     }
 
     /**
@@ -223,7 +192,12 @@ export class OpenAISession extends EventEmitter implements AgentSession {
      * leaves the Promise pending, which is fine: the turn is gone either way,
      * and a stale resolver is simply never called again.
      */
-    private requestApproval(toolId: string, toolName: string, detail: string | undefined, tier: "write" | "destructive"): Promise<boolean> {
+    private requestApproval(
+        toolId: string,
+        toolName: string,
+        detail: string | undefined,
+        tier: "write" | "destructive",
+    ): Promise<boolean> {
         return new Promise<boolean>((resolve) => {
             this.pendingApprovals.set(toolId, resolve);
             this.emit("event", { kind: "approval-request", toolId, toolName, detail, tier });
@@ -233,7 +207,9 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     /** Answers a pending approval-request (called from the webview's accept/reject click). */
     resolveApproval(toolId: string, approved: boolean): void {
         const resolve = this.pendingApprovals.get(toolId);
-        if (!resolve) { return; }
+        if (!resolve) {
+            return;
+        }
         this.pendingApprovals.delete(toolId);
         resolve(approved);
         this.emit("event", { kind: "approval-resolved", toolId, approved });
@@ -247,7 +223,9 @@ export class OpenAISession extends EventEmitter implements AgentSession {
      * rather than "the prompt got big".
      */
     private async compactOnTasksComplete(): Promise<void> {
-        if (this.cfg.autoCompactOnTasksComplete === false) { return; }
+        if (this.cfg.autoCompactOnTasksComplete === false) {
+            return;
+        }
         await this.compactor.compact("auto");
     }
 
@@ -291,14 +269,22 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     /** Append one entry to the lossless ledger for the current turn (best-effort). */
     private led(role: string, content: unknown, extra?: Record<string, unknown>): void {
         ledger.appendMessage(this.sessionId, {
-            role, content, turn: this.turnSeq,
+            role,
+            content,
+            turn: this.turnSeq,
             ...(this.currentLogicalTurnId ? { logicalTurnId: this.currentLogicalTurnId } : {}),
             ...(this.currentIntentId ? { intentId: this.currentIntentId } : {}),
             ...extra,
         });
     }
 
-    send(text: string, images?: string[], preamble?: string[], intentId?: string, resumeTurnId?: string): void {
+    send(
+        text: string,
+        images?: string[],
+        preamble?: string[],
+        intentId?: string,
+        resumeTurnId?: string,
+    ): void {
         // Intercept /compact: a local command (summarize the conversation to shrink
         // the model context), NOT a user turn to ship to the gateway.
         if (text.trim().toLowerCase() === "/compact") {
@@ -327,7 +313,8 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         // last message is textually identical, reuse it instead of re-pushing.
         const last = this.messages[this.messages.length - 1];
         const lastText = last && typeof last.content === "string" ? last.content : "";
-        const isRetryReuse = typeof resumeTurnId === "string" && last && last.role === "user" && lastText === text;
+        const isRetryReuse =
+            typeof resumeTurnId === "string" && last && last.role === "user" && lastText === text;
         if (last && last.role === "user" && !isRetryReuse) {
             this.messages.push({ role: "assistant", content: "(previous turn interrupted)" });
             this.led("assistant", "(previous turn interrupted)");
@@ -351,13 +338,20 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         if (!isRetryReuse) {
             this.messages.push({ role: "user", content: userContent });
             const taskText = text.trim();
-            if (taskText.length >= 8 && !/^(continue|continuar|segue|prossiga|go on|keep going|ok|sim|yes|y)\b/i.test(taskText)) {
+            if (
+                taskText.length >= 8 &&
+                !/^(continue|continuar|segue|prossiga|go on|keep going|ok|sim|yes|y)\b/i.test(
+                    taskText,
+                )
+            ) {
                 this.objective = taskText.slice(0, 600);
                 this.progress = [];
             }
             ledger.appendMessage(this.sessionId, {
                 role: "user",
-                content: imageParts.length ? `${text}\n[${imageParts.length} image(s) attached]` : text,
+                content: imageParts.length
+                    ? `${text}\n[${imageParts.length} image(s) attached]`
+                    : text,
                 turn: this.turnSeq + 1,
                 // The user message anticipates the upcoming turn (bumpTurn runs in
                 // run()). Stamp the intent now so the row carries it even though the
@@ -365,14 +359,20 @@ export class OpenAISession extends EventEmitter implements AgentSession {
                 ...(this.currentIntentId ? { intentId: this.currentIntentId } : {}),
             });
         }
-        if (!this.title) { this.title = text.trim().slice(0, 60); }
+        if (!this.title) {
+            this.title = text.trim().slice(0, 60);
+        }
         this.safePersist();
         void this.runner.run();
     }
 
-    cancel(): void { this.runner.cancel(); }
+    cancel(): void {
+        this.runner.cancel();
+    }
     continueTurn(): void {
-        if (!this.pausedForToolCap) { return; }
+        if (!this.pausedForToolCap) {
+            return;
+        }
         this.pausedForToolCap = false;
         this.pendingResumeTurnId = this.currentLogicalTurnId;
         void this.runner.run();
@@ -385,7 +385,8 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     aiTools(): { available: string[]; enabled: string[] } {
         const available = [...ALL_AI_TOOL_NAMES];
         // options.aiTools: undefined = all available; [] = none; else the subset.
-        const enabled = this.options.aiTools === undefined ? [...available] : [...this.options.aiTools];
+        const enabled =
+            this.options.aiTools === undefined ? [...available] : [...this.options.aiTools];
         return { available, enabled };
     }
 
@@ -395,5 +396,4 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         const known = new Set(ALL_AI_TOOL_NAMES);
         this.options.aiTools = names.filter((n) => known.has(n));
     }
-
 }

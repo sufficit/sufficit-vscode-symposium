@@ -3,11 +3,18 @@ import * as fs from "fs";
 import * as path from "path";
 
 /** Runs git in a directory; resolves with code+stdout+stderr (never rejects). */
-function git(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+function git(
+    cwd: string,
+    args: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
         execFile("git", args, { cwd, maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
             const nodeError = err as { code?: number } | null;
-            resolve({ code: nodeError?.code !== undefined ? nodeError.code : err ? 1 : 0, stdout: String(stdout), stderr: String(stderr) });
+            resolve({
+                code: nodeError?.code !== undefined ? nodeError.code : err ? 1 : 0,
+                stdout: String(stdout),
+                stderr: String(stderr),
+            });
         });
     });
 }
@@ -27,19 +34,27 @@ export async function gitRoot(cwd: string): Promise<string | undefined> {
  */
 export async function commitDiff(root: string): Promise<string> {
     const staged = await git(root, ["diff", "--cached", "--no-color", "--no-ext-diff"]);
-    if (staged.code === 0 && staged.stdout.trim()) { return staged.stdout; }
+    if (staged.code === 0 && staged.stdout.trim()) {
+        return staged.stdout;
+    }
 
     const working = await git(root, ["diff", "HEAD", "--no-color", "--no-ext-diff"]);
     let out = working.code === 0 ? working.stdout : "";
 
     const untracked = await git(root, ["ls-files", "--others", "--exclude-standard"]);
     if (untracked.code === 0) {
-        const files = untracked.stdout.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 50);
+        const files = untracked.stdout
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .slice(0, 50);
         for (const f of files) {
             // --no-index against /dev/null renders a new file as an add-diff; it
             // exits 1 when the files differ (expected), but stdout holds the diff.
             const d = await git(root, ["diff", "--no-index", "--no-color", "/dev/null", f]);
-            if (d.stdout.trim()) { out += (out ? "\n" : "") + d.stdout; }
+            if (d.stdout.trim()) {
+                out += (out ? "\n" : "") + d.stdout;
+            }
         }
     }
     return out;
@@ -48,8 +63,13 @@ export async function commitDiff(root: string): Promise<string> {
 /** Subjects of the most recent commits, newest first (for style priming). */
 export async function recentSubjects(root: string, n: number): Promise<string[]> {
     const r = await git(root, ["log", `-${Math.max(1, n)}`, "--format=%s"]);
-    if (r.code !== 0) { return []; }
-    return r.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (r.code !== 0) {
+        return [];
+    }
+    return r.stdout
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
 }
 
 /** True if the path is tracked by git (exists at HEAD or index). */
@@ -61,7 +81,9 @@ export async function isTracked(cwd: string, abs: string): Promise<boolean> {
 /** File content at HEAD, or undefined if the file is untracked/new. */
 export async function headContent(cwd: string, abs: string): Promise<string | undefined> {
     const root = await gitRoot(cwd);
-    if (!root) { return undefined; }
+    if (!root) {
+        return undefined;
+    }
     const rel = path.relative(root, abs).split(path.sep).join("/");
     const r = await git(root, ["show", `HEAD:${rel}`]);
     return r.code === 0 ? r.stdout : undefined;
@@ -82,7 +104,12 @@ export async function rejectChange(cwd: string, abs: string): Promise<boolean> {
         }
         return true;
     }
-    try { await fs.promises.unlink(abs); return true; } catch { return false; }
+    try {
+        await fs.promises.unlink(abs);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 /** Approves a change by staging it (git add). Returns true on success. */
@@ -104,14 +131,22 @@ export async function approveChange(cwd: string, abs: string): Promise<boolean> 
  */
 export async function dirtyFiles(cwd: string): Promise<string[]> {
     const root = await gitRoot(cwd);
-    if (!root) { return []; }
+    if (!root) {
+        return [];
+    }
     const r = await git(root, ["status", "--porcelain", "--no-renames"]);
-    if (r.code !== 0) { return []; }
+    if (r.code !== 0) {
+        return [];
+    }
     return [...parsePorcelainDirty(r.stdout, root, path)];
 }
 
 /** One pending file with its real line delta vs the index/HEAD. */
-export interface FileDelta { path: string; added: number; removed: number; }
+export interface FileDelta {
+    path: string;
+    added: number;
+    removed: number;
+}
 
 /**
  * Faithful mirror of the working tree for the repo containing `cwd`: every
@@ -125,16 +160,22 @@ export interface FileDelta { path: string; added: number; removed: number; }
  */
 export async function changedFilesWithCounts(cwd: string): Promise<FileDelta[]> {
     const root = await gitRoot(cwd);
-    if (!root) { return []; }
+    if (!root) {
+        return [];
+    }
     const out: FileDelta[] = [];
     const seen = new Set<string>();
     const diff = await git(root, ["diff", "--numstat", "--no-renames"]);
     if (diff.code === 0) {
         for (const line of diff.stdout.split("\n")) {
             const cols = line.split("\t");
-            if (cols.length < 3) { continue; }
+            if (cols.length < 3) {
+                continue;
+            }
             const rel = cols[2].trim();
-            if (!rel) { continue; }
+            if (!rel) {
+                continue;
+            }
             const abs = path.resolve(root, rel);
             // numstat reports "-" for binary files; treat those as 0/0.
             const added = cols[0] === "-" ? 0 : Number(cols[0]) || 0;
@@ -145,11 +186,21 @@ export async function changedFilesWithCounts(cwd: string): Promise<FileDelta[]> 
     }
     const untracked = await git(root, ["ls-files", "--others", "--exclude-standard"]);
     if (untracked.code === 0) {
-        for (const rel of untracked.stdout.split("\n").map((l) => l.trim()).filter(Boolean)) {
+        for (const rel of untracked.stdout
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean)) {
             const abs = path.resolve(root, rel);
-            if (seen.has(abs)) { continue; }
+            if (seen.has(abs)) {
+                continue;
+            }
             let added = 0;
-            try { const t = fs.readFileSync(abs, "utf8"); added = t ? t.split("\n").length : 0; } catch { /* binary/unreadable → all-added 0 */ }
+            try {
+                const t = fs.readFileSync(abs, "utf8");
+                added = t ? t.split("\n").length : 0;
+            } catch {
+                /* binary/unreadable → all-added 0 */
+            }
             out.push({ path: abs, added, removed: 0 });
         }
     }
@@ -169,13 +220,24 @@ export async function pendingChanges(absPaths: string[]): Promise<Set<string>> {
     for (const [root, paths] of byRepo) {
         if (!root) {
             // Non-git: always pending (snapshot-resolved elsewhere).
-            for (const p of paths) { pending.add(p); }
+            for (const p of paths) {
+                pending.add(p);
+            }
             continue;
         }
         const r = await git(root, ["status", "--porcelain", "--no-renames"]);
-        if (r.code !== 0) { for (const p of paths) { pending.add(p); } continue; }
+        if (r.code !== 0) {
+            for (const p of paths) {
+                pending.add(p);
+            }
+            continue;
+        }
         const dirty = parsePorcelainDirty(r.stdout, root, path);
-        for (const p of paths) { if (dirty.has(p)) { pending.add(p); } }
+        for (const p of paths) {
+            if (dirty.has(p)) {
+                pending.add(p);
+            }
+        }
     }
     return pending;
 }
@@ -186,15 +248,22 @@ export async function pendingChanges(absPaths: string[]): Promise<Set<string>> {
  * worktree column (2nd char) isn't a space. `pathMod` is node:path (injectable).
  */
 export function parsePorcelainDirty(
-    stdout: string, root: string, pathMod: typeof import("path") = path,
+    stdout: string,
+    root: string,
+    pathMod: typeof import("path") = path,
 ): Set<string> {
     const dirty = new Set<string>();
     for (const line of stdout.split("\n")) {
-        if (line.length < 4) { continue; }
-        const x = line[0], y = line[1];
+        if (line.length < 4) {
+            continue;
+        }
+        const x = line[0],
+            y = line[1];
         const rel = line.slice(3).trim();
-        const isPending = (x === "?" && y === "?") || (y !== " ");
-        if (isPending && rel) { dirty.add(pathMod.resolve(root, rel)); }
+        const isPending = (x === "?" && y === "?") || y !== " ";
+        if (isPending && rel) {
+            dirty.add(pathMod.resolve(root, rel));
+        }
     }
     return dirty;
 }

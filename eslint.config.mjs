@@ -10,10 +10,8 @@ import tseslint from "typescript-eslint";
  * strings, so ESLint only checks their TS wrapper, not the embedded JS/CSS —
  * splitting those out is tracked in docs/PLAN-architecture-refactor.md (#2).
  *
- * `no-explicit-any` is a WARNING on purpose: the codebase still carries ~40
- * escape-hatch casts that are being removed incrementally (#5/#6). Keeping it a
- * warning means CI stays green while the count is driven down, instead of
- * blocking every build until the last cast is gone.
+ * Browser code is authored as TypeScript and participates in the same lint
+ * contract. Explicit `any` is rejected in production code.
  *
  * TYPE-AWARE RULES: we enable type-checking via `projectService` and turn on
  * the specific rules that catch the bug class that caused "sessions vanish on
@@ -24,9 +22,8 @@ import tseslint from "typescript-eslint";
  */
 export default tseslint.config(
     {
-        // Webview blobs are template-literal HTML/JS/CSS strings: ESLint can't
-        // meaningfully lint the embedded code, and `--fix` would corrupt the
-        // string contents. Excluded until they are split out (#2 in the plan).
+        // Generated/template-literal surfaces remain excluded; the extracted
+        // TypeScript webview modules are linted below.
         ignores: [
             "out/**",
             "node_modules/**",
@@ -36,9 +33,6 @@ export default tseslint.config(
             "src/ui/chatStyles.ts",
             "src/ui/chatHtml.ts",
             "src/ui/configHtml.ts",
-            "src/ui/webview/**",
-            // The service worker is bundled as standalone JavaScript and is not
-            // part of the extension-host TypeScript project used by ESLint.
             "src/pwa/sw.js",
         ],
     },
@@ -54,7 +48,7 @@ export default tseslint.config(
             },
         },
         rules: {
-            "@typescript-eslint/no-explicit-any": "warn",
+            "@typescript-eslint/no-explicit-any": "error",
             "@typescript-eslint/no-unused-vars": [
                 "warn",
                 { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" },
@@ -81,6 +75,16 @@ export default tseslint.config(
             "@typescript-eslint/no-explicit-any": "off",
             "@typescript-eslint/no-floating-promises": "off",
             "@typescript-eslint/no-misused-promises": "off",
+        },
+    },
+    {
+        files: ["src/ui/webview/**/*.ts"],
+        languageOptions: {
+            parserOptions: {
+                projectService: false,
+                project: ["./tsconfig.webview.json"],
+                tsconfigRootDir: import.meta.dirname,
+            },
         },
     },
 );

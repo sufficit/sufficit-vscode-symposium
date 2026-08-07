@@ -24,7 +24,7 @@ export class CompressionManager {
     }
 
     getPreset(id: string): CompressionPreset | undefined {
-        return this.getPresets().find(p => p.id === id);
+        return this.getPresets().find((p) => p.id === id);
     }
 
     async savePreset(preset: CompressionPreset): Promise<void> {
@@ -36,7 +36,7 @@ export class CompressionManager {
         const custom = config.get<CompressionPreset[]>("presets", []);
 
         // Update existing or add new
-        const index = custom.findIndex(p => p.id === preset.id);
+        const index = custom.findIndex((p) => p.id === preset.id);
         if (index >= 0) {
             custom[index] = preset;
         } else {
@@ -48,14 +48,14 @@ export class CompressionManager {
 
     async deletePreset(id: string): Promise<void> {
         // Prevent deleting built-in presets
-        const builtin = DEFAULT_PRESETS.find(p => p.id === id);
+        const builtin = DEFAULT_PRESETS.find((p) => p.id === id);
         if (builtin) {
             return;
         }
 
         const config = vscode.workspace.getConfiguration("symposium.compression");
         const custom = config.get<CompressionPreset[]>("presets", []);
-        const filtered = custom.filter(p => p.id !== id);
+        const filtered = custom.filter((p) => p.id !== id);
 
         await config.update("presets", filtered, vscode.ConfigurationTarget.Global);
     }

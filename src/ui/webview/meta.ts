@@ -6,47 +6,107 @@ import { t } from "./i18n";
 import { renderSessions } from "./sessions";
 import { renderStatusbar } from "./statusbar";
 import { setComposerBlocked, setLoading } from "./status";
-import { modelLabel, modelList, modelDefault, modelValue, reasoningList, reasoningValue, setModelDefault, setModelLabel, setModelLabels, setModelList, setModelValue, setPinnedModels, setReasoningDefault, setReasoningLabel, setReasoningList, setReasoningValue } from "./models";
+import {
+    modelList,
+    modelDefault,
+    modelValue,
+    reasoningList,
+    reasoningValue,
+    setModelDefault,
+    setModelLabel,
+    setModelLabels,
+    setModelList,
+    setModelValue,
+    setPinnedModels,
+    setReasoningDefault,
+    setReasoningLabel,
+    setReasoningList,
+    setReasoningValue,
+} from "./models";
 import { scheduleLayout, scrollToBottom } from "./scroll";
 import { saved } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
-import { root, chatTitle, agentBadge, configBtn, copySessionBtn, modelPicker, reasoningPicker, sendMode, switchAgentBtn, remoteAccessBtn } from "./dom";
+import {
+    root,
+    chatTitle,
+    agentBadge,
+    configBtn,
+    copySessionBtn,
+    modelPicker,
+    reasoningPicker,
+    sendMode,
+    switchAgentBtn,
+    remoteAccessBtn,
+} from "./dom";
 import { svgIcon } from "./icons";
-import { activeSessionId, setAgentLabels, setOpenInPref, setActiveFile, setActiveFileDismissed, setActiveFilePinned, setActiveFilePreview, setActiveFileRange, setActiveSessionId, setAiToolsAvailable, setAiToolsEnabled, setBootstrapPath, setBusy, setCurrentBackend, setCurrentBackendName, setPermissionDefault, setPermissionModes, setPermissionValue, setSideMode } from "./state";
+import {
+    activeSessionId,
+    setAgentLabels,
+    setOpenInPref,
+    setActiveFile,
+    setActiveFileDismissed,
+    setActiveFilePinned,
+    setActiveFilePreview,
+    setActiveFileRange,
+    setActiveSessionId,
+    setAiToolsAvailable,
+    setAiToolsEnabled,
+    setBootstrapPath,
+    setBusy,
+    setCurrentBackend,
+    setCurrentBackendName,
+    setPermissionDefault,
+    setPermissionModes,
+    setPermissionValue,
+    setSideMode,
+} from "./state";
 import { preserveSelectedModel } from "./modelCatalog";
+import type { MetaMessageData } from "./types";
 
 /** Apply a `meta` message payload (session resolved / re-meta). */
-export function applyMeta(data: any): void {
+export function applyMeta(data: MetaMessageData): void {
     const nextSessionId = data.sessionId || "";
     const nextBackend = data.backend || "";
     setSideMode(data.sessionsSide || "auto");
     root.classList.toggle("dev-mode", !!data.devMode);
-    if (typeof data.openIn === "string") { setOpenInPref(data.openIn); }
+    if (typeof data.openIn === "string") {
+        setOpenInPref(data.openIn);
+    }
     // Seed the default send mode once (don't override a saved choice).
-    if (data.whenBusy && !(saved && saved.sendMode)) { sendMode.value = data.whenBusy; }
+    if (data.whenBusy && !(saved && saved.sendMode)) {
+        sendMode.value = data.whenBusy;
+    }
     // Apply the real busy state from the host (overrides any stale busy set by render log replay).
     setBusy(!!data.busy);
     root.classList.toggle("chat-only", !!data.chatOnly);
     root.classList.toggle("sessions-only", data.openIn === "editor" && !data.chatOnly);
-    scheduleLayout();   // apply sessions-side after the host dimensions settle
+    scheduleLayout(); // apply sessions-side after the host dimensions settle
     setActiveSessionId(nextSessionId);
-    copySessionBtn.style.display = "inline-flex";   // a session surface is open
-    clearTimeout(bootTimer); bootStep("host", null, "ok"); bootStep("session", "Session ready", "ok"); bootComplete();
-    startWorkingSet(activeSessionId);   // bind edited-files set to this session
+    copySessionBtn.style.display = "inline-flex"; // a session surface is open
+    clearTimeout(bootTimer);
+    bootStep("host", null, "ok");
+    bootStep("session", "Session ready", "ok");
+    bootComplete();
+    startWorkingSet(activeSessionId); // bind edited-files set to this session
     setCurrentBackend(data.backend || "");
     setCurrentBackendName(data.backendName || "");
     setAgentLabels(data.agentLabels || null);
     // Per-workspace bootstrap link on the empty screen (read-only ref).
     const bootEl = document.getElementById("bootstrapLink");
-    if (data.bootstrapLink && data.bootstrapLink.path) {
+    if (bootEl && data.bootstrapLink && data.bootstrapLink.path) {
         setBootstrapPath(data.bootstrapLink.path);
-        bootEl.querySelector(".lbl").textContent = t("chat.empty.bootstrap.label", { name: data.bootstrapLink.name || t("chat.empty.bootstrap.open") });
+        const label = bootEl.querySelector<HTMLElement>(".lbl");
+        if (label) {
+            label.textContent = t("chat.empty.bootstrap.label", {
+                name: data.bootstrapLink.name || t("chat.empty.bootstrap.open"),
+            });
+        }
         bootEl.style.display = "inline-flex";
-    } else {
+    } else if (bootEl) {
         setBootstrapPath("");
         bootEl.style.display = "none";
     }
-    chatTitle.textContent = data.title || (data.backendName || data.backend);
+    chatTitle.textContent = data.title || data.backendName || data.backend || "";
     // Persistent agent badge: the agent-def name when bound, else the backend
     // display name — so it's always visible which agent drives this session.
     renderAgentBadge(data);
@@ -56,7 +116,9 @@ export function applyMeta(data: any): void {
     setModelDefault(data.modelDefault || "");
     setModelLabels(data.modelLabels || {});
     setReasoningDefault(data.reasoningDefault || "");
-    setModelList(preserveSelectedModel(data.models || [], data.resumed ? data.sessionModel || "" : ""));
+    setModelList(
+        preserveSelectedModel(data.models || [], data.resumed ? data.sessionModel || "" : ""),
+    );
     setPinnedModels(data.pinnedModels || []);
     // A resumed session owns its last-used model. A new session must start
     // from the configured default, even when the previous session selected a
@@ -98,7 +160,9 @@ export function applyMeta(data: any): void {
     // the config button is available regardless of permissionModes.
     configBtn.style.display = "";
     // Remote access (QR) button — always visible so the user can find it.
-    if (remoteAccessBtn) { remoteAccessBtn.style.display = ""; }
+    if (remoteAccessBtn) {
+        remoteAccessBtn.style.display = "";
+    }
     // Hand-off works for live chat dialogues and for terminal
     // sessions (whose transcript is read back from the CLI). Only
     // read-only live mirrors can't be handed off.
@@ -107,26 +171,41 @@ export function applyMeta(data: any): void {
     const blockedNotice = codexSubagentBlocked ? t("chat.composer.codexSubagent.notice") : "";
     setComposerBlocked(
         blockedNotice,
-        codexSubagentBlocked ? t("chat.composer.codexSubagent.placeholder") : t("chat.composer.placeholder"),
+        codexSubagentBlocked
+            ? t("chat.composer.codexSubagent.placeholder")
+            : t("chat.composer.placeholder"),
         t("chat.composer.placeholder"),
     );
     restoreComposerDraft(nextBackend, nextSessionId);
-    document.getElementById("composer").style.display = data.readOnly && !codexSubagentBlocked ? "none" : "flex";
+    const composer = document.getElementById("composer");
+    if (composer) {
+        composer.style.display = data.readOnly && !codexSubagentBlocked ? "none" : "flex";
+    }
     if (codexSubagentBlocked) {
         append("meta", blockedNotice);
     } else if (data.readOnly) {
         append("meta", "👁 watching live — read only (this session runs elsewhere)");
     } else if (data.terminal) {
-        append("meta", "▷ terminal session — drive it here or type in the terminal panel" + (data.resumed ? " (resumed)" : ""));
+        append(
+            "meta",
+            "▷ terminal session — drive it here or type in the terminal panel" +
+                (data.resumed ? " (resumed)" : ""),
+        );
     } else {
         append("meta", data.backend + (data.resumed ? " · resumed session" : " · new session"));
     }
     renderSessions();
     renderStatusbar(data);
     setActiveFile(data.activeFile || null);
-    setActiveFileRange((data.activeFile_start && data.activeFile_end) ? { start: data.activeFile_start, end: data.activeFile_end } : null);
-    setActiveFilePreview(!!data.activeFilePreview); setActiveFilePinned(false);
-    setActiveFileDismissed(false); renderChips();
+    setActiveFileRange(
+        data.activeFile_start && data.activeFile_end
+            ? { start: data.activeFile_start, end: data.activeFile_end }
+            : null,
+    );
+    setActiveFilePreview(!!data.activeFilePreview);
+    setActiveFilePinned(false);
+    setActiveFileDismissed(false);
+    renderChips();
     // Resumed sessions remain hidden until the host finishes replaying their
     // stored render log/history. Revealing here used to expose the first rows
     // while they were appended, making the conversation visibly load from top
@@ -140,9 +219,12 @@ export function applyMeta(data: any): void {
 /** Fills the chat-header badge with the AGENT-DEF driving this session. Hidden
  *  for plain backend sessions — the backend is already shown in the statusbar,
  *  so the badge doesn't duplicate the adapter. */
-function renderAgentBadge(data: any): void {
+function renderAgentBadge(data: MetaMessageData): void {
     const agentName = data.agentLabels && data.agentLabels.agent;
-    if (!agentName) { agentBadge.style.display = "none"; return; }
+    if (!agentName) {
+        agentBadge.style.display = "none";
+        return;
+    }
     agentBadge.textContent = "";
     const ic = svgIcon("robot");
     ic.classList.add("agentBadgeIcon");

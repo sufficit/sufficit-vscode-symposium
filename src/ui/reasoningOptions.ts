@@ -20,7 +20,9 @@ export function buildReasoningMenuOptions(
     // or duplicated list.
     const orderedLevels = [
         ...CANONICAL_REASONING_ORDER.filter((level) => uniqueLevels.includes(level)),
-        ...uniqueLevels.filter((level) => !CANONICAL_REASONING_ORDER.includes(level) && level !== "default"),
+        ...uniqueLevels.filter(
+            (level) => !CANONICAL_REASONING_ORDER.includes(level) && level !== "default",
+        ),
         ...(uniqueLevels.includes("default") ? ["default"] : []),
     ];
     const concreteDefault = defaultLevel && defaultLevel !== "default" ? defaultLevel : "";

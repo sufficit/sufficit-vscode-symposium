@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { makeLogicalTurnId, makeAttemptId, parseTurnSeq, parseAttemptNo } from "../adapters/openai/turnId";
+import {
+    makeLogicalTurnId,
+    makeAttemptId,
+    parseTurnSeq,
+    parseAttemptNo,
+} from "../adapters/openai/turnId";
 
 // --- Entrega 1A: identidade estável de turno (não reseta no reopen) ---
 // O defeito: turnNo era um contador in-memory que zerava a cada reopen, então a
@@ -66,4 +71,3 @@ test("retry reuse: an arbitrary string fails the format check (fallback)", () =>
     assert.equal("random-uuid-1234".includes("/turn-"), false);
     assert.equal("a1b2c3d4-e5f6".includes("/turn-"), false);
 });
-

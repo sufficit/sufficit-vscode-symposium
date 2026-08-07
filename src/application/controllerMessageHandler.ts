@@ -1,0 +1,100 @@
+import { WebviewToHost } from "../protocol/chat";
+import { ChatQueue, PendingMessage, SendMode } from "./controllerQueue";
+import { RenderStream } from "./renderStream";
+import type { FileDialogPort } from "./ports";
+
+export interface ControllerMessageContext {
+    busy(): boolean;
+    cancel(): void;
+    continueTurn(): void;
+    queue: ChatQueue;
+    stream: RenderStream;
+    emitQueue(): void;
+    dispatch(message: PendingMessage): void;
+    onSend(message: PendingMessage, mode: SendMode): void;
+    resolveApproval(toolId: string, approved: boolean): void;
+}
+
+/** Handles webview-only commands for a live ChatController. */
+export async function handleControllerMessage(
+    message: WebviewToHost,
+    ctx: ControllerMessageContext,
+    files: FileDialogPort,
+): Promise<boolean> {
+    switch (message.type) {
+        case "send":
+            ctx.onSend(
+                {
+                    clientMessageId: message.clientMessageId,
+                    intentId: message.intentId,
+                    retryOf: message.retryOf,
+                    speech: message.speech,
+                    text: message.text,
+                    attachments: message.attachments ?? [],
+                    model: message.model,
+                    reasoning: message.reasoning,
+                    permission: message.permission,
+                    autonomy: message.autonomy,
+                    interruptedBy: message.interruptedBy,
+                },
+                (message.mode as SendMode) ?? "send",
+            );
+            return true;
+        case "cancel":
+            ctx.cancel();
+            return true;
+        case "continue":
+            ctx.continueTurn();
+            return true;
+        case "queue-remove":
+            if (ctx.queue.remove(message.id)) {
+                ctx.emitQueue();
+            }
+            return true;
+        case "queue-edit": {
+            const queued = ctx.queue.take(message.id);
+            if (queued) {
+                ctx.emitQueue();
+                ctx.stream.toSink({
+                    type: "load-input",
+                    text: queued.text,
+                    attachments: queued.attachments,
+                });
+            }
+            return true;
+        }
+        case "queue-promote": {
+            const queued = ctx.queue.take(message.id);
+            if (!queued) {
+                return true;
+            }
+            if (ctx.busy()) {
+                ctx.queue.unshift(queued);
+                ctx.emitQueue();
+                ctx.cancel();
+            } else {
+                ctx.emitQueue();
+                ctx.dispatch(queued);
+            }
+            return true;
+        }
+        case "approval-response":
+            ctx.resolveApproval(message.toolId, message.approved);
+            return true;
+        case "pick-attachments": {
+            const picked = await files.pickFiles({
+                many: true,
+                label: "Attach",
+                title: "Attach files to the message",
+            });
+            if (picked?.length) {
+                ctx.stream.toSink({
+                    type: "attachments-picked",
+                    files: picked,
+                });
+            }
+            return true;
+        }
+    }
+    return false;
+}

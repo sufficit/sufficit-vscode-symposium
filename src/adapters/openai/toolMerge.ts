@@ -49,7 +49,9 @@ export function mergeToolDefinitions(
     for (const { tool, source } of sourced) {
         const t = tool as ToolDefinition;
         const name = (t.function?.name ?? t.name) as string;
-        if (!nameGroups.has(name)) { nameGroups.set(name, []); }
+        if (!nameGroups.has(name)) {
+            nameGroups.set(name, []);
+        }
         nameGroups.get(name)!.push({ tool, source });
     }
     const finalTools: { tool: ToolDefinition; source: string }[] = [];
@@ -70,18 +72,18 @@ export function mergeToolDefinitions(
                 const label = source.slice(0, -1);
                 const renamed: ToolDefinition = tool.function
                     ? {
-                        ...tool,
-                        function: {
-                            ...tool.function,
-                            name: `${source}${nameKey}`,
-                            description: `[${label}] ${tool.function.description ?? ""}`,
-                        },
-                    }
+                          ...tool,
+                          function: {
+                              ...tool.function,
+                              name: `${source}${nameKey}`,
+                              description: `[${label}] ${tool.function.description ?? ""}`,
+                          },
+                      }
                     : {
-                        ...tool,
-                        name: `${source}${nameKey}`,
-                        description: `[${label}] ${tool.description ?? ""}`,
-                    };
+                          ...tool,
+                          name: `${source}${nameKey}`,
+                          description: `[${label}] ${tool.description ?? ""}`,
+                      };
                 finalTools.push({ tool: renamed, source });
             }
         }

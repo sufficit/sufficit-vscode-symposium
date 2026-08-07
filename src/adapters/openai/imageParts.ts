@@ -8,7 +8,10 @@ export function buildImageParts(images?: string[]): ContentPart[] {
         try {
             const mime = mimeTypeFor(p) || "image/png";
             const b64 = fs.readFileSync(p).toString("base64");
-            imageParts.push({ type: "image_url", image_url: { url: `data:${mime};base64,${b64}` } });
+            imageParts.push({
+                type: "image_url",
+                image_url: { url: `data:${mime};base64,${b64}` },
+            });
         } catch {
             // skip files we can't read
         }

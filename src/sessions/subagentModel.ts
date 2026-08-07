@@ -1,13 +1,19 @@
 import type { AgentAdapter } from "../adapters/types";
-import { resolveModelPin } from "../extension/models";
+import { resolveModelPin } from "../application/modelSelection";
 
 function parseList(value: string): string[] {
-    return value.split(",").map((item) => item.trim()).filter(Boolean);
+    return value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
 }
 
 function matchAny(constraint: string, value: string): boolean {
     return parseList(constraint).some((pattern) => {
-        const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".");
+        const escaped = pattern
+            .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+            .replace(/\*/g, ".*")
+            .replace(/\?/g, ".");
         return new RegExp(`^${escaped}$`, "i").test(value);
     });
 }

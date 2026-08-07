@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatSurface, ChatSurfaceDeps } from "./chatSurface";
-import { AgentPickerEntry } from "./protocol";
+import { AgentPickerEntry } from "../protocol/chat";
 
 /**
  * Editor surface: one reusable full-size panel with the sessions list
@@ -31,14 +31,22 @@ export class ChatPanel {
     }
 
     /** Opens a new blank editor tab and shows its agent picker. */
-    static newSession(context: vscode.ExtensionContext, deps: ChatSurfaceDeps, agents: AgentPickerEntry[]): ChatPanel {
+    static newSession(
+        context: vscode.ExtensionContext,
+        deps: ChatSurfaceDeps,
+        agents: AgentPickerEntry[],
+    ): ChatPanel {
         const panel = new ChatPanel(context, deps);
         panel.showAgentPicker(agents);
         return panel;
     }
 
     /** Opens one dedicated editor tab per existing conversation. */
-    static openSession(context: vscode.ExtensionContext, deps: ChatSurfaceDeps, info: SessionInfo): ChatPanel {
+    static openSession(
+        context: vscode.ExtensionContext,
+        deps: ChatSurfaceDeps,
+        info: SessionInfo,
+    ): ChatPanel {
         const existing = [...ChatPanel.panels].find((panel) => panel.sessionId === info.sessionId);
         if (existing) {
             existing.panel.reveal();
@@ -58,7 +66,11 @@ export class ChatPanel {
      * on the immediately-following followSession() — a wasted open that also
      * leaks a stray controller. The followed process has no local controller.
      */
-    static followSession(context: vscode.ExtensionContext, deps: ChatSurfaceDeps, info: SessionInfo): ChatPanel {
+    static followSession(
+        context: vscode.ExtensionContext,
+        deps: ChatSurfaceDeps,
+        info: SessionInfo,
+    ): ChatPanel {
         const existing = [...ChatPanel.panels].find((panel) => panel.sessionId === info.sessionId);
         if (existing) {
             existing.panel.reveal();
@@ -72,19 +84,24 @@ export class ChatPanel {
 
     /** Re-pushes the sessions list to every open panel. */
     static refreshSessions(): void {
-        for (const panel of ChatPanel.panels) { void panel.surface.refreshSessions(); }
+        for (const panel of ChatPanel.panels) {
+            void panel.surface.refreshSessions();
+        }
     }
 
     /** Re-pushes the active session title to each open panel's chat header. */
     static reMetaActive(): void {
-        for (const panel of ChatPanel.panels) { void panel.surface.reMetaActive(); }
+        for (const panel of ChatPanel.panels) {
+            void panel.surface.reMetaActive();
+        }
     }
-
 
     /** Resets only panels currently showing the just-deleted session. */
     static sessionDeleted(sessionId: string): void {
         for (const panel of ChatPanel.panels) {
-            if (panel.sessionId === sessionId) { panel.surface.sessionDeleted(sessionId); }
+            if (panel.sessionId === sessionId) {
+                panel.surface.sessionDeleted(sessionId);
+            }
         }
     }
 
@@ -95,28 +112,45 @@ export class ChatPanel {
             vscode.ViewColumn.Active,
             { enableScripts: true, retainContextWhenHidden: true },
         );
-        this.surface = new ChatSurface(this.panel.webview, deps,
-            (title) => { this.panel.title = title; },
-            (sessionId) => { this.sessionId = sessionId; },
+        this.surface = new ChatSurface(
+            this.panel.webview,
+            deps,
+            (title) => {
+                this.panel.title = title;
+            },
+            (sessionId) => {
+                this.sessionId = sessionId;
+            },
             () => this.panel.reveal(this.panel.viewColumn, true),
-            /* chatOnly */ true);
+            /* chatOnly */ true,
+        );
         ChatPanel.panels.add(this);
-        this.panel.onDidDispose(() => {
-            this.surface.dispose();
-            ChatPanel.panels.delete(this);
-            if (ChatPanel.newChatPanel === this) { ChatPanel.newChatPanel = undefined; }
-        }, undefined, context.subscriptions);
+        this.panel.onDidDispose(
+            () => {
+                this.surface.dispose();
+                ChatPanel.panels.delete(this);
+                if (ChatPanel.newChatPanel === this) {
+                    ChatPanel.newChatPanel = undefined;
+                }
+            },
+            undefined,
+            context.subscriptions,
+        );
     }
 
     openSession(info: SessionInfo): void {
         this.sessionId = info.sessionId;
-        if (ChatPanel.newChatPanel === this) { ChatPanel.newChatPanel = undefined; }
+        if (ChatPanel.newChatPanel === this) {
+            ChatPanel.newChatPanel = undefined;
+        }
         this.surface.openSession(info);
     }
 
     async followSession(info: SessionInfo): Promise<void> {
         this.sessionId = info.sessionId;
-        if (ChatPanel.newChatPanel === this) { ChatPanel.newChatPanel = undefined; }
+        if (ChatPanel.newChatPanel === this) {
+            ChatPanel.newChatPanel = undefined;
+        }
         await this.surface.followSession(info);
     }
 
@@ -124,21 +158,33 @@ export class ChatPanel {
         // Reserve a blank panel before the backend creates its session so a
         // second New Chat never replaces an in-flight conversation.
         this.sessionId = options.resumeSessionId;
-        if (ChatPanel.newChatPanel === this) { ChatPanel.newChatPanel = undefined; }
+        if (ChatPanel.newChatPanel === this) {
+            ChatPanel.newChatPanel = undefined;
+        }
         this.surface.openDialogue(backend, options, title);
     }
 
-    showAgentPicker(agents: import("./protocol").AgentPickerEntry[]): void {
+    showAgentPicker(agents: import("../protocol/chat").AgentPickerEntry[]): void {
         this.surface.showAgentPicker(agents);
     }
 
-    refreshAgentPicker(agents: import("./protocol").AgentPickerEntry[]): void {
+    refreshAgentPicker(agents: import("../protocol/chat").AgentPickerEntry[]): void {
         this.surface.refreshAgentPicker(agents);
     }
 
-    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string; reasoning?: string }, title: string): void {
+    openTerminalDialogue(
+        backend: string,
+        options: SessionStartOptions & {
+            env?: Record<string, string>;
+            tmuxName?: string;
+            reasoning?: string;
+        },
+        title: string,
+    ): void {
         this.sessionId = options.resumeSessionId;
-        if (ChatPanel.newChatPanel === this) { ChatPanel.newChatPanel = undefined; }
+        if (ChatPanel.newChatPanel === this) {
+            ChatPanel.newChatPanel = undefined;
+        }
         this.surface.openTerminalDialogue(backend, options, title);
     }
 }

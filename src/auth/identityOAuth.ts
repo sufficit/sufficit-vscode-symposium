@@ -55,7 +55,12 @@ export function createPkceAuthorization(
     const state = crypto.randomBytes(16).toString("base64url");
     const redirectUri = identityRedirectUri(uriScheme);
     const url = buildPkceAuthorizationUrl({
-        endpoint, clientId, redirectUri, scope, challenge, state,
+        endpoint,
+        clientId,
+        redirectUri,
+        scope,
+        challenge,
+        state,
     });
     return { verifier, state, redirectUri, url };
 }

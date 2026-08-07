@@ -1,4 +1,5 @@
 import { micBtn } from "./dom";
+import type { SpeechRecognitionLike } from "./voiceTypes";
 
 export type VoicePath = "webspeech" | "local" | "none";
 
@@ -30,7 +31,7 @@ let voicePreferences: VoicePreferences = {
 };
 
 export function getVoicePreferences(): VoicePreferences {
-    const prefs = (window as any).voicePreferences;
+    const prefs = window.voicePreferences;
     if (prefs) {
         voicePreferences = {
             language: prefs.language || "pt-BR",
@@ -47,8 +48,10 @@ export function getVoicePreferences(): VoicePreferences {
     return voicePreferences;
 }
 
-export function applyRecognitionPreferences(recognition: any): void {
-    if (!recognition) { return; }
+export function applyRecognitionPreferences(recognition: SpeechRecognitionLike | null): void {
+    if (!recognition) {
+        return;
+    }
     const prefs = getVoicePreferences();
     recognition.lang = prefs.language;
     recognition.continuous = prefs.continuous;
@@ -60,16 +63,27 @@ export function webSpeechWorksHere(prefs: VoicePreferences, webSpeechSupported: 
 }
 
 export function updateMicVisibility(webSpeechSupported: boolean): void {
-    if (!micBtn) { return; }
+    if (!micBtn) {
+        return;
+    }
     const prefs = getVoicePreferences();
-    const canWebSpeech = webSpeechWorksHere(prefs, webSpeechSupported) && (prefs.engine === "webspeech" || (prefs.engine === "auto" && !prefs.localStt));
+    const canWebSpeech =
+        webSpeechWorksHere(prefs, webSpeechSupported) &&
+        (prefs.engine === "webspeech" || (prefs.engine === "auto" && !prefs.localStt));
     const canLocal = prefs.localStt && prefs.engine !== "webspeech";
-    micBtn.style.display = (canWebSpeech || canLocal) ? "inline-flex" : "none";
+    micBtn.style.display = canWebSpeech || canLocal ? "inline-flex" : "none";
 }
 
 export function chooseVoicePath(webSpeechSupported: boolean): VoicePath {
     const prefs = getVoicePreferences();
-    if (prefs.localStt && prefs.engine !== "webspeech") { return "local"; }
-    if (webSpeechWorksHere(prefs, webSpeechSupported) && (prefs.engine === "webspeech" || prefs.engine === "auto")) { return "webspeech"; }
+    if (prefs.localStt && prefs.engine !== "webspeech") {
+        return "local";
+    }
+    if (
+        webSpeechWorksHere(prefs, webSpeechSupported) &&
+        (prefs.engine === "webspeech" || prefs.engine === "auto")
+    ) {
+        return "webspeech";
+    }
     return "none";
 }

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ChatQueue, MessageDedup, recoverPersistedQueue } from "../ui/controllerQueue";
+import { ChatQueue, MessageDedup, recoverPersistedQueue } from "../application/controllerQueue";
 
 test("ChatQueue restores persisted messages and keeps ids monotonic", () => {
     const queue = new ChatQueue();
@@ -44,7 +44,9 @@ test("persisted queue recovery uses client ids for duplicate message text", () =
         { type: "user", clientMessageId: "first", text: "same", attachments: [] },
     ]);
 
-    assert.deepEqual(recovered, [{ id: 2, clientMessageId: "second", text: "same", attachments: [] }]);
+    assert.deepEqual(recovered, [
+        { id: 2, clientMessageId: "second", text: "same", attachments: [] },
+    ]);
 });
 
 // --- Regressão entrega 1B: clientMessageId duplicado é processado uma vez ---
@@ -107,10 +109,10 @@ test("steer would clear the queue, but redirect does not", () => {
     steerQueue.enqueue({ text: "queued", attachments: [] });
     steerQueue.clear();
     steerQueue.push({ text: "steer-msg", attachments: [] });
-    assert.equal(steerQueue.items().length, 1);   // original queue gone
+    assert.equal(steerQueue.items().length, 1); // original queue gone
 
     const redirectQueue = new ChatQueue();
     redirectQueue.enqueue({ text: "queued", attachments: [] });
-    redirectQueue.unshift({ text: "redirect-msg", attachments: [] });   // no clear
-    assert.equal(redirectQueue.items().length, 2);   // original queue kept
+    redirectQueue.unshift({ text: "redirect-msg", attachments: [] }); // no clear
+    assert.equal(redirectQueue.items().length, 2); // original queue kept
 });

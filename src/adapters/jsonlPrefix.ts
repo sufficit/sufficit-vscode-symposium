@@ -12,7 +12,9 @@ export async function readJsonlPrefix(file: string, maxBytes: number): Promise<s
         handle = await fs.promises.open(file, "r");
         const stat = await handle.stat();
         const length = Math.min(Math.max(0, maxBytes), stat.size);
-        if (length === 0) { return ""; }
+        if (length === 0) {
+            return "";
+        }
         const buffer = Buffer.allocUnsafe(length);
         const { bytesRead } = await handle.read(buffer, 0, length, 0);
         let text = buffer.subarray(0, bytesRead).toString("utf8");
@@ -39,7 +41,9 @@ export async function readJsonlTail(file: string, maxBytes: number): Promise<str
         handle = await fs.promises.open(file, "r");
         const stat = await handle.stat();
         const length = Math.min(Math.max(0, maxBytes), stat.size);
-        if (length === 0) { return ""; }
+        if (length === 0) {
+            return "";
+        }
         const position = stat.size - length;
         const buffer = Buffer.allocUnsafe(length);
         const { bytesRead } = await handle.read(buffer, 0, length, position);
@@ -73,19 +77,27 @@ export class JsonlMetadataCache<T> {
 
     async get(file: string, load: () => Promise<T>): Promise<T> {
         let stat: fs.Stats | undefined;
-        try { stat = await fs.promises.stat(file); } catch { /* load handles it */ }
+        try {
+            stat = await fs.promises.stat(file);
+        } catch {
+            /* load handles it */
+        }
         const cached = this.values.get(file);
         if (stat && cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
             return cached.value;
         }
         const current = this.pending.get(file);
-        if (current) { return current; }
-        const promise = load().then((value) => {
-            if (stat) {
-                this.values.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, value });
-            }
-            return value;
-        }).finally(() => this.pending.delete(file));
+        if (current) {
+            return current;
+        }
+        const promise = load()
+            .then((value) => {
+                if (stat) {
+                    this.values.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, value });
+                }
+                return value;
+            })
+            .finally(() => this.pending.delete(file));
         this.pending.set(file, promise);
         return promise;
     }

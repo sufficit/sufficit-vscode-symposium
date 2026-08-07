@@ -18,7 +18,8 @@ import {
     setSessionScopeFilter,
 } from "./state";
 import { t } from "./i18n";
-import { renderSessions, backendLabel } from "./sessions";
+import type { SessionListItem } from "./types";
+import { refreshSessionList, sessionBackendName } from "./sessionBridge";
 
 export function persistSessionFilters() {
     saveState({
@@ -36,41 +37,64 @@ function toggleIn(list: string[], value: string, setter: (v: string[]) => void) 
     const next = list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
     setter(next);
     persistSessionFilters();
-    renderSessions();
+    refreshSessionList();
 }
 
-export function matchesSessionFilters(s: any) {
-    if (sessionBackendFilter.length && !sessionBackendFilter.includes(String(s.backend || ""))) { return false; }
+export function matchesSessionFilters(s: SessionListItem): boolean {
+    if (sessionBackendFilter.length && !sessionBackendFilter.includes(String(s.backend || ""))) {
+        return false;
+    }
     if (sessionStatusFilter.length) {
         const statusTags = new Set<string>();
-        if (s.status === "working") { statusTags.add("working"); }
-        if (s.status === "error") { statusTags.add("error"); }
-        if (s.status === "warning") { statusTags.add("warning"); }
-        if (s.status === "idle" || !s.status) { statusTags.add("idle"); }
-        if (s.deleting) { statusTags.add("deleting"); }
-        if (s.parentId) { statusTags.add("subagent"); }
-        if (!sessionStatusFilter.some((tag) => statusTags.has(tag))) { return false; }
+        if (s.status === "working") {
+            statusTags.add("working");
+        }
+        if (s.status === "error") {
+            statusTags.add("error");
+        }
+        if (s.status === "warning") {
+            statusTags.add("warning");
+        }
+        if (s.status === "idle" || !s.status) {
+            statusTags.add("idle");
+        }
+        if (s.deleting) {
+            statusTags.add("deleting");
+        }
+        if (s.parentId) {
+            statusTags.add("subagent");
+        }
+        if (!sessionStatusFilter.some((tag) => statusTags.has(tag))) {
+            return false;
+        }
     }
     if (sessionScopeFilter.length) {
         const scopeTags = new Set<string>();
         scopeTags.add(s.cwd ? "workspace" : "imported");
         scopeTags.add(s.parentId ? "child" : "top");
-        if (!sessionScopeFilter.some((tag) => scopeTags.has(tag))) { return false; }
+        if (!sessionScopeFilter.some((tag) => scopeTags.has(tag))) {
+            return false;
+        }
     }
     return true;
 }
 
-export function matchesSearch(s: any) {
+export function matchesSearch(s: SessionListItem): boolean {
     const q = (sessionSearchTerm || "").trim().toLowerCase();
-    if (!q) { return true; }
-    const hay = `${s.title || ""} ${s.backendName || backendLabel(s.backend)} ${s.backend || ""}`.toLowerCase();
+    if (!q) {
+        return true;
+    }
+    const hay =
+        `${s.title || ""} ${s.backendName || sessionBackendName(s.backend)} ${s.backend || ""}`.toLowerCase();
     return hay.includes(q);
 }
 
-export function sortSessions(list: any[]) {
+export function sortSessions(list: SessionListItem[]): SessionListItem[] {
     const copy = [...list];
     copy.sort((a, b) => {
-        if (sessionSort === "title-asc") { return String(a.title || "").localeCompare(String(b.title || "")); }
+        if (sessionSort === "title-asc") {
+            return String(a.title || "").localeCompare(String(b.title || ""));
+        }
         const at = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
         const bt = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
         return sessionSort === "updated-asc" ? at - bt : bt - at;
@@ -79,18 +103,29 @@ export function sortSessions(list: any[]) {
 }
 
 function activeFilterCount() {
-    return sessionBackendFilter.length + sessionStatusFilter.length + sessionScopeFilter.length + (sessionSort !== "updated-desc" ? 1 : 0);
+    return (
+        sessionBackendFilter.length +
+        sessionStatusFilter.length +
+        sessionScopeFilter.length +
+        (sessionSort !== "updated-desc" ? 1 : 0)
+    );
 }
 
 export function updateFilterButtonState() {
-    if (!sessionFilterBtn) { return; }
+    if (!sessionFilterBtn) {
+        return;
+    }
     const n = activeFilterCount();
     sessionFilterBtn.classList.toggle("active", n > 0);
-    sessionFilterBtn.title = n > 0 ? t("sessions.filter.activeTooltip", { n }) : t("sessions.filter.tooltip");
+    sessionFilterBtn.title =
+        n > 0 ? t("sessions.filter.activeTooltip", { n }) : t("sessions.filter.tooltip");
     sessionFilterBtn.setAttribute("aria-label", sessionFilterBtn.title);
 }
 
-function appendFilterSection(title: string, items: Array<{ label: string; active: boolean; onToggle: () => void }>) {
+function appendFilterSection(
+    title: string,
+    items: Array<{ label: string; active: boolean; onToggle: () => void }>,
+) {
     const group = document.createElement("div");
     group.className = "sessionFilterGroup";
     const h = document.createElement("div");
@@ -108,7 +143,11 @@ function appendFilterSection(title: string, items: Array<{ label: string; active
         label.textContent = item.label;
         row.appendChild(tick);
         row.appendChild(label);
-        row.onclick = (ev) => { ev.stopPropagation(); item.onToggle(); openSessionsFilterMenu(sessionFilterBtn); };
+        row.onclick = (ev) => {
+            ev.stopPropagation();
+            item.onToggle();
+            openSessionsFilterMenu(sessionFilterBtn);
+        };
         group.appendChild(row);
     }
     ctxMenu.appendChild(group);
@@ -133,7 +172,7 @@ export function openSessionsFilterMenu(anchorEl: HTMLElement) {
         setSessionStatusFilter([]);
         setSessionScopeFilter([]);
         persistSessionFilters();
-        renderSessions();
+        refreshSessionList();
         openSessionsFilterMenu(anchorEl);
     };
     head.appendChild(title);
@@ -141,48 +180,168 @@ export function openSessionsFilterMenu(anchorEl: HTMLElement) {
     ctxMenu.appendChild(head);
 
     appendFilterSection(t("sessions.group.label"), [
-        { label: t("sessions.group.none"), active: sessionGroupBy === "none", onToggle: () => { setSessionGroupBy("none"); persistSessionFilters(); renderSessions(); } },
-        { label: t("sessions.group.projectConversation"), active: sessionGroupBy === "project-conversation", onToggle: () => { setSessionGroupBy("project-conversation"); persistSessionFilters(); renderSessions(); } },
-        { label: t("sessions.group.conversation"), active: sessionGroupBy === "conversation", onToggle: () => { setSessionGroupBy("conversation"); persistSessionFilters(); renderSessions(); } },
-        { label: t("sessions.group.time"), active: sessionGroupBy === "time", onToggle: () => { setSessionGroupBy("time"); persistSessionFilters(); renderSessions(); } },
-        { label: t("sessions.group.project"), active: sessionGroupBy === "project", onToggle: () => { setSessionGroupBy("project"); persistSessionFilters(); renderSessions(); } },
-        { label: t("sessions.group.branch"), active: sessionGroupBy === "branch", onToggle: () => { setSessionGroupBy("branch"); persistSessionFilters(); renderSessions(); } },
+        {
+            label: t("sessions.group.none"),
+            active: sessionGroupBy === "none",
+            onToggle: () => {
+                setSessionGroupBy("none");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
+        {
+            label: t("sessions.group.projectConversation"),
+            active: sessionGroupBy === "project-conversation",
+            onToggle: () => {
+                setSessionGroupBy("project-conversation");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
+        {
+            label: t("sessions.group.conversation"),
+            active: sessionGroupBy === "conversation",
+            onToggle: () => {
+                setSessionGroupBy("conversation");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
+        {
+            label: t("sessions.group.time"),
+            active: sessionGroupBy === "time",
+            onToggle: () => {
+                setSessionGroupBy("time");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
+        {
+            label: t("sessions.group.project"),
+            active: sessionGroupBy === "project",
+            onToggle: () => {
+                setSessionGroupBy("project");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
+        {
+            label: t("sessions.group.branch"),
+            active: sessionGroupBy === "branch",
+            onToggle: () => {
+                setSessionGroupBy("branch");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
     ]);
 
     appendFilterSection(t("sessions.filter.sort"), [
-        { label: t("sessions.sort.newest"), active: sessionSort === "updated-desc", onToggle: () => { setSessionSort("updated-desc"); persistSessionFilters(); renderSessions(); } },
-        { label: t("sessions.sort.oldest"), active: sessionSort === "updated-asc", onToggle: () => { setSessionSort("updated-asc"); persistSessionFilters(); renderSessions(); } },
-        { label: t("sessions.sort.title"), active: sessionSort === "title-asc", onToggle: () => { setSessionSort("title-asc"); persistSessionFilters(); renderSessions(); } },
+        {
+            label: t("sessions.sort.newest"),
+            active: sessionSort === "updated-desc",
+            onToggle: () => {
+                setSessionSort("updated-desc");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
+        {
+            label: t("sessions.sort.oldest"),
+            active: sessionSort === "updated-asc",
+            onToggle: () => {
+                setSessionSort("updated-asc");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
+        {
+            label: t("sessions.sort.title"),
+            active: sessionSort === "title-asc",
+            onToggle: () => {
+                setSessionSort("title-asc");
+                persistSessionFilters();
+                refreshSessionList();
+            },
+        },
     ]);
 
-    const backends = [...new Set(sessions.map((s) => String(s.backend || "")).filter(Boolean))].sort();
+    const backends = [
+        ...new Set(sessions.map((s) => String(s.backend || "")).filter(Boolean)),
+    ].sort();
     if (backends.length) {
-        appendFilterSection(t("sessions.filter.agent"), backends.map((backend) => ({
-            label: sessions.find((s) => String(s.backend || "") === backend)?.backendName || backendLabel(backend),
-            active: sessionBackendFilter.includes(backend),
-            onToggle: () => toggleIn(sessionBackendFilter, backend, setSessionBackendFilter),
-        })));
+        appendFilterSection(
+            t("sessions.filter.agent"),
+            backends.map((backend) => ({
+                label:
+                    sessions.find((s) => String(s.backend || "") === backend)?.backendName ||
+                    sessionBackendName(backend),
+                active: sessionBackendFilter.includes(backend),
+                onToggle: () => toggleIn(sessionBackendFilter, backend, setSessionBackendFilter),
+            })),
+        );
     }
 
     appendFilterSection(t("sessions.filter.status"), [
-        { label: t("sessions.status.working"), active: sessionStatusFilter.includes("working"), onToggle: () => toggleIn(sessionStatusFilter, "working", setSessionStatusFilter) },
-        { label: t("sessions.status.idle"), active: sessionStatusFilter.includes("idle"), onToggle: () => toggleIn(sessionStatusFilter, "idle", setSessionStatusFilter) },
-        { label: t("sessions.status.error"), active: sessionStatusFilter.includes("error"), onToggle: () => toggleIn(sessionStatusFilter, "error", setSessionStatusFilter) },
-        { label: t("sessions.status.warning"), active: sessionStatusFilter.includes("warning"), onToggle: () => toggleIn(sessionStatusFilter, "warning", setSessionStatusFilter) },
-        { label: t("sessions.status.subagent"), active: sessionStatusFilter.includes("subagent"), onToggle: () => toggleIn(sessionStatusFilter, "subagent", setSessionStatusFilter) },
-        { label: t("sessions.status.deleting"), active: sessionStatusFilter.includes("deleting"), onToggle: () => toggleIn(sessionStatusFilter, "deleting", setSessionStatusFilter) },
+        {
+            label: t("sessions.status.working"),
+            active: sessionStatusFilter.includes("working"),
+            onToggle: () => toggleIn(sessionStatusFilter, "working", setSessionStatusFilter),
+        },
+        {
+            label: t("sessions.status.idle"),
+            active: sessionStatusFilter.includes("idle"),
+            onToggle: () => toggleIn(sessionStatusFilter, "idle", setSessionStatusFilter),
+        },
+        {
+            label: t("sessions.status.error"),
+            active: sessionStatusFilter.includes("error"),
+            onToggle: () => toggleIn(sessionStatusFilter, "error", setSessionStatusFilter),
+        },
+        {
+            label: t("sessions.status.warning"),
+            active: sessionStatusFilter.includes("warning"),
+            onToggle: () => toggleIn(sessionStatusFilter, "warning", setSessionStatusFilter),
+        },
+        {
+            label: t("sessions.status.subagent"),
+            active: sessionStatusFilter.includes("subagent"),
+            onToggle: () => toggleIn(sessionStatusFilter, "subagent", setSessionStatusFilter),
+        },
+        {
+            label: t("sessions.status.deleting"),
+            active: sessionStatusFilter.includes("deleting"),
+            onToggle: () => toggleIn(sessionStatusFilter, "deleting", setSessionStatusFilter),
+        },
     ]);
 
     appendFilterSection(t("sessions.filter.scope"), [
-        { label: t("sessions.scope.workspace"), active: sessionScopeFilter.includes("workspace"), onToggle: () => toggleIn(sessionScopeFilter, "workspace", setSessionScopeFilter) },
-        { label: t("sessions.scope.imported"), active: sessionScopeFilter.includes("imported"), onToggle: () => toggleIn(sessionScopeFilter, "imported", setSessionScopeFilter) },
-        { label: t("sessions.scope.top"), active: sessionScopeFilter.includes("top"), onToggle: () => toggleIn(sessionScopeFilter, "top", setSessionScopeFilter) },
-        { label: t("sessions.scope.child"), active: sessionScopeFilter.includes("child"), onToggle: () => toggleIn(sessionScopeFilter, "child", setSessionScopeFilter) },
+        {
+            label: t("sessions.scope.workspace"),
+            active: sessionScopeFilter.includes("workspace"),
+            onToggle: () => toggleIn(sessionScopeFilter, "workspace", setSessionScopeFilter),
+        },
+        {
+            label: t("sessions.scope.imported"),
+            active: sessionScopeFilter.includes("imported"),
+            onToggle: () => toggleIn(sessionScopeFilter, "imported", setSessionScopeFilter),
+        },
+        {
+            label: t("sessions.scope.top"),
+            active: sessionScopeFilter.includes("top"),
+            onToggle: () => toggleIn(sessionScopeFilter, "top", setSessionScopeFilter),
+        },
+        {
+            label: t("sessions.scope.child"),
+            active: sessionScopeFilter.includes("child"),
+            onToggle: () => toggleIn(sessionScopeFilter, "child", setSessionScopeFilter),
+        },
     ]);
 
     ctxMenu.style.display = "block";
     const r = anchorEl.getBoundingClientRect();
-    const w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
+    const w = ctxMenu.offsetWidth,
+        h = ctxMenu.offsetHeight;
     ctxMenu.style.left = Math.max(4, Math.min(r.left, window.innerWidth - w - 4)) + "px";
     ctxMenu.style.top = Math.max(4, Math.min(r.bottom + 4, window.innerHeight - h - 4)) + "px";
 }

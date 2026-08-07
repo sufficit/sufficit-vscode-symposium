@@ -43,7 +43,8 @@ export function getVscodeSpeechStatus(): VscodeSpeechStatus {
     const supported = vscode.env.uiKind !== vscode.UIKind.Web;
     return {
         supported,
-        installed: supported && vscode.extensions.getExtension(VSCODE_SPEECH_EXTENSION_ID) !== undefined,
+        installed:
+            supported && vscode.extensions.getExtension(VSCODE_SPEECH_EXTENSION_ID) !== undefined,
         extensionId: VSCODE_SPEECH_EXTENSION_ID,
     };
 }
@@ -59,17 +60,26 @@ export async function installVscodeSpeechProvider(): Promise<VscodeSpeechStatus>
     if (!before.supported) {
         throw new Error("VS Code Speech is available only in the desktop VS Code UI.");
     }
-    if (before.installed) { return before; }
+    if (before.installed) {
+        return before;
+    }
 
-    await vscode.commands.executeCommand("workbench.extensions.installExtension", VSCODE_SPEECH_EXTENSION_ID);
+    await vscode.commands.executeCommand(
+        "workbench.extensions.installExtension",
+        VSCODE_SPEECH_EXTENSION_ID,
+    );
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
         const status = getVscodeSpeechStatus();
-        if (status.installed) { return status; }
+        if (status.installed) {
+            return status;
+        }
         await delay(250);
     }
 
-    throw new Error(`VS Code did not activate ${VSCODE_SPEECH_EXTENSION_ID}. Reload the window and diagnose again.`);
+    throw new Error(
+        `VS Code did not activate ${VSCODE_SPEECH_EXTENSION_ID}. Reload the window and diagnose again.`,
+    );
 }
 
 /** Start editor dictation. Returns false when a concurrent cancel won the race. */
@@ -86,7 +96,9 @@ export async function startVscodeSpeechDictation(
     try {
         return await pending;
     } finally {
-        if (startInFlight === pending) { startInFlight = undefined; }
+        if (startInFlight === pending) {
+            startInFlight = undefined;
+        }
     }
 }
 
@@ -100,7 +112,9 @@ async function createAndStartSession(
         throw new Error("VS Code Speech is unavailable in web/code-server sessions.");
     }
     if (!status.installed) {
-        throw new Error(`Install and enable ${VSCODE_SPEECH_EXTENSION_ID}, then run the voice diagnostic again.`);
+        throw new Error(
+            `Install and enable ${VSCODE_SPEECH_EXTENSION_ID}, then run the voice diagnostic again.`,
+        );
     }
     if (!storageDir) {
         throw new Error("VS Code Speech bridge has not been initialized.");
@@ -113,7 +127,10 @@ async function createAndStartSession(
     }
 
     await fs.mkdir(storageDir, { recursive: true });
-    const filePath = path.join(storageDir, `dictation-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+    const filePath = path.join(
+        storageDir,
+        `dictation-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`,
+    );
     await fs.writeFile(filePath, "", "utf8");
 
     const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
@@ -144,14 +161,19 @@ async function createAndStartSession(
 
 /** Stop dictation and return the final non-empty transcript written by VS Code. */
 export async function stopVscodeSpeechDictation(): Promise<string> {
-    if (startInFlight) { await startInFlight; }
+    if (startInFlight) {
+        await startInFlight;
+    }
     const session = takeActiveSession();
     if (!session) {
         throw new Error("VS Code Speech dictation is not in progress.");
     }
 
     try {
-        await vscode.window.showTextDocument(session.document, { preview: true, preserveFocus: false });
+        await vscode.window.showTextDocument(session.document, {
+            preview: true,
+            preserveFocus: false,
+        });
         await vscode.commands.executeCommand(STOP_DICTATION_COMMAND);
         await waitForTranscriptToSettle(session.document);
         const transcript = session.document.getText().trim();
@@ -170,7 +192,9 @@ export async function stopVscodeSpeechDictation(): Promise<string> {
 /** Cancel any starting/active dictation without returning provisional text. */
 export async function cancelVscodeSpeechDictation(): Promise<void> {
     cancellationGeneration += 1;
-    if (startInFlight) { await startInFlight.catch(() => undefined); }
+    if (startInFlight) {
+        await startInFlight.catch(() => undefined);
+    }
     const session = takeActiveSession();
     if (session) {
         await stopAndReleaseSession(session);
@@ -185,9 +209,14 @@ function takeActiveSession(): DictationSession | undefined {
 }
 
 async function stopAndReleaseSession(session: DictationSession): Promise<void> {
-    if (activeSession === session) { activeSession = undefined; }
+    if (activeSession === session) {
+        activeSession = undefined;
+    }
     try {
-        await vscode.window.showTextDocument(session.document, { preview: true, preserveFocus: false });
+        await vscode.window.showTextDocument(session.document, {
+            preview: true,
+            preserveFocus: false,
+        });
         await vscode.commands.executeCommand(STOP_DICTATION_COMMAND);
     } catch {
         // The stop command is best-effort; cleanup is still mandatory.
@@ -196,7 +225,9 @@ async function stopAndReleaseSession(session: DictationSession): Promise<void> {
 }
 
 async function releaseSession(session: DictationSession): Promise<void> {
-    if (activeSession === session) { activeSession = undefined; }
+    if (activeSession === session) {
+        activeSession = undefined;
+    }
     // Closing a hidden retained editor would bring its TXT tab to the front.
     // The document is clean after STOP_DICTATION_COMMAND, so deleting the
     // backing file and dropping our reference lets VS Code release it without
@@ -215,7 +246,9 @@ async function waitForTranscriptToSettle(document: vscode.TextDocument): Promise
             previous = current;
             quietSince = Date.now();
         }
-        if (Date.now() - quietSince >= TRANSCRIPT_QUIET_MS) { return; }
+        if (Date.now() - quietSince >= TRANSCRIPT_QUIET_MS) {
+            return;
+        }
     }
 }
 

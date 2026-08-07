@@ -8,14 +8,29 @@ export function friendlyToolDetail(name: string, args: Record<string, unknown>):
     }
     let d = "";
     switch (name) {
-        case "shell": d = s(args.command).split("\n")[0]; break;
-        case "fetch_url": case "open_url": d = s(args.url); break;
-        case "read_file": case "write_file": case "edit_file": case "list_dir": d = s(args.path); break;
-        case "memory_search": case "web_search": d = s(args.query); break;
-        case "memory_save": d = s(args.title); break;
+        case "shell":
+            d = s(args.command).split("\n")[0];
+            break;
+        case "fetch_url":
+        case "open_url":
+            d = s(args.url);
+            break;
+        case "read_file":
+        case "write_file":
+        case "edit_file":
+        case "list_dir":
+            d = s(args.path);
+            break;
+        case "memory_search":
+        case "web_search":
+            d = s(args.query);
+            break;
+        case "memory_save":
+            d = s(args.title);
+            break;
         default: {
             const first = Object.values(args).find((v) => typeof v === "string");
-            d = first ? s(first) : (Object.keys(args).length ? JSON.stringify(args) : "");
+            d = first ? s(first) : Object.keys(args).length ? JSON.stringify(args) : "";
         }
     }
     return d.length > 160 ? d.slice(0, 159) + "…" : d;
@@ -23,7 +38,13 @@ export function friendlyToolDetail(name: string, args: Record<string, unknown>):
 
 /** File path a tool acts on (gives the row a file icon); else undefined. */
 export function toolPath(name: string, args: Record<string, unknown>): string | undefined {
-    if ((name === "read_file" || name === "write_file" || name === "edit_file" || name === "list_dir") && typeof args.path === "string") {
+    if (
+        (name === "read_file" ||
+            name === "write_file" ||
+            name === "edit_file" ||
+            name === "list_dir") &&
+        typeof args.path === "string"
+    ) {
         return args.path;
     }
     return undefined;

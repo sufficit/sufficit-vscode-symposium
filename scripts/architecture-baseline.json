@@ -1,40 +1,5 @@
 {
-  "allowedCycles": [
-    [
-      "adapters/aiTools/defs.ts",
-      "adapters/aiTools/localDefs.ts",
-      "adapters/aiTools/subagentDefs.ts"
-    ],
-    [
-      "adapters/openai/turnRunner.ts",
-      "adapters/openai/turnUsage.ts"
-    ],
-    [
-      "adapters/sessionInfo.ts",
-      "adapters/types.ts"
-    ],
-    [
-      "config/agentFrontmatter.ts",
-      "config/root.ts"
-    ],
-    [
-      "ui/webview/composer.ts",
-      "ui/webview/messages.ts",
-      "ui/webview/panels.ts",
-      "ui/webview/panelsExtras.ts",
-      "ui/webview/voice.ts"
-    ],
-    [
-      "ui/webview/sessionFilters.ts",
-      "ui/webview/sessions.ts"
-    ]
-  ],
-  "allowedBoundaryViolations": [
-    "sessions/runtime.ts -> ui/chatController.ts",
-    "sessions/subagents.ts -> ui/chatController.ts"
-  ],
-  "allowedUnreachableModules": [
-    "adapters/claude/models.ts",
-    "ahp/channelStore.ts"
-  ]
+  "allowedCycles": [],
+  "allowedBoundaryViolations": [],
+  "allowedUnreachableModules": []
 }

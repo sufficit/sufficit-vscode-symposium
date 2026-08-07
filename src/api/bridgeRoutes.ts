@@ -1,5 +1,7 @@
 import type * as http from "http";
 
+export type BridgeRoute = { method: string; parts: string[]; url: URL };
+
 /** VS Code commands the bridge is allowed to run (browser/navigation only). */
 export const ALLOWED_BRIDGE_COMMANDS = new Set([
     "simpleBrowser.show",
@@ -10,7 +12,9 @@ export const ALLOWED_BRIDGE_COMMANDS = new Set([
 
 /** Decodes one URL path segment without letting malformed escapes crash routing. */
 export function decodeBridgePathSegment(value: string | undefined): string | undefined {
-    if (!value) { return undefined; }
+    if (!value) {
+        return undefined;
+    }
     try {
         return decodeURIComponent(value);
     } catch {
@@ -29,7 +33,9 @@ export function readBridgeBody(req: http.IncomingMessage): Promise<Record<string
         let data = "";
         let tooLarge = false;
         req.on("data", (chunk) => {
-            if (tooLarge) { return; }
+            if (tooLarge) {
+                return;
+            }
             data += chunk;
             if (data.length > 1_000_000) {
                 tooLarge = true;
@@ -38,7 +44,9 @@ export function readBridgeBody(req: http.IncomingMessage): Promise<Record<string
             }
         });
         req.on("end", () => {
-            if (tooLarge) { return; }
+            if (tooLarge) {
+                return;
+            }
             try {
                 resolve((data ? JSON.parse(data) : {}) as Record<string, unknown>);
             } catch (error) {

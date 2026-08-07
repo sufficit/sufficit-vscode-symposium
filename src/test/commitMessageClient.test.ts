@@ -13,7 +13,8 @@ function mockFetch(
     calls: FetchCall[] = [],
 ): { fetchImpl: typeof fetch; calls: FetchCall[] } {
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const url =
+            typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
         calls.push({ input: url, init });
         return typeof response === "function" ? response(url, init) : response;
     }) as typeof fetch;
@@ -21,12 +22,19 @@ function mockFetch(
 }
 
 test("uses OpenAI chat completions with tools explicitly disabled", async () => {
-    const mock = mockFetch(new Response(JSON.stringify({
-        choices: [{
-            message: { role: "assistant", content: "fix: repair commit generation" },
-            finish_reason: "stop",
-        }],
-    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const mock = mockFetch(
+        new Response(
+            JSON.stringify({
+                choices: [
+                    {
+                        message: { role: "assistant", content: "fix: repair commit generation" },
+                        finish_reason: "stop",
+                    },
+                ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
 
     const result = await requestCommitMessage(
         "https://ai.example/vscode/secret-token/",
@@ -50,48 +58,84 @@ test("uses OpenAI chat completions with tools explicitly disabled", async () => 
 });
 
 test("accepts structured OpenAI text content", async () => {
-    const mock = mockFetch(new Response(JSON.stringify({
-        choices: [{
-            message: {
-                content: [
-                    { type: "text", text: "feat: add diagnostics" },
-                    { type: "output_text", text: "Report gateway failures clearly." },
+    const mock = mockFetch(
+        new Response(
+            JSON.stringify({
+                choices: [
+                    {
+                        message: {
+                            content: [
+                                { type: "text", text: "feat: add diagnostics" },
+                                { type: "output_text", text: "Report gateway failures clearly." },
+                            ],
+                        },
+                    },
                 ],
-            },
-        }],
-    }), { status: 200 }));
+            }),
+            { status: 200 },
+        ),
+    );
 
-    const result = await requestCommitMessage("https://ai.example/vscode/token", "preset", "s", "u", {
-        fetchImpl: mock.fetchImpl,
-    });
+    const result = await requestCommitMessage(
+        "https://ai.example/vscode/token",
+        "preset",
+        "s",
+        "u",
+        {
+            fetchImpl: mock.fetchImpl,
+        },
+    );
 
     assert.equal(result.message, "feat: add diagnostics\nReport gateway failures clearly.");
 });
 
 test("accepts an Ollama envelope as a compatibility response", async () => {
-    const mock = mockFetch(new Response(JSON.stringify({
-        message: { role: "assistant", content: "chore: keep compatibility" },
-        done: true,
-    }), { status: 200 }));
+    const mock = mockFetch(
+        new Response(
+            JSON.stringify({
+                message: { role: "assistant", content: "chore: keep compatibility" },
+                done: true,
+            }),
+            { status: 200 },
+        ),
+    );
 
-    const result = await requestCommitMessage("https://ai.example/vscode/token", "preset", "s", "u", {
-        fetchImpl: mock.fetchImpl,
-    });
+    const result = await requestCommitMessage(
+        "https://ai.example/vscode/token",
+        "preset",
+        "s",
+        "u",
+        {
+            fetchImpl: mock.fetchImpl,
+        },
+    );
 
     assert.equal(result.message, "chore: keep compatibility");
     assert.equal(result.protocol, "ollama");
 });
 
 test("reports tool calls instead of mislabeling them as an empty message", async () => {
-    const mock = mockFetch(new Response(JSON.stringify({
-        choices: [{
-            message: {
-                content: null,
-                tool_calls: [{ id: "call_1", function: { name: "apply_patch", arguments: "{}" } }],
-            },
-            finish_reason: "tool_calls",
-        }],
-    }), { status: 200 }));
+    const mock = mockFetch(
+        new Response(
+            JSON.stringify({
+                choices: [
+                    {
+                        message: {
+                            content: null,
+                            tool_calls: [
+                                {
+                                    id: "call_1",
+                                    function: { name: "apply_patch", arguments: "{}" },
+                                },
+                            ],
+                        },
+                        finish_reason: "tool_calls",
+                    },
+                ],
+            }),
+            { status: 200 },
+        ),
+    );
 
     await assert.rejects(
         requestCommitMessage("https://ai.example/vscode/token", "preset", "s", "u", {
@@ -107,10 +151,15 @@ test("reports tool calls instead of mislabeling them as an empty message", async
 });
 
 test("reports a successful but incompatible response shape without response content", async () => {
-    const mock = mockFetch(new Response(JSON.stringify({
-        id: "unexpected",
-        result: null,
-    }), { status: 200 }));
+    const mock = mockFetch(
+        new Response(
+            JSON.stringify({
+                id: "unexpected",
+                result: null,
+            }),
+            { status: 200 },
+        ),
+    );
 
     await assert.rejects(
         requestCommitMessage("https://ai.example/vscode/token", "preset", "s", "u", {
@@ -127,9 +176,14 @@ test("reports a successful but incompatible response shape without response cont
 });
 
 test("preserves an HTTP error status and safe provider detail", async () => {
-    const mock = mockFetch(new Response(JSON.stringify({
-        error: { message: "all configured backends are unavailable" },
-    }), { status: 503 }));
+    const mock = mockFetch(
+        new Response(
+            JSON.stringify({
+                error: { message: "all configured backends are unavailable" },
+            }),
+            { status: 503 },
+        ),
+    );
 
     await assert.rejects(
         requestCommitMessage("https://ai.example/vscode/token", "preset", "s", "u", {
@@ -145,7 +199,10 @@ test("preserves an HTTP error status and safe provider detail", async () => {
 });
 
 test("reports invalid and empty JSON responses separately", async () => {
-    for (const [body, expected] of [["not-json", /invalid JSON/], ["", /empty HTTP 200 response/]] as const) {
+    for (const [body, expected] of [
+        ["not-json", /invalid JSON/],
+        ["", /empty HTTP 200 response/],
+    ] as const) {
         const mock = mockFetch(new Response(body, { status: 200 }));
         await assert.rejects(
             requestCommitMessage("https://ai.example/vscode/token", "preset", "s", "u", {
@@ -157,6 +214,9 @@ test("reports invalid and empty JSON responses separately", async () => {
 });
 
 test("cleans common model wrappers from the final message", () => {
-    assert.equal(cleanupCommitMessage("```text\nfix: repair generation\n```"), "fix: repair generation");
-    assert.equal(cleanupCommitMessage("\"feat: add commit support\""), "feat: add commit support");
+    assert.equal(
+        cleanupCommitMessage("```text\nfix: repair generation\n```"),
+        "fix: repair generation",
+    );
+    assert.equal(cleanupCommitMessage('"feat: add commit support"'), "feat: add commit support");
 });

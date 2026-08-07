@@ -14,7 +14,13 @@
  */
 
 /** Local STT engine ids. "webspeech" lives in the webview, listed for the picker only. */
-export type SttEngineId = "auto" | "webspeech" | "vscode-speech" | "whisper-cpp" | "faster-whisper" | "vosk";
+export type SttEngineId =
+    | "auto"
+    | "webspeech"
+    | "vscode-speech"
+    | "whisper-cpp"
+    | "faster-whisper"
+    | "vosk";
 
 /** How a downloaded model is materialised on disk. */
 export type ModelArtifactKind = "file" | "zip";
@@ -65,21 +71,24 @@ export const STT_ENGINES: SttEngineSpec[] = [
     {
         id: "vscode-speech",
         label: "VS Code Speech (installed provider)",
-        description: "Uses the Microsoft VS Code Speech provider already installed in the desktop UI. No model download by Symposium.",
+        description:
+            "Uses the Microsoft VS Code Speech provider already installed in the desktop UI. No model download by Symposium.",
         defaultCommand: "",
         managesModels: false,
     },
     {
         id: "whisper-cpp",
         label: "whisper.cpp (local, CPU)",
-        description: "OpenAI Whisper via the whisper-cli binary. Offline, multilingual, CPU-friendly.",
+        description:
+            "OpenAI Whisper via the whisper-cli binary. Offline, multilingual, CPU-friendly.",
         defaultCommand: "whisper-cli",
         managesModels: true,
     },
     {
         id: "faster-whisper",
         label: "faster-whisper (CTranslate2)",
-        description: "Faster Whisper via whisper-ctranslate2. Models are fetched by the tool itself.",
+        description:
+            "Faster Whisper via whisper-ctranslate2. Models are fetched by the tool itself.",
         defaultCommand: "whisper-ctranslate2",
         managesModels: false,
     },
@@ -97,26 +106,154 @@ const VOSK_BASE = "https://alphacephei.com/vosk/models";
 
 /** whisper.cpp GGML weights. `.en` variants are English-only and a bit sharper for English. */
 export const WHISPER_MODELS: SttModelSpec[] = [
-    { id: "tiny", engine: "whisper-cpp", label: "tiny", size: "75 MB", languages: "99 languages", url: `${WHISPER_BASE}/ggml-tiny.bin`, kind: "file" },
-    { id: "tiny.en", engine: "whisper-cpp", label: "tiny.en", size: "75 MB", languages: "English only", url: `${WHISPER_BASE}/ggml-tiny.en.bin`, kind: "file" },
-    { id: "base", engine: "whisper-cpp", label: "base", size: "142 MB", languages: "99 languages", url: `${WHISPER_BASE}/ggml-base.bin`, kind: "file" },
-    { id: "base.en", engine: "whisper-cpp", label: "base.en", size: "142 MB", languages: "English only", url: `${WHISPER_BASE}/ggml-base.en.bin`, kind: "file" },
-    { id: "small", engine: "whisper-cpp", label: "small", size: "466 MB", languages: "99 languages", url: `${WHISPER_BASE}/ggml-small.bin`, kind: "file" },
-    { id: "small.en", engine: "whisper-cpp", label: "small.en", size: "466 MB", languages: "English only", url: `${WHISPER_BASE}/ggml-small.en.bin`, kind: "file" },
-    { id: "medium", engine: "whisper-cpp", label: "medium", size: "1.5 GB", languages: "99 languages", url: `${WHISPER_BASE}/ggml-medium.bin`, kind: "file" },
-    { id: "medium.en", engine: "whisper-cpp", label: "medium.en", size: "1.5 GB", languages: "English only", url: `${WHISPER_BASE}/ggml-medium.en.bin`, kind: "file" },
-    { id: "large-v3-turbo", engine: "whisper-cpp", label: "large-v3-turbo", size: "1.6 GB", languages: "99 languages", url: `${WHISPER_BASE}/ggml-large-v3-turbo.bin`, kind: "file" },
-    { id: "large-v3", engine: "whisper-cpp", label: "large-v3", size: "3.1 GB", languages: "99 languages", url: `${WHISPER_BASE}/ggml-large-v3.bin`, kind: "file" },
+    {
+        id: "tiny",
+        engine: "whisper-cpp",
+        label: "tiny",
+        size: "75 MB",
+        languages: "99 languages",
+        url: `${WHISPER_BASE}/ggml-tiny.bin`,
+        kind: "file",
+    },
+    {
+        id: "tiny.en",
+        engine: "whisper-cpp",
+        label: "tiny.en",
+        size: "75 MB",
+        languages: "English only",
+        url: `${WHISPER_BASE}/ggml-tiny.en.bin`,
+        kind: "file",
+    },
+    {
+        id: "base",
+        engine: "whisper-cpp",
+        label: "base",
+        size: "142 MB",
+        languages: "99 languages",
+        url: `${WHISPER_BASE}/ggml-base.bin`,
+        kind: "file",
+    },
+    {
+        id: "base.en",
+        engine: "whisper-cpp",
+        label: "base.en",
+        size: "142 MB",
+        languages: "English only",
+        url: `${WHISPER_BASE}/ggml-base.en.bin`,
+        kind: "file",
+    },
+    {
+        id: "small",
+        engine: "whisper-cpp",
+        label: "small",
+        size: "466 MB",
+        languages: "99 languages",
+        url: `${WHISPER_BASE}/ggml-small.bin`,
+        kind: "file",
+    },
+    {
+        id: "small.en",
+        engine: "whisper-cpp",
+        label: "small.en",
+        size: "466 MB",
+        languages: "English only",
+        url: `${WHISPER_BASE}/ggml-small.en.bin`,
+        kind: "file",
+    },
+    {
+        id: "medium",
+        engine: "whisper-cpp",
+        label: "medium",
+        size: "1.5 GB",
+        languages: "99 languages",
+        url: `${WHISPER_BASE}/ggml-medium.bin`,
+        kind: "file",
+    },
+    {
+        id: "medium.en",
+        engine: "whisper-cpp",
+        label: "medium.en",
+        size: "1.5 GB",
+        languages: "English only",
+        url: `${WHISPER_BASE}/ggml-medium.en.bin`,
+        kind: "file",
+    },
+    {
+        id: "large-v3-turbo",
+        engine: "whisper-cpp",
+        label: "large-v3-turbo",
+        size: "1.6 GB",
+        languages: "99 languages",
+        url: `${WHISPER_BASE}/ggml-large-v3-turbo.bin`,
+        kind: "file",
+    },
+    {
+        id: "large-v3",
+        engine: "whisper-cpp",
+        label: "large-v3",
+        size: "3.1 GB",
+        languages: "99 languages",
+        url: `${WHISPER_BASE}/ggml-large-v3.bin`,
+        kind: "file",
+    },
 ];
 
 /** Vosk model packs (zip archives that expand to a model directory). */
 export const VOSK_MODELS: SttModelSpec[] = [
-    { id: "vosk-model-small-pt-0.3", engine: "vosk", label: "Portuguese (small)", size: "31 MB", languages: "pt-BR / pt-PT", url: `${VOSK_BASE}/vosk-model-small-pt-0.3.zip`, kind: "zip" },
-    { id: "vosk-model-small-en-us-0.15", engine: "vosk", label: "English US (small)", size: "40 MB", languages: "en-US", url: `${VOSK_BASE}/vosk-model-small-en-us-0.15.zip`, kind: "zip" },
-    { id: "vosk-model-en-us-0.22", engine: "vosk", label: "English US (large)", size: "1.8 GB", languages: "en-US", url: `${VOSK_BASE}/vosk-model-en-us-0.22.zip`, kind: "zip" },
-    { id: "vosk-model-small-es-0.42", engine: "vosk", label: "Spanish (small)", size: "39 MB", languages: "es", url: `${VOSK_BASE}/vosk-model-small-es-0.42.zip`, kind: "zip" },
-    { id: "vosk-model-small-fr-0.22", engine: "vosk", label: "French (small)", size: "41 MB", languages: "fr", url: `${VOSK_BASE}/vosk-model-small-fr-0.22.zip`, kind: "zip" },
-    { id: "vosk-model-small-de-0.15", engine: "vosk", label: "German (small)", size: "45 MB", languages: "de", url: `${VOSK_BASE}/vosk-model-small-de-0.15.zip`, kind: "zip" },
+    {
+        id: "vosk-model-small-pt-0.3",
+        engine: "vosk",
+        label: "Portuguese (small)",
+        size: "31 MB",
+        languages: "pt-BR / pt-PT",
+        url: `${VOSK_BASE}/vosk-model-small-pt-0.3.zip`,
+        kind: "zip",
+    },
+    {
+        id: "vosk-model-small-en-us-0.15",
+        engine: "vosk",
+        label: "English US (small)",
+        size: "40 MB",
+        languages: "en-US",
+        url: `${VOSK_BASE}/vosk-model-small-en-us-0.15.zip`,
+        kind: "zip",
+    },
+    {
+        id: "vosk-model-en-us-0.22",
+        engine: "vosk",
+        label: "English US (large)",
+        size: "1.8 GB",
+        languages: "en-US",
+        url: `${VOSK_BASE}/vosk-model-en-us-0.22.zip`,
+        kind: "zip",
+    },
+    {
+        id: "vosk-model-small-es-0.42",
+        engine: "vosk",
+        label: "Spanish (small)",
+        size: "39 MB",
+        languages: "es",
+        url: `${VOSK_BASE}/vosk-model-small-es-0.42.zip`,
+        kind: "zip",
+    },
+    {
+        id: "vosk-model-small-fr-0.22",
+        engine: "vosk",
+        label: "French (small)",
+        size: "41 MB",
+        languages: "fr",
+        url: `${VOSK_BASE}/vosk-model-small-fr-0.22.zip`,
+        kind: "zip",
+    },
+    {
+        id: "vosk-model-small-de-0.15",
+        engine: "vosk",
+        label: "German (small)",
+        size: "45 MB",
+        languages: "de",
+        url: `${VOSK_BASE}/vosk-model-small-de-0.15.zip`,
+        kind: "zip",
+    },
 ];
 
 /** Every downloadable model across engines. */

@@ -19,7 +19,10 @@ import * as path from "path";
  */
 
 /** Runs git in a directory; resolves with code+stdout+stderr (never rejects). */
-function git(cwd: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
+function git(
+    cwd: string,
+    args: string[],
+): Promise<{ code: number; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
         execFile("git", args, { cwd, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
             const nodeError = err as { code?: number } | null;
@@ -77,7 +80,9 @@ function deletedSessionsFile(): string {
 function deletedSessionIds(): Set<string> {
     try {
         const value = JSON.parse(fs.readFileSync(deletedSessionsFile(), "utf8"));
-        return new Set(Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : []);
+        return new Set(
+            Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [],
+        );
     } catch {
         return new Set();
     }
@@ -96,14 +101,18 @@ export function isLedgerDeleted(sessionId: string): boolean {
 export function markLedgerDeleted(sessionId: string): void {
     try {
         const ids = deletedSessionIds();
-        if (ids.has(sessionId)) { return; }
+        if (ids.has(sessionId)) {
+            return;
+        }
         ids.add(sessionId);
         fs.mkdirSync(ledgerRoot(), { recursive: true });
         const target = deletedSessionsFile();
         const temp = `${target}.${process.pid}.tmp`;
         fs.writeFileSync(temp, JSON.stringify([...ids]));
         fs.renameSync(temp, target);
-    } catch { /* best-effort: the physical scrub still runs */ }
+    } catch {
+        /* best-effort: the physical scrub still runs */
+    }
 }
 
 /** Absolute path of a session's ledger repo. */
@@ -111,28 +120,43 @@ export function ledgerDir(sessionId: string): string {
     return path.join(ledgerRoot(), sessionId);
 }
 
-function messagesFile(dir: string): string { return path.join(dir, "messages.jsonl"); }
-function requestFile(dir: string): string { return path.join(dir, "request-last.json"); }
-function metaFile(dir: string): string { return path.join(dir, "meta.json"); }
+function messagesFile(dir: string): string {
+    return path.join(dir, "messages.jsonl");
+}
+function requestFile(dir: string): string {
+    return path.join(dir, "request-last.json");
+}
+function metaFile(dir: string): string {
+    return path.join(dir, "meta.json");
+}
 
 /**
  * Ensures the session's ledger repo exists and is initialised with an isolated
  * git identity that never touches the user's config or hooks.
  */
-export async function ensureLedger(sessionId: string, meta: LedgerMeta): Promise<string | undefined> {
-    if (isLedgerDeleted(sessionId)) { return undefined; }
+export async function ensureLedger(
+    sessionId: string,
+    meta: LedgerMeta,
+): Promise<string | undefined> {
+    if (isLedgerDeleted(sessionId)) {
+        return undefined;
+    }
     const dir = ledgerDir(sessionId);
     try {
         fs.mkdirSync(dir, { recursive: true });
         if (!fs.existsSync(path.join(dir, ".git"))) {
             const init = await git(dir, ["-c", "init.defaultBranch=main", "init", "-q"]);
-            if (init.code !== 0) { return undefined; }
+            if (init.code !== 0) {
+                return undefined;
+            }
             // Per-repo identity + total isolation from the user's environment.
             await git(dir, ["config", "user.name", "Symposium"]);
             await git(dir, ["config", "user.email", "symposium@local"]);
             await git(dir, ["config", "commit.gpgsign", "false"]);
             await git(dir, ["config", "core.hooksPath", "/dev/null"]);
-            if (!fs.existsSync(messagesFile(dir))) { fs.writeFileSync(messagesFile(dir), ""); }
+            if (!fs.existsSync(messagesFile(dir))) {
+                fs.writeFileSync(messagesFile(dir), "");
+            }
             writeMetaDir(dir, meta);
         } else {
             writeMetaDir(dir, meta);
@@ -148,11 +172,17 @@ function writeMetaDir(dir: string, meta: LedgerMeta): void {
         const existing = readMetaDir(dir);
         const merged: LedgerMeta = { ...existing, ...meta, updatedAt: new Date().toISOString() };
         fs.writeFileSync(metaFile(dir), JSON.stringify(merged, null, 2));
-    } catch { /* best-effort */ }
+    } catch {
+        /* best-effort */
+    }
 }
 
 function readMetaDir(dir: string): LedgerMeta | undefined {
-    try { return JSON.parse(fs.readFileSync(metaFile(dir), "utf8")); } catch { return undefined; }
+    try {
+        return JSON.parse(fs.readFileSync(metaFile(dir), "utf8"));
+    } catch {
+        return undefined;
+    }
 }
 
 /**
@@ -162,24 +192,41 @@ function readMetaDir(dir: string): LedgerMeta | undefined {
  * `ensureLedger` path. Best-effort: never throws on a missing/corrupt ledger.
  */
 export function writeMeta(sessionId: string, meta: Partial<LedgerMeta>): void {
-    if (isLedgerDeleted(sessionId)) { return; }
-    try { writeMetaDir(ledgerDir(sessionId), { ...(readMetaDir(ledgerDir(sessionId)) ?? { id: sessionId, backend: "" }), ...meta } as LedgerMeta); } catch { /* best-effort */ }
+    if (isLedgerDeleted(sessionId)) {
+        return;
+    }
+    try {
+        writeMetaDir(ledgerDir(sessionId), {
+            ...(readMetaDir(ledgerDir(sessionId)) ?? { id: sessionId, backend: "" }),
+            ...meta,
+        } as LedgerMeta);
+    } catch {
+        /* best-effort */
+    }
 }
 
 /** Reads the session's merged `meta.json`, or undefined when absent/corrupt. */
 export function readMeta(sessionId: string): LedgerMeta | undefined {
-    try { return readMetaDir(ledgerDir(sessionId)); } catch { return undefined; }
+    try {
+        return readMetaDir(ledgerDir(sessionId));
+    } catch {
+        return undefined;
+    }
 }
 
 /** Appends one message to the session ledger (append-only, never rewrites). */
 export function appendMessage(sessionId: string, msg: LedgerMessage): void {
-    if (isLedgerDeleted(sessionId)) { return; }
+    if (isLedgerDeleted(sessionId)) {
+        return;
+    }
     try {
         const dir = ledgerDir(sessionId);
         fs.mkdirSync(dir, { recursive: true });
         const line = JSON.stringify({ ...msg, at: msg.at ?? new Date().toISOString() });
         fs.appendFileSync(messagesFile(dir), line + "\n");
-    } catch { /* best-effort */ }
+    } catch {
+        /* best-effort */
+    }
 }
 
 /**
@@ -192,7 +239,9 @@ export function lastMessageAtMs(sessionId: string): number | undefined {
     try {
         const raw = fs.readFileSync(messagesFile(ledgerDir(sessionId)), "utf8");
         const lines = raw.split("\n").filter((l) => l.trim());
-        if (!lines.length) { return undefined; }
+        if (!lines.length) {
+            return undefined;
+        }
         const last = JSON.parse(lines[lines.length - 1]) as { at?: string };
         const ms = last.at ? Date.parse(last.at) : NaN;
         return Number.isFinite(ms) ? ms : undefined;
@@ -206,7 +255,9 @@ export function lastMessageAtMs(sessionId: string): number | undefined {
  * truth of what the LLM received (system/developer/user + tools + model + effort).
  */
 export function recordRequest(sessionId: string, body: unknown, attemptId?: string): void {
-    if (isLedgerDeleted(sessionId)) { return; }
+    if (isLedgerDeleted(sessionId)) {
+        return;
+    }
     try {
         const dir = ledgerDir(sessionId);
         fs.mkdirSync(dir, { recursive: true });
@@ -215,20 +266,30 @@ export function recordRequest(sessionId: string, body: unknown, attemptId?: stri
         // mutating the gateway payload itself.
         const envelope = attemptId ? { attemptId, body } : body;
         fs.writeFileSync(requestFile(dir), JSON.stringify(envelope, null, 2));
-    } catch { /* best-effort */ }
+    } catch {
+        /* best-effort */
+    }
 }
 
 /** Commits the current ledger state as one immutable snapshot for this turn. */
 export async function commitTurn(sessionId: string, message: string): Promise<void> {
-    if (isLedgerDeleted(sessionId)) { return; }
+    if (isLedgerDeleted(sessionId)) {
+        return;
+    }
     try {
         const dir = ledgerDir(sessionId);
-        if (!fs.existsSync(path.join(dir, ".git"))) { return; }
+        if (!fs.existsSync(path.join(dir, ".git"))) {
+            return;
+        }
         await git(dir, ["add", "-A"]);
         const status = await git(dir, ["status", "--porcelain"]);
-        if (!status.stdout.trim()) { return; } // nothing changed
+        if (!status.stdout.trim()) {
+            return;
+        } // nothing changed
         await git(dir, ["commit", "-q", "--no-verify", "-m", message]);
-    } catch { /* best-effort */ }
+    } catch {
+        /* best-effort */
+    }
 }
 
 /** Reads the full accumulated message history from the ledger (lossless). */
@@ -238,8 +299,14 @@ export function readMessages(sessionId: string): LedgerMessage[] {
         const out: LedgerMessage[] = [];
         for (const line of raw.split("\n")) {
             const t = line.trim();
-            if (!t) { continue; }
-            try { out.push(JSON.parse(t)); } catch { /* skip corrupt line */ }
+            if (!t) {
+                continue;
+            }
+            try {
+                out.push(JSON.parse(t));
+            } catch {
+                /* skip corrupt line */
+            }
         }
         return out;
     } catch {
@@ -249,21 +316,37 @@ export function readMessages(sessionId: string): LedgerMessage[] {
 
 /** True if a ledger repo exists for this session. */
 export function hasLedger(sessionId: string): boolean {
-    if (isLedgerDeleted(sessionId)) { return false; }
-    try { return fs.existsSync(path.join(ledgerDir(sessionId), ".git")); } catch { return false; }
+    if (isLedgerDeleted(sessionId)) {
+        return false;
+    }
+    try {
+        return fs.existsSync(path.join(ledgerDir(sessionId), ".git"));
+    } catch {
+        return false;
+    }
 }
 
 /** The commit timeline (newest first): [{ hash, date, subject }]. */
-export async function timeline(sessionId: string): Promise<{ hash: string; date: string; subject: string }[]> {
+export async function timeline(
+    sessionId: string,
+): Promise<{ hash: string; date: string; subject: string }[]> {
     try {
         const dir = ledgerDir(sessionId);
-        if (!fs.existsSync(path.join(dir, ".git"))) { return []; }
+        if (!fs.existsSync(path.join(dir, ".git"))) {
+            return [];
+        }
         const r = await git(dir, ["log", "--pretty=%H%x1f%aI%x1f%s"]);
-        if (r.code !== 0) { return []; }
-        return r.stdout.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
-            const [hash, date, subject] = l.split("\x1f");
-            return { hash, date, subject };
-        });
+        if (r.code !== 0) {
+            return [];
+        }
+        return r.stdout
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .map((l) => {
+                const [hash, date, subject] = l.split("\x1f");
+                return { hash, date, subject };
+            });
     } catch {
         return [];
     }
@@ -271,7 +354,11 @@ export async function timeline(sessionId: string): Promise<{ hash: string; date:
 
 /** Permanently removes a session's ledger repo (secure delete / scrub). */
 export function removeLedger(sessionId: string): void {
-    try { fs.rmSync(ledgerDir(sessionId), { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+        fs.rmSync(ledgerDir(sessionId), { recursive: true, force: true });
+    } catch {
+        /* ignore */
+    }
 }
 
 /**
@@ -284,12 +371,20 @@ export function listLedgerSessions(): LedgerMeta[] {
     const root = ledgerRoot();
     const deleted = deletedSessionIds();
     let entries: string[];
-    try { entries = fs.readdirSync(root).filter((e) => fs.statSync(path.join(root, e)).isDirectory()); } catch { return []; }
+    try {
+        entries = fs.readdirSync(root).filter((e) => fs.statSync(path.join(root, e)).isDirectory());
+    } catch {
+        return [];
+    }
     const out: LedgerMeta[] = [];
     for (const sessionId of entries) {
-        if (deleted.has(sessionId)) { continue; }
+        if (deleted.has(sessionId)) {
+            continue;
+        }
         const meta = readMetaDir(ledgerDir(sessionId));
-        if (meta) { out.push(meta); }
+        if (meta) {
+            out.push(meta);
+        }
     }
     return out;
 }

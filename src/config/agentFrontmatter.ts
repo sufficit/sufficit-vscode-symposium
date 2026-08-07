@@ -46,7 +46,8 @@ export function readAgentTools(name: string): string[] {
         if (!raw) {
             return [];
         }
-        return raw.replace(/^\[|\]$/g, "")
+        return raw
+            .replace(/^\[|\]$/g, "")
             .split(",")
             .map((t) => t.trim().replace(/^["']|["']$/g, ""))
             .filter(Boolean);
@@ -59,8 +60,12 @@ export function readAgentTools(name: string): string[] {
  * created before this field existed. */
 export function readAgentBootstrap(name: string): boolean {
     try {
-        const v = parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))["bootstrap"];
-        if (v === undefined || v === "") { return true; }
+        const v = parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))[
+            "bootstrap"
+        ];
+        if (v === undefined || v === "") {
+            return true;
+        }
         return v.toLowerCase() !== "false";
     } catch {
         return true;
@@ -69,7 +74,9 @@ export function readAgentBootstrap(name: string): boolean {
 /** Reads an agent-def's `model:` pin (a label or id). Empty when absent. */
 export function readAgentModel(name: string): string {
     try {
-        return parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))["model"] ?? "";
+        return (
+            parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))["model"] ?? ""
+        );
     } catch {
         return "";
     }
@@ -83,7 +90,10 @@ export function readAgentModel(name: string): string {
  */
 export function readAgentBackend(name: string): string {
     try {
-        return parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))["backend"] ?? "";
+        return (
+            parseFrontmatterRaw(fs.readFileSync(resourcePath("agent", name), "utf8"))["backend"] ??
+            ""
+        );
     } catch {
         return "";
     }

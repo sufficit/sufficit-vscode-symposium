@@ -62,7 +62,7 @@ export async function requestCommitMessage(
     try {
         response = await fetchImpl(endpoint, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
             body: JSON.stringify({
                 model,
                 stream: false,
@@ -168,7 +168,8 @@ function extractMessage(
         return {
             message: openAIContent,
             protocol: "openai",
-            finishReason: typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined,
+            finishReason:
+                typeof choice?.finish_reason === "string" ? choice.finish_reason : undefined,
         };
     }
 
@@ -183,14 +184,21 @@ function extractMessage(
 }
 
 function textContent(content: unknown): string {
-    if (typeof content === "string") { return content; }
-    if (!Array.isArray(content)) { return ""; }
+    if (typeof content === "string") {
+        return content;
+    }
+    if (!Array.isArray(content)) {
+        return "";
+    }
 
     return content
         .map((part) => {
-            if (!part || typeof part !== "object") { return ""; }
+            if (!part || typeof part !== "object") {
+                return "";
+            }
             const item = part as { type?: unknown; text?: unknown };
-            return (item.type === "text" || item.type === "output_text") && typeof item.text === "string"
+            return (item.type === "text" || item.type === "output_text") &&
+                typeof item.text === "string"
                 ? item.text
                 : "";
         })
@@ -200,15 +208,20 @@ function textContent(content: unknown): string {
 
 function extractGatewayError(payload: ChatPayload): string {
     const error = payload.error;
-    if (typeof error === "string") { return error.slice(0, 300); }
-    if (!error || typeof error !== "object") { return ""; }
+    if (typeof error === "string") {
+        return error.slice(0, 300);
+    }
+    if (!error || typeof error !== "object") {
+        return "";
+    }
 
     const value = error as { message?: unknown; detail?: unknown };
-    const detail = typeof value.message === "string"
-        ? value.message
-        : typeof value.detail === "string"
-            ? value.detail
-            : "";
+    const detail =
+        typeof value.message === "string"
+            ? value.message
+            : typeof value.detail === "string"
+              ? value.detail
+              : "";
     return detail.slice(0, 300);
 }
 
@@ -231,7 +244,9 @@ function errorMessage(error: unknown): string {
 export function cleanupCommitMessage(raw: string): string {
     let value = raw.trim();
     const fence = value.match(/^```[a-z]*\n([\s\S]*?)\n```$/i);
-    if (fence) { value = fence[1].trim(); }
+    if (fence) {
+        value = fence[1].trim();
+    }
     if (value.length > 1 && value.startsWith('"') && value.endsWith('"')) {
         value = value.slice(1, -1).trim();
     }

@@ -19,7 +19,8 @@ function settings(engine: SttSettings["engine"] = "faster-whisper"): SttSettings
             initialPrompt: "",
         },
         fasterWhisper: {
-            binaryPath: "/home/user/snap/code/250/.local/share/pipx/venvs/whisper-ctranslate2/bin/whisper-ctranslate2",
+            binaryPath:
+                "/home/user/snap/code/250/.local/share/pipx/venvs/whisper-ctranslate2/bin/whisper-ctranslate2",
             model: "base",
             device: "cpu",
             computeType: "int8",

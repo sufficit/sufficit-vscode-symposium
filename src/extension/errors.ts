@@ -1,8 +1,14 @@
 import * as vscode from "vscode";
 
 export function errorDetails(error: unknown): string {
-    if (error instanceof Error) { return error.stack || error.message; }
-    try { return JSON.stringify(error, null, 2); } catch { return String(error); }
+    if (error instanceof Error) {
+        return error.stack || error.message;
+    }
+    try {
+        return JSON.stringify(error, null, 2);
+    } catch {
+        return String(error);
+    }
 }
 
 export async function showErrorWithCopy(message: string, details: string): Promise<void> {

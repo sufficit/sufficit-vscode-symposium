@@ -43,7 +43,8 @@ const CONTEXT_REQUIRED_TOOL = /terminal|task|test|exec/i;
 // And block remaining edit/search/data duplicates (findTextInFiles, replaceString,
 // insertEdit, applyPatch, createFile/Directory, usages, getErrors, fetch) — all
 // have first-class Symposium equivalents (Edit/write_file, Grep, fetch_url).
-const DEFAULT_TOOL_BLOCKLIST = /copilot_memory|^memory$|_memory|memory_|read[_-]?file|write[_-]?file|list[_-]?dir|find[_-]?file|search[_-]?file|grep|glob|workspace[_-]?symbol|text[_-]?search|find[_-]?text|view[_-]?image|read[_-]?image|copilot_\w*image|switch[_-]?agent|sub[_-]?agent|new[_-]?workspace|create[_-]?(file|directory|folder|workspace)|edit[_-]?file|insert[_-]?edit|apply[_-]?patch|replace[_-]?string|(?:^|[_-])usages|get[_-]?errors|copilot_fetch/i;
+const DEFAULT_TOOL_BLOCKLIST =
+    /copilot_memory|^memory$|_memory|memory_|read[_-]?file|write[_-]?file|list[_-]?dir|find[_-]?file|search[_-]?file|grep|glob|workspace[_-]?symbol|text[_-]?search|find[_-]?text|view[_-]?image|read[_-]?image|copilot_\w*image|switch[_-]?agent|sub[_-]?agent|new[_-]?workspace|create[_-]?(file|directory|folder|workspace)|edit[_-]?file|insert[_-]?edit|apply[_-]?patch|replace[_-]?string|(?:^|[_-])usages|get[_-]?errors|copilot_fetch/i;
 
 // Exact names of Symposium's own hub tools (aiTools/defs.ts). "task" is inside
 // CONTEXT_REQUIRED_TOOL (for runTask/tasks.json), so any other extension's LM tool
@@ -54,10 +55,13 @@ const DEFAULT_TOOL_BLOCKLIST = /copilot_memory|^memory$|_memory|memory_|read[_-]
 // bridged impostor (returns plain text, never touches the session task list)
 // instead of Symposium's own task_complete/TaskUpdate — exact-match blocked
 // here so ours is the only tool that can ever own these names.
-const SYMPOSIUM_OWN_TOOL_NAMES = /^(add_task|taskcreate|list_tasks|task_complete|taskupdate|add_guardrail|clear_guardrails)$/i;
+const SYMPOSIUM_OWN_TOOL_NAMES =
+    /^(add_task|taskcreate|list_tasks|task_complete|taskupdate|add_guardrail|clear_guardrails)$/i;
 
 function isBlocked(name: string): boolean {
-    if (DEFAULT_TOOL_BLOCKLIST.test(name) || SYMPOSIUM_OWN_TOOL_NAMES.test(name)) { return true; }
+    if (DEFAULT_TOOL_BLOCKLIST.test(name) || SYMPOSIUM_OWN_TOOL_NAMES.test(name)) {
+        return true;
+    }
     const extra = vscode.workspace
         .getConfiguration("symposium")
         .get<string[]>("lmToolsBlocklist", []);
@@ -83,10 +87,16 @@ const MAX_LM_TOOLS = 48;
 /** Currently selected VS Code LM tools (honoring the `symposium.lmTools` mode). */
 function selectedTools(): readonly vscode.LanguageModelToolInformation[] {
     const m = mode();
-    if (m === "off") { return []; }
+    if (m === "off") {
+        return [];
+    }
     const all = vscode.lm?.tools ?? [];
     const picked = all
-        .filter((t) => !CONTEXT_REQUIRED_TOOL.test(t.name) && !(t.tags ?? []).some((g) => CONTEXT_REQUIRED_TOOL.test(g)))
+        .filter(
+            (t) =>
+                !CONTEXT_REQUIRED_TOOL.test(t.name) &&
+                !(t.tags ?? []).some((g) => CONTEXT_REQUIRED_TOOL.test(g)),
+        )
         .filter((t) => !isBlocked(t.name));
     // De-dupe by sanitized name (collisions would map to one tool anyway) and
     // cap the total to keep the tool payload small for the model.
@@ -94,10 +104,14 @@ function selectedTools(): readonly vscode.LanguageModelToolInformation[] {
     const out: vscode.LanguageModelToolInformation[] = [];
     for (const t of picked) {
         const key = sanitize(t.name);
-        if (seen.has(key)) { continue; }
+        if (seen.has(key)) {
+            continue;
+        }
         seen.add(key);
         out.push(t);
-        if (out.length >= MAX_LM_TOOLS) { break; }
+        if (out.length >= MAX_LM_TOOLS) {
+            break;
+        }
     }
     return out;
 }
@@ -116,7 +130,9 @@ function selectedTools(): readonly vscode.LanguageModelToolInformation[] {
  */
 function nameMap(): Map<string, string> {
     const map = new Map<string, string>();
-    for (const t of selectedTools()) { map.set(sanitize(t.name), t.name); }
+    for (const t of selectedTools()) {
+        map.set(sanitize(t.name), t.name);
+    }
     return map;
 }
 
@@ -133,7 +149,12 @@ export function lmToolDefs(): OpenAITool[] {
 }
 
 /** Same defs in the Responses API (flat) shape. */
-export function lmToolDefsResponses(): { type: "function"; name: string; description: string; parameters: Record<string, unknown> }[] {
+export function lmToolDefsResponses(): {
+    type: "function";
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+}[] {
     return lmToolDefs().map((t) => ({
         type: "function" as const,
         name: t.function.name,
@@ -151,15 +172,18 @@ export function isLmTool(name: string): boolean {
 async function invokeOne(real: string, input: Record<string, unknown>): Promise<string> {
     const cts = new vscode.CancellationTokenSource();
     try {
-        const res = await vscode.lm.invokeTool(
-            real,
-            lmToolInvocationOptions(input),
-            cts.token,
-        );
+        const res = await vscode.lm.invokeTool(real, lmToolInvocationOptions(input), cts.token);
         const parts: string[] = [];
         for (const part of res.content) {
-            if (part instanceof vscode.LanguageModelTextPart) { parts.push(part.value); }
-            else { try { parts.push(JSON.stringify(part)); } catch { /* skip */ } }
+            if (part instanceof vscode.LanguageModelTextPart) {
+                parts.push(part.value);
+            } else {
+                try {
+                    parts.push(JSON.stringify(part));
+                } catch {
+                    /* skip */
+                }
+            }
         }
         return parts.join("\n");
     } finally {
@@ -169,7 +193,11 @@ async function invokeOne(real: string, input: Record<string, unknown>): Promise<
 
 /** Finds a registered tool whose real name matches `re`, if any. */
 function findToolByName(re: RegExp): string | undefined {
-    for (const t of (vscode.lm.tools ?? [])) { if (re.test(t.name)) { return t.name; } }
+    for (const t of vscode.lm.tools ?? []) {
+        if (re.test(t.name)) {
+            return t.name;
+        }
+    }
     return undefined;
 }
 
@@ -196,8 +224,12 @@ export async function invokeLmTool(name: string, input: Record<string, unknown>)
                 if (id) {
                     try {
                         const fetched = await invokeOne(fetchTool, { id });
-                        if (fetched && fetched.trim()) { out += `\n\n[terminal output]\n${fetched}`; }
-                    } catch { /* best effort — output stays as returned */ }
+                        if (fetched && fetched.trim()) {
+                            out += `\n\n[terminal output]\n${fetched}`;
+                        }
+                    } catch {
+                        /* best effort — output stays as returned */
+                    }
                 }
             }
         }
@@ -210,13 +242,21 @@ export async function invokeLmTool(name: string, input: Record<string, unknown>)
 
 /** Best-effort extraction of a terminal/command id from runInTerminal output. */
 function extractTerminalId(text: string): string | undefined {
-    if (!text) { return undefined; }
+    if (!text) {
+        return undefined;
+    }
     // Common shapes: a JSON blob with an id, or "... id: <uuid>".
     try {
         const j = JSON.parse(text);
         const v = j?.id ?? j?.terminalId ?? j?.commandId;
-        if (typeof v === "string" && v) { return v; }
-    } catch { /* not json */ }
-    const m = text.match(/\b([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b/);
+        if (typeof v === "string" && v) {
+            return v;
+        }
+    } catch {
+        /* not json */
+    }
+    const m = text.match(
+        /\b([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\b/,
+    );
     return m ? m[1] : undefined;
 }

@@ -4,8 +4,15 @@ export {};
 declare global {
     /** Acquire the webview ↔ extension messaging bridge (callable once). */
     function acquireVsCodeApi(): {
-        postMessage(message: unknown): void;
+        postMessage(message: import("../../protocol/chat").WebviewToHost): void;
         getState(): unknown;
         setState(state: unknown): void;
     };
+
+    interface Window {
+        voicePreferences?: import("./voicePrefs").VoicePreferences;
+        SpeechRecognition?: import("./voiceTypes").SpeechRecognitionConstructor;
+        webkitSpeechRecognition?: import("./voiceTypes").SpeechRecognitionConstructor;
+        __SYMPOSIUM__?: Record<string, unknown>;
+    }
 }

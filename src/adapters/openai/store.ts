@@ -23,11 +23,17 @@ export function storePath(backend: string, id: string): string {
     return path.join(storeDir(backend), id + ".json");
 }
 export function readStored(backend: string, id: string): StoredSession | undefined {
-    try { return JSON.parse(fs.readFileSync(storePath(backend, id), "utf8")); } catch { return undefined; }
+    try {
+        return JSON.parse(fs.readFileSync(storePath(backend, id), "utf8"));
+    } catch {
+        return undefined;
+    }
 }
 export function writeStored(s: StoredSession): void {
     try {
         fs.mkdirSync(storeDir(s.backend), { recursive: true });
         fs.writeFileSync(storePath(s.backend, s.id), JSON.stringify(s));
-    } catch { /* best-effort persistence */ }
+    } catch {
+        /* best-effort persistence */
+    }
 }

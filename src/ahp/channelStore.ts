@@ -9,8 +9,10 @@ import type {
 type AhpState = Snapshot["state"];
 
 /** Pure state transition for one AHP channel. */
-export type AhpChannelReducer<S extends AhpState, A extends StateAction = StateAction> =
-    (state: S, action: A) => S;
+export type AhpChannelReducer<S extends AhpState, A extends StateAction = StateAction> = (
+    state: S,
+    action: A,
+) => S;
 
 interface RegisteredChannel {
     state: AhpState;
@@ -50,7 +52,9 @@ export class AhpStateStore {
     private readonly channels = new Map<URI, RegisteredChannel>();
     private readonly listeners = new Map<URI, Set<(envelope: ActionEnvelope) => void>>();
     private readonly replayCapacity: number;
-    private readonly onListenerError: ((error: unknown, envelope: ActionEnvelope) => void) | undefined;
+    private readonly onListenerError:
+        | ((error: unknown, envelope: ActionEnvelope) => void)
+        | undefined;
     private readonly replayBuffer: ActionEnvelope[] = [];
     private sequence = 0;
 
@@ -170,8 +174,8 @@ export class AhpStateStore {
         const existing = resources.filter((resource) => this.channels.has(resource));
         const missing = resources.filter((resource) => !this.channels.has(resource));
         const oldestAvailable = this.replayBuffer[0]?.serverSeq ?? this.sequence + 1;
-        const canReplay = lastSeenServerSeq <= this.sequence
-            && lastSeenServerSeq >= oldestAvailable - 1;
+        const canReplay =
+            lastSeenServerSeq <= this.sequence && lastSeenServerSeq >= oldestAvailable - 1;
 
         if (!canReplay) {
             return { type: "snapshot", ...this.snapshots(existing), missing };
@@ -180,8 +184,10 @@ export class AhpStateStore {
         const wanted = new Set(existing);
         return {
             type: "replay",
-            actions: this.replayBuffer.filter((envelope) =>
-                envelope.serverSeq > lastSeenServerSeq && wanted.has(envelope.channel)),
+            actions: this.replayBuffer.filter(
+                (envelope) =>
+                    envelope.serverSeq > lastSeenServerSeq && wanted.has(envelope.channel),
+            ),
             missing,
         };
     }

@@ -1,4 +1,5 @@
-import type { AgentBackend } from "./types";
+/** Backend identifiers are open because custom OpenAI-compatible adapters use their own ids. */
+export type AgentBackend = string;
 
 /** Last terminal outcome that requires attention after a session stops. */
 export type SessionTerminalStatus = "warning" | "error";

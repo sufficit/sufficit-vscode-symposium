@@ -12,16 +12,19 @@ export class SufficitAuthProvider implements vscode.AuthenticationProvider {
     static readonly id = "sufficit";
     static readonly label = "Sufficit";
 
-    private readonly changeEmitter = new vscode.EventEmitter<vscode.AuthenticationProviderAuthenticationSessionsChangeEvent>();
+    private readonly changeEmitter =
+        new vscode.EventEmitter<vscode.AuthenticationProviderAuthenticationSessionsChangeEvent>();
     readonly onDidChangeSessions = this.changeEmitter.event;
 
     constructor(private readonly auth: SufficitAuth) {
         // Bridge SufficitAuth changes to VS Code's session-change event.
         this.auth.onDidChange(async () => {
             const sessions = await this.getSessions();
-            this.changeEmitter.fire(sessions.length
-                ? { added: sessions, removed: [], changed: [] }
-                : { added: [], removed: [], changed: [] });
+            this.changeEmitter.fire(
+                sessions.length
+                    ? { added: sessions, removed: [], changed: [] }
+                    : { added: [], removed: [], changed: [] },
+            );
         });
     }
 
@@ -30,13 +33,18 @@ export class SufficitAuthProvider implements vscode.AuthenticationProvider {
         const provider = new SufficitAuthProvider(auth);
         context.subscriptions.push(
             vscode.authentication.registerAuthenticationProvider(
-                SufficitAuthProvider.id, SufficitAuthProvider.label, provider,
-                { supportsMultipleAccounts: false }),
+                SufficitAuthProvider.id,
+                SufficitAuthProvider.label,
+                provider,
+                { supportsMultipleAccounts: false },
+            ),
         );
         return provider;
     }
 
-    private async toSession(scopes: readonly string[]): Promise<vscode.AuthenticationSession | undefined> {
+    private async toSession(
+        scopes: readonly string[],
+    ): Promise<vscode.AuthenticationSession | undefined> {
         const token = await this.auth.getAccessToken();
         if (!token) {
             return undefined;
@@ -59,7 +67,9 @@ export class SufficitAuthProvider implements vscode.AuthenticationProvider {
         const profile = await this.auth.login();
         const s = await this.toSession(scopes);
         if (!s) {
-            throw new Error(profile === undefined ? "Sufficit login cancelled." : "Sufficit login failed.");
+            throw new Error(
+                profile === undefined ? "Sufficit login cancelled." : "Sufficit login failed.",
+            );
         }
         this.changeEmitter.fire({ added: [s], removed: [], changed: [] });
         return s;

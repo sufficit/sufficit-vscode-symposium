@@ -34,31 +34,38 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
             // stays nested under its main conversation after it's stored to disk
             // (disk rows otherwise lose the in-memory parentId).
             for (const l of liveInfos) {
-                if (l.parentId) { store.setParent(l.sessionId, l.parentId); }
-                if (l.lineageId) { store.setLineage(l.sessionId, l.lineageId); }
+                if (l.parentId) {
+                    store.setParent(l.sessionId, l.parentId);
+                }
+                if (l.lineageId) {
+                    store.setLineage(l.sessionId, l.lineageId);
+                }
             }
-            const disk = store.decorate(await rawSessions(), true)
-                .map((s) => {
-                    const status = runtime.statusFor(s.sessionId) ?? s.terminalStatus;
-                    const adapter = adapterByBackend.get(s.backend);
-                    return { ...s, backendName: adapter?.displayName ?? s.backend, status };
-                });
+            const disk = store.decorate(await rawSessions(), true).map((s) => {
+                const status = runtime.statusFor(s.sessionId) ?? s.terminalStatus;
+                const adapter = adapterByBackend.get(s.backend);
+                return { ...s, backendName: adapter?.displayName ?? s.backend, status };
+            });
             const known = new Set(disk.map((s) => s.sessionId));
             const live = liveInfos
                 .filter((l) => !known.has(l.sessionId) && !l.sessionId.startsWith("new-"))
-                .map((l) => ({
-                    ...l,
-                    backendName: adapterByBackend.get(l.backend)?.displayName ?? l.backend,
-                    updatedAt: new Date(),
-                } as SessionInfo));
+                .map(
+                    (l) =>
+                        ({
+                            ...l,
+                            backendName: adapterByBackend.get(l.backend)?.displayName ?? l.backend,
+                            updatedAt: new Date(),
+                        }) as SessionInfo,
+                );
             return [...live, ...disk].map((s) =>
-                deleting.has(s.sessionId) ? { ...s, deleting: true } : s);
+                deleting.has(s.sessionId) ? { ...s, deleting: true } : s,
+            );
         },
         // Resume must run in the session's original cwd: the CLIs scope sessions per directory.
         cwdFor: (info) =>
             info.cwd && path.isAbsolute(info.cwd)
                 ? info.cwd
-                : vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+                : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()),
         runtime,
         lastActive: {
             // Per-workspace: reopening the window restores the session you were on.
@@ -86,8 +93,10 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
             },
         },
         store: {
-            setParent: (sessionId: string, parentId: string | undefined) => store.setParent(sessionId, parentId),
-            setLineage: (sessionId: string, lineageId: string | undefined) => store.setLineage(sessionId, lineageId),
+            setParent: (sessionId: string, parentId: string | undefined) =>
+                store.setParent(sessionId, parentId),
+            setLineage: (sessionId: string, lineageId: string | undefined) =>
+                store.setLineage(sessionId, lineageId),
         },
     };
 }

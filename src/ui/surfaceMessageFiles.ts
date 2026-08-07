@@ -6,12 +6,15 @@
  * to disk and posts the resulting attachments back to the webview. Behavior is
  * identical to the inline case bodies.
  */
-import type { WebviewToHost } from "./protocol";
+import type { WebviewToHost } from "../protocol/chat";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 import { writeDroppedFile, writePastedImage, attachmentFromUri } from "./chatSurfaceContext";
 
 /** Handles paste-image / drop-file / drop-files / drop-uris. Returns true if handled. */
-export async function handleFileMessage(message: WebviewToHost, d: SurfaceMessagesDeps): Promise<boolean> {
+export async function handleFileMessage(
+    message: WebviewToHost,
+    d: SurfaceMessagesDeps,
+): Promise<boolean> {
     switch (message?.type) {
         case "paste-image": {
             const file = await writePastedImage(message.mime, message.data);
@@ -31,9 +34,14 @@ export async function handleFileMessage(message: WebviewToHost, d: SurfaceMessag
             const payloads = Array.isArray(message.files) ? message.files : [];
             const written = await Promise.all(
                 payloads.map((f: { name?: string; mime?: string; data?: string }) =>
-                    writeDroppedFile(f?.name, f?.mime, f?.data ?? "")),
+                    writeDroppedFile(f?.name, f?.mime, f?.data ?? ""),
+                ),
             );
-            const files = written.filter((f: { path: string; name: string } | undefined): f is { path: string; name: string } => Boolean(f));
+            const files = written.filter(
+                (
+                    f: { path: string; name: string } | undefined,
+                ): f is { path: string; name: string } => Boolean(f),
+            );
             if (files.length) {
                 d.post({ type: "attachments-picked", files });
             }
@@ -41,7 +49,13 @@ export async function handleFileMessage(message: WebviewToHost, d: SurfaceMessag
         }
         case "drop-uris": {
             const files = Array.isArray(message.uris)
-                ? message.uris.map((u: string) => attachmentFromUri(u)).filter((f: { path: string; name: string } | undefined): f is { path: string; name: string } => Boolean(f))
+                ? message.uris
+                      .map((u: string) => attachmentFromUri(u))
+                      .filter(
+                          (
+                              f: { path: string; name: string } | undefined,
+                          ): f is { path: string; name: string } => Boolean(f),
+                      )
                 : [];
             if (files.length) {
                 d.post({ type: "attachments-picked", files });

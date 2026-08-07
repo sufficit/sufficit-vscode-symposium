@@ -80,7 +80,9 @@ function isFresh(oauth: StoredOAuth): boolean {
  * on failure (caller falls back to whatever it had).
  */
 async function refresh(oauth: StoredOAuth): Promise<string | undefined> {
-    if (!oauth.refreshToken) { return undefined; }
+    if (!oauth.refreshToken) {
+        return undefined;
+    }
     const body = new URLSearchParams({
         grant_type: "refresh_token",
         refresh_token: oauth.refreshToken,
@@ -94,19 +96,25 @@ async function refresh(oauth: StoredOAuth): Promise<string | undefined> {
                 headers: { "content-type": "application/x-www-form-urlencoded" },
                 body,
             });
-            if (!res.ok) { continue; }   // try the next endpoint (the legacy URL 404s now)
-            const json = await res.json() as {
+            if (!res.ok) {
+                continue;
+            } // try the next endpoint (the legacy URL 404s now)
+            const json = (await res.json()) as {
                 access_token?: string;
                 refresh_token?: string;
                 expires_in?: number;
                 expires_at?: number;
             };
-            if (!json.access_token) { continue; }
+            if (!json.access_token) {
+                continue;
+            }
             const next: StoredOAuth = {
                 ...oauth,
                 accessToken: json.access_token,
                 refreshToken: json.refresh_token || oauth.refreshToken,
-                expiresAt: json.expires_at ?? (json.expires_in ? Date.now() + json.expires_in * 1000 : oauth.expiresAt),
+                expiresAt:
+                    json.expires_at ??
+                    (json.expires_in ? Date.now() + json.expires_in * 1000 : oauth.expiresAt),
             };
             // Persist the refreshed pair so the CLI (and the next refreshModels)
             // see the same token, mirroring what Claude Code itself does.
@@ -123,7 +131,11 @@ async function refresh(oauth: StoredOAuth): Promise<string | undefined> {
 function persist(oauth: StoredOAuth): void {
     const file = claudeCredentialsPath();
     let current: StoredCredentials = {};
-    try { current = JSON.parse(fs.readFileSync(file, "utf8")) as StoredCredentials; } catch { /* ignore */ }
+    try {
+        current = JSON.parse(fs.readFileSync(file, "utf8")) as StoredCredentials;
+    } catch {
+        /* ignore */
+    }
     current.claudeAiOauth = oauth;
     try {
         fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -140,8 +152,12 @@ function persist(oauth: StoredOAuth): void {
 export async function claudeOAuthToken(): Promise<string> {
     const creds = readCredentials();
     const oauth = creds?.claudeAiOauth;
-    if (!oauth?.accessToken) { return ""; }
-    if (isFresh(oauth)) { return oauth.accessToken; }
+    if (!oauth?.accessToken) {
+        return "";
+    }
+    if (isFresh(oauth)) {
+        return oauth.accessToken;
+    }
     const refreshed = await refresh(oauth);
     return refreshed ?? "";
 }

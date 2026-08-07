@@ -7,7 +7,9 @@ import { BridgePolicy, resolveBridgePolicy } from "./bridgePolicy";
 /** Resolves the effective remote bridge policy from workspace settings. */
 export function configuredBridgePolicy(): BridgePolicy {
     const cfg = vscode.workspace.getConfiguration("symposium.bridge");
-    const workspaceRoots = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+    const workspaceRoots = (vscode.workspace.workspaceFolders ?? []).map(
+        (folder) => folder.uri.fsPath,
+    );
     const joinedHostname = getJoinedHostname();
     const allowedHosts = cfg.get<string[]>("allowedHosts", []);
     return resolveBridgePolicy({
@@ -21,6 +23,15 @@ export function configuredBridgePolicy(): BridgePolicy {
     });
 }
 
-export function isConfiguredBridgeAuthorized(req: http.IncomingMessage, url: URL, token: string): boolean {
-    return isBridgeAuthorized(req.headers.authorization, url, token, req.headers["x-symposium-token"]);
+export function isConfiguredBridgeAuthorized(
+    req: http.IncomingMessage,
+    url: URL,
+    token: string,
+): boolean {
+    return isBridgeAuthorized(
+        req.headers.authorization,
+        url,
+        token,
+        req.headers["x-symposium-token"],
+    );
 }

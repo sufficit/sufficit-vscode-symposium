@@ -74,20 +74,36 @@ function storesRoot(): string {
 function fromStore(id: string): SessionDump | undefined {
     const root = storesRoot();
     let backends: string[] = [];
-    try { backends = fs.readdirSync(root); } catch { return undefined; }
+    try {
+        backends = fs.readdirSync(root);
+    } catch {
+        return undefined;
+    }
     for (const backend of backends) {
         const file = path.join(root, backend, id + ".json");
         if (!fs.existsSync(file)) continue;
         try {
             const s = JSON.parse(fs.readFileSync(file, "utf8")) as {
-                title?: string; messages?: Array<{ role?: string; content?: unknown }>;
+                title?: string;
+                messages?: Array<{ role?: string; content?: unknown }>;
             };
-            const messages: ReadMsg[] = (s.messages ?? []).map((m) => ({
-                role: String(m.role ?? "?"),
-                text: contentToText(m.content),
-            })).filter((m) => m.text);
-            return { id, source: "store", backend, title: s.title, count: messages.length, messages };
-        } catch { /* try next */ }
+            const messages: ReadMsg[] = (s.messages ?? [])
+                .map((m) => ({
+                    role: String(m.role ?? "?"),
+                    text: contentToText(m.content),
+                }))
+                .filter((m) => m.text);
+            return {
+                id,
+                source: "store",
+                backend,
+                title: s.title,
+                count: messages.length,
+                messages,
+            };
+        } catch {
+            /* try next */
+        }
     }
     return undefined;
 }
@@ -95,7 +111,11 @@ function fromStore(id: string): SessionDump | undefined {
 /** Recursively finds the first file whose name contains the id under a root. */
 function findFile(root: string, idFragment: string, depth = 4): string | undefined {
     let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return undefined; }
+    try {
+        entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch {
+        return undefined;
+    }
     for (const e of entries) {
         const full = path.join(root, e.name);
         if (e.isFile() && e.name.includes(idFragment)) return full;
@@ -120,7 +140,11 @@ function fromCliTranscript(id: string): SessionDump | undefined {
             const messages: ReadMsg[] = [];
             for (const line of lines) {
                 let row: Record<string, unknown>;
-                try { row = JSON.parse(line); } catch { continue; }
+                try {
+                    row = JSON.parse(line);
+                } catch {
+                    continue;
+                }
                 // Claude jsonl: { type:"user"|"assistant", message:{ role, content } }
                 const msg = (row.message ?? row) as Record<string, unknown>;
                 const role = String(msg.role ?? row.role ?? row.type ?? "");
@@ -128,8 +152,11 @@ function fromCliTranscript(id: string): SessionDump | undefined {
                 const text = contentToText(msg.content ?? row.content);
                 if (text) messages.push({ role, text });
             }
-            if (messages.length) return { id, source: "cli", backend, count: messages.length, messages };
-        } catch { /* try next */ }
+            if (messages.length)
+                return { id, source: "cli", backend, count: messages.length, messages };
+        } catch {
+            /* try next */
+        }
     }
     return undefined;
 }
@@ -139,8 +166,7 @@ export function readSession(id: string): SessionDump {
     return (
         fromLedger(id) ??
         fromStore(id) ??
-        fromCliTranscript(id) ??
-        { id, source: "none", count: 0, messages: [] }
+        fromCliTranscript(id) ?? { id, source: "none", count: 0, messages: [] }
     );
 }
 
@@ -151,7 +177,8 @@ export function dumpToText(dump: SessionDump, opts?: { maxChars?: number; tail?:
     if (opts?.tail && opts.tail > 0 && msgs.length > opts.tail) {
         msgs = msgs.slice(-opts.tail);
     }
-    const header = `session ${dump.id} · source=${dump.source}` +
+    const header =
+        `session ${dump.id} · source=${dump.source}` +
         (dump.backend ? ` · backend=${dump.backend}` : "") +
         ` · ${dump.count} messages` +
         (msgs.length !== dump.count ? ` (showing last ${msgs.length})` : "");

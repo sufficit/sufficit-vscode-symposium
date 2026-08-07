@@ -10,23 +10,38 @@ const TIME_GAP_THRESHOLDS_MS: Record<string, number> = {
 
 function formatGap(ms: number): string {
     const totalMinutes = Math.floor(ms / 60_000);
-    if (totalMinutes < 60) { return `${Math.max(1, totalMinutes)}m`; }
+    if (totalMinutes < 60) {
+        return `${Math.max(1, totalMinutes)}m`;
+    }
     const totalHours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
-    if (totalHours < 24) { return minutes ? `${totalHours}h${minutes}m` : `${totalHours}h`; }
+    if (totalHours < 24) {
+        return minutes ? `${totalHours}h${minutes}m` : `${totalHours}h`;
+    }
     const days = Math.floor(totalHours / 24);
     const hours = totalHours % 24;
     return hours ? `${days}d${hours}h` : `${days}d`;
 }
 
-export function buildTimeGapNotice(cfg: OpenAIAdapterConfig, sessionId: string): string | undefined {
+export function buildTimeGapNotice(
+    cfg: OpenAIAdapterConfig,
+    sessionId: string,
+): string | undefined {
     const setting = cfg.timeGapNotice ?? "5m";
     const thresholdMs = TIME_GAP_THRESHOLDS_MS[setting];
-    if (!thresholdMs) { return undefined; }
+    if (!thresholdMs) {
+        return undefined;
+    }
     const lastAt = ledger.lastMessageAtMs(sessionId);
-    if (lastAt == null) { return undefined; }
+    if (lastAt == null) {
+        return undefined;
+    }
     const gapMs = Date.now() - lastAt;
-    if (gapMs < thresholdMs) { return undefined; }
-    return `[Time gap: ~${formatGap(gapMs)} since your last message in this conversation — ` +
-        "you may be resuming this on a different day/session; don't assume very recent context is still fresh.]";
+    if (gapMs < thresholdMs) {
+        return undefined;
+    }
+    return (
+        `[Time gap: ~${formatGap(gapMs)} since your last message in this conversation — ` +
+        "you may be resuming this on a different day/session; don't assume very recent context is still fresh.]"
+    );
 }

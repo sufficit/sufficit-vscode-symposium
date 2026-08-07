@@ -1,19 +1,14 @@
-/**
- * Symposium configuration webview client script.
- *
- * Extracted from configHtml.ts to keep the markup module under the file-size
- * budget. Runs inside the webview (CSP allows nonce'd scripts only; see
- * renderConfigHtml). The only host-injected value is the serialized i18n
- * dictionary; every other translation lookup happens client-side via the inlined t().
- */
+// Configuration-webview client, emitted as a nonce-protected script.
 import { configViews } from "./configViews";
 import { configScriptMcp } from "./configScriptMcp";
 import { configScriptOllama } from "./configScriptOllama";
 import { configScriptStt } from "./configScriptStt";
 import { configScriptResources } from "./configScriptResources";
+import { serializeConfigI18n } from "./configScriptI18n";
 export function renderConfigScript(dict: Record<string, string>): string {
-    const i18n = JSON.stringify(dict).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
-    return `
+    const i18n = serializeConfigI18n(dict);
+    return (
+        `
     const vscode = acquireVsCodeApi();
     const I18N = ${i18n};
     function t(k, vars){ let s = (I18N[k] != null ? I18N[k] : k); if (vars) { for (const n in vars) { s = s.split('{' + n + '}').join(String(vars[n])); } } return s; }
@@ -55,7 +50,9 @@ export function renderConfigScript(dict: Record<string, string>): string {
         }
     }
 
-` + configViews + `    function render() {
+` +
+        configViews +
+        `    function render() {
         renderTabs();
         const main = document.getElementById("content");
         const page = (h) => '<div class="page">' + h + "</div>";
@@ -394,6 +391,10 @@ export function renderConfigScript(dict: Record<string, string>): string {
         }
     });
     vscode.postMessage({ type: "ready" });
-`
-    + configScriptMcp + configScriptOllama + configScriptStt + configScriptResources;
+` +
+        configScriptMcp +
+        configScriptOllama +
+        configScriptStt +
+        configScriptResources
+    );
 }

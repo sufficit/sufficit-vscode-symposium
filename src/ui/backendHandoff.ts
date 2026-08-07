@@ -7,8 +7,17 @@ import { AgentAdapter, SessionInfo, SessionStartOptions } from "../adapters/type
  * reads as one continuous dialogue. Works from a live chat controller, a live
  * terminal session, or a stored session. Extracted from ChatSurface.
  */
-interface HandoffController { backend: string; title: string; cwd: string; sessionId: string | undefined }
-interface HandoffTerminal { backend: string; cwd: string; currentSessionId: string | undefined }
+interface HandoffController {
+    backend: string;
+    title: string;
+    cwd: string;
+    sessionId: string | undefined;
+}
+interface HandoffTerminal {
+    backend: string;
+    cwd: string;
+    currentSessionId: string | undefined;
+}
 
 export interface HandoffDeps {
     getAdapter: (backend: string) => AgentAdapter | undefined;
@@ -33,18 +42,33 @@ export class BackendHandoff {
 
     private displayName(backend: string): string {
         const adapter = this.d.getAdapter(backend);
-        return adapter ? (adapter.displayName || backend) : backend;
+        return adapter ? adapter.displayName || backend : backend;
     }
 
-    private openDialogueSeeded(backend: string, cwd: string, title: string, fromName: string, parentId?: string): void {
+    private openDialogueSeeded(
+        backend: string,
+        cwd: string,
+        title: string,
+        fromName: string,
+        parentId?: string,
+    ): void {
         const adapter = this.d.getAdapter(backend);
-        if (!adapter) { return; }
+        if (!adapter) {
+            return;
+        }
         const options: SessionStartOptions = {
-            cwd, model: undefined, permission: undefined, env: {}, parentId,
+            cwd,
+            model: undefined,
+            permission: undefined,
+            env: {},
+            parentId,
             handoff: { sessionId: parentId, backend: fromName, title },
         };
         this.d.openDialogue(backend, options, title);
-        this.d.post({ type: "set-input", text: `Continue the parent conversation${parentId ? ` (${parentId})` : ""}.` });
+        this.d.post({
+            type: "set-input",
+            text: `Continue the parent conversation${parentId ? ` (${parentId})` : ""}.`,
+        });
     }
 
     /**
@@ -53,8 +77,12 @@ export class BackendHandoff {
      */
     switch(backend: string): void {
         const from = this.d.getController();
-        if (!from || from.backend === backend) { return; }
-        if (!this.d.getAdapter(backend)) { return; }
+        if (!from || from.backend === backend) {
+            return;
+        }
+        if (!this.d.getAdapter(backend)) {
+            return;
+        }
         const fromName = this.displayName(from.backend);
         const sourceSessionId = from.sessionId;
         this.openDialogueSeeded(backend, from.cwd, from.title, fromName, sourceSessionId);
@@ -63,10 +91,20 @@ export class BackendHandoff {
     /** Hand a live TERMINAL session off (history read from the CLI transcript). */
     switchTerminal(backend: string): void {
         const term = this.d.getTerminalSession();
-        if (!term) { return; }
-        if (!this.d.getAdapter(backend)) { return; }
+        if (!term) {
+            return;
+        }
+        if (!this.d.getAdapter(backend)) {
+            return;
+        }
         const fromName = this.displayName(term.backend);
-        this.openDialogueSeeded(backend, term.cwd, `From ${term.backend} (terminal)`, fromName, term.currentSessionId);
+        this.openDialogueSeeded(
+            backend,
+            term.cwd,
+            `From ${term.backend} (terminal)`,
+            fromName,
+            term.currentSessionId,
+        );
     }
 
     /**
@@ -76,7 +114,9 @@ export class BackendHandoff {
     async switchSession(sessionId: string): Promise<void> {
         const sessions = await this.d.listSessions();
         const info = sessions.find((s) => s.sessionId === sessionId);
-        if (!info) { return; }
+        if (!info) {
+            return;
+        }
         const fromName = this.displayName(info.backend);
         const cwd = this.d.cwdFor(info);
         const parentId = sessionId; // new session links to the stored one
@@ -86,7 +126,9 @@ export class BackendHandoff {
     async switchToSession(sessionId: string): Promise<void> {
         const sessions = await this.d.listSessions();
         const info = sessions.find((s) => s.sessionId === sessionId);
-        if (!info) { return; }
+        if (!info) {
+            return;
+        }
         const fromName = this.displayName(info.backend);
         const parentId = sessionId; // new session links to the stored one
         this.openDialogueSeeded(info.backend, this.d.cwdFor(info), info.title, fromName, parentId);
@@ -96,13 +138,21 @@ export class BackendHandoff {
      * Hands off a stored session from one backend to another backend.
      * The session is looked up by id, and the transcript is read from storage.
      */
-    async switchFromSession(sessionId: string, sourceBackend: string, targetBackend: string): Promise<void> {
+    async switchFromSession(
+        sessionId: string,
+        sourceBackend: string,
+        targetBackend: string,
+    ): Promise<void> {
         const sessions = await this.d.listSessions();
         const info = sessions.find((s) => s.sessionId === sessionId && s.backend === sourceBackend);
-        if (!info) { return; }
+        if (!info) {
+            return;
+        }
         const fromName = this.displayName(info.backend);
         const targetAdapter = this.d.getAdapter(targetBackend);
-        if (!targetAdapter) { return; }
+        if (!targetAdapter) {
+            return;
+        }
         const parentId = sessionId; // new session links to the stored one
         this.openDialogueSeeded(targetBackend, this.d.cwdFor(info), info.title, fromName, parentId);
     }

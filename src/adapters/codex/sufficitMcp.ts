@@ -17,7 +17,7 @@ export function setCodexSufficitTokenProvider(provider: TokenProvider | undefine
 
 export async function resolveCodexSufficitToken(forceRefresh = false): Promise<string | null> {
     try {
-        return await tokenProvider?.(forceRefresh) ?? null;
+        return (await tokenProvider?.(forceRefresh)) ?? null;
     } catch {
         return null;
     }
@@ -48,7 +48,10 @@ export function buildSufficitMcpSection(enabled: boolean): string {
 }
 
 export function hasSufficitMcpSection(content: string): boolean {
-    return content.replace(/\r\n/g, "\n").split("\n").some((line) => line.trim() === sectionHeader());
+    return content
+        .replace(/\r\n/g, "\n")
+        .split("\n")
+        .some((line) => line.trim() === sectionHeader());
 }
 
 export function upsertSufficitMcpSection(content: string, enabled: boolean): string {
@@ -63,8 +66,11 @@ export function upsertSufficitMcpSection(content: string, enabled: boolean): str
     let end = lines.length;
     for (let i = start + 1; i < lines.length; i += 1) {
         const trimmed = lines[i].trim();
-        if (trimmed.startsWith("[") && trimmed.endsWith("]")
-            && !trimmed.startsWith(`[mcp_servers.${SUFFICIT_MCP_SERVER}.`)) {
+        if (
+            trimmed.startsWith("[") &&
+            trimmed.endsWith("]") &&
+            !trimmed.startsWith(`[mcp_servers.${SUFFICIT_MCP_SERVER}.`)
+        ) {
             end = i;
             break;
         }
@@ -72,7 +78,10 @@ export function upsertSufficitMcpSection(content: string, enabled: boolean): str
     return `${[...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n").trimEnd()}\n`;
 }
 
-export function syncSufficitMcpConfig(token: string | null | undefined, homeDir = os.homedir()): {
+export function syncSufficitMcpConfig(
+    token: string | null | undefined,
+    homeDir = os.homedir(),
+): {
     configPath: string;
     enabled: boolean;
     changed: boolean;
@@ -92,7 +101,10 @@ export function syncSufficitMcpConfig(token: string | null | undefined, homeDir 
     return { configPath, enabled, changed: true };
 }
 
-export async function syncCodexSufficitMcp(forceRefresh = false, homeDir?: string): Promise<{
+export async function syncCodexSufficitMcp(
+    forceRefresh = false,
+    homeDir?: string,
+): Promise<{
     configPath: string;
     enabled: boolean;
     changed: boolean;

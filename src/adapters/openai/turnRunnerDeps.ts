@@ -1,5 +1,5 @@
-import type { SessionStartOptions } from "../types";
-import type { ShellExecutionMode } from "../aiTools";
+import type { AgentEvent, SessionStartOptions } from "../types";
+import type { ShellExecutionMode } from "../aiTools/types";
 import type { HubClient } from "../../sync/hubClient";
 import type { ChatMessage, OpenAIAdapterConfig } from "./types";
 import type { RequestEstimate } from "./requestWindow";
@@ -23,7 +23,7 @@ export interface TurnRunnerDeps {
     getIntentId: () => string | undefined;
     getLastInputTokens: () => number;
     setLastInputTokens: (n: number) => void;
-    emit: (event: Record<string, unknown>) => void;
+    emit: (event: AgentEvent) => void;
     model: () => string;
     label: (id: string) => string;
     contextWindow: () => number;
@@ -38,7 +38,12 @@ export interface TurnRunnerDeps {
     led: (role: string, content: unknown, extra?: Record<string, unknown>) => void;
     maybeAutoCompact: (observedInputTokens?: number) => Promise<boolean>;
     compactOnTasksComplete: () => Promise<void>;
-    requestApproval: (toolId: string, toolName: string, detail: string | undefined, tier: "write" | "destructive") => Promise<boolean>;
+    requestApproval: (
+        toolId: string,
+        toolName: string,
+        detail: string | undefined,
+        tier: "write" | "destructive",
+    ) => Promise<boolean>;
     /** Marks a local pause whose continuation is initiated by the UI, not the model. */
     markPausedForContinuation?: () => void;
 }

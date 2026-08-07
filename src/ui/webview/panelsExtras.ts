@@ -1,80 +1,140 @@
 // Guardrails + queued-messages panels — split out of panels.ts (check:size).
-import { vscode } from "./vscode";
+import { postMessage } from "./vscode";
 import { guardrailsEl, queuedEl } from "./dom";
 import { setQueued } from "./state";
 import { setStatus } from "./status";
 import { svgIcon } from "./icons";
-import { refreshPanels } from "./panels";
+import { refreshPanelLayout } from "./panelBridge";
+import type { GuardrailItem, QueueItem } from "./types";
 
 // ---- guardrails (agent-defined absolute rules, sent every message) ----
 // Live-binding export (mirrors state.ts): panels.ts reads the count for its tab badge.
-export let lastGuardrailItems = [];
-export function renderGuardrails(items) {
+export let lastGuardrailItems: GuardrailItem[] = [];
+export function renderGuardrails(items: GuardrailItem[]): void {
     lastGuardrailItems = items || [];
     guardrailsEl.textContent = "";
-    if (!lastGuardrailItems.length) { guardrailsEl.classList.remove("has"); refreshPanels(); return; }
-    const card = document.createElement("div"); card.className = "grcard";
-    const head = document.createElement("div"); head.className = "grhead";
+    if (!lastGuardrailItems.length) {
+        guardrailsEl.classList.remove("has");
+        refreshPanelLayout();
+        return;
+    }
+    const card = document.createElement("div");
+    card.className = "grcard";
+    const head = document.createElement("div");
+    head.className = "grhead";
     head.appendChild(svgIcon("shield"));
-    const ttl = document.createElement("span"); ttl.className = "grtitle"; ttl.textContent = "Guardrails";
-    ttl.title = "Absolute rules the agent set for this session, sent on every message. The agent adds them; you can remove or clear them.";
-    const cnt = document.createElement("span"); cnt.className = "grcount"; cnt.textContent = String(lastGuardrailItems.length);
-    const clear = document.createElement("button"); clear.className = "grbtn"; clear.title = "Clear all guardrails";
+    const ttl = document.createElement("span");
+    ttl.className = "grtitle";
+    ttl.textContent = "Guardrails";
+    ttl.title =
+        "Absolute rules the agent set for this session, sent on every message. The agent adds them; you can remove or clear them.";
+    const cnt = document.createElement("span");
+    cnt.className = "grcount";
+    cnt.textContent = String(lastGuardrailItems.length);
+    const clear = document.createElement("button");
+    clear.className = "grbtn";
+    clear.title = "Clear all guardrails";
     clear.setAttribute("aria-label", "Clear all guardrails");
     clear.appendChild(svgIcon("trash"));
-    clear.addEventListener("click", (e) => { e.stopPropagation(); if (lastGuardrailItems.length) { vscode.postMessage({ type: "clear-guardrails" }); } });
-    head.appendChild(ttl); head.appendChild(cnt); head.appendChild(clear);
+    clear.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (lastGuardrailItems.length) {
+            postMessage({ type: "clear-guardrails" });
+        }
+    });
+    head.appendChild(ttl);
+    head.appendChild(cnt);
+    head.appendChild(clear);
     card.appendChild(head);
-    const list = document.createElement("div"); list.className = "grlist";
+    const list = document.createElement("div");
+    list.className = "grlist";
     for (const it of lastGuardrailItems) {
-        const row = document.createElement("div"); row.className = "gritem";
-        const txt = document.createElement("span"); txt.className = "grtext"; txt.textContent = it.text; txt.title = it.text;
-        const del = document.createElement("button"); del.className = "grdel"; del.title = "Remove"; del.textContent = "✕";
-        del.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type: "remove-guardrail", id: it.id }); });
-        row.appendChild(txt); row.appendChild(del);
+        const row = document.createElement("div");
+        row.className = "gritem";
+        const txt = document.createElement("span");
+        txt.className = "grtext";
+        txt.textContent = it.text;
+        txt.title = it.text;
+        const del = document.createElement("button");
+        del.className = "grdel";
+        del.title = "Remove";
+        del.textContent = "✕";
+        del.addEventListener("click", (e) => {
+            e.stopPropagation();
+            postMessage({ type: "remove-guardrail", id: it.id });
+        });
+        row.appendChild(txt);
+        row.appendChild(del);
         list.appendChild(row);
     }
     card.appendChild(list);
     guardrailsEl.appendChild(card);
     guardrailsEl.classList.add("has");
-    refreshPanels();
+    refreshPanelLayout();
 }
 
 // ---- queued messages (editable until dispatched) ----
-export function renderQueued(items) {
-    setQueued(items.length);   // keep status text in sync
+export function renderQueued(items: QueueItem[]): void {
+    setQueued(items.length); // keep status text in sync
     queuedEl.textContent = "";
-    if (!items.length) { queuedEl.classList.remove("has"); setStatus(); return; }
+    if (!items.length) {
+        queuedEl.classList.remove("has");
+        setStatus();
+        return;
+    }
     queuedEl.classList.add("has");
-    const head = document.createElement("div"); head.className = "qhead"; head.textContent = "Queued";
+    const head = document.createElement("div");
+    head.className = "qhead";
+    head.textContent = "Queued";
     queuedEl.appendChild(head);
     for (const it of items) {
-        const row = document.createElement("div"); row.className = "qitem";
-        const main = document.createElement("div"); main.className = "qmain";
-        const txt = document.createElement("div"); txt.className = "qtext"; txt.textContent = it.text;
-        txt.title = "Click to edit"; txt.addEventListener("click", () => vscode.postMessage({ type: "queue-edit", id: it.id }));
+        const row = document.createElement("div");
+        row.className = "qitem";
+        const main = document.createElement("div");
+        main.className = "qmain";
+        const txt = document.createElement("div");
+        txt.className = "qtext";
+        txt.textContent = it.text;
+        txt.title = "Click to edit";
+        txt.addEventListener("click", () => postMessage({ type: "queue-edit", id: it.id }));
         main.appendChild(txt);
         if (it.attachments && it.attachments.length) {
-            const atts = document.createElement("div"); atts.className = "qatts";
+            const atts = document.createElement("div");
+            atts.className = "qatts";
             for (const p of it.attachments) {
-                const chip = document.createElement("span"); chip.className = "qatt"; chip.title = p;
-                const ic = svgIcon("file"); ic.classList.add("qattIcon"); chip.appendChild(ic);
+                const chip = document.createElement("span");
+                chip.className = "qatt";
+                chip.title = p;
+                const ic = svgIcon("file");
+                ic.classList.add("qattIcon");
+                chip.appendChild(ic);
                 chip.appendChild(document.createTextNode(String(p).split("/").pop() || p));
                 atts.appendChild(chip);
             }
             main.appendChild(atts);
         }
-        const acts = document.createElement("span"); acts.className = "qacts";
-        const mkBtn = (icon, title, type) => {
-            const b = document.createElement("button"); b.className = "qbtn"; b.title = title;
+        const acts = document.createElement("span");
+        acts.className = "qacts";
+        const mkBtn = (
+            icon: string,
+            title: string,
+            type: "queue-edit" | "queue-promote" | "queue-remove",
+        ): HTMLButtonElement => {
+            const b = document.createElement("button");
+            b.className = "qbtn";
+            b.title = title;
             b.appendChild(svgIcon(icon));
-            b.addEventListener("click", (e) => { e.stopPropagation(); vscode.postMessage({ type, id: it.id }); });
+            b.addEventListener("click", (e) => {
+                e.stopPropagation();
+                postMessage({ type, id: it.id });
+            });
             return b;
         };
         acts.appendChild(mkBtn("edit", "Edit", "queue-edit"));
         acts.appendChild(mkBtn("up", "Send next", "queue-promote"));
         acts.appendChild(mkBtn("x", "Remove", "queue-remove"));
-        row.appendChild(main); row.appendChild(acts);
+        row.appendChild(main);
+        row.appendChild(acts);
         queuedEl.appendChild(row);
     }
     setStatus();

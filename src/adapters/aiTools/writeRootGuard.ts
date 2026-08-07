@@ -21,7 +21,9 @@ import * as path from "node:path";
  * isCwdAllowed.
  */
 export function isPathInAllowedRoots(target: string, roots?: string[]): boolean {
-    if (!roots || roots.length === 0) { return true; }   // no containment configured
+    if (!roots || roots.length === 0) {
+        return true;
+    } // no containment configured
     const t = path.resolve(target);
     return roots.some((root) => {
         const r = path.resolve(root);

@@ -17,15 +17,27 @@ export function ledgerWasCompacted(id: string): boolean {
 export function historyFromLedger(id: string): HistoryMessage[] {
     const out: HistoryMessage[] = [];
     for (const m of ledger.readMessages(id)) {
-        if (m.kind === "compaction") { continue; }
+        if (m.kind === "compaction") {
+            continue;
+        }
         const role = String(m.role ?? "");
         const text = contentText(m.content as string | null | ContentPart[]);
-        if (!text) { continue; }
-        if (role === "user") { out.push({ role: "user", text }); }
-        else if (role === "assistant") { out.push({ role: "assistant", text }); }
-        else if (role === "tool") {
+        if (!text) {
+            continue;
+        }
+        if (role === "user") {
+            out.push({ role: "user", text });
+        } else if (role === "assistant") {
+            out.push({ role: "assistant", text });
+        } else if (role === "tool") {
             const name = String(m.name ?? "tool");
-            out.push({ role: "tool", text: name, toolName: name, detail: String(m.detail ?? ""), result: text });
+            out.push({
+                role: "tool",
+                text: name,
+                toolName: name,
+                detail: String(m.detail ?? ""),
+                result: text,
+            });
         }
         // developer/system scaffolding intentionally skipped
     }

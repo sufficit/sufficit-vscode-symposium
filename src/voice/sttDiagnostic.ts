@@ -44,14 +44,20 @@ export function buildSttDiagnostic(
         // (confirmed: neither onstart nor onerror ever fires) — so on desktop
         // this must NOT report "ready" just because the API is present.
         const worksHere = webSpeechSupported !== false && isWebUi === true;
-        const steps: DiagnoseStep[] = [{
-            id: "webspeech",
-            status: worksHere ? "ok" : "fail",
-            label: tr("config.voice.diagnose.webspeech"),
-            fix: worksHere ? undefined : tr(isWebUi === false
-                ? "config.voice.diagnose.fixWebspeechDesktop"
-                : "config.voice.diagnose.fixWebspeech"),
-        }];
+        const steps: DiagnoseStep[] = [
+            {
+                id: "webspeech",
+                status: worksHere ? "ok" : "fail",
+                label: tr("config.voice.diagnose.webspeech"),
+                fix: worksHere
+                    ? undefined
+                    : tr(
+                          isWebUi === false
+                              ? "config.voice.diagnose.fixWebspeechDesktop"
+                              : "config.voice.diagnose.fixWebspeech",
+                      ),
+            },
+        ];
         return { ready: worksHere, steps };
     }
 
@@ -62,16 +68,25 @@ export function buildSttDiagnostic(
         const supported = isWebUi !== true;
         return {
             ready: available,
-            steps: [{
-                id: "vscode-speech",
-                status: available ? "ok" : "fail",
-                label: tr("config.voice.diagnose.vscodeSpeech"),
-                fix: available ? tr("config.voice.diagnose.vscodeSpeechReady") : tr(supported
-                    ? "config.voice.diagnose.fixVscodeSpeech"
-                    : "config.voice.diagnose.fixVscodeSpeechWeb"),
-                action: !available && supported ? "install-vscode-speech" : undefined,
-                actionLabel: !available && supported ? tr("config.voice.vscodeSpeech.install") : undefined,
-            }],
+            steps: [
+                {
+                    id: "vscode-speech",
+                    status: available ? "ok" : "fail",
+                    label: tr("config.voice.diagnose.vscodeSpeech"),
+                    fix: available
+                        ? tr("config.voice.diagnose.vscodeSpeechReady")
+                        : tr(
+                              supported
+                                  ? "config.voice.diagnose.fixVscodeSpeech"
+                                  : "config.voice.diagnose.fixVscodeSpeechWeb",
+                          ),
+                    action: !available && supported ? "install-vscode-speech" : undefined,
+                    actionLabel:
+                        !available && supported
+                            ? tr("config.voice.vscodeSpeech.install")
+                            : undefined,
+                },
+            ],
         };
     }
     const models = stt.models || [];
@@ -88,21 +103,25 @@ export function buildSttDiagnostic(
 
     const binaryOk = !!avail[engine];
     const binaryPath =
-        engine === "whisper-cpp" ? settings.whisper.binaryPath
-        : engine === "faster-whisper" ? settings.fasterWhisper.binaryPath
-        : settings.vosk.binaryPath;
+        engine === "whisper-cpp"
+            ? settings.whisper.binaryPath
+            : engine === "faster-whisper"
+              ? settings.fasterWhisper.binaryPath
+              : settings.vosk.binaryPath;
     steps.push({
         id: "binary",
         status: binaryOk ? "ok" : "fail",
         label: tr("config.voice.diagnose.binary", { engine }),
-        fix: binaryOk ? undefined : tr("config.voice.diagnose.fixBinary", {
-            engine,
-            path: binaryPath || engine,
-            // The 3 engines are entirely different tools (apt package vs 2
-            // separate pip packages) — a single hardcoded suggestion would be
-            // wrong for whichever engine ISN'T whisper.cpp, so it's picked here.
-            hint: installHintFor(engine),
-        }),
+        fix: binaryOk
+            ? undefined
+            : tr("config.voice.diagnose.fixBinary", {
+                  engine,
+                  path: binaryPath || engine,
+                  // The 3 engines are entirely different tools (apt package vs 2
+                  // separate pip packages) — a single hardcoded suggestion would be
+                  // wrong for whichever engine ISN'T whisper.cpp, so it's picked here.
+                  hint: installHintFor(engine),
+              }),
     });
 
     let modelOk = engine === "faster-whisper";
@@ -110,7 +129,9 @@ export function buildSttDiagnostic(
     if (!modelOk) {
         const forEngine = models.filter((m) => m.engine === engine);
         modelOk = forEngine.some((m) => m.installed);
-        if (!modelOk) { downloadable = forEngine.map((m) => m.id); }
+        if (!modelOk) {
+            downloadable = forEngine.map((m) => m.id);
+        }
     }
     steps.push({
         id: "model",
@@ -123,15 +144,23 @@ export function buildSttDiagnostic(
     return { ready: steps.every((s) => s.status === "ok"), steps };
 }
 
-function resolveDiagnosticLocalEngine(engine: SttEngineId): "whisper-cpp" | "faster-whisper" | "vosk" {
-    if (engine === "faster-whisper" || engine === "vosk") { return engine; }
+function resolveDiagnosticLocalEngine(
+    engine: SttEngineId,
+): "whisper-cpp" | "faster-whisper" | "vosk" {
+    if (engine === "faster-whisper" || engine === "vosk") {
+        return engine;
+    }
     return "whisper-cpp";
 }
 
 /** Install command per engine — same phrasing already used elsewhere for these
  *  tools (sttCatalog.ts descriptions, sttEngines.ts's own runtime error text). */
 function installHintFor(engine: "whisper-cpp" | "faster-whisper" | "vosk"): string {
-    if (engine === "faster-whisper") { return "pip install whisper-ctranslate2"; }
-    if (engine === "vosk") { return "pip install vosk"; }
+    if (engine === "faster-whisper") {
+        return "pip install whisper-ctranslate2";
+    }
+    if (engine === "vosk") {
+        return "pip install vosk";
+    }
     return "sudo apt-get install -y whisper.cpp";
 }

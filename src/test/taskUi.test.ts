@@ -2,18 +2,28 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { TaskItem } from "../sync/tasks";
 import {
-    applyTaskState, completedTaskIds, reconcileTaskStateOverrides, TaskStateOverride,
+    applyTaskState,
+    completedTaskIds,
+    reconcileTaskStateOverrides,
+    TaskStateOverride,
 } from "../sync/taskUi";
 
 const pending = (id: string): TaskItem => ({
-    id, type: "task-anchor", title: id, summary: id, done: false,
+    id,
+    type: "task-anchor",
+    title: id,
+    summary: id,
+    done: false,
 });
 
 test("task completion result exposes exact completed and cascaded ids to the UI", () => {
-    assert.deepEqual(completedTaskIds({
-        ok: true,
-        completed: ["task-current", "task-prior", "task-current", 123],
-    }), ["task-current", "task-prior"]);
+    assert.deepEqual(
+        completedTaskIds({
+            ok: true,
+            completed: ["task-current", "task-prior", "task-current", 123],
+        }),
+        ["task-current", "task-prior"],
+    );
     assert.deepEqual(completedTaskIds({ ok: true, pending: [] }), []);
 });
 

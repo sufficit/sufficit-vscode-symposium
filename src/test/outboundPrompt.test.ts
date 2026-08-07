@@ -10,7 +10,7 @@ import {
     planTrackingPreamble,
     responseLanguageName,
     responseLanguagePreamble,
-} from "../ui/outboundPrompt";
+} from "../application/outboundPrompt";
 
 test("response language is reasserted on every turn, including resumed sessions", () => {
     assert.equal(responseLanguageName("en-US"), "English");
@@ -97,8 +97,12 @@ test("buildOutboundPrompt injects workspace bootstrap once, before the first mes
 
 test("buildOutboundPrompt injects checkpoint discipline once when enabled", () => {
     const first = buildOutboundPrompt({
-        text: "Start", fileAttachments: [],
-        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+        text: "Start",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: false,
+        seedInjected: false,
+        autonomyInjected: false,
         checkpoints: true,
     });
     assert.ok(first.text.includes("[Context window & checkpoints"));
@@ -107,13 +111,20 @@ test("buildOutboundPrompt injects checkpoint discipline once when enabled", () =
     assert.equal(first.text.includes("add_task"), false);
     assert.equal(first.state.checkpointInjected, true);
     const second = buildOutboundPrompt({
-        text: "Next", fileAttachments: [], checkpoints: true, ...first.state,
+        text: "Next",
+        fileAttachments: [],
+        checkpoints: true,
+        ...first.state,
     });
     assert.equal(second.text.includes("[Context window & checkpoints"), false);
     // Disabled → never injected.
     const off = buildOutboundPrompt({
-        text: "x", fileAttachments: [],
-        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+        text: "x",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: false,
+        seedInjected: false,
+        autonomyInjected: false,
     });
     assert.equal(off.text.includes("[Context window & checkpoints"), false);
 });
@@ -121,8 +132,12 @@ test("buildOutboundPrompt injects checkpoint discipline once when enabled", () =
 test("buildOutboundPrompt injects plan/tracking discipline for every backend", () => {
     // Native (CLI with TodoWrite/update_plan) — even without checkpoints/roleAware.
     const native = buildOutboundPrompt({
-        text: "Do it", fileAttachments: [],
-        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+        text: "Do it",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: false,
+        seedInjected: false,
+        autonomyInjected: false,
         trackingMode: "native",
     });
     assert.ok(native.text.includes("[PLAN & TRACK TASKS"));
@@ -132,8 +147,12 @@ test("buildOutboundPrompt injects plan/tracking discipline for every backend", (
 
     // hub-tools (OpenAI w/ Hub) — mentions add_task/task_complete.
     const hub = buildOutboundPrompt({
-        text: "Do it", fileAttachments: [],
-        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+        text: "Do it",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: false,
+        seedInjected: false,
+        autonomyInjected: false,
         trackingMode: "hub-tools",
     });
     assert.ok(hub.text.includes("add_task"));
@@ -143,8 +162,12 @@ test("buildOutboundPrompt injects plan/tracking discipline for every backend", (
     // fence mode is owned by todoInjection, so trackingMode: "fence" is NOT
     // injected here (avoids restating the ```todo instruction twice).
     const fence = buildOutboundPrompt({
-        text: "Do it", fileAttachments: [],
-        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+        text: "Do it",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: false,
+        seedInjected: false,
+        autonomyInjected: false,
         trackingMode: "fence",
     });
     assert.equal(fence.text.includes("[PLAN & TRACK TASKS"), false);
@@ -152,7 +175,10 @@ test("buildOutboundPrompt injects plan/tracking discipline for every backend", (
 
     // Injected once: second call with propagated state does not re-inject.
     const nativeSecond = buildOutboundPrompt({
-        text: "More", fileAttachments: [], trackingMode: "native", ...native.state,
+        text: "More",
+        fileAttachments: [],
+        trackingMode: "native",
+        ...native.state,
     });
     assert.equal(nativeSecond.text.includes("[PLAN & TRACK TASKS"), false);
 });
@@ -173,15 +199,23 @@ test("planTrackingPreamble adapts wording to the backend capability", () => {
 
 test("buildOutboundPrompt prepends resume checkpoint when provided", () => {
     const out = buildOutboundPrompt({
-        text: "continue", fileAttachments: [],
-        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+        text: "continue",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: false,
+        seedInjected: false,
+        autonomyInjected: false,
         resumeCheckpoint: "[Resume] latest checkpoint: did X, next Y",
     });
     assert.ok(out.text.includes("[Resume] latest checkpoint: did X, next Y"));
     // None provided → not present.
     const none = buildOutboundPrompt({
-        text: "continue", fileAttachments: [],
-        policyInjected: true, todoInjected: false, seedInjected: false, autonomyInjected: false,
+        text: "continue",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: false,
+        seedInjected: false,
+        autonomyInjected: false,
     });
     assert.equal(none.text.includes("[Resume]"), false);
 });
@@ -210,7 +244,11 @@ test("buildOutboundPrompt classifies autonomy and attachments", () => {
 });
 
 test("backend handoff injects only a parent reference, not the full transcript", () => {
-    const handoff = { sessionId: "claude-parent-123", backend: "Claude Code", title: "Fix bridge routing" };
+    const handoff = {
+        sessionId: "claude-parent-123",
+        backend: "Claude Code",
+        title: "Fix bridge routing",
+    };
     const out = buildOutboundPrompt({
         text: "Continue the parent conversation.",
         fileAttachments: [],
@@ -226,7 +264,12 @@ test("backend handoff injects only a parent reference, not the full transcript",
     assert.equal(out.text.includes("[user] full historic transcript"), false);
     assert.equal(out.state.handoffInjected, true);
 
-    const second = buildOutboundPrompt({ text: "next turn", fileAttachments: [], ...out.state, handoff });
+    const second = buildOutboundPrompt({
+        text: "next turn",
+        fileAttachments: [],
+        ...out.state,
+        handoff,
+    });
     assert.equal(second.text.includes("claude-parent-123"), false);
 });
 

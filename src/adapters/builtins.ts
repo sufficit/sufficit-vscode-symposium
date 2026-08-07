@@ -17,7 +17,11 @@ interface BuiltinSet {
     commands: SlashCommand[];
 }
 
-const b = (name: string, description: string): SlashCommand => ({ name, description, kind: "builtin" });
+const b = (name: string, description: string): SlashCommand => ({
+    name,
+    description,
+    kind: "builtin",
+});
 
 export const BUILTINS: Record<string, BuiltinSet> = {
     claude: {
@@ -110,7 +114,9 @@ export function builtinCommands(
         return [];
     }
     if (installedVersion && !installedVersion.includes(set.version)) {
-        log?.(`[${backend}] built-in command list pinned to ${set.version} but CLI reports "${installedVersion}" — review src/adapters/builtins.ts`);
+        log?.(
+            `[${backend}] built-in command list pinned to ${set.version} but CLI reports "${installedVersion}" — review src/adapters/builtins.ts`,
+        );
     }
     return set.commands;
 }

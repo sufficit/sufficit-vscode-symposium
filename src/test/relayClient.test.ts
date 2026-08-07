@@ -17,7 +17,9 @@ import {
 // mensagens) e o lifecycle do RelayClient (machineId estável, getPublicUrl).
 
 test("parseRelayMessage parses a valid relay message", () => {
-    const msg = parseRelayMessage('{"type":"registered","publicUrl":"https://ai.sufficit.com.br/symposium/abc"}');
+    const msg = parseRelayMessage(
+        '{"type":"registered","publicUrl":"https://ai.sufficit.com.br/symposium/abc"}',
+    );
     assert.ok(msg);
     assert.equal(msg!.type, "registered");
     assert.equal(msg!.publicUrl, "https://ai.sufficit.com.br/symposium/abc");
@@ -38,7 +40,8 @@ test("parseRelayMessage returns undefined for empty/null input", () => {
 });
 
 test("parseRelayMessage parses a request message (HTTP proxy)", () => {
-    const raw = '{"type":"request","id":"r1","method":"GET","path":"/health","headers":{},"body":""}';
+    const raw =
+        '{"type":"request","id":"r1","method":"GET","path":"/health","headers":{},"body":""}';
     const msg = parseRelayMessage(raw);
     assert.ok(msg);
     assert.equal(msg!.type, "request");
@@ -94,5 +97,5 @@ test("RelayClient.stop is idempotent (no throw on double stop)", () => {
         getToken: () => Promise.resolve(null),
     });
     client.stop();
-    client.stop();   // must not throw
+    client.stop(); // must not throw
 });

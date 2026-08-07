@@ -1,5 +1,6 @@
 node_modules/
 out/
+coverage/
 *.vsix
 .vscode-test/
 .tmp/

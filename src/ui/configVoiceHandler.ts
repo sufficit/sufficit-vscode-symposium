@@ -13,11 +13,22 @@ export type { DiagnoseResult, DiagnoseStep } from "../voice/sttDiagnostic";
  * Handles the voice-setup diagnostic webview messages for a live ConfigPanel.
  * Mirrors the controllerMessageHandler precedent: returns true when handled.
  */
-export async function handleVoiceMessage(_message: ConfigMessage, ctx: ConfigHandlerCtx): Promise<boolean> {
-    if (_message.type === "stt-diagnose") { return handleManualDiagnose(_message, ctx); }
-    if (_message.type === "stt-sufficit-diagnose") { return handleSufficitDiagnose(ctx); }
-    if (_message.type === "stt-sufficit-recover") { return handleSufficitRecover(ctx); }
-    if (_message.type === "stt-install-vscode-speech") { return handleVscodeSpeechInstall(ctx); }
+export async function handleVoiceMessage(
+    _message: ConfigMessage,
+    ctx: ConfigHandlerCtx,
+): Promise<boolean> {
+    if (_message.type === "stt-diagnose") {
+        return handleManualDiagnose(_message, ctx);
+    }
+    if (_message.type === "stt-sufficit-diagnose") {
+        return handleSufficitDiagnose(ctx);
+    }
+    if (_message.type === "stt-sufficit-recover") {
+        return handleSufficitRecover(ctx);
+    }
+    if (_message.type === "stt-install-vscode-speech") {
+        return handleVscodeSpeechInstall(ctx);
+    }
     return false;
 }
 
@@ -29,7 +40,12 @@ async function handleVscodeSpeechInstall(ctx: ConfigHandlerCtx): Promise<boolean
         const stt = await getSttState();
         ctx.post({
             type: "stt-diagnose-result",
-            result: buildSttDiagnostic(stt as unknown as SttDiagnosticSnapshot, ctx.tr, false, false),
+            result: buildSttDiagnostic(
+                stt as unknown as SttDiagnosticSnapshot,
+                ctx.tr,
+                false,
+                false,
+            ),
         });
     } catch (error) {
         ctx.post({
@@ -47,7 +63,10 @@ async function handleVscodeSpeechInstall(ctx: ConfigHandlerCtx): Promise<boolean
  * step-by-step what's missing and offer fixes (download a model, or copy an
  * install command for a missing binary).
  */
-async function handleManualDiagnose(message: ConfigMessage, ctx: ConfigHandlerCtx): Promise<boolean> {
+async function handleManualDiagnose(
+    message: ConfigMessage,
+    ctx: ConfigHandlerCtx,
+): Promise<boolean> {
     const stt = await getSttState().catch(() => null);
     if (!stt) {
         ctx.post({ type: "stt-diagnose-result", result: { ready: false, steps: [] } });
@@ -86,7 +105,11 @@ async function handleSufficitDiagnose(ctx: ConfigHandlerCtx): Promise<boolean> {
         return true;
     }
     ctx.api.sessions.send(key, SUFFICIT_VOICE_BENCHMARK_PROMPT, "send");
-    void ctx.chatView.openDialogue("openai", { cwd, resumeSessionId: key }, "Voice engine benchmark");
+    void ctx.chatView.openDialogue(
+        "openai",
+        { cwd, resumeSessionId: key },
+        "Voice engine benchmark",
+    );
     ctx.post({ type: "stt-sufficit-diagnose-result", ok: true });
     return true;
 }
@@ -114,7 +137,16 @@ async function handleSufficitRecover(ctx: ConfigHandlerCtx): Promise<boolean> {
         return true;
     }
     ctx.api.sessions.send(key, prompt, "send");
-    void ctx.chatView.openDialogue("openai", { cwd, resumeSessionId: key }, `Voice engine recovery: ${target.engine}`);
-    ctx.post({ type: "stt-sufficit-recover-result", ok: true, engine: target.engine, model: target.model });
+    void ctx.chatView.openDialogue(
+        "openai",
+        { cwd, resumeSessionId: key },
+        `Voice engine recovery: ${target.engine}`,
+    );
+    ctx.post({
+        type: "stt-sufficit-recover-result",
+        ok: true,
+        engine: target.engine,
+        model: target.model,
+    });
     return true;
 }

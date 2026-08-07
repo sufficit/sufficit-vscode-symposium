@@ -12,9 +12,14 @@ export interface ClaudeAdapterConfig {
 /** Maps Symposium permission modes to native Claude Code CLI flags. */
 export function mapUnifiedToClaudeFlag(mode: string): { flag: string; unenforced: boolean } {
     switch (mode) {
-        case "admin": return { flag: "bypassPermissions", unenforced: false };
-        case "plan": return { flag: "plan", unenforced: false };
-        case "manager": case "user": return { flag: "bypassPermissions", unenforced: true };
-        default: return { flag: mode, unenforced: false };
+        case "admin":
+            return { flag: "bypassPermissions", unenforced: false };
+        case "plan":
+            return { flag: "plan", unenforced: false };
+        case "manager":
+        case "user":
+            return { flag: "bypassPermissions", unenforced: true };
+        default:
+            return { flag: mode, unenforced: false };
     }
 }

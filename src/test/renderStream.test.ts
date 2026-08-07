@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RenderStream } from "../ui/renderStream";
+import { RenderStream } from "../application/renderStream";
 
 test("RenderStream keeps editor and sidebar sinks synchronized", () => {
     const stream = new RenderStream();

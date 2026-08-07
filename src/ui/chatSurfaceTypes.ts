@@ -12,7 +12,9 @@ export interface ChatSurfaceDeps {
         set(value: { backend: string; sessionId: string } | undefined): void;
     };
     account?: {
-        get(force?: boolean): Promise<{ name?: string; email?: string; picture?: string } | undefined>;
+        get(
+            force?: boolean,
+        ): Promise<{ name?: string; email?: string; picture?: string } | undefined>;
         onDidChange: vscode.Event<void>;
     };
     modelPrefs: {

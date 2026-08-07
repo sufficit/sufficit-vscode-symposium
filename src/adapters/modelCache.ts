@@ -32,7 +32,9 @@ function readStore(): CacheStore {
 function writeStore(store: CacheStore): void {
     try {
         const dir = path.dirname(CACHE_FILE);
-        if (!fs.existsSync(dir)) { fs.mkdirSync(dir, { recursive: true }); }
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
         fs.writeFileSync(CACHE_FILE, JSON.stringify(store, null, 2), "utf8");
     } catch {
         // non-fatal: operate without persistence

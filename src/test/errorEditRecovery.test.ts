@@ -8,7 +8,9 @@ function element(text: string, meta = false): FailedAttemptElement & { removed: 
         textContent: text,
         classList: { contains: (name) => meta && name === "meta" },
         removed: false,
-        remove() { this.removed = true; },
+        remove() {
+            this.removed = true;
+        },
     };
 }
 

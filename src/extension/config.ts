@@ -58,11 +58,16 @@ export function codexConfig(): CodexAdapterConfig {
         sandboxMode: config.get<string>("sandboxMode", "workspace-write"),
         workspaceDirs: vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [],
         playwright: config.get<boolean>("playwright", false),
-        mcpServers: config.get<Record<string, { command?: string; args?: string[] }>>("mcpServers", {}),
+        mcpServers: config.get<Record<string, { command?: string; args?: string[] }>>(
+            "mcpServers",
+            {},
+        ),
     };
 }
 
-export function symposiumClientInfo(context: vscode.ExtensionContext): NonNullable<OpenAIAdapterConfig["clientInfo"]> {
+export function symposiumClientInfo(
+    context: vscode.ExtensionContext,
+): NonNullable<OpenAIAdapterConfig["clientInfo"]> {
     const pkg = context.extension.packageJSON as { version?: string };
     const type = os.type();
     const release = os.release();
@@ -93,7 +98,9 @@ export function openaiConfig(context: vscode.ExtensionContext): OpenAIAdapterCon
         // to satisfy the gateway's AIUser policy). Takes precedence over the
         // login token, which may lack the AI claims — guarantees /models + chat
         // work. When neither is set, the login token is used as the fallback.
-        apiKey: config.get<string>("apiKey", "") || vscode.workspace.getConfiguration("symposium.hub").get<string>("token", ""),
+        apiKey:
+            config.get<string>("apiKey", "") ||
+            vscode.workspace.getConfiguration("symposium.hub").get<string>("token", ""),
         maxToolHops: config.get<number>("maxToolHops", 50),
         noProgressStop: config.get<number>("noProgressStop", 0),
         autoCompactAt: config.get<number>("autoCompactAt", 0.8),
@@ -122,7 +129,9 @@ const BUILTIN_MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "openai"])
 
 /** Reads the user's extra OpenAI-compatible adapters (symposium.adapters). */
 export function customAdapterDefs(): CustomAdapterDef[] {
-    const arr = vscode.workspace.getConfiguration("symposium").get<CustomAdapterDef[]>("adapters", []);
+    const arr = vscode.workspace
+        .getConfiguration("symposium")
+        .get<CustomAdapterDef[]>("adapters", []);
     return Array.isArray(arr) ? arr.filter((a) => a && a.id && a.baseUrl) : [];
 }
 
@@ -145,7 +154,8 @@ export async function setConfiguredModel(
     target: vscode.ConfigurationTarget,
 ): Promise<void> {
     if (BUILTIN_MODEL_BACKENDS.has(backend)) {
-        await vscode.workspace.getConfiguration(`symposium.${backend}`)
+        await vscode.workspace
+            .getConfiguration(`symposium.${backend}`)
             .update("model", model || undefined, target);
         return;
     }
@@ -153,13 +163,21 @@ export async function setConfiguredModel(
     const config = vscode.workspace.getConfiguration("symposium");
     const defs = config.get<CustomAdapterDef[]>("adapters", []);
     const index = Array.isArray(defs) ? defs.findIndex((entry) => entry?.id === backend) : -1;
-    if (index < 0) { return; }
+    if (index < 0) {
+        return;
+    }
 
     const next = defs.map((entry, i) => {
-        if (i !== index) { return entry; }
+        if (i !== index) {
+            return entry;
+        }
         const updated = { ...entry };
         const value = model?.trim();
-        if (value) { updated.model = value; } else { delete updated.model; }
+        if (value) {
+            updated.model = value;
+        } else {
+            delete updated.model;
+        }
         return updated;
     });
     await config.update("adapters", next, target);
@@ -173,7 +191,9 @@ export async function setConfiguredModel(
  */
 export function adapterLabel(def: { name?: string; baseUrl?: string; id?: string }): string {
     const name = def.name?.trim();
-    if (name) { return name; }
+    if (name) {
+        return name;
+    }
     const fromUrl = labelFromBaseUrl(def.baseUrl);
     return fromUrl || def.id || "endpoint";
 }
@@ -181,7 +201,9 @@ export function adapterLabel(def: { name?: string; baseUrl?: string; id?: string
 /** "https://ai.sufficit.com.br/openai/v1" → "ai.sufficit.com.br/openai/v1". */
 export function labelFromBaseUrl(baseUrl?: string): string {
     const raw = baseUrl?.trim();
-    if (!raw) { return ""; }
+    if (!raw) {
+        return "";
+    }
     try {
         const u = new URL(raw);
         const p = u.pathname.replace(/\/+$/, "");
@@ -201,35 +223,61 @@ export function normalizeAdapterDefs(): CustomAdapterDef[] {
     const arr = (cfg.get<CustomAdapterDef[]>("adapters", []) ?? []).filter((a) => a && a.baseUrl);
     let changed = false;
     for (const a of arr) {
-        if (!a.id) { a.id = randomUUID().replace(/-/g, ""); changed = true; }
+        if (!a.id) {
+            a.id = randomUUID().replace(/-/g, "");
+            changed = true;
+        }
     }
-    if (changed) { void cfg.update("adapters", arr, vscode.ConfigurationTarget.Global); }
+    if (changed) {
+        void cfg.update("adapters", arr, vscode.ConfigurationTarget.Global);
+    }
     return arr;
 }
 
 /** One OpenAIAdapter per custom def, re-reading its entry live by id. */
-export function buildCustomAdapters(context: vscode.ExtensionContext, defs: CustomAdapterDef[]): OpenAIAdapter[] {
-    return defs.map((def) =>
-        new OpenAIAdapter(def.id, adapterLabel(def), () => {
-            const e = customAdapterDefs().find((x) => x.id === def.id) ?? def;
-            return {
-                clientInfo: symposiumClientInfo(context),
-                api: e.api === "responses" ? "responses" : "chat",
-                baseUrl: e.baseUrl,
-                model: e.model ?? "",
-                models: e.models ?? [],
-                headers: e.headers ?? {},
-                apiKey: e.apiKey ?? "",
-                supportsDeveloperRole: e.supportsDeveloperRole ?? false,
-                maxToolHops: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxToolHops", 50),
-                noProgressStop: vscode.workspace.getConfiguration("symposium.openai").get<number>("noProgressStop", 0),
-                autoCompactAt: vscode.workspace.getConfiguration("symposium.openai").get<number>("autoCompactAt", 0.8),
-                autoCompactOnTasksComplete: vscode.workspace.getConfiguration("symposium.openai").get<boolean>("autoCompactOnTasksComplete", true),
-                maxHistoryMessages: vscode.workspace.getConfiguration("symposium.openai").get<number>("maxHistoryMessages", 40),
-                shellExecution: vscode.workspace.getConfiguration("symposium.openai").get<ShellExecutionMode>("shellExecution", "silent"),
-                timeGapNotice: vscode.workspace.getConfiguration("symposium.openai").get<string>("timeGapNotice", "5m"),
-                permissionMode: vscode.workspace.getConfiguration("symposium.openai").get<string>("permissionMode", "admin"),
-                log: symposiumLog,
-            };
-        }));
+export function buildCustomAdapters(
+    context: vscode.ExtensionContext,
+    defs: CustomAdapterDef[],
+): OpenAIAdapter[] {
+    return defs.map(
+        (def) =>
+            new OpenAIAdapter(def.id, adapterLabel(def), () => {
+                const e = customAdapterDefs().find((x) => x.id === def.id) ?? def;
+                return {
+                    clientInfo: symposiumClientInfo(context),
+                    api: e.api === "responses" ? "responses" : "chat",
+                    baseUrl: e.baseUrl,
+                    model: e.model ?? "",
+                    models: e.models ?? [],
+                    headers: e.headers ?? {},
+                    apiKey: e.apiKey ?? "",
+                    supportsDeveloperRole: e.supportsDeveloperRole ?? false,
+                    maxToolHops: vscode.workspace
+                        .getConfiguration("symposium.openai")
+                        .get<number>("maxToolHops", 50),
+                    noProgressStop: vscode.workspace
+                        .getConfiguration("symposium.openai")
+                        .get<number>("noProgressStop", 0),
+                    autoCompactAt: vscode.workspace
+                        .getConfiguration("symposium.openai")
+                        .get<number>("autoCompactAt", 0.8),
+                    autoCompactOnTasksComplete: vscode.workspace
+                        .getConfiguration("symposium.openai")
+                        .get<boolean>("autoCompactOnTasksComplete", true),
+                    maxHistoryMessages: vscode.workspace
+                        .getConfiguration("symposium.openai")
+                        .get<number>("maxHistoryMessages", 40),
+                    shellExecution: vscode.workspace
+                        .getConfiguration("symposium.openai")
+                        .get<ShellExecutionMode>("shellExecution", "silent"),
+                    timeGapNotice: vscode.workspace
+                        .getConfiguration("symposium.openai")
+                        .get<string>("timeGapNotice", "5m"),
+                    permissionMode: vscode.workspace
+                        .getConfiguration("symposium.openai")
+                        .get<string>("permissionMode", "admin"),
+                    log: symposiumLog,
+                };
+            }),
+    );
 }

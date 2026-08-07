@@ -1,8 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { guardrailStopNotice, legacyGuardrailStopNotice, toolHopLimitNotice } from "../adapters/openai/turnNotices";
-import { transcriptMessages } from "../ui/controllerTranscript";
+import {
+    guardrailStopNotice,
+    legacyGuardrailStopNotice,
+    toolHopLimitNotice,
+} from "../adapters/openai/turnNotices";
+import { transcriptMessages } from "../application/controllerTranscript";
 
 test("OpenAI guardrail stops are system warnings, not assistant text", () => {
     const event = guardrailStopNotice("Stopped after repeated tool calls.");
@@ -31,7 +35,9 @@ test("system warnings are excluded from the assistant transcript", () => {
 
 test("legacy persisted guardrail text is restored as a system warning", () => {
     assert.deepEqual(
-        legacyGuardrailStopNotice("\n\n_(stopped: the model repeated the same tool call 6x without progress)_"),
+        legacyGuardrailStopNotice(
+            "\n\n_(stopped: the model repeated the same tool call 6x without progress)_",
+        ),
         {
             kind: "status-notice",
             severity: "warning",
@@ -41,11 +47,20 @@ test("legacy persisted guardrail text is restored as a system warning", () => {
     );
     assert.equal(legacyGuardrailStopNotice("A normal assistant reply"), null);
 
-    assert.deepEqual(transcriptMessages([
-        { type: "user", text: "Run the task" },
-        { type: "event", event: { kind: "text", text: "_(stopped after 15 tool steps with no reply — send \"continue\" to resume)_" } },
-        { type: "event", event: { kind: "turn-end" } },
-    ]), [{ role: "user", text: "Run the task" }]);
+    assert.deepEqual(
+        transcriptMessages([
+            { type: "user", text: "Run the task" },
+            {
+                type: "event",
+                event: {
+                    kind: "text",
+                    text: '_(stopped after 15 tool steps with no reply — send "continue" to resume)_',
+                },
+            },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [{ role: "user", text: "Run the task" }],
+    );
 });
 
 test("turn guardrails emit structured notices instead of markdown assistant messages", () => {
@@ -68,14 +83,16 @@ test("tool-hop cap exposes a local continuation action", () => {
 
 test("legacy tool-hop pause is restored as an actionable system notice", () => {
     assert.deepEqual(
-        legacyGuardrailStopNotice("\n\n_(paused after 200 tool steps — send \"continue\" to proceed)_"),
+        legacyGuardrailStopNotice(
+            '\n\n_(paused after 200 tool steps — send "continue" to proceed)_',
+        ),
         toolHopLimitNotice(200),
     );
 });
 
 test("continuation stays a local controller command", () => {
-    const protocol = readFileSync("src/ui/protocol.ts", "utf8");
-    const handler = readFileSync("src/ui/controllerMessageHandler.ts", "utf8");
+    const protocol = readFileSync("src/protocol/chat.ts", "utf8");
+    const handler = readFileSync("src/application/controllerMessageHandler.ts", "utf8");
     const session = readFileSync("src/adapters/openai/session.ts", "utf8");
 
     assert.match(protocol, /type:\s*["']continue["']/);

@@ -12,9 +12,13 @@ export function looksInjected(text: string): boolean {
     // Codex rollout. They are not a conversation task. Treating the first one
     // as a title made unrelated parent/subagent sessions all look like
     // "[Terminal execution] …", which in turn looked like duplicated work.
-    return value.startsWith("<")
-        || value.startsWith("# ")
-        || /^\[(?:terminal execution|role|operational rule|plan|session|rtk command policy)\b/i.test(value);
+    return (
+        value.startsWith("<") ||
+        value.startsWith("# ") ||
+        /^\[(?:terminal execution|role|operational rule|plan|session|rtk command policy)\b/i.test(
+            value,
+        )
+    );
 }
 
 /** Reads the session_meta line (id, cwd) and first real user prompt (title). */
@@ -45,7 +49,10 @@ function assistantContent(historyText: string): string {
 }
 
 /** Finds the first candidate whose visible history starts with the carried branch seed. */
-export function inferCodexLineage(seedHistory: string, candidates: CodexLineageCandidate[]): string | undefined {
+export function inferCodexLineage(
+    seedHistory: string,
+    candidates: CodexLineageCandidate[],
+): string | undefined {
     const seed = seedHistory.trim();
     let match = candidates.find((candidate) => candidate.historyText.trim().startsWith(seed));
     if (!match) {
@@ -57,7 +64,9 @@ export function inferCodexLineage(seedHistory: string, candidates: CodexLineageC
         // are deliberately ignored to avoid linking unrelated conversations.
         const assistantSeed = assistantContent(seed);
         if (assistantSeed.length >= 160) {
-            match = candidates.find((candidate) => assistantContent(candidate.historyText).startsWith(assistantSeed));
+            match = candidates.find((candidate) =>
+                assistantContent(candidate.historyText).startsWith(assistantSeed),
+            );
         }
     }
     return match ? match.lineageId || match.sessionId : undefined;
@@ -116,8 +125,8 @@ function parseCodexMeta(content: string): CodexMeta {
             id = entry.payload?.id;
             cwd = entry.payload?.cwd;
             const subagent = entry.payload?.source?.subagent;
-            const nativeParentId = entry.payload?.parent_thread_id
-                ?? subagent?.thread_spawn?.parent_thread_id;
+            const nativeParentId =
+                entry.payload?.parent_thread_id ?? subagent?.thread_spawn?.parent_thread_id;
             if (subagent && typeof nativeParentId === "string") {
                 // Codex multi-agent v2 rollouts cannot accept direct app-server
                 // input. This is a spawned-agent tree relationship, not an
@@ -130,18 +139,29 @@ function parseCodexMeta(content: string): CodexMeta {
             }
         } else if (entry.type === "turn_context" && typeof entry.payload?.model === "string") {
             model = entry.payload.model;
-        } else if (!title && index < 60 && entry.type === "response_item" && entry.payload?.type === "message" && entry.payload.role === "user") {
+        } else if (
+            !title &&
+            index < 60 &&
+            entry.type === "response_item" &&
+            entry.payload?.type === "message" &&
+            entry.payload.role === "user"
+        ) {
             const text = (entry.payload.content ?? [])
                 .filter((c: { type: string }) => c.type === "input_text" || c.type === "text")
                 .map((c: { text?: string }) => c.text)
                 .join("")
                 .trim();
             const branchMarker = text.match(/lineage:\s*([0-9a-f-]{36})/i);
-            if (branchMarker) { lineageId = branchMarker[1]; }
+            if (branchMarker) {
+                lineageId = branchMarker[1];
+            }
             const seedStartMarker = "=== Conversation so far ===\n";
             const seedEndMarker = "\n=== End of conversation so far ===";
             const seedStart = text.indexOf(seedStartMarker);
-            const seedEnd = seedStart >= 0 ? text.indexOf(seedEndMarker, seedStart + seedStartMarker.length) : -1;
+            const seedEnd =
+                seedStart >= 0
+                    ? text.indexOf(seedEndMarker, seedStart + seedStartMarker.length)
+                    : -1;
             if (!seedHistory && seedStart >= 0 && seedEnd > seedStart) {
                 seedHistory = text.slice(seedStart + seedStartMarker.length, seedEnd).trim();
             }
@@ -151,7 +171,10 @@ function parseCodexMeta(content: string): CodexMeta {
         }
     }
     return {
-        id, cwd, title, model,
+        id,
+        cwd,
+        title,
+        model,
         ...(lineageId ? { lineageId } : {}),
         ...(parentId ? { parentId } : {}),
         ...(continuationBlockedReason ? { continuationBlockedReason } : {}),

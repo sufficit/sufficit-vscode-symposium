@@ -43,7 +43,9 @@ function sanitizeSchemaValue(value: unknown): unknown {
 
     const output: Record<string, unknown> = {};
     for (const [key, child] of Object.entries(value)) {
-        if (OPENAI_UNSUPPORTED_SCHEMA_KEYS.has(key)) { continue; }
+        if (OPENAI_UNSUPPORTED_SCHEMA_KEYS.has(key)) {
+            continue;
+        }
         output[key] = sanitizeSchemaValue(child);
     }
     return output;

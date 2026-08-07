@@ -26,9 +26,13 @@ export function mergeQuotaSnapshot(
     const authoritative = incoming.state != null;
     const windows = new Map<string, UsageQuotaWindow>();
     if (!authoritative) {
-        for (const window of previous?.windows ?? []) { windows.set(window.id, window); }
+        for (const window of previous?.windows ?? []) {
+            windows.set(window.id, window);
+        }
     }
-    for (const window of incoming.windows) { windows.set(window.id, window); }
+    for (const window of incoming.windows) {
+        windows.set(window.id, window);
+    }
     return {
         ...(authoritative ? {} : previous),
         ...incoming,

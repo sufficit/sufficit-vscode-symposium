@@ -7,11 +7,14 @@
  * Behavior is identical to the inline case bodies.
  */
 import * as vscode from "vscode";
-import type { WebviewToHost } from "./protocol";
+import type { WebviewToHost } from "../protocol/chat";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
 /** Handles file-approve/reject/approve-all/reject-all. Returns true if handled. */
-export async function handleChangedFilesMessage(message: WebviewToHost, d: SurfaceMessagesDeps): Promise<boolean> {
+export async function handleChangedFilesMessage(
+    message: WebviewToHost,
+    d: SurfaceMessagesDeps,
+): Promise<boolean> {
     switch (message?.type) {
         case "file-approve": {
             if (typeof message.path === "string") {
@@ -22,8 +25,11 @@ export async function handleChangedFilesMessage(message: WebviewToHost, d: Surfa
         }
         case "file-reject": {
             if (typeof message.path === "string") {
-                if (await d.changedFiles.reject(message.path)) { d.getController()?.resolveChanged(message.path); }
-                else { void vscode.window.showWarningMessage("Could not revert " + message.path); }
+                if (await d.changedFiles.reject(message.path)) {
+                    d.getController()?.resolveChanged(message.path);
+                } else {
+                    void vscode.window.showWarningMessage("Could not revert " + message.path);
+                }
                 d.changedFiles.refreshNow();
             }
             return true;
@@ -40,13 +46,21 @@ export async function handleChangedFilesMessage(message: WebviewToHost, d: Surfa
         }
         case "file-reject-all": {
             const paths = message.paths ?? d.getController()?.changedPaths() ?? [];
-            if (!paths.length) { return true; }
+            if (!paths.length) {
+                return true;
+            }
             const pick = await vscode.window.showWarningMessage(
                 `Revert ${paths.length} file(s) to their pre-edit state? This discards the agent's changes.`,
-                { modal: true }, "Revert");
-            if (pick !== "Revert") { return true; }
+                { modal: true },
+                "Revert",
+            );
+            if (pick !== "Revert") {
+                return true;
+            }
             for (const p of paths) {
-                if (await d.changedFiles.reject(p)) { d.getController()?.resolveChanged(p); }
+                if (await d.changedFiles.reject(p)) {
+                    d.getController()?.resolveChanged(p);
+                }
             }
             d.changedFiles.refreshNow();
             return true;

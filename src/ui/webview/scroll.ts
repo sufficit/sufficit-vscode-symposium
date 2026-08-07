@@ -6,11 +6,15 @@ import { sideMode } from "./state";
 // The sessions pane sits on the OUTER edge: docked right → sessions right;
 // docked left → sessions left. With no dock-side API, infer from screen position.
 export function sideIsRight(): boolean {
-    if (sideMode === "left") { return false; }
-    if (sideMode === "right") { return true; }
+    if (sideMode === "left") {
+        return false;
+    }
+    if (sideMode === "right") {
+        return true;
+    }
     try {
-        const center = ((window as any).screenX || 0) + window.innerWidth / 2;
-        return center > (window.screen.width / 2);
+        const center = window.screenX + window.innerWidth / 2;
+        return center > window.screen.width / 2;
     } catch (e) {
         return false;
     }
@@ -61,7 +65,11 @@ window.addEventListener("resize", scheduleLayout);
 window.visualViewport?.addEventListener("resize", scheduleLayout);
 window.addEventListener("load", scheduleLayout);
 window.addEventListener("pageshow", scheduleLayout);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) { scheduleLayout(); } });
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+        scheduleLayout();
+    }
+});
 scheduleLayout();
 listToggle.addEventListener("click", () => root.classList.toggle("listOpen"));
 
@@ -71,13 +79,23 @@ listToggle.addEventListener("click", () => root.classList.toggle("listOpen"));
 // images, streamed history) extends the scrollbar upward without moving the
 // view. Scrolling up unpins; the browser's native scroll anchoring then keeps
 // the reading position stable. Scrolling back to the bottom re-pins.
-export function nearBottom(): boolean { return logScroller.scrollHeight - logScroller.scrollTop - logScroller.clientHeight < 80; }
+export function nearBottom(): boolean {
+    return logScroller.scrollHeight - logScroller.scrollTop - logScroller.clientHeight < 80;
+}
 // Timestamp of the last PROGRAMMATIC scroll, so the ctx-menu auto-close can tell
 // it apart from a user scroll. Read by the document scroll handler in index.
 export let lastAutoScroll = 0;
-let pinned = true;   // an empty/new log starts pinned
-function snapToBottom(): void { lastAutoScroll = Date.now(); logScroller.scrollTop = logScroller.scrollHeight; }
-export function autoScroll(stick: boolean): void { if (stick) { pinned = true; snapToBottom(); } }
+let pinned = true; // an empty/new log starts pinned
+function snapToBottom(): void {
+    lastAutoScroll = Date.now();
+    logScroller.scrollTop = logScroller.scrollHeight;
+}
+export function autoScroll(stick: boolean): void {
+    if (stick) {
+        pinned = true;
+        snapToBottom();
+    }
+}
 export function scrollToBottom(): void {
     pinned = true;
     snapToBottom();
@@ -90,7 +108,9 @@ export function settleAtBottom(stillCurrent: () => boolean, done?: () => void): 
     let stableFrames = 0;
     let previousHeight = -1;
     const step = (): void => {
-        if (!stillCurrent()) { return; }
+        if (!stillCurrent()) {
+            return;
+        }
         const height = logScroller.scrollHeight;
         scrollToBottom();
         stableFrames = height === previousHeight ? stableFrames + 1 : 0;
@@ -107,27 +127,41 @@ export function settleAtBottom(stillCurrent: () => boolean, done?: () => void): 
 // Ignore the scroll events our own snaps produce (they're always at-bottom
 // anyway, but the timestamp guard keeps a mid-frame unpin from a programmatic
 // scroll racing a user wheel event).
-logScroller.addEventListener("scroll", () => {
-    if (Date.now() - lastAutoScroll > 120) { pinned = nearBottom(); }
-}, { passive: true });
+logScroller.addEventListener(
+    "scroll",
+    () => {
+        if (Date.now() - lastAutoScroll > 120) {
+            pinned = nearBottom();
+        }
+    },
+    { passive: true },
+);
 // Content grew (history restore, streaming, images/fonts settling): keep the
 // view glued to the newest message while pinned.
 new ResizeObserver(() => {
-    if (pinned) { snapToBottom(); }
+    if (pinned) {
+        snapToBottom();
+    }
     updateScrollBtn();
 }).observe(log);
 
 // Floating "scroll to bottom" button: visible only when scrolled up.
-let scrollBtn: any = null;
+let scrollBtn: HTMLButtonElement | null = null;
 export function updateScrollBtn(): void {
-    if (!scrollBtn) { return; }
+    if (!scrollBtn) {
+        return;
+    }
     scrollBtn.classList.toggle("show", !nearBottom() && log.childElementCount > 0);
 }
 logScroller.addEventListener("scroll", updateScrollBtn);
-scrollBtn = document.getElementById("scrollBottom");
-if (scrollBtn) { scrollBtn.addEventListener("click", scrollToBottom); }
+scrollBtn = document.querySelector<HTMLButtonElement>("#scrollBottom");
+if (scrollBtn) {
+    scrollBtn.addEventListener("click", scrollToBottom);
+}
 // Show the empty-state placeholder when the log has no messages yet.
-export function refreshEmpty(): void { root.classList.toggle("empty", log.childElementCount === 0); }
+export function refreshEmpty(): void {
+    root.classList.toggle("empty", log.childElementCount === 0);
+}
 
 let stickyUserMessage: HTMLElement | null = null;
 let stickyStateRaf = 0;
@@ -155,7 +189,9 @@ export function clearStickyUserMessage(): void {
 // Only activate when user manually scrolls up (not at bottom)
 function updateStickyState(): void {
     stickyStateRaf = 0;
-    if (!stickyUserMessage) { return; }
+    if (!stickyUserMessage) {
+        return;
+    }
 
     // Don't apply sticky if we're at or near bottom (auto-scroll / not manually scrolled up)
     if (logScroller.scrollHeight - logScroller.scrollTop - logScroller.clientHeight < 100) {
@@ -177,7 +213,9 @@ function updateStickyState(): void {
 }
 
 function scheduleStickyState(): void {
-    if (!stickyStateRaf) { stickyStateRaf = requestAnimationFrame(updateStickyState); }
+    if (!stickyStateRaf) {
+        stickyStateRaf = requestAnimationFrame(updateStickyState);
+    }
 }
 
 logScroller.addEventListener("scroll", scheduleStickyState, { passive: true });

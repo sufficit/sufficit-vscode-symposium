@@ -30,17 +30,24 @@ export interface LocalFileTarget {
 /** Resolves a Markdown file target without treating `file:` as a relative path. */
 export function resolveLocalResourcePath(raw: string, cwd?: string): string | undefined {
     let value = String(raw || "").trim();
-    if (!value) { return undefined; }
+    if (!value) {
+        return undefined;
+    }
     if (/^file:/i.test(value)) {
-        try { return fileURLToPath(value); }
-        catch { return undefined; }
+        try {
+            return fileURLToPath(value);
+        } catch {
+            return undefined;
+        }
     }
     // Reject URL-like schemes, while retaining Windows drive paths.
     if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) && !/^[A-Za-z]:[\\/]/.test(value)) {
         return undefined;
     }
     value = value.replace(/^~(?=$|[/\\])/, os.homedir());
-    if (path.isAbsolute(value)) { return path.normalize(value); }
+    if (path.isAbsolute(value)) {
+        return path.normalize(value);
+    }
     return cwd ? path.resolve(cwd, value) : undefined;
 }
 
@@ -55,32 +62,47 @@ export function resolveLocalFileTarget(
     workspaceRoots: readonly string[] = [],
 ): LocalFileTarget | undefined {
     let value = String(raw || "").trim();
-    if (!value) { return undefined; }
+    if (!value) {
+        return undefined;
+    }
 
     let line: number | undefined;
     let column: number | undefined;
     const hashLocation = value.match(/^(.*)#L(\d+)(?:C(\d+))?$/i);
     const colonLocation = hashLocation
         ? undefined
-        : value.match(/^(.*):(\d+):(\d+)$/) ?? value.match(/^(.*):(\d+)$/);
+        : (value.match(/^(.*):(\d+):(\d+)$/) ?? value.match(/^(.*):(\d+)$/));
     const location = hashLocation ?? colonLocation;
     if (location) {
         value = location[1];
         line = Number(location[2]);
         column = location[3] ? Number(location[3]) : undefined;
-        if (!Number.isSafeInteger(line) || line < 1 ||
-            (column !== undefined && (!Number.isSafeInteger(column) || column < 1))) {
+        if (
+            !Number.isSafeInteger(line) ||
+            line < 1 ||
+            (column !== undefined && (!Number.isSafeInteger(column) || column < 1))
+        ) {
             return undefined;
         }
     }
 
-    const fsPath = resolveWorkspaceQualifiedPath(value, workspaceRoots) ?? resolveLocalResourcePath(value, cwd);
+    const fsPath =
+        resolveWorkspaceQualifiedPath(value, workspaceRoots) ??
+        resolveLocalResourcePath(value, cwd);
     return fsPath ? { fsPath, line, column } : undefined;
 }
 
 /** Resolves `workspace-name/path` against the matching VS Code workspace root. */
-function resolveWorkspaceQualifiedPath(value: string, roots: readonly string[]): string | undefined {
-    if (/^file:/i.test(value) || /^~(?=$|[/\\])/.test(value) || path.isAbsolute(value) || /^[A-Za-z]:[\\/]/.test(value)) {
+function resolveWorkspaceQualifiedPath(
+    value: string,
+    roots: readonly string[],
+): string | undefined {
+    if (
+        /^file:/i.test(value) ||
+        /^~(?=$|[/\\])/.test(value) ||
+        path.isAbsolute(value) ||
+        /^[A-Za-z]:[\\/]/.test(value)
+    ) {
         return undefined;
     }
     const [workspaceName, ...relativeParts] = value.split(/[\\/]/);
@@ -98,22 +120,33 @@ export async function loadMarkdownImage(
     allowedRoots: readonly string[],
 ): Promise<MarkdownImageResult> {
     const resolved = resolveLocalResourcePath(raw, cwd);
-    if (!resolved) { return { error: "Invalid local image path." }; }
+    if (!resolved) {
+        return { error: "Invalid local image path." };
+    }
     const mime = IMAGE_MIME_BY_EXTENSION[path.extname(resolved).toLowerCase()];
-    if (!mime) { return { error: "Preview unavailable for this image type." }; }
+    if (!mime) {
+        return { error: "Preview unavailable for this image type." };
+    }
     try {
         const realFile = await fs.promises.realpath(resolved);
         const roots: string[] = [];
         for (const root of allowedRoots) {
-            if (!root) { continue; }
-            try { roots.push(await fs.promises.realpath(root)); }
-            catch { /* Ignore a stale workspace root. */ }
+            if (!root) {
+                continue;
+            }
+            try {
+                roots.push(await fs.promises.realpath(root));
+            } catch {
+                /* Ignore a stale workspace root. */
+            }
         }
         if (!roots.some((root) => isInside(root, realFile))) {
             return { error: "Preview unavailable outside the active workspace." };
         }
         const stat = await fs.promises.stat(realFile);
-        if (!stat.isFile()) { return { error: "The image target is not a file." }; }
+        if (!stat.isFile()) {
+            return { error: "The image target is not a file." };
+        }
         if (stat.size > MAX_MARKDOWN_IMAGE_BYTES) {
             return { error: "Image is too large to preview." };
         }
@@ -126,5 +159,8 @@ export async function loadMarkdownImage(
 
 function isInside(root: string, target: string): boolean {
     const relative = path.relative(root, target);
-    return relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+    return (
+        relative === "" ||
+        (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))
+    );
 }

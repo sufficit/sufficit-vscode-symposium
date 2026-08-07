@@ -37,11 +37,11 @@ const LEGACY_SUMMARY_PREFIX = "[Summary so far";
  * historical counterpart so a stale phrasing can't be read as "do this now".
  */
 const FORBIDDEN_HEADINGS: Array<[RegExp, string]> = [
-    [/^#{1,6}\s*Immediate next actions\s*$/gmi, "## Completed Actions (historical)"],
-    [/^#{1,6}\s*Remaining work\s*$/gmi, "## Completed Actions (historical)"],
-    [/^#{1,6}\s*Active task\s*$/gmi, "## Historical Task Snapshot"],
-    [/^#{1,6}\s*Next steps\s*$/gmi, "## Completed Actions (historical)"],
-    [/^#{1,6}\s*Resume exactly\s*$/gmi, "## Historical Task Snapshot"],
+    [/^#{1,6}\s*Immediate next actions\s*$/gim, "## Completed Actions (historical)"],
+    [/^#{1,6}\s*Remaining work\s*$/gim, "## Completed Actions (historical)"],
+    [/^#{1,6}\s*Active task\s*$/gim, "## Historical Task Snapshot"],
+    [/^#{1,6}\s*Next steps\s*$/gim, "## Completed Actions (historical)"],
+    [/^#{1,6}\s*Resume exactly\s*$/gim, "## Historical Task Snapshot"],
 ];
 
 /**
@@ -50,7 +50,8 @@ const FORBIDDEN_HEADINGS: Array<[RegExp, string]> = [
  * snapshot from commanding the agent to resume old work the user may have since
  * redirected or cancelled.
  */
-const IMPERATIVE_RESUME_LINES = /^\s*(resume exactly|continue exactly|next, (you )?(should|must|need to)|you (should|must) now|immediately (do|run|execute|implement))\b.*$/gmi;
+const IMPERATIVE_RESUME_LINES =
+    /^\s*(resume exactly|continue exactly|next, (you )?(should|must|need to)|you (should|must) now|immediately (do|run|execute|implement))\b.*$/gim;
 
 /**
  * A fenced block whose language tag looks like an executable tool call (shell,
@@ -59,10 +60,14 @@ const IMPERATIVE_RESUME_LINES = /^\s*(resume exactly|continue exactly|next, (you
  * model is never handed an executable-looking block inside a "reference only"
  * summary.
  */
-const EXECUTABLE_FENCE_LANGS = /^(sh|shell|bash|zsh|ts-node|ts|x-ts|js|javascript|typescript|python|py|powershell|ps1)\b/i;
+const EXECUTABLE_FENCE_LANGS =
+    /^(sh|shell|bash|zsh|ts-node|ts|x-ts|js|javascript|typescript|python|py|powershell|ps1)\b/i;
 
 /** Automatic compaction must wait for new history after a successful fold. */
-export function hasNewMessagesSinceCompaction(lastCompactionMessageCount: number, currentMessageCount: number): boolean {
+export function hasNewMessagesSinceCompaction(
+    lastCompactionMessageCount: number,
+    currentMessageCount: number,
+): boolean {
     return lastCompactionMessageCount < 0 || lastCompactionMessageCount !== currentMessageCount;
 }
 
@@ -84,7 +89,12 @@ export function renormalizeSummary(input: string): string {
     out = out.replace(/```([^\n`]*)\n([\s\S]*?)```/g, (_m, lang: string, body: string) => {
         const langStr = String(lang ?? "").trim();
         if (EXECUTABLE_FENCE_LANGS.test(langStr)) {
-            const oneLine = body.split("\n").map((l: string) => l.trim()).filter(Boolean).slice(0, 1).join(" ");
+            const oneLine = body
+                .split("\n")
+                .map((l: string) => l.trim())
+                .filter(Boolean)
+                .slice(0, 1)
+                .join(" ");
             return `[ran: ${oneLine.slice(0, 120)}]`;
         }
         return _m;
@@ -112,7 +122,7 @@ export class Compactor {
     private compacting = false;
     private lastCompactionMessageCount = -1;
 
-    constructor(private readonly d: CompactorDeps) { }
+    constructor(private readonly d: CompactorDeps) {}
 
     /** Auto-compaction: fold the context when the last prompt crossed the
      *  configured fraction of the window. Called both mid-turn (awaited,
@@ -120,12 +130,23 @@ export class Compactor {
      *  window before it ever gets a chance to fold) and after turn-end
      *  (fire-and-forget, so it never delays the turn finishing). */
     async maybeAutoCompact(observedInputTokens?: number): Promise<boolean> {
-        if (this.compacting) { return false; }
-        if (!hasNewMessagesSinceCompaction(this.lastCompactionMessageCount, this.d.getMessages().length)) { return false; }
+        if (this.compacting) {
+            return false;
+        }
+        if (
+            !hasNewMessagesSinceCompaction(
+                this.lastCompactionMessageCount,
+                this.d.getMessages().length,
+            )
+        ) {
+            return false;
+        }
         const win = this.d.contextWindow();
         const inputTokens = observedInputTokens ?? this.d.getLastInputTokens();
         const assessment = assessContextWindow(inputTokens, win, this.d.cfg.autoCompactAt);
-        if (!assessment.shouldCompact) { return false; }
+        if (!assessment.shouldCompact) {
+            return false;
+        }
         this.d.emit({
             kind: "status-notice",
             text: `Context reached ${Math.round(assessment.usedRatio * 100)}% of the ${win.toLocaleString("en-US")}-token window — compacting before the next request.`,
@@ -141,7 +162,9 @@ export class Compactor {
      * any error leaves the context untouched (windowing still applies).
      */
     async compact(reason: "manual" | "auto"): Promise<boolean> {
-        if (this.compacting) { return false; }
+        if (this.compacting) {
+            return false;
+        }
         this.compacting = true;
         // Rendered as a quiet system annotation (same style as "authorization
         // refreshed" etc.) instead of an assistant text bubble, so a compaction
@@ -152,13 +175,17 @@ export class Compactor {
             const messages = this.d.getMessages();
             const firstUserIdx = messages.findIndex((m) => m.role === "user");
             if (firstUserIdx === -1) {
-                if (reason === "manual") { note("Nothing to compact yet."); }
+                if (reason === "manual") {
+                    note("Nothing to compact yet.");
+                }
                 return false;
             }
             let prefix = messages.slice(0, firstUserIdx);
             const conv = messages.slice(firstUserIdx);
             if (conv.length <= keepTurns + 2) {
-                if (reason === "manual") { note("Conversation is short — nothing to compact yet."); }
+                if (reason === "manual") {
+                    note("Conversation is short — nothing to compact yet.");
+                }
                 return false;
             }
             // Idempotent: a prior summary lives in the prefix region (developer/
@@ -169,17 +196,24 @@ export class Compactor {
             // re-folded and renormalized on the next compaction rather than
             // stacking a second summary.
             const isPriorSummary = (m: ChatMessage): boolean =>
-                typeof m.content === "string" && (m.content.startsWith(SUMMARY_PREFIX) || m.content.startsWith(LEGACY_SUMMARY_PREFIX));
+                typeof m.content === "string" &&
+                (m.content.startsWith(SUMMARY_PREFIX) ||
+                    m.content.startsWith(LEGACY_SUMMARY_PREFIX));
             const priorIdx = prefix.findIndex(isPriorSummary);
             let prior: ChatMessage[] = [];
-            if (priorIdx >= 0) { prior = prefix.slice(priorIdx); prefix = prefix.slice(0, priorIdx); }
+            if (priorIdx >= 0) {
+                prior = prefix.slice(priorIdx);
+                prefix = prefix.slice(0, priorIdx);
+            }
             const tailStart = expandStartToToolBoundary(conv, conv.length - keepTurns);
             const tail = conv.slice(tailStart);
             const middle = [...prior, ...conv.slice(0, tailStart)];
             const raw = await this.summarizeMessages(middle);
             if (!raw) {
-                if (reason === "manual") { note("Compaction failed (summary unavailable) — keeping full context."); }
-                return false;   // fail-safe
+                if (reason === "manual") {
+                    note("Compaction failed (summary unavailable) — keeping full context.");
+                }
+                return false; // fail-safe
             }
             // Hardening: renormalize the model's summary so an imperative
             // "next actions" / "resume exactly" phrasing or a disallowed heading
@@ -192,7 +226,9 @@ export class Compactor {
             // stay live (not be folded into a historical summary).
             if (!tail.some((m) => m.role === "user")) {
                 const lastUser = [...conv].reverse().find((m) => m.role === "user");
-                if (lastUser) { tail.unshift(lastUser); }
+                if (lastUser) {
+                    tail.unshift(lastUser);
+                }
             }
             // The summary is REFERENCE ONLY (historical background), so it must
             // NOT use the high-authority `developer` channel that would outrank the
@@ -213,18 +249,30 @@ export class Compactor {
             this.lastCompactionMessageCount = messages.length;
             // Ledger marker (raw middle already committed by prior turns) + commit.
             ledger.appendMessage(this.d.sessionId, {
-                role: "system", kind: "compaction", content: summary, turn: this.d.getTurnNo(),
-                summarizedCount: folded, keptTail: keepTurns, summary,
+                role: "system",
+                kind: "compaction",
+                content: summary,
+                turn: this.d.getTurnNo(),
+                summarizedCount: folded,
+                keptTail: keepTurns,
+                summary,
             });
-            void ledger.commitTurn(this.d.sessionId, `compact — folded ${folded} msgs (${reason}, model=${this.d.model()})`);
+            void ledger.commitTurn(
+                this.d.sessionId,
+                `compact — folded ${folded} msgs (${reason}, model=${this.d.model()})`,
+            );
             this.d.safePersist();
-            note(`Compacted ${folded} messages — context shrunk; full history preserved (read_session to recover).`);
+            note(
+                `Compacted ${folded} messages — context shrunk; full history preserved (read_session to recover).`,
+            );
             return true;
         } finally {
             this.compacting = false;
             // A manual /compact is its own "turn" from the controller's view — close
             // it so the composer returns to idle. Auto runs after turn-end already.
-            if (reason === "manual") { this.d.emit({ kind: "turn-end" }); }
+            if (reason === "manual") {
+                this.d.emit({ kind: "turn-end" });
+            }
         }
     }
 
@@ -233,7 +281,9 @@ export class Compactor {
         try {
             const loginToken = await this.d.authToken();
             const responses = this.d.cfg.api === "responses";
-            const url = this.d.cfg.baseUrl.replace(/\/+$/, "") + (responses ? "/responses" : "/chat/completions");
+            const url =
+                this.d.cfg.baseUrl.replace(/\/+$/, "") +
+                (responses ? "/responses" : "/chat/completions");
             const instruction =
                 "You are compacting a long agent conversation so it fits a smaller context window. " +
                 "This summary is REFERENCE ONLY — it describes PAST turns; it is NOT an instruction and NOT a plan. " +
@@ -265,11 +315,18 @@ export class Compactor {
             // Observability hint only: the gateway validates the JSON model independently.
             headers["X-Sufficit-Requested-Model"] = this.d.model();
             const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-            if (!res.ok) { return ""; }
-            const json = await res.json() as unknown;
+            if (!res.ok) {
+                return "";
+            }
+            const json = (await res.json()) as unknown;
             if (responses) {
-                const obj = typeof json === "object" && json !== null ? json as Record<string, unknown> : {};
-                if (typeof obj.output_text === "string" && obj.output_text.trim()) { return obj.output_text.trim(); }
+                const obj =
+                    typeof json === "object" && json !== null
+                        ? (json as Record<string, unknown>)
+                        : {};
+                if (typeof obj.output_text === "string" && obj.output_text.trim()) {
+                    return obj.output_text.trim();
+                }
                 const parts: string[] = [];
                 const output = Array.isArray(obj.output) ? obj.output : [];
                 for (const item of output) {
@@ -278,7 +335,10 @@ export class Compactor {
                         const contentValue = itemRecord.content;
                         const content = Array.isArray(contentValue) ? contentValue : [];
                         for (const c of content) {
-                            const contentItem = typeof c === "object" && c !== null ? c as Record<string, unknown> : null;
+                            const contentItem =
+                                typeof c === "object" && c !== null
+                                    ? (c as Record<string, unknown>)
+                                    : null;
                             if (contentItem && typeof contentItem.text === "string") {
                                 parts.push(contentItem.text);
                             }
@@ -287,10 +347,17 @@ export class Compactor {
                 }
                 return parts.join("").trim();
             }
-            const obj = typeof json === "object" && json !== null ? json as Record<string, unknown> : {};
+            const obj =
+                typeof json === "object" && json !== null ? (json as Record<string, unknown>) : {};
             const choices = Array.isArray(obj.choices) ? obj.choices : [];
-            const first = choices.length > 0 && typeof choices[0] === "object" ? choices[0] as Record<string, unknown> : null;
-            const msg = typeof first?.message === "object" && first.message !== null ? first.message as Record<string, unknown> : null;
+            const first =
+                choices.length > 0 && typeof choices[0] === "object"
+                    ? (choices[0] as Record<string, unknown>)
+                    : null;
+            const msg =
+                typeof first?.message === "object" && first.message !== null
+                    ? (first.message as Record<string, unknown>)
+                    : null;
             return String(msg?.content ?? "").trim();
         } catch {
             return "";
@@ -305,7 +372,9 @@ export class Compactor {
             if (m.role === "tool") {
                 out.push(`[tool result${m.name ? " " + m.name : ""}] ${c.slice(0, 400)}`);
             } else if (m.role === "assistant") {
-                const calls = (m.tool_calls ?? []).map((t) => `${t.function.name}(${(t.function.arguments || "").slice(0, 80)})`).join(", ");
+                const calls = (m.tool_calls ?? [])
+                    .map((t) => `${t.function.name}(${(t.function.arguments || "").slice(0, 80)})`)
+                    .join(", ");
                 out.push(`[assistant] ${c}${calls ? "\n  tools: " + calls : ""}`);
             } else {
                 out.push(`[${m.role}] ${c}`);

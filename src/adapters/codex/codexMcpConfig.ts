@@ -180,13 +180,25 @@ rl.on('line', async (line) => {
  * prompt over its own protocol, which Symposium doesn't answer here, so they
  * clamp to admin's flags with a one-time notice (matching the claude adapter).
  */
-export function mapUnifiedToCodexFlags(mode: string, staticSandbox: string): { approvalPolicy: string; sandboxMode: string; unenforced: boolean } {
+export function mapUnifiedToCodexFlags(
+    mode: string,
+    staticSandbox: string,
+): { approvalPolicy: string; sandboxMode: string; unenforced: boolean } {
     switch (mode) {
-        case "admin": return { approvalPolicy: "never", sandboxMode: "danger-full-access", unenforced: false };
-        case "plan": return { approvalPolicy: "never", sandboxMode: "read-only", unenforced: false };
-        case "manager": case "user": return { approvalPolicy: "never", sandboxMode: "danger-full-access", unenforced: true };
+        case "admin":
+            return {
+                approvalPolicy: "never",
+                sandboxMode: "danger-full-access",
+                unenforced: false,
+            };
+        case "plan":
+            return { approvalPolicy: "never", sandboxMode: "read-only", unenforced: false };
+        case "manager":
+        case "user":
+            return { approvalPolicy: "never", sandboxMode: "danger-full-access", unenforced: true };
         // Legacy stored value (untrusted/on-failure/on-request/never): keep the
         // static sandbox setting unchanged, exactly as before this unification.
-        default: return { approvalPolicy: mode, sandboxMode: staticSandbox, unenforced: false };
+        default:
+            return { approvalPolicy: mode, sandboxMode: staticSandbox, unenforced: false };
     }
 }

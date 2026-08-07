@@ -45,10 +45,18 @@ export interface BridgePolicyInput {
  * agent that runs shell/edits unattended with no approval. Anything outside
  * this set is clamped to `acceptEdits`.
  */
-export const SAFE_SESSION_PERMISSIONS = ["plan", "acceptEdits", "on-request", "on-failure", "untrusted"];
+export const SAFE_SESSION_PERMISSIONS = [
+    "plan",
+    "acceptEdits",
+    "on-request",
+    "on-failure",
+    "untrusted",
+];
 
 export function resolveBridgePolicy(input: BridgePolicyInput): BridgePolicy {
-    const configuredRoots = (input.allowedRoots ?? []).filter((r) => typeof r === "string" && r.length > 0);
+    const configuredRoots = (input.allowedRoots ?? []).filter(
+        (r) => typeof r === "string" && r.length > 0,
+    );
     const rawRoots = configuredRoots.length > 0 ? configuredRoots : (input.workspaceRoots ?? []);
     const allowedRoots = rawRoots
         .filter((r) => typeof r === "string" && r.length > 0)
@@ -62,17 +70,25 @@ export function resolveBridgePolicy(input: BridgePolicyInput): BridgePolicy {
     return {
         allowedRoots,
         sessionPermission,
-        allowedLmTools: (input.allowedLmTools ?? []).filter((t) => typeof t === "string" && t.length > 0),
+        allowedLmTools: (input.allowedLmTools ?? []).filter(
+            (t) => typeof t === "string" && t.length > 0,
+        ),
         allowExecutableOverride: input.allowExecutableOverride === true,
         allowVaultResolve: input.allowVaultResolve === true,
-        allowedHosts: (input.allowedHosts ?? []).filter((h) => typeof h === "string" && h.length > 0),
+        allowedHosts: (input.allowedHosts ?? []).filter(
+            (h) => typeof h === "string" && h.length > 0,
+        ),
     };
 }
 
 /** True only when `cwd` resolves inside one of the allowed roots. Fails closed. */
 export function isCwdAllowed(cwd: unknown, allowedRoots: string[]): boolean {
-    if (typeof cwd !== "string" || cwd.length === 0) { return false; }
-    if (allowedRoots.length === 0) { return false; }
+    if (typeof cwd !== "string" || cwd.length === 0) {
+        return false;
+    }
+    if (allowedRoots.length === 0) {
+        return false;
+    }
     const target = path.resolve(cwd);
     return allowedRoots.some((root) => {
         const r = path.resolve(root);
@@ -96,9 +112,15 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 export function isHostAllowed(hostHeader: string | undefined, allowedHosts: string[]): boolean {
     const host = (hostHeader || "").toLowerCase().trim();
     const bare = host.replace(/:\d+$/, "");
-    if (LOOPBACK_HOSTS.has(bare)) { return true; }
-    if (allowedHosts.length === 0) { return true; }
-    if (!host) { return false; }
+    if (LOOPBACK_HOSTS.has(bare)) {
+        return true;
+    }
+    if (allowedHosts.length === 0) {
+        return true;
+    }
+    if (!host) {
+        return false;
+    }
     return allowedHosts.some((h) => {
         const a = h.toLowerCase().trim();
         return a === host || a === bare || a.replace(/:\d+$/, "") === bare;

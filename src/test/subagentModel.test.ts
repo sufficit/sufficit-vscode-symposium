@@ -12,7 +12,10 @@ test("subagent default model is omitted instead of sent as the literal default",
 });
 
 test("subagent preset labels resolve to gateway model ids", async () => {
-    assert.deepEqual(await resolveSubagentModel(adapter, "Sufficit AI - Development (ollama)", ""), { model: "preset-development-id" });
+    assert.deepEqual(
+        await resolveSubagentModel(adapter, "Sufficit AI - Development (ollama)", ""),
+        { model: "preset-development-id" },
+    );
 });
 
 test("subagent rejects an unavailable model instead of sending an invalid gateway value", async () => {

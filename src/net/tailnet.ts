@@ -11,7 +11,9 @@ import { HubClient } from "../sync/hubClient";
  * machine's first-ever join; every later login just confirms the existing join is healthy.
  */
 
-function runTailscale(args: string[]): Promise<{ code: number | null; stdout: string; stderr: string }> {
+function runTailscale(
+    args: string[],
+): Promise<{ code: number | null; stdout: string; stderr: string }> {
     return new Promise((resolve) => {
         try {
             const bin = process.platform === "win32" ? "tailscale.exe" : "/usr/bin/tailscale";
@@ -20,17 +22,27 @@ function runTailscale(args: string[]): Promise<{ code: number | null; stdout: st
                 // Fallback: try "tailscale" from PATH (may differ on some systems)
                 try {
                     const child2 = spawn("tailscale", args, { stdio: ["ignore", "pipe", "pipe"] });
-                    child2.stdout.on("data", (d) => { stdout += String(d); });
-                    child2.stderr.on("data", (d) => { stderr += String(d); });
+                    child2.stdout.on("data", (d) => {
+                        stdout += String(d);
+                    });
+                    child2.stderr.on("data", (d) => {
+                        stderr += String(d);
+                    });
                     child2.on("error", () => resolve({ code: null, stdout, stderr }));
                     child2.on("exit", (code2) => resolve({ code: code2, stdout, stderr }));
-                } catch { resolve({ code: null, stdout, stderr }); }
+                } catch {
+                    resolve({ code: null, stdout, stderr });
+                }
                 return;
             });
             let stdout = "";
             let stderr = "";
-            child.stdout.on("data", (d) => { stdout += String(d); });
-            child.stderr.on("data", (d) => { stderr += String(d); });
+            child.stdout.on("data", (d) => {
+                stdout += String(d);
+            });
+            child.stderr.on("data", (d) => {
+                stderr += String(d);
+            });
             child.on("error", () => resolve({ code: null, stdout, stderr }));
             child.on("exit", (code) => resolve({ code, stdout, stderr }));
         } catch {
@@ -82,10 +94,15 @@ function deviceLabel(): string {
  * network hiccup all degrade to "remote access unavailable this session" rather than an
  * error surfaced to the user (login must never fail because of this).
  */
-export async function ensureTailnetJoined(hub: HubClient, log: (msg: string) => void): Promise<void> {
+export async function ensureTailnetJoined(
+    hub: HubClient,
+    log: (msg: string) => void,
+): Promise<void> {
     const status = await checkTailscaleStatus();
     if (status === null) {
-        log("[tailnet] `tailscale` CLI not found or not responding — remote access needs it installed separately.");
+        log(
+            "[tailnet] `tailscale` CLI not found or not responding — remote access needs it installed separately.",
+        );
         return;
     }
     if (status.BackendState === "Running" && status.Self?.HostName) {
@@ -99,7 +116,9 @@ export async function ensureTailnetJoined(hub: HubClient, log: (msg: string) => 
 
     const join = await hub.joinSymposiumTailnet();
     if (!join?.ok || !join.tailnetJoinKey || !join.tailnetLoginServer || !join.hostnamePrefix) {
-        log("[tailnet] could not mint a join key (hub unreachable or not logged in) — remote access unavailable this session.");
+        log(
+            "[tailnet] could not mint a join key (hub unreachable or not logged in) — remote access unavailable this session.",
+        );
         return;
     }
 

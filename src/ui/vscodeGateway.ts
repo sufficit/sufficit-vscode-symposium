@@ -13,13 +13,23 @@ import * as vscode from "vscode";
  */
 const TOKEN_KEY = "sufficit.vscodeGatewayToken";
 
-export interface GatewayPreset { id: string; name: string; }
-export interface GatewayResult { gatewayUrl: string; presets: GatewayPreset[]; }
+export interface GatewayPreset {
+    id: string;
+    name: string;
+}
+export interface GatewayResult {
+    gatewayUrl: string;
+    presets: GatewayPreset[];
+}
 
 export async function resolveVSCodeGateway(
-    context: vscode.ExtensionContext, origin: string, loginToken: string,
+    context: vscode.ExtensionContext,
+    origin: string,
+    loginToken: string,
 ): Promise<GatewayResult | undefined> {
-    if (!origin || !loginToken) { return undefined; }
+    if (!origin || !loginToken) {
+        return undefined;
+    }
 
     let token = context.globalState.get<string>(TOKEN_KEY) ?? "";
     let presets = token ? await fetchTags(`${origin}/vscode/${token}`) : undefined;
@@ -27,7 +37,9 @@ export async function resolveVSCodeGateway(
     // Cached token missing/rejected → mint a fresh one and retry.
     if (presets === undefined) {
         const fresh = await createToken(origin, loginToken);
-        if (!fresh) { return undefined; }
+        if (!fresh) {
+            return undefined;
+        }
         token = fresh;
         await context.globalState.update(TOKEN_KEY, token);
         presets = await fetchTags(`${origin}/vscode/${token}`);
@@ -41,24 +53,38 @@ async function createToken(origin: string, loginToken: string): Promise<string> 
     try {
         const res = await fetch(`${origin}/api/ai/vscode/tokens`, {
             method: "POST",
-            headers: { "Authorization": `Bearer ${loginToken}`, "Content-Type": "application/json", "Accept": "application/json" },
+            headers: {
+                Authorization: `Bearer ${loginToken}`,
+                "Content-Type": "application/json",
+                Accept: "application/json",
+            },
             body: JSON.stringify({ description: "Symposium VS Code integration" }),
         });
-        if (!res.ok) { return ""; }
-        const d = await res.json() as { token?: string };
+        if (!res.ok) {
+            return "";
+        }
+        const d = (await res.json()) as { token?: string };
         return typeof d.token === "string" ? d.token : "";
-    } catch { return ""; }
+    } catch {
+        return "";
+    }
 }
 
 /** GET <gateway>/api/tags → preset list, or undefined when the token is rejected. */
 async function fetchTags(gatewayUrl: string): Promise<GatewayPreset[] | undefined> {
     try {
-        const res = await fetch(`${gatewayUrl.replace(/\/+$/, "")}/api/tags`, { headers: { "Accept": "application/json" } });
-        if (!res.ok) { return undefined; }
-        const d = await res.json() as { models?: Array<{ name?: string; model?: string }> };
+        const res = await fetch(`${gatewayUrl.replace(/\/+$/, "")}/api/tags`, {
+            headers: { Accept: "application/json" },
+        });
+        if (!res.ok) {
+            return undefined;
+        }
+        const d = (await res.json()) as { models?: Array<{ name?: string; model?: string }> };
         const models = Array.isArray(d.models) ? d.models : [];
         return models
             .map((m) => ({ id: m.model || m.name || "", name: m.name || m.model || "" }))
             .filter((m) => m.id);
-    } catch { return undefined; }
+    } catch {
+        return undefined;
+    }
 }

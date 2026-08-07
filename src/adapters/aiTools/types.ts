@@ -1,5 +1,10 @@
 import { HubClient } from "../../sync/hubClient";
 
+export interface OpenAITool {
+    type: "function";
+    function: { name: string; description: string; parameters: Record<string, unknown> };
+}
+
 export type ShellExecutionMode = "silent" | "inline" | "terminal";
 
 export interface ToolProgressSink {
@@ -113,7 +118,9 @@ export function getSubagentHost(): SubagentHost | undefined {
  */
 export interface LiveTranscriptReader {
     /** Live transcript for a running session, or undefined when none is live. */
-    read(sessionId: string): { backend?: string; title?: string; messages: { role: string; text: string }[] } | undefined;
+    read(
+        sessionId: string,
+    ): { backend?: string; title?: string; messages: { role: string; text: string }[] } | undefined;
 }
 
 let liveTranscriptReader: LiveTranscriptReader | undefined;

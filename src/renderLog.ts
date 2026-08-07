@@ -26,13 +26,21 @@ function renderFile(sessionId: string): string {
 
 /** Appends one render message to the session's render log (append-only). */
 export function appendRender(sessionId: string, msg: unknown): void {
-    if (!sessionId) { return; }
+    if (!sessionId) {
+        return;
+    }
     try {
         let line = JSON.stringify(msg);
-        if (line === undefined) { return; }
+        if (line === undefined) {
+            return;
+        }
         if (Buffer.byteLength(line) > MAX_LINE_BYTES) {
             // Keep a placeholder so the timeline stays intact without the bulk.
-            line = JSON.stringify({ type: "event", event: { kind: "text", text: "" }, _truncated: true });
+            line = JSON.stringify({
+                type: "event",
+                event: { kind: "text", text: "" },
+                _truncated: true,
+            });
         }
         const dir = ledgerDir(sessionId);
         fs.mkdirSync(dir, { recursive: true });
@@ -44,27 +52,47 @@ export function appendRender(sessionId: string, msg: unknown): void {
 
 /** True when a render log exists for the session. */
 export function hasRender(sessionId: string): boolean {
-    try { return !!sessionId && fs.existsSync(renderFile(sessionId)); }
-    catch { return false; }
+    try {
+        return !!sessionId && fs.existsSync(renderFile(sessionId));
+    } catch {
+        return false;
+    }
 }
 
 /** Reads the full render log (parsed messages) for the session, oldest first. */
 export function readRender(sessionId: string): unknown[] {
-    if (!sessionId) { return []; }
+    if (!sessionId) {
+        return [];
+    }
     let raw: string;
-    try { raw = fs.readFileSync(renderFile(sessionId), "utf8"); }
-    catch { return []; }
+    try {
+        raw = fs.readFileSync(renderFile(sessionId), "utf8");
+    } catch {
+        return [];
+    }
     const out: unknown[] = [];
     for (const line of raw.split("\n")) {
         const s = line.trim();
-        if (!s) { continue; }
-        try { out.push(JSON.parse(s)); } catch { /* skip a corrupt line */ }
+        if (!s) {
+            continue;
+        }
+        try {
+            out.push(JSON.parse(s));
+        } catch {
+            /* skip a corrupt line */
+        }
     }
     return out;
 }
 
 /** Deletes a session's render log (called on permanent session delete). */
 export function removeRender(sessionId: string): void {
-    if (!sessionId) { return; }
-    try { fs.rmSync(renderFile(sessionId), { force: true }); } catch { /* ignore */ }
+    if (!sessionId) {
+        return;
+    }
+    try {
+        fs.rmSync(renderFile(sessionId), { force: true });
+    } catch {
+        /* ignore */
+    }
 }

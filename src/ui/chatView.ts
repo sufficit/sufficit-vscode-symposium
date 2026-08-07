@@ -1,13 +1,17 @@
 import * as vscode from "vscode";
 import { SessionInfo, SessionStartOptions } from "../adapters/types";
 import { ChatSurface, ChatSurfaceDeps } from "./chatSurface";
-import { AgentPickerEntry } from "./protocol";
+import { AgentPickerEntry } from "../protocol/chat";
 
 interface PendingOpen {
     kind: "session" | "dialogue" | "follow" | "terminal" | "agentpick";
     info?: SessionInfo;
     backend?: string;
-    options?: (SessionStartOptions & { env?: Record<string, string>; tmuxName?: string; reasoning?: string });
+    options?: SessionStartOptions & {
+        env?: Record<string, string>;
+        tmuxName?: string;
+        reasoning?: string;
+    };
     title?: string;
     agents?: AgentPickerEntry[];
 }
@@ -25,7 +29,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     private surface: ChatSurface | undefined;
     private pending: PendingOpen | undefined;
 
-    constructor(private readonly deps: ChatSurfaceDeps) { }
+    constructor(private readonly deps: ChatSurfaceDeps) {}
 
     /** True when the sidebar Chat view is resolved and currently visible. */
     get visible(): boolean {
@@ -34,10 +38,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     resolveWebviewView(webviewView: vscode.WebviewView): void {
         this.view = webviewView;
-        this.surface = new ChatSurface(webviewView.webview, this.deps,
-            (title) => { if (this.view) { this.view.title = title; } },
+        this.surface = new ChatSurface(
+            webviewView.webview,
+            this.deps,
+            (title) => {
+                if (this.view) {
+                    this.view.title = title;
+                }
+            },
             undefined,
-            () => vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`));
+            () => vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`),
+        );
         webviewView.onDidDispose(() => {
             this.surface?.dispose();
             this.surface = undefined;
@@ -76,7 +87,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.reveal();
     }
 
-    async openDialogue(backend: string, options: SessionStartOptions, title: string): Promise<void> {
+    async openDialogue(
+        backend: string,
+        options: SessionStartOptions,
+        title: string,
+    ): Promise<void> {
         this.pending = { kind: "dialogue", backend, options, title };
         await this.reveal();
     }
@@ -95,7 +110,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.surface?.refreshAgentPicker(agents);
     }
 
-    async openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string; reasoning?: string }, title: string): Promise<void> {
+    async openTerminalDialogue(
+        backend: string,
+        options: SessionStartOptions & {
+            env?: Record<string, string>;
+            tmuxName?: string;
+            reasoning?: string;
+        },
+        title: string,
+    ): Promise<void> {
         this.pending = { kind: "terminal", backend, options, title };
         await this.reveal();
     }
@@ -116,9 +139,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         } else if (pending.kind === "follow" && pending.info) {
             void this.surface.followSession(pending.info);
         } else if (pending.kind === "dialogue" && pending.backend && pending.options) {
-            this.surface.openDialogue(pending.backend, pending.options, pending.title ?? "New dialogue");
+            this.surface.openDialogue(
+                pending.backend,
+                pending.options,
+                pending.title ?? "New dialogue",
+            );
         } else if (pending.kind === "terminal" && pending.backend && pending.options) {
-            this.surface.openTerminalDialogue(pending.backend, pending.options, pending.title ?? "New terminal session");
+            this.surface.openTerminalDialogue(
+                pending.backend,
+                pending.options,
+                pending.title ?? "New terminal session",
+            );
         } else if (pending.kind === "agentpick" && pending.agents) {
             this.surface.showAgentPicker(pending.agents);
         }

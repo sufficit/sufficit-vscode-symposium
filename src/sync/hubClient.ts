@@ -78,18 +78,33 @@ export function setHubTokenProvider(fn: () => Promise<string | null>): void {
 
 /** Returns the Sufficit login token from the registered provider, or null. */
 export async function getHubLoginToken(): Promise<string | null> {
-    if (!loginTokenProvider) { return null; }
-    try { return await loginTokenProvider(); } catch { return null; }
+    if (!loginTokenProvider) {
+        return null;
+    }
+    try {
+        return await loginTokenProvider();
+    } catch {
+        return null;
+    }
 }
 
 export class HubClient {
     private base(): string {
-        const explicit = vscode.workspace.getConfiguration("symposium.hub").get<string>("url", "").replace(/\/+$/, "");
-        if (explicit) { return explicit; }
+        const explicit = vscode.workspace
+            .getConfiguration("symposium.hub")
+            .get<string>("url", "")
+            .replace(/\/+$/, "");
+        if (explicit) {
+            return explicit;
+        }
         // Derive hub URL from the OpenAI base URL (same Sufficit AI gateway host).
         // Users who configure openai.baseUrl get auto-sync without a separate hub.url.
-        const openaiBase = vscode.workspace.getConfiguration("symposium.openai").get<string>("baseUrl", "");
-        if (!openaiBase) { return ""; }
+        const openaiBase = vscode.workspace
+            .getConfiguration("symposium.openai")
+            .get<string>("baseUrl", "");
+        if (!openaiBase) {
+            return "";
+        }
         try {
             return new URL(openaiBase).origin;
         } catch {
@@ -98,8 +113,12 @@ export class HubClient {
     }
 
     private token(): string {
-        const hubToken = vscode.workspace.getConfiguration("symposium.hub").get<string>("token", "");
-        if (hubToken) { return hubToken; }
+        const hubToken = vscode.workspace
+            .getConfiguration("symposium.hub")
+            .get<string>("token", "");
+        if (hubToken) {
+            return hubToken;
+        }
         // Reuse the Sufficit AI / OpenAI key: the same service key that
         // authenticates the chat backend also satisfies the memory + vault REST
         // API, so the user configures one key instead of two. (The chat path uses
@@ -113,7 +132,9 @@ export class HubClient {
     }
 
     private source(): string {
-        return vscode.workspace.getConfiguration("symposium.hub").get<string>("source", "symposium");
+        return vscode.workspace
+            .getConfiguration("symposium.hub")
+            .get<string>("source", "symposium");
     }
 
     /** True when a hub URL is configured. */
@@ -124,7 +145,7 @@ export class HubClient {
     private async headers(): Promise<Record<string, string>> {
         const h: Record<string, string> = {
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            Accept: "application/json",
         };
         // Prefer the static hub token (the AIUser-policy service token the
         // memory/vault API accepts); fall back to the logged-in identity token
@@ -152,7 +173,9 @@ export class HubClient {
             return false;
         }
         try {
-            const res = await fetch(`${this.base()}/api/memory/health`, { headers: await this.headers() });
+            const res = await fetch(`${this.base()}/api/memory/health`, {
+                headers: await this.headers(),
+            });
             return res.ok;
         } catch {
             return false;
@@ -165,7 +188,12 @@ export class HubClient {
     }
 
     /** Free-form memory search (query/type/limit). Returns compact records. */
-    async searchMemory(params: { query?: string; type?: string; limit?: number; sessionId?: string }): Promise<CompactRecord[]> {
+    async searchMemory(params: {
+        query?: string;
+        type?: string;
+        limit?: number;
+        sessionId?: string;
+    }): Promise<CompactRecord[]> {
         const res = await fetch(`${this.base()}/api/memory/search`, {
             method: "POST",
             headers: await this.headers(),
@@ -247,7 +275,10 @@ export class HubClient {
             return null;
         }
         try {
-            const res = await fetch(`${this.base()}/api/symposium/join`, { method: "POST", headers: await this.headers() });
+            const res = await fetch(`${this.base()}/api/symposium/join`, {
+                method: "POST",
+                headers: await this.headers(),
+            });
             if (!res.ok) {
                 return null;
             }
@@ -263,7 +294,9 @@ export class HubClient {
             return null;
         }
         try {
-            const res = await fetch(`${this.base()}/api/symposium/remote-url`, { headers: await this.headers() });
+            const res = await fetch(`${this.base()}/api/symposium/remote-url`, {
+                headers: await this.headers(),
+            });
             if (!res.ok) {
                 return null;
             }

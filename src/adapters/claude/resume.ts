@@ -7,6 +7,8 @@ const SUBAGENT_SESSION = new RegExp(`^(${UUID})/subagents/[^/]+$`, "i");
  * `claude --resume` accepts only that UUID (or a named top-level session).
  */
 export function claudeResumeSessionId(sessionId: string | undefined): string | undefined {
-    if (!sessionId) { return undefined; }
+    if (!sessionId) {
+        return undefined;
+    }
     return SUBAGENT_SESSION.exec(sessionId)?.[1] ?? sessionId;
 }

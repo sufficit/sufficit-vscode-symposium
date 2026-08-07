@@ -9,9 +9,7 @@ export const DEFAULT_IDENTITY_SCOPE = "openid profile email roles directives off
  * can emit the role/directive claims required by Sufficit AI policies.
  */
 export function normalizeIdentityScope(configured?: string): string {
-    const values = (configured?.trim() || DEFAULT_IDENTITY_SCOPE)
-        .split(/\s+/)
-        .filter(Boolean);
+    const values = (configured?.trim() || DEFAULT_IDENTITY_SCOPE).split(/\s+/).filter(Boolean);
     const unique = new Set(values);
     for (const required of REQUIRED_IDENTITY_AUTHORIZATION_SCOPES) {
         unique.add(required);
@@ -20,11 +18,17 @@ export function normalizeIdentityScope(configured?: string): string {
 }
 
 /** Returns whether a stored token grant covers every currently requested scope. */
-export function hasRequestedIdentityScopes(granted: string | undefined, requested: string): boolean {
+export function hasRequestedIdentityScopes(
+    granted: string | undefined,
+    requested: string,
+): boolean {
     if (!granted?.trim()) {
         return false;
     }
 
     const grantedScopes = new Set(granted.trim().split(/\s+/).filter(Boolean));
-    return requested.split(/\s+/).filter(Boolean).every((scope) => grantedScopes.has(scope));
+    return requested
+        .split(/\s+/)
+        .filter(Boolean)
+        .every((scope) => grantedScopes.has(scope));
 }

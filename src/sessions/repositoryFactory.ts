@@ -9,7 +9,9 @@ export interface SessionRepositoryFactoryOptions {
     repositoryFactories?: readonly (() => SessionRepository)[];
 }
 
-export function createSessionRepository(options: SessionRepositoryFactoryOptions): SessionRepository {
+export function createSessionRepository(
+    options: SessionRepositoryFactoryOptions,
+): SessionRepository {
     const log = options.log ?? (() => undefined);
     const factories = options.repositoryFactories ?? defaultFactories(options);
 
@@ -26,7 +28,9 @@ export function createSessionRepository(options: SessionRepositoryFactoryOptions
             log(`[sessions] repository=${repository.kind}`);
             return repository;
         } catch (error) {
-            log(`[sessions] repository unavailable: ${error instanceof Error ? error.message : String(error)}`);
+            log(
+                `[sessions] repository unavailable: ${error instanceof Error ? error.message : String(error)}`,
+            );
         }
     }
 
@@ -42,12 +46,21 @@ function defaultFactories(options: SessionRepositoryFactoryOptions): (() => Sess
     return factories;
 }
 
-function readJsonSeed(storageDir: string, log: (message: string) => void): ReturnType<JsonSessionRepository["list"]> {
+function readJsonSeed(
+    storageDir: string,
+    log: (message: string) => void,
+): ReturnType<JsonSessionRepository["list"]> {
     try {
         const json = new JsonSessionRepository(storageDir);
-        try { return json.list(); } finally { json.dispose(); }
+        try {
+            return json.list();
+        } finally {
+            json.dispose();
+        }
     } catch (error) {
-        log(`[sessions] JSON migration skipped: ${error instanceof Error ? error.message : String(error)}`);
+        log(
+            `[sessions] JSON migration skipped: ${error instanceof Error ? error.message : String(error)}`,
+        );
         return [];
     }
 }

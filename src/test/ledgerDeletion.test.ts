@@ -13,14 +13,27 @@ test("a permanently deleted ledger session is never recovered", () => {
         process.env.HOME = home;
         const ledger = path.join(home, ".symposium", "ledger", sessionId);
         fs.mkdirSync(ledger, { recursive: true });
-        fs.writeFileSync(path.join(ledger, "meta.json"), JSON.stringify({ id: sessionId, backend: "openai" }));
+        fs.writeFileSync(
+            path.join(ledger, "meta.json"),
+            JSON.stringify({ id: sessionId, backend: "openai" }),
+        );
 
-        assert.equal(listLedgerSessions().some((entry) => entry.id === sessionId), true);
+        assert.equal(
+            listLedgerSessions().some((entry) => entry.id === sessionId),
+            true,
+        );
         markLedgerDeleted(sessionId);
         assert.equal(isLedgerDeleted(sessionId), true);
-        assert.equal(listLedgerSessions().some((entry) => entry.id === sessionId), false);
+        assert.equal(
+            listLedgerSessions().some((entry) => entry.id === sessionId),
+            false,
+        );
     } finally {
-        if (originalHome === undefined) { delete process.env.HOME; } else { process.env.HOME = originalHome; }
+        if (originalHome === undefined) {
+            delete process.env.HOME;
+        } else {
+            process.env.HOME = originalHome;
+        }
         fs.rmSync(home, { recursive: true, force: true });
     }
 });

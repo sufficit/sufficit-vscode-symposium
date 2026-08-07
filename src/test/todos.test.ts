@@ -4,7 +4,11 @@ import { parseNativeTodos, parseTodoFence, todosSummary } from "../adapters/todo
 
 test("parseNativeTodos: Claude TodoWrite", () => {
     const out = parseNativeTodos("TodoWrite", {
-        todos: [{ content: "a", status: "completed" }, { content: "b", status: "in_progress" }, { content: "c" }],
+        todos: [
+            { content: "a", status: "completed" },
+            { content: "b", status: "in_progress" },
+            { content: "c" },
+        ],
     });
     assert.deepEqual(out, [
         { content: "a", status: "completed" },
@@ -14,8 +18,16 @@ test("parseNativeTodos: Claude TodoWrite", () => {
 });
 
 test("parseNativeTodos: Codex update_plan with steps + status spellings", () => {
-    const out = parseNativeTodos("update_plan", { plan: [{ step: "x", status: "done" }, { step: "y", state: "doing" }] });
-    assert.deepEqual(out, [{ content: "x", status: "completed" }, { content: "y", status: "in_progress" }]);
+    const out = parseNativeTodos("update_plan", {
+        plan: [
+            { step: "x", status: "done" },
+            { step: "y", state: "doing" },
+        ],
+    });
+    assert.deepEqual(out, [
+        { content: "x", status: "completed" },
+        { content: "y", status: "in_progress" },
+    ]);
 });
 
 test("parseNativeTodos: Codex function_call update_plan arguments JSON", () => {
@@ -96,7 +108,10 @@ test("Codex todo_list reminder advances past completed work", () => {
 
 test("todosSummary declares itself CONTEXT subordinate to the latest user message", () => {
     const out = parseNativeTodos("TodoWrite", {
-        todos: [{ content: "Implementar rescan", status: "in_progress" }, { content: "Deploy", status: "pending" }],
+        todos: [
+            { content: "Implementar rescan", status: "in_progress" },
+            { content: "Deploy", status: "pending" },
+        ],
     });
     const summary = todosSummary(out!);
     assert.ok(summary, "expected a reminder for open steps");
@@ -113,10 +128,11 @@ test("parseNativeTodos: Codex custom_tool_call exec-sandboxed update_plan (real 
     // is a JS "program" as source text (`input`), not a structured
     // function_call/arguments envelope — update_plan is one of several
     // `tools.*` calls inside it.
-    const input = "const p = await tools.update_plan({plan:[\n" +
-        "  {step:\"Consultar memórias Sufficit, instruções locais e estado Git do projeto\",status:\"in_progress\"},\n" +
-        "  {step:\"Mapear arquitetura do backend, API, autenticação, dados e dependências\",status:\"pending\"},\n" +
-        "  {step:\"Auditar segurança com evidências e validar riscos relevantes\",status:\"pending\"}\n" +
+    const input =
+        "const p = await tools.update_plan({plan:[\n" +
+        '  {step:"Consultar memórias Sufficit, instruções locais e estado Git do projeto",status:"in_progress"},\n' +
+        '  {step:"Mapear arquitetura do backend, API, autenticação, dados e dependências",status:"pending"},\n' +
+        '  {step:"Auditar segurança com evidências e validar riscos relevantes",status:"pending"}\n' +
         "]});\n" +
         "const r = await tools.list_mcp_resources({});\n" +
         "const t = await tools.list_mcp_resource_templates({});\n" +
@@ -130,19 +146,33 @@ test("parseNativeTodos: Codex custom_tool_call exec-sandboxed update_plan (real 
         input,
     });
     assert.deepEqual(out, [
-        { content: "Consultar memórias Sufficit, instruções locais e estado Git do projeto", status: "in_progress" },
-        { content: "Mapear arquitetura do backend, API, autenticação, dados e dependências", status: "pending" },
-        { content: "Auditar segurança com evidências e validar riscos relevantes", status: "pending" },
+        {
+            content: "Consultar memórias Sufficit, instruções locais e estado Git do projeto",
+            status: "in_progress",
+        },
+        {
+            content: "Mapear arquitetura do backend, API, autenticação, dados e dependências",
+            status: "pending",
+        },
+        {
+            content: "Auditar segurança com evidências e validar riscos relevantes",
+            status: "pending",
+        },
     ]);
 });
 
 test("parseNativeTodos: Codex exec update_plan, later call marks earlier steps completed", () => {
-    const input = "const p = await tools.update_plan({plan:[" +
-        "{step:\"a\",status:\"completed\"}," +
-        "{step:\"b\",status:\"in_progress\"}," +
-        "{step:\"c\",status:\"pending\"}" +
+    const input =
+        "const p = await tools.update_plan({plan:[" +
+        '{step:"a",status:"completed"},' +
+        '{step:"b",status:"in_progress"},' +
+        '{step:"c",status:"pending"}' +
         "]});\n";
-    const out = parseNativeTodos("custom_tool_call", { type: "custom_tool_call", name: "exec", input });
+    const out = parseNativeTodos("custom_tool_call", {
+        type: "custom_tool_call",
+        name: "exec",
+        input,
+    });
     assert.deepEqual(out, [
         { content: "a", status: "completed" },
         { content: "b", status: "in_progress" },
@@ -151,8 +181,11 @@ test("parseNativeTodos: Codex exec update_plan, later call marks earlier steps c
 });
 
 test("parseNativeTodos: exec call with no update_plan → undefined", () => {
-    const input = "const r = await tools.exec_command({cmd:\"ls\",workdir:\"/tmp\"});\n";
-    assert.equal(parseNativeTodos("custom_tool_call", { type: "custom_tool_call", name: "exec", input }), undefined);
+    const input = 'const r = await tools.exec_command({cmd:"ls",workdir:"/tmp"});\n';
+    assert.equal(
+        parseNativeTodos("custom_tool_call", { type: "custom_tool_call", name: "exec", input }),
+        undefined,
+    );
 });
 
 test("parseNativeTodos: non-todo tool → undefined", () => {
@@ -171,7 +204,6 @@ test("parseTodoFence: checkbox block", () => {
 test("parseTodoFence: no block → undefined", () => {
     assert.equal(parseTodoFence("just text"), undefined);
 });
-
 
 test("parseTodoFence: ordered checkbox block keeps order numbers", () => {
     const md = "```todo\n1. [ ] first\n2. [-] second\n3. [x] third\n```";

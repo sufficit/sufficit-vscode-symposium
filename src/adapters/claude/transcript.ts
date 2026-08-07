@@ -1,6 +1,10 @@
 import {
-    diffCounts, editDiff, extractTodos,
-    prettyJson, summarizeToolInput, toolFilePath,
+    diffCounts,
+    editDiff,
+    extractTodos,
+    prettyJson,
+    summarizeToolInput,
+    toolFilePath,
 } from "../parse";
 import { JsonlMetadataCache, readJsonlPrefix } from "../jsonlPrefix";
 import { HistoryMessage } from "../types";
@@ -30,7 +34,9 @@ function cleanUserText(raw: string): string {
 
 /** Defensive read of a transcript line's raw top-level `type` (for status inference). */
 export function rawLineType(line: string): string | undefined {
-    if (!line.trim()) { return undefined; }
+    if (!line.trim()) {
+        return undefined;
+    }
     try {
         const entry = JSON.parse(line) as { type?: unknown };
         return typeof entry.type === "string" ? entry.type : undefined;
@@ -40,7 +46,10 @@ export function rawLineType(line: string): string | undefined {
 }
 
 /** Parses one transcript JSONL line into chat messages (text + tool calls). */
-export function parseTranscriptLine(line: string, taskTracker?: ClaudeTaskTracker): HistoryMessage[] {
+export function parseTranscriptLine(
+    line: string,
+    taskTracker?: ClaudeTaskTracker,
+): HistoryMessage[] {
     if (!line.trim()) {
         return [];
     }
@@ -48,15 +57,17 @@ export function parseTranscriptLine(line: string, taskTracker?: ClaudeTaskTracke
         isMeta?: boolean;
         type: "user" | "assistant" | "result";
         message?: {
-            content?: string | Array<{
-                type: string;
-                text?: string;
-                thinking?: string;
-                id?: string;
-                name?: string;
-                input?: unknown;
-                tool_use_id?: string;
-            }>;
+            content?:
+                | string
+                | Array<{
+                      type: string;
+                      text?: string;
+                      thinking?: string;
+                      id?: string;
+                      name?: string;
+                      input?: unknown;
+                      tool_use_id?: string;
+                  }>;
         };
         is_error?: boolean;
         result?: unknown;
@@ -78,21 +89,39 @@ export function parseTranscriptLine(line: string, taskTracker?: ClaudeTaskTracke
         const content = entry.message?.content;
         if (typeof content === "string") {
             const t = cleanUserText(content);
-            if (t) { messages.push({ role: "user", text: t }); }
+            if (t) {
+                messages.push({ role: "user", text: t });
+            }
         } else if (Array.isArray(content)) {
             for (const block of content) {
-                if (typeof block === "object" && block !== null && block.type === "text" && typeof block.text === "string") {
+                if (
+                    typeof block === "object" &&
+                    block !== null &&
+                    block.type === "text" &&
+                    typeof block.text === "string"
+                ) {
                     const t = cleanUserText(block.text);
-                    if (t) { messages.push({ role: "user", text: t }); }
+                    if (t) {
+                        messages.push({ role: "user", text: t });
+                    }
                 }
                 if (typeof block === "object" && block !== null && block.type === "tool_result") {
-                    const toolId = typeof (block as { tool_use_id?: unknown }).tool_use_id === "string"
-                        ? (block as { tool_use_id: string }).tool_use_id : undefined;
+                    const toolId =
+                        typeof (block as { tool_use_id?: unknown }).tool_use_id === "string"
+                            ? (block as { tool_use_id: string }).tool_use_id
+                            : undefined;
                     const todos = taskTracker?.observeToolResult(toolId, entry.toolUseResult);
                     // Task results are normally hidden because their tool row was
                     // already rendered. A changed native task snapshot is the
                     // exception: emit a hidden todo render update for the panel.
-                    if (todos) { messages.push({ role: "tool", text: "TodoWrite", toolName: "TodoWrite", todos }); }
+                    if (todos) {
+                        messages.push({
+                            role: "tool",
+                            text: "TodoWrite",
+                            toolName: "TodoWrite",
+                            todos,
+                        });
+                    }
                 }
             }
         }
@@ -101,17 +130,24 @@ export function parseTranscriptLine(line: string, taskTracker?: ClaudeTaskTracke
         for (const block of Array.isArray(assistantContent) ? assistantContent : []) {
             if (typeof block === "object" && block !== null) {
                 if (block.type === "thinking" && typeof block.thinking === "string") {
-                    if (block.thinking.trim()) { messages.push({ role: "thinking", text: block.thinking }); }
+                    if (block.thinking.trim()) {
+                        messages.push({ role: "thinking", text: block.thinking });
+                    }
                 } else if (block.type === "text" && typeof block.text === "string") {
                     messages.push({ role: "assistant", text: block.text });
                 } else if (block.type === "tool_use") {
                     const counts = diffCounts(block.name ?? "", block.input);
                     messages.push({
-                        role: "tool", text: block.name ?? "", toolName: block.name ?? "",
-                        detail: summarizeToolInput(block.input), input: prettyJson(block.input),
-                        added: counts?.added, removed: counts?.removed,
-                        todos: extractTodos(block.name ?? "", block.input)
-                            ?? taskTracker?.observeToolUse(block.name ?? "", block.input, block.id),
+                        role: "tool",
+                        text: block.name ?? "",
+                        toolName: block.name ?? "",
+                        detail: summarizeToolInput(block.input),
+                        input: prettyJson(block.input),
+                        added: counts?.added,
+                        removed: counts?.removed,
+                        todos:
+                            extractTodos(block.name ?? "", block.input) ??
+                            taskTracker?.observeToolUse(block.name ?? "", block.input, block.id),
                         path: toolFilePath(block.input),
                         diff: editDiff(block.name ?? "", block.input),
                     });
@@ -122,14 +158,21 @@ export function parseTranscriptLine(line: string, taskTracker?: ClaudeTaskTracke
         // A failed turn (e.g. usage/session limit) is stored as a `result`
         // entry with is_error. Re-render it as an error row so reloaded
         // history keeps the same red styling it had when it happened live.
-        const msg = (typeof entry.result === "string" && entry.result.trim())
-            ? entry.result.trim()
-            : (typeof entry.subtype === "string" ? entry.subtype : "unknown error");
+        const msg =
+            typeof entry.result === "string" && entry.result.trim()
+                ? entry.result.trim()
+                : typeof entry.subtype === "string"
+                  ? entry.subtype
+                  : "unknown error";
         messages.push({ role: "error", text: msg });
     }
     // Stamp the transcript time so history shows real timestamps on hover.
     const ts = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : NaN;
-    if (!Number.isNaN(ts)) { for (const m of messages) { m.ts = ts; } }
+    if (!Number.isNaN(ts)) {
+        for (const m of messages) {
+            m.ts = ts;
+        }
+    }
     return messages;
 }
 
@@ -149,9 +192,9 @@ const claudeMetaCache = new JsonlMetadataCache<ClaudeSessionMeta>();
 const CLAUDE_META_PREFIX_BYTES = 512 * 1024;
 
 export async function readSessionMeta(file: string): Promise<ClaudeSessionMeta> {
-    return claudeMetaCache.get(file, async () => parseSessionMeta(
-        await readJsonlPrefix(file, CLAUDE_META_PREFIX_BYTES),
-    ));
+    return claudeMetaCache.get(file, async () =>
+        parseSessionMeta(await readJsonlPrefix(file, CLAUDE_META_PREFIX_BYTES)),
+    );
 }
 
 function parseSessionMeta(content: string): ClaudeSessionMeta {
@@ -172,7 +215,9 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
                 if (typeof c === "string" && c.trim() && !c.startsWith("<")) {
                     title = c.slice(0, 80);
                 } else if (Array.isArray(c)) {
-                    const text = c.find((b: { type: string; text?: string }) => b.type === "text")?.text;
+                    const text = c.find(
+                        (b: { type: string; text?: string }) => b.type === "text",
+                    )?.text;
                     if (text) {
                         title = String(text).slice(0, 80);
                     }
@@ -193,7 +238,10 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
     const om = content.match(/originSessionId:\s*([0-9a-f-]{36})/g);
     if (om && om.length) {
         const counts: Record<string, number> = {};
-        for (const x of om) { const id = x.replace(/originSessionId:\s*/, ""); counts[id] = (counts[id] || 0) + 1; }
+        for (const x of om) {
+            const id = x.replace(/originSessionId:\s*/, "");
+            counts[id] = (counts[id] || 0) + 1;
+        }
         originSessionId = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
     }
     return { title, cwd, gitBranch, originSessionId };

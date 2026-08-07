@@ -8,15 +8,16 @@ import { resolve } from "node:path";
 import { assessContextWindow, windowMessages } from "../adapters/openai/requestWindow";
 import { findToolHistoryIssues, materializeToolSafeHistory } from "../adapters/openai/toolHistory";
 import { ChatMessage } from "../adapters/openai/types";
-import { mergeToolDefinitions } from "../adapters/openai/toolMerge";
 import { consumeStream } from "../adapters/openai/streamConsume";
-import { activeRepeatedToolCallFingerprint, appendRepeatedToolCallFeedback, REPEAT_TOOL_CALL_LIMIT, repeatedToolCallWithoutProgress, toolCallBatchFingerprint } from "../adapters/openai/turnNotices";
 
 /** Builds a ReadableStream that emits the given SSE text as UTF-8 bytes. */
 function sseStream(body: string): ReadableStream<Uint8Array> {
     const bytes = new TextEncoder().encode(body);
     return new ReadableStream<Uint8Array>({
-        start(controller) { controller.enqueue(bytes); controller.close(); },
+        start(controller) {
+            controller.enqueue(bytes);
+            controller.close();
+        },
     });
 }
 
@@ -41,7 +42,9 @@ test("consumeStream surfaces chat-completions reasoning_content as thinking", as
 test("consumeStream surfaces OpenRouter-style delta.reasoning as thinking", async () => {
     const body = `data: {"choices":[{"delta":{"reasoning":"hmm"}}]}\n` + `data: [DONE]\n`;
     const out = await consumeStream(sseStream(body), "m", timing, false, {
-        onText: () => {}, onReasoning: () => {}, onError: () => {},
+        onText: () => {},
+        onReasoning: () => {},
+        onError: () => {},
     });
     assert.equal(out.reasoning, "hmm");
 });
@@ -52,7 +55,9 @@ test("consumeStream surfaces responses-API reasoning_text delta as thinking", as
         `data: {"type":"response.output_text.delta","delta":"answer"}\n` +
         `data: [DONE]\n`;
     const out = await consumeStream(sseStream(body), "m", timing, true, {
-        onText: () => {}, onReasoning: () => {}, onError: () => {},
+        onText: () => {},
+        onReasoning: () => {},
+        onError: () => {},
     });
     assert.equal(out.reasoning, "think");
     assert.equal(out.text, "answer");
@@ -66,7 +71,9 @@ test("consumeStream hides gateway think blocks split across content deltas", asy
         `data: {"choices":[{"delta":{"content":" final</think>"}}]}\n` +
         `data: [DONE]\n`;
     const out = await consumeStream(sseStream(body), "m", timing, false, {
-        onText: (d) => seen.push(d), onReasoning: () => {}, onError: () => {},
+        onText: (d) => seen.push(d),
+        onReasoning: () => {},
+        onError: () => {},
     });
     assert.equal(out.text, "Resposta final");
     assert.deepEqual(seen, ["Resposta", " final"]);
@@ -78,10 +85,10 @@ test("buildOpenAIModelList does not invent OpenAI fallback models", () => {
 });
 
 test("buildOpenAIModelList keeps configured model and configured list", () => {
-    assert.deepEqual(
-        buildOpenAIModelList(["sufficit-dev", "sufficit-fast"], "sufficit-dev"),
-        ["sufficit-dev", "sufficit-fast"],
-    );
+    assert.deepEqual(buildOpenAIModelList(["sufficit-dev", "sufficit-fast"], "sufficit-dev"), [
+        "sufficit-dev",
+        "sufficit-fast",
+    ]);
 });
 
 test("sanitizeToolParametersForOpenAI removes unsupported nested schema keys", () => {
@@ -131,7 +138,11 @@ test("compressMessages preserves tool-call boundary when keeping recent history"
             role: "assistant",
             content: null,
             tool_calls: [
-                { id: "call_new", type: "function", function: { name: "read_file", arguments: "{}" } },
+                {
+                    id: "call_new",
+                    type: "function",
+                    function: { name: "read_file", arguments: "{}" },
+                },
             ],
         },
         { role: "tool", tool_call_id: "call_new", name: "read_file", content: "new result" },
@@ -141,7 +152,7 @@ test("compressMessages preserves tool-call boundary when keeping recent history"
     const compressed = compressMessages(messages, "summarize", { keepRecent: 5 });
 
     assert.deepEqual(
-        compressed.map((m) => m.role === "tool" ? `tool:${m.tool_call_id}` : m.role),
+        compressed.map((m) => (m.role === "tool" ? `tool:${m.tool_call_id}` : m.role)),
         ["system", "assistant", "tool:call_old", "user", "assistant", "tool:call_new", "assistant"],
     );
     assert.deepEqual(findToolHistoryIssues(compressed), []);
@@ -156,7 +167,11 @@ test("findToolHistoryIssues reports invalid dispatch windows without repairing t
             role: "assistant",
             content: null,
             tool_calls: [
-                { id: "call_new", type: "function", function: { name: "read_file", arguments: "{}" } },
+                {
+                    id: "call_new",
+                    type: "function",
+                    function: { name: "read_file", arguments: "{}" },
+                },
             ],
         },
     ];
@@ -175,7 +190,11 @@ test("windowMessages keeps tool results paired with the assistant call that prod
             role: "assistant",
             content: null,
             tool_calls: [
-                { id: "call_keep", type: "function", function: { name: "read_file", arguments: "{}" } },
+                {
+                    id: "call_keep",
+                    type: "function",
+                    function: { name: "read_file", arguments: "{}" },
+                },
             ],
         },
         { role: "tool", tool_call_id: "call_keep", name: "read_file", content: "result" },
@@ -185,7 +204,7 @@ test("windowMessages keeps tool results paired with the assistant call that prod
     const windowed = windowMessages(messages, 2);
 
     assert.deepEqual(
-        windowed.map((m) => m.role === "tool" ? `tool:${m.tool_call_id}` : m.role),
+        windowed.map((m) => (m.role === "tool" ? `tool:${m.tool_call_id}` : m.role)),
         ["system", "assistant", "tool:call_keep", "assistant"],
     );
     assert.deepEqual(findToolHistoryIssues(windowed), []);
@@ -201,7 +220,10 @@ test("request preflight compacts before an estimated context overflow", () => {
     assert.equal(disabled.shouldCompact, false);
     assert.equal(disabled.exceedsWindow, true);
 
-    const source = readFileSync(resolve(__dirname, "../../src/adapters/openai/turnRunner.ts"), "utf8");
+    const source = readFileSync(
+        resolve(__dirname, "../../src/adapters/openai/turnRunner.ts"),
+        "utf8",
+    );
     const compactAt = source.indexOf("maybeAutoCompact(estimate.inputTokens)");
     const dispatchAt = source.indexOf("let res = await post(loginToken)");
     assert.ok(compactAt >= 0, "preflight estimate must feed the compactor");
@@ -224,135 +246,4 @@ test("materializeToolSafeHistory folds orphan tool results without mutating save
     assert.equal(materialized.messages[1].role, "developer");
     assert.match(String(materialized.messages[1].content), /Tool history compacted for dispatch/);
     assert.deepEqual(findToolHistoryIssues(materialized.messages), []);
-});
-
-test("materializeToolSafeHistory supplies a request-only result for missing tool calls", () => {
-    const messages: ChatMessage[] = [
-        { role: "system", content: "system" },
-        { role: "user", content: "run tools" },
-        {
-            role: "assistant",
-            content: null,
-            tool_calls: [
-                { id: "call_missing", type: "function", function: { name: "missing", arguments: "{}" } },
-                { id: "call_present", type: "function", function: { name: "present", arguments: "{}" } },
-            ],
-        },
-        { role: "tool", tool_call_id: "call_present", name: "present", content: "ok" },
-    ];
-
-    const materialized = materializeToolSafeHistory(messages);
-
-    assert.equal(materialized.foldedOrphanTools, 0);
-    assert.equal(materialized.foldedMissingToolCalls, 0);
-    assert.equal(materialized.repairedMissingToolCalls, 1);
-    assert.deepEqual(materialized.messages[2].tool_calls?.map((toolCall) => toolCall.id), ["call_missing", "call_present"]);
-    assert.equal(materialized.messages[3].role, "tool");
-    assert.equal(materialized.messages[3].tool_call_id, "call_missing");
-    assert.match(String(materialized.messages[3].content), /was not executed/);
-    assert.deepEqual(findToolHistoryIssues(materialized.messages), []);
-});
-
-test("repeated tool-call guard stops before an unmatched tool call is persisted", () => {
-    const recent: string[] = [];
-    const signature = 'read_file:{"path":"/repo/file.ts"}';
-
-    for (let i = 1; i < REPEAT_TOOL_CALL_LIMIT; i++) {
-        assert.equal(repeatedToolCallWithoutProgress(recent, signature), false, `call ${i} must remain executable`);
-    }
-    assert.equal(repeatedToolCallWithoutProgress(recent, signature), true);
-    assert.deepEqual(recent, Array(REPEAT_TOOL_CALL_LIMIT).fill(signature));
-});
-
-test("repeated tool-call guard catches an interleaved A/B loop", () => {
-    const recent: string[] = [];
-    const first = 'read_file:{"path":"/repo/current.service"}';
-    const second = 'read_file:{"path":"/repo/missing.service"}';
-
-    for (let i = 1; i < REPEAT_TOOL_CALL_LIMIT; i++) {
-        assert.equal(repeatedToolCallWithoutProgress(recent, first), false, `first call ${i} must remain executable`);
-        assert.equal(repeatedToolCallWithoutProgress(recent, second), false, `second call ${i} must remain executable`);
-    }
-
-    assert.equal(repeatedToolCallWithoutProgress(recent, first), true);
-    assert.equal(recent.filter((call) => call === first).length, REPEAT_TOOL_CALL_LIMIT);
-    assert.equal(recent.filter((call) => call === second).length, REPEAT_TOOL_CALL_LIMIT - 1);
-});
-
-test("repeated tool-call guard forgets occurrences outside its recent window", () => {
-    const recent: string[] = [];
-    const repeated = 'read_file:{"path":"/repo/reused.ts"}';
-
-    for (let i = 0; i < REPEAT_TOOL_CALL_LIMIT - 1; i++) {
-        assert.equal(repeatedToolCallWithoutProgress(recent, repeated), false);
-        assert.equal(repeatedToolCallWithoutProgress(recent, `other:${i}:a`), false);
-        assert.equal(repeatedToolCallWithoutProgress(recent, `other:${i}:b`), false);
-    }
-
-    assert.equal(repeatedToolCallWithoutProgress(recent, repeated), false);
-    assert.equal(recent.filter((call) => call === repeated).length, 4);
-});
-
-test("repeated tool-call feedback is durable model context without exposing arguments", () => {
-    const signature = 'read_file:{"path":"/private/token.json"}';
-    const messages: ChatMessage[] = [
-        { role: "user", content: "inspect" },
-        {
-            role: "assistant", content: null,
-            tool_calls: [{ id: "call_1", type: "function", function: { name: "read_file", arguments: "{}" } }],
-        },
-        { role: "tool", tool_call_id: "call_1", name: "read_file", content: "result" },
-    ];
-    const feedback = appendRepeatedToolCallFeedback(messages, signature, ["read_file"], true);
-    assert.equal(feedback.role, "developer");
-    assert.match(String(feedback.content), /read_file call batch was requested 6 times/);
-    assert.doesNotMatch(String(feedback.content), /private|token\.json/);
-    assert.deepEqual(findToolHistoryIssues(messages), []);
-    messages.push({ role: "developer", content: "one-shot preamble" }, { role: "user", content: "continue" });
-    assert.equal(activeRepeatedToolCallFingerprint(messages), toolCallBatchFingerprint(signature));
-});
-
-test("repeated tool-call carryover expires after assistant progress", () => {
-    const signature = "read_file:{}";
-    const messages: ChatMessage[] = [];
-    appendRepeatedToolCallFeedback(messages, signature, ["read_file"], false);
-    assert.equal(messages[0].role, "system");
-    messages.push({ role: "user", content: "continue" });
-    messages.push({ role: "assistant", content: "Used the existing result." });
-    messages.push({ role: "user", content: "new task" });
-    assert.equal(activeRepeatedToolCallFingerprint(messages), undefined);
-    assert.notEqual(toolCallBatchFingerprint(signature), toolCallBatchFingerprint("read_file:{\"path\":\"other\"}"));
-});
-
-test("mergeToolDefinitions prefixes collisions without mutating shared tool defs", () => {
-    const symTool = {
-        type: "function",
-        function: {
-            name: "search",
-            description: "Search memory",
-        },
-    };
-    const localTool = {
-        type: "function",
-        function: {
-            name: "search",
-            description: "Search files",
-        },
-    };
-
-    const merged = mergeToolDefinitions([
-        { tool: symTool, source: "sym_" },
-        { tool: localTool, source: "local_" },
-    ]);
-
-    assert.deepEqual(
-        merged.map((tool) => tool.function?.name),
-        ["sym_search", "local_search"],
-    );
-    assert.equal(symTool.function.name, "search");
-    assert.equal(symTool.function.description, "Search memory");
-    assert.equal(localTool.function.name, "search");
-    assert.equal(localTool.function.description, "Search files");
-    assert.notEqual(merged[0], symTool);
-    assert.notEqual(merged[0].function, symTool.function);
 });

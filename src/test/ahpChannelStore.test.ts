@@ -12,7 +12,10 @@ const ROOT = "ahp-root://";
 const SESSION = "ahp-session:/session-1";
 
 function activeSessions(value: number): RootActiveSessionsChangedAction {
-    return { type: "root/activeSessionsChanged", activeSessions: value } as RootActiveSessionsChangedAction;
+    return {
+        type: "root/activeSessionsChanged",
+        activeSessions: value,
+    } as RootActiveSessionsChangedAction;
 }
 
 function rootStore(replayCapacity = 10): AhpStateStore {
@@ -88,7 +91,10 @@ test("AHP reconnect replays retained subscribed actions and reports missing chan
 
     assert.equal(result.type, "replay");
     if (result.type === "replay") {
-        assert.deepEqual(result.actions.map((item) => item.serverSeq), [2]);
+        assert.deepEqual(
+            result.actions.map((item) => item.serverSeq),
+            [2],
+        );
         assert.deepEqual(result.missing, [SESSION]);
     }
 });
@@ -111,7 +117,10 @@ test("AHP reconnect falls back to a snapshot after replay history rolls over", (
 test("AHP channel registration and sequence inputs are guarded", () => {
     const store = rootStore();
 
-    assert.throws(() => store.register(ROOT, { agents: [] }, (state) => state), /already registered/);
+    assert.throws(
+        () => store.register(ROOT, { agents: [] }, (state) => state),
+        /already registered/,
+    );
     assert.throws(() => store.snapshot(SESSION), /Unknown AHP channel/);
     assert.throws(() => store.reconnect(-1, [ROOT]), /lastSeenServerSeq/);
     assert.throws(() => new AhpStateStore({ replayCapacity: -1 }), /replayCapacity/);

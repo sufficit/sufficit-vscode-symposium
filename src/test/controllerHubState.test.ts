@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pendingTasksSummary, HubStateContext, HubState } from "../ui/controllerHubState";
+import { pendingTasksSummary, HubStateContext, HubState } from "../application/controllerHubState";
 import { TaskItem } from "../sync/tasks";
 
 // --- Regressão entrega 0C (Hub tasks): o reminder é CONTEXTO, não override ---
@@ -9,14 +9,22 @@ import { TaskItem } from "../sync/tasks";
 // backlog antigo. Agora declara-se subordinado à última mensagem do usuário.
 
 const anchor = (overrides: Partial<TaskItem> = {}): TaskItem => ({
-    id: "t1", type: "task-anchor", title: "Implementar rescan", summary: "rescan",
-    tags: "", done: false, ...overrides,
+    id: "t1",
+    type: "task-anchor",
+    title: "Implementar rescan",
+    summary: "rescan",
+    tags: "",
+    done: false,
+    ...overrides,
 });
 
 function ctxWith(state: HubState): HubStateContext {
     return {
         sessionId: () => "s1",
-        hub: () => ({ configured: () => true } as unknown as HubStateContext["hub"] extends () => infer H ? H : never),
+        hub: () =>
+            ({ configured: () => true }) as unknown as HubStateContext["hub"] extends () => infer H
+                ? H
+                : never,
         state,
     } as unknown as HubStateContext;
 }

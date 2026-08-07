@@ -1,6 +1,6 @@
 import type * as vscode from "vscode";
 import type { FollowHandle, SessionInfo } from "../adapters/types";
-import type { ChatController } from "./chatController";
+import type { ChatController } from "../application/chatController";
 import type { TerminalSession } from "./terminalSession";
 import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 import type { SurfaceSync } from "./surfaceSync";
@@ -22,7 +22,10 @@ export interface SurfaceMessagesDeps {
     getController: () => ChatController | undefined;
     getTerminalSession: () => TerminalSession | undefined;
     getFollowHandle: () => FollowHandle | undefined;
-    getSendBlockedReason: () => SessionInfo["continuationBlockedReason"] | "live-follow" | undefined;
+    getSendBlockedReason: () =>
+        | SessionInfo["continuationBlockedReason"]
+        | "live-follow"
+        | undefined;
     sync: SurfaceSync;
     dialogues: SurfaceDialogues;
     handoff: BackendHandoff;

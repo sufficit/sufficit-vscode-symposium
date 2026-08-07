@@ -2,15 +2,9 @@ import * as assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
-import {
-    buildHeaders,
-    shouldRefreshNativeAuthorization,
-} from "../adapters/openai/httpAuth";
+import { buildHeaders, shouldRefreshNativeAuthorization } from "../adapters/openai/httpAuth";
 import { OpenAIAdapterConfig } from "../adapters/openai/types";
-import {
-    buildPkceAuthorizationUrl,
-    identityRedirectUri,
-} from "../auth/identityOAuth";
+import { buildPkceAuthorizationUrl, identityRedirectUri } from "../auth/identityOAuth";
 
 const adapterConfig: OpenAIAdapterConfig = {
     api: "responses",
@@ -51,12 +45,18 @@ test("PKCE authorization URL carries the complete public-client contract", () =>
 });
 
 test("Sufficit AI requests use the Identity token without overriding explicit auth", () => {
-    assert.equal(buildHeaders(adapterConfig, "identity-token").authorization, "Bearer identity-token");
+    assert.equal(
+        buildHeaders(adapterConfig, "identity-token").authorization,
+        "Bearer identity-token",
+    );
 
-    const explicit = buildHeaders({
-        ...adapterConfig,
-        headers: { Authorization: "Bearer explicit-token" },
-    }, "identity-token");
+    const explicit = buildHeaders(
+        {
+            ...adapterConfig,
+            headers: { Authorization: "Bearer explicit-token" },
+        },
+        "identity-token",
+    );
     assert.equal(explicit.Authorization, "Bearer explicit-token");
     assert.equal(explicit.authorization, undefined);
 

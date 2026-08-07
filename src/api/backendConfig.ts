@@ -87,22 +87,31 @@ function readAdapterDefs(): AdapterEntry[] {
 }
 
 async function writeAdapterDefs(defs: AdapterEntry[]): Promise<void> {
-    await vscode.workspace.getConfiguration("symposium")
+    await vscode.workspace
+        .getConfiguration("symposium")
         .update("adapters", defs, vscode.ConfigurationTarget.Global);
 }
 
 /** Copies only the provided patch fields onto an entry (trims, drops blanks). */
 function applyPatch(entry: AdapterEntry, patch: AdapterPatch): void {
     const set = (key: "name" | "baseUrl" | "apiKey" | "model", value: string | undefined) => {
-        if (value === undefined) { return; }
+        if (value === undefined) {
+            return;
+        }
         const v = value.trim();
-        if (v) { entry[key] = v; } else { delete entry[key]; }
+        if (v) {
+            entry[key] = v;
+        } else {
+            delete entry[key];
+        }
     };
     set("name", patch.name);
     set("baseUrl", patch.baseUrl);
     set("apiKey", patch.apiKey);
     set("model", patch.model);
-    if (patch.api === "chat" || patch.api === "responses") { entry.api = patch.api; }
+    if (patch.api === "chat" || patch.api === "responses") {
+        entry.api = patch.api;
+    }
 }
 
 /**
@@ -138,14 +147,19 @@ async function probeBackend(a: AgentAdapter, refresh = false): Promise<BackendSt
         detail,
         // Custom OpenAI-compatible endpoints keep their model in symposium.adapters[].model
         // (not symposium.<id>.model); built-in backends use the per-backend setting.
-        model: custom ? (readAdapterDefs().find((d) => d.id === a.backend)?.model ?? "") : cfg.get<string>("model", ""),
+        model: custom
+            ? (readAdapterDefs().find((d) => d.id === a.backend)?.model ?? "")
+            : cfg.get<string>("model", ""),
         models: a.models ? a.models() : [],
-        executable: CLI_BACKENDS.has(a.backend) ? cfg.get<string>("executable", a.backend) : undefined,
+        executable: CLI_BACKENDS.has(a.backend)
+            ? cfg.get<string>("executable", a.backend)
+            : undefined,
         executableEditable: CLI_BACKENDS.has(a.backend),
         // Custom endpoints are model-editable too (their picker writes back into the adapter entry).
         modelEditable: isModelEditable(a.backend) || custom,
         custom,
-        installCommand: !available && CLI_BACKENDS.has(a.backend) ? INSTALL_COMMANDS[a.backend] : undefined,
+        installCommand:
+            !available && CLI_BACKENDS.has(a.backend) ? INSTALL_COMMANDS[a.backend] : undefined,
     };
 }
 
@@ -172,7 +186,9 @@ export function createBackendsApi(adapters: AgentAdapter[]): BackendsApi {
             if (!BUILTIN_BACKENDS.has(backend)) {
                 const defs = readAdapterDefs();
                 const entry = defs.find((d) => d.id === backend);
-                if (!entry) { return false; }
+                if (!entry) {
+                    return false;
+                }
                 applyPatch(entry, { model });
                 await writeAdapterDefs(defs);
                 return true;
@@ -180,7 +196,8 @@ export function createBackendsApi(adapters: AgentAdapter[]): BackendsApi {
             if (!isModelEditable(backend)) {
                 return false;
             }
-            await vscode.workspace.getConfiguration(`symposium.${backend}`)
+            await vscode.workspace
+                .getConfiguration(`symposium.${backend}`)
                 .update("model", model, vscode.ConfigurationTarget.Global);
             return true;
         },
@@ -188,7 +205,8 @@ export function createBackendsApi(adapters: AgentAdapter[]): BackendsApi {
             if (!adapterByBackend.has(backend) || !CLI_BACKENDS.has(backend)) {
                 return false;
             }
-            await vscode.workspace.getConfiguration(`symposium.${backend}`)
+            await vscode.workspace
+                .getConfiguration(`symposium.${backend}`)
                 .update("executable", executable, vscode.ConfigurationTarget.Global);
             return true;
         },
@@ -196,14 +214,18 @@ export function createBackendsApi(adapters: AgentAdapter[]): BackendsApi {
             const id = randomUUID().replace(/-/g, "");
             const entry: AdapterEntry = { id };
             applyPatch(entry, patch);
-            if (!entry.baseUrl) { entry.baseUrl = ""; }
+            if (!entry.baseUrl) {
+                entry.baseUrl = "";
+            }
             await writeAdapterDefs([...readAdapterDefs(), entry]);
             return id;
         },
         updateAdapter: async (id, patch) => {
             const defs = readAdapterDefs();
             const entry = defs.find((d) => d.id === id);
-            if (!entry) { return false; }
+            if (!entry) {
+                return false;
+            }
             applyPatch(entry, patch);
             await writeAdapterDefs(defs);
             return true;
@@ -211,7 +233,9 @@ export function createBackendsApi(adapters: AgentAdapter[]): BackendsApi {
         removeAdapter: async (id) => {
             const defs = readAdapterDefs();
             const next = defs.filter((d) => d.id !== id);
-            if (next.length === defs.length) { return false; }
+            if (next.length === defs.length) {
+                return false;
+            }
             await writeAdapterDefs(next);
             return true;
         },

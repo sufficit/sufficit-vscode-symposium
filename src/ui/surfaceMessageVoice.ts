@@ -6,20 +6,29 @@
  * host-side action (native mic capture / transcription), and posts the result
  * back to the webview. Behavior is identical to the inline case bodies.
  */
-import type { WebviewToHost } from "./protocol";
+import type { WebviewToHost } from "../protocol/chat";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
 /** Handles voice-start/stop/cancel/stt-transcribe. Returns true if handled. */
-export async function handleVoiceMessage(message: WebviewToHost, d: SurfaceMessagesDeps): Promise<boolean> {
+export async function handleVoiceMessage(
+    message: WebviewToHost,
+    d: SurfaceMessagesDeps,
+): Promise<boolean> {
     switch (message?.type) {
         case "voice-start": {
             try {
                 const { readSettings } = await import("../voice/sttService");
                 const settings = readSettings();
                 if (settings.engine === "vscode-speech") {
-                    const { startVscodeSpeechDictation } = await import("../voice/vscodeSpeechBridge");
-                    const started = await startVscodeSpeechDictation(settings.language, d.restoreFocus);
-                    if (!started) { return true; }
+                    const { startVscodeSpeechDictation } =
+                        await import("../voice/vscodeSpeechBridge");
+                    const started = await startVscodeSpeechDictation(
+                        settings.language,
+                        d.restoreFocus,
+                    );
+                    if (!started) {
+                        return true;
+                    }
                 } else {
                     // Native mic capture in the extension host (no webview
                     // getUserMedia — VS Code drops that permission on reload).
@@ -32,7 +41,11 @@ export async function handleVoiceMessage(message: WebviewToHost, d: SurfaceMessa
                 }
                 d.post({ type: "voice-recording", ok: true });
             } catch (e) {
-                d.post({ type: "voice-recording", ok: false, error: String((e && (e as Error).message) || e) });
+                d.post({
+                    type: "voice-recording",
+                    ok: false,
+                    error: String((e && (e as Error).message) || e),
+                });
             }
             return true;
         }
@@ -41,7 +54,8 @@ export async function handleVoiceMessage(message: WebviewToHost, d: SurfaceMessa
                 const { readSettings, transcribeWav } = await import("../voice/sttService");
                 let text: string;
                 if (readSettings().engine === "vscode-speech") {
-                    const { stopVscodeSpeechDictation } = await import("../voice/vscodeSpeechBridge");
+                    const { stopVscodeSpeechDictation } =
+                        await import("../voice/vscodeSpeechBridge");
                     text = await stopVscodeSpeechDictation();
                 } else {
                     const { stopCapture } = await import("../voice/recorder");

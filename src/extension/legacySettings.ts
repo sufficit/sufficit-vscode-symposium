@@ -21,18 +21,23 @@ export async function migrateLegacySettings(): Promise<void> {
     const config = vscode.workspace.getConfiguration("symposium");
     for (const [legacyKey, currentKey] of RENAMES) {
         const legacy = config.inspect<unknown>(legacyKey);
-        if (!legacy) { continue; }
+        if (!legacy) {
+            continue;
+        }
 
         const legacyValue = configuredValue("symposium", legacyKey);
-        if (legacyValue === undefined) { continue; }
+        if (legacyValue === undefined) {
+            continue;
+        }
 
         const currentValue = configuredValue("symposium", currentKey);
         if (currentValue === undefined) {
-            const target = legacy.workspaceFolderValue !== undefined
-                ? vscode.ConfigurationTarget.WorkspaceFolder
-                : legacy.workspaceValue !== undefined
-                    ? vscode.ConfigurationTarget.Workspace
-                    : vscode.ConfigurationTarget.Global;
+            const target =
+                legacy.workspaceFolderValue !== undefined
+                    ? vscode.ConfigurationTarget.WorkspaceFolder
+                    : legacy.workspaceValue !== undefined
+                      ? vscode.ConfigurationTarget.Workspace
+                      : vscode.ConfigurationTarget.Global;
             await config.update(currentKey, legacyValue, target);
             symposiumLog(`[settings] migrated symposium.${legacyKey} -> symposium.${currentKey}`);
         }

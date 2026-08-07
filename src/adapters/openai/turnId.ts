@@ -48,9 +48,13 @@ export function makeAttemptId(logicalTurnId: string, n: number): string {
  * ledger as a fallback when `meta.json` is unavailable or corrupt.
  */
 export function parseTurnSeq(logicalTurnId: string | undefined | null): number | undefined {
-    if (typeof logicalTurnId !== "string") { return undefined; }
+    if (typeof logicalTurnId !== "string") {
+        return undefined;
+    }
     const idx = logicalTurnId.lastIndexOf(TURN_SEP);
-    if (idx < 0) { return undefined; }
+    if (idx < 0) {
+        return undefined;
+    }
     const n = Number(logicalTurnId.slice(idx + TURN_SEP.length));
     return Number.isFinite(n) && n > 0 ? n : undefined;
 }
@@ -59,9 +63,13 @@ export function parseTurnSeq(logicalTurnId: string | undefined | null): number |
  * Extracts the attempt number from an attemptId, or undefined when absent.
  */
 export function parseAttemptNo(attemptId: string | undefined | null): number | undefined {
-    if (typeof attemptId !== "string") { return undefined; }
+    if (typeof attemptId !== "string") {
+        return undefined;
+    }
     const idx = attemptId.lastIndexOf(ATTEMPT_SEP);
-    if (idx < 0) { return undefined; }
+    if (idx < 0) {
+        return undefined;
+    }
     const n = Number(attemptId.slice(idx + ATTEMPT_SEP.length));
     return Number.isFinite(n) && n > 0 ? n : undefined;
 }

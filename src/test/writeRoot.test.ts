@@ -18,7 +18,7 @@ test("isPathInAllowedRoots: empty roots → allowed (no containment, back-compat
 
 test("isPathInAllowedRoots: path inside a root → allowed", () => {
     assert.equal(isPathInAllowedRoots("/proj/src/a.ts", ["/proj"]), true);
-    assert.equal(isPathInAllowedRoots("/proj", ["/proj"]), true);   // exact root
+    assert.equal(isPathInAllowedRoots("/proj", ["/proj"]), true); // exact root
 });
 
 test("isPathInAllowedRoots: path outside all roots → blocked", () => {
@@ -68,4 +68,3 @@ test("writeRootError returns undefined when no roots configured (back-compat)", 
     assert.equal(writeRootError("/anywhere", undefined), undefined);
     assert.equal(writeRootError("/anywhere", []), undefined);
 });
-

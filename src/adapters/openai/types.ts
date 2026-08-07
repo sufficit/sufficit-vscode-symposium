@@ -1,4 +1,4 @@
-import { ShellExecutionMode } from "../aiTools";
+import type { ShellExecutionMode } from "../aiTools/types";
 
 /** OpenAI tool call as streamed/accumulated from chat completions deltas. */
 export interface ToolCall {

@@ -53,7 +53,11 @@ export class SharedIdentityTokenStore {
      */
     initialize(): void {
         this.ensureDirectory();
-        try { fs.chmodSync(this.tokenFile, 0o600); } catch { /* token may not exist yet */ }
+        try {
+            fs.chmodSync(this.tokenFile, 0o600);
+        } catch {
+            /* token may not exist yet */
+        }
         if (!this.isInitialized()) {
             this.atomicWrite(this.initializedFile, "1\n");
         }
@@ -85,7 +89,10 @@ export class SharedIdentityTokenStore {
         }
     }
 
-    async withLock<T>(action: () => Promise<T> | T, options: TokenStoreLockOptions = {}): Promise<T> {
+    async withLock<T>(
+        action: () => Promise<T> | T,
+        options: TokenStoreLockOptions = {},
+    ): Promise<T> {
         const timeoutMs = options.timeoutMs ?? 30_000;
         const staleMs = options.staleMs ?? 120_000;
         const retryMs = options.retryMs ?? 40;
@@ -117,7 +124,9 @@ export class SharedIdentityTokenStore {
                     continue;
                 }
                 if (Date.now() >= deadline) {
-                    throw new Error(`Timed out waiting for the shared Identity token lock (${timeoutMs}ms).`);
+                    throw new Error(
+                        `Timed out waiting for the shared Identity token lock (${timeoutMs}ms).`,
+                    );
                 }
                 await delay(retryMs);
             }
@@ -152,6 +161,8 @@ export class SharedIdentityTokenStore {
     }
 }
 
-export function sharedIdentityTokenStore(context: vscode.ExtensionContext): SharedIdentityTokenStore {
+export function sharedIdentityTokenStore(
+    context: vscode.ExtensionContext,
+): SharedIdentityTokenStore {
     return new SharedIdentityTokenStore(context.globalStorageUri.fsPath);
 }

@@ -1,8 +1,13 @@
 import type { SessionStatus, SessionTerminalStatus } from "../adapters/sessionInfo";
 
 /** Maps controller state to the status exposed to the sessions list. */
-export function liveSessionStatus(isBusy: boolean, attentionStatus?: SessionTerminalStatus): SessionStatus {
-    if (isBusy) { return "working"; }
+export function liveSessionStatus(
+    isBusy: boolean,
+    attentionStatus?: SessionTerminalStatus,
+): SessionStatus {
+    if (isBusy) {
+        return "working";
+    }
     return attentionStatus ?? "idle";
 }
 
@@ -16,11 +21,19 @@ export type FollowSessionStatus = "working" | "idle";
 export class FollowStatusRegistry {
     private readonly values = new Map<string, FollowSessionStatus>();
 
-    get(sessionId: string): FollowSessionStatus | undefined { return this.values.get(sessionId); }
+    get(sessionId: string): FollowSessionStatus | undefined {
+        return this.values.get(sessionId);
+    }
 
-    set(sessionId: string, status: FollowSessionStatus): void { this.values.set(sessionId, status); }
+    set(sessionId: string, status: FollowSessionStatus): void {
+        this.values.set(sessionId, status);
+    }
 
-    delete(sessionId: string): boolean { return this.values.delete(sessionId); }
+    delete(sessionId: string): boolean {
+        return this.values.delete(sessionId);
+    }
 
-    clear(): void { this.values.clear(); }
+    clear(): void {
+        this.values.clear();
+    }
 }

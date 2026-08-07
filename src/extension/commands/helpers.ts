@@ -13,7 +13,12 @@ import { SufficitAuth } from "../../auth/identity";
 import { claudeConfig, codexConfig, copilotConfig } from "../config";
 
 /** A tmux-backed persistent terminal session (survives VS Code quit). */
-export interface PersistEntry { tmuxName: string; backend: string; cwd: string; title: string; }
+export interface PersistEntry {
+    tmuxName: string;
+    backend: string;
+    cwd: string;
+    title: string;
+}
 
 /** Raw wiring passed from activate() to the command registrars. */
 export interface CommandDeps {
@@ -37,7 +42,11 @@ export interface CommandDeps {
 export interface CommandHelpers {
     infoOf: (item: { info?: SessionInfo } | SessionInfo) => SessionInfo;
     inEditor: () => boolean;
-    startTerminal: (backend: string, options: { cwd: string; resumeSessionId?: string; tmuxName?: string }, title: string) => void;
+    startTerminal: (
+        backend: string,
+        options: { cwd: string; resumeSessionId?: string; tmuxName?: string },
+        title: string,
+    ) => void;
     persistKey: string;
     persistGet: () => PersistEntry[];
     persistAdd: (e: PersistEntry) => Thenable<void>;
@@ -51,27 +60,40 @@ export function buildCommandContext(d: CommandDeps): CommandContext {
     const { context, chatView, surfaceDeps } = d;
 
     const infoOf = (item: { info?: SessionInfo } | SessionInfo): SessionInfo =>
-        "info" in item && item.info ? item.info : item as SessionInfo;
+        "info" in item && item.info ? item.info : (item as SessionInfo);
 
     // Open in the editor only when configured to AND the sidebar isn't the
     // surface in use: if the user acts from the visible sidebar view, the new
     // session stays there instead of jumping to a central editor panel.
     const inEditor = () =>
-        vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor") === "editor"
-        && !chatView.visible;
+        vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor") ===
+            "editor" && !chatView.visible;
 
     // Per-backend env for terminal-backed sessions (e.g. gateway routing).
     const envFor = (backend: string): Record<string, string> =>
         backend === "claude" ? claudeConfig().env : {};
     const modelFor = (backend: string): string =>
-        backend === "claude" ? claudeConfig().model
-            : backend === "codex" ? codexConfig().model
-                : copilotConfig().model;
+        backend === "claude"
+            ? claudeConfig().model
+            : backend === "codex"
+              ? codexConfig().model
+              : copilotConfig().model;
     const reasoningFor = (backend: string): string =>
-        vscode.workspace.getConfiguration(`symposium.${backend}`).get<string>("reasoning", "default");
+        vscode.workspace
+            .getConfiguration(`symposium.${backend}`)
+            .get<string>("reasoning", "default");
 
-    const startTerminal = (backend: string, options: { cwd: string; resumeSessionId?: string; tmuxName?: string }, title: string) => {
-        const opts = { ...options, env: envFor(backend), model: modelFor(backend) || undefined, reasoning: reasoningFor(backend) };
+    const startTerminal = (
+        backend: string,
+        options: { cwd: string; resumeSessionId?: string; tmuxName?: string },
+        title: string,
+    ) => {
+        const opts = {
+            ...options,
+            env: envFor(backend),
+            model: modelFor(backend) || undefined,
+            reasoning: reasoningFor(backend),
+        };
         if (inEditor()) {
             ChatPanel.show(context, surfaceDeps).openTerminalDialogue(backend, opts, title);
         } else {

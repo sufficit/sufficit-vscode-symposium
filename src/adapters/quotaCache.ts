@@ -13,7 +13,10 @@ interface RecentFile {
     mtimeMs: number;
 }
 
-export type AdapterQuotaParser = (event: unknown, backend: string) => AdapterQuotaSnapshot | undefined;
+export type AdapterQuotaParser = (
+    event: unknown,
+    backend: string,
+) => AdapterQuotaSnapshot | undefined;
 
 function mergeSnapshots(
     current: AdapterQuotaSnapshot | undefined,
@@ -22,9 +25,13 @@ function mergeSnapshots(
     const windows = new Map<string, UsageQuotaWindow>();
     // Input is scanned newest-first. Preserve the newest value for each
     // dynamically named window while older events fill missing windows.
-    for (const window of current?.windows ?? []) { windows.set(window.id, window); }
+    for (const window of current?.windows ?? []) {
+        windows.set(window.id, window);
+    }
     for (const window of incoming.windows) {
-        if (!windows.has(window.id)) { windows.set(window.id, window); }
+        if (!windows.has(window.id)) {
+            windows.set(window.id, window);
+        }
     }
     return {
         ...incoming,
@@ -44,18 +51,32 @@ export function parseQuotaJsonl(
 ): AdapterQuotaSnapshot[] {
     const snapshots: AdapterQuotaSnapshot[] = [];
     const lines = text.split(/\r?\n/);
-    for (let index = lines.length - 1; index >= 0 && snapshots.length < MAX_EVENTS_PER_BACKEND; index--) {
+    for (
+        let index = lines.length - 1;
+        index >= 0 && snapshots.length < MAX_EVENTS_PER_BACKEND;
+        index--
+    ) {
         const line = lines[index].trim();
-        if (!line || (!line.includes("rate_limit") && !line.includes("rateLimit"))) { continue; }
+        if (!line || (!line.includes("rate_limit") && !line.includes("rateLimit"))) {
+            continue;
+        }
         try {
             const event = JSON.parse(line) as Record<string, unknown>;
             const parsed = parser(event, backend);
-            if (!parsed) { continue; }
-            const payload = event.payload && typeof event.payload === "object"
-                ? event.payload as Record<string, unknown>
-                : undefined;
-            const timestamp = event.timestamp ?? event.created_at ?? event.createdAt ??
-                payload?.timestamp ?? payload?.created_at ?? payload?.createdAt;
+            if (!parsed) {
+                continue;
+            }
+            const payload =
+                event.payload && typeof event.payload === "object"
+                    ? (event.payload as Record<string, unknown>)
+                    : undefined;
+            const timestamp =
+                event.timestamp ??
+                event.created_at ??
+                event.createdAt ??
+                payload?.timestamp ??
+                payload?.created_at ??
+                payload?.createdAt;
             snapshots.push({
                 ...parsed,
                 updatedAt: timestamp != null ? parsed.updatedAt : fallbackUpdatedAt,
@@ -116,7 +137,9 @@ async function loadBackend(
     parser: AdapterQuotaParser,
 ): Promise<AdapterQuotaSnapshot | undefined> {
     const files: RecentFile[] = [];
-    for (const root of roots) { await collectRecentJsonl(root, files); }
+    for (const root of roots) {
+        await collectRecentJsonl(root, files);
+    }
     files.sort((a, b) => b.mtimeMs - a.mtimeMs);
 
     let merged: AdapterQuotaSnapshot | undefined;
@@ -131,7 +154,9 @@ async function loadBackend(
         for (const snapshot of snapshots) {
             merged = mergeSnapshots(merged, snapshot);
             eventCount++;
-            if (eventCount >= MAX_EVENTS_PER_BACKEND) { return merged; }
+            if (eventCount >= MAX_EVENTS_PER_BACKEND) {
+                return merged;
+            }
         }
     }
     return merged;
@@ -146,7 +171,7 @@ export class JsonlAdapterUsage implements AdapterUsageProvider {
         readonly displayName: string,
         private readonly roots: () => string[],
         private readonly parser: AdapterQuotaParser = parseAdapterQuota,
-    ) { }
+    ) {}
 
     async read(force = false): Promise<AdapterQuotaSnapshot> {
         if (!force && this.cached && Date.now() - this.cached.readAt < CACHE_TTL_MS) {
@@ -156,13 +181,13 @@ export class JsonlAdapterUsage implements AdapterUsageProvider {
         const value: AdapterQuotaSnapshot = found
             ? { ...found, displayName: this.displayName, state: "ready" }
             : {
-                backend: this.backend,
-                displayName: this.displayName,
-                windows: [],
-                updatedAt: Date.now(),
-                state: "unavailable",
-                message: "This adapter has not reported usage limits yet.",
-            };
+                  backend: this.backend,
+                  displayName: this.displayName,
+                  windows: [],
+                  updatedAt: Date.now(),
+                  state: "unavailable",
+                  message: "This adapter has not reported usage limits yet.",
+              };
         this.cached = { readAt: Date.now(), value };
         return value;
     }
@@ -174,7 +199,7 @@ export class EmptyAdapterUsage implements AdapterUsageProvider {
         readonly backend: string,
         readonly displayName: string,
         private readonly unavailableMessage = "This adapter does not expose usage limits yet.",
-    ) { }
+    ) {}
 
     read(): Promise<AdapterQuotaSnapshot> {
         return Promise.resolve({

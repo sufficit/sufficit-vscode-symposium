@@ -18,11 +18,7 @@ import { SUBAGENT_TOOLS, SUBAGENT_TOOL_NAMES } from "./subagentDefs";
 // LOCAL_TOOLS / LOCAL_TOOL_NAMES / LOCAL_TOOLS_RESPONSES are imported back here,
 // and toResponsesShape is shared from localDefs so the shape mapping stays DRY.
 import { LOCAL_TOOLS, LOCAL_TOOL_NAMES, toResponsesShape } from "./localDefs";
-
-export interface OpenAITool {
-    type: "function";
-    function: { name: string; description: string; parameters: Record<string, unknown> };
-}
+import type { OpenAITool } from "./types";
 
 // Universal tools: work with any backend via local fallbacks
 const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
@@ -30,12 +26,20 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "memory_search",
-            description: "Search the shared Sufficit AI memory (cross-agent knowledge: facts, guidelines, task history, agent defs). Returns compact records (id, title, summary). Use before non-trivial tasks and to recall prior context.",
+            description:
+                "Search the shared Sufficit AI memory (cross-agent knowledge: facts, guidelines, task history, agent defs). Returns compact records (id, title, summary). Use before non-trivial tasks and to recall prior context.",
             parameters: {
                 type: "object",
                 properties: {
-                    query: { type: "string", description: "Free-text query matched against title and summary." },
-                    type: { type: "string", description: "Optional type filter, e.g. guideline, fact, task-checkpoint, agent-def." },
+                    query: {
+                        type: "string",
+                        description: "Free-text query matched against title and summary.",
+                    },
+                    type: {
+                        type: "string",
+                        description:
+                            "Optional type filter, e.g. guideline, fact, task-checkpoint, agent-def.",
+                    },
                     limit: { type: "integer", description: "Max records (1-50). Default 20." },
                 },
                 required: ["query"],
@@ -46,10 +50,17 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "memory_get_observations",
-            description: "Fetch full memory observations (including payload) by their ids, after a memory_search returned promising ids.",
+            description:
+                "Fetch full memory observations (including payload) by their ids, after a memory_search returned promising ids.",
             parameters: {
                 type: "object",
-                properties: { ids: { type: "array", items: { type: "string" }, description: "Observation ids." } },
+                properties: {
+                    ids: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "Observation ids.",
+                    },
+                },
                 required: ["ids"],
             },
         },
@@ -58,14 +69,22 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "memory_save",
-            description: "Persist a memory observation to shared Sufficit memory (e.g. a durable fact, decision, or task-checkpoint). Never store secrets.",
+            description:
+                "Persist a memory observation to shared Sufficit memory (e.g. a durable fact, decision, or task-checkpoint). Never store secrets.",
             parameters: {
                 type: "object",
                 properties: {
-                    type: { type: "string", description: "Observation type, e.g. fact, decision, task-checkpoint, note." },
+                    type: {
+                        type: "string",
+                        description:
+                            "Observation type, e.g. fact, decision, task-checkpoint, note.",
+                    },
                     title: { type: "string", description: "Short title." },
                     summary: { type: "string", description: "Compact searchable text." },
-                    payload: { type: "string", description: "Optional full detail (JSON or text)." },
+                    payload: {
+                        type: "string",
+                        description: "Optional full detail (JSON or text).",
+                    },
                     tags: { type: "string", description: "Optional comma-separated tags." },
                 },
                 required: ["type", "title", "summary"],
@@ -76,11 +95,15 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "add_guardrail",
-            description: "Add an absolute rule (guardrail) for THIS chat session — a hard constraint you must honor on every message for the rest of the session (e.g. 'only edit the backend, never the Razor markup'). Use it to lock in a constraint the user gave you, or a commitment you make, so it can't drift across turns. Guardrails are injected into every later message. Keep each one short and imperative.",
+            description:
+                "Add an absolute rule (guardrail) for THIS chat session — a hard constraint you must honor on every message for the rest of the session (e.g. 'only edit the backend, never the Razor markup'). Use it to lock in a constraint the user gave you, or a commitment you make, so it can't drift across turns. Guardrails are injected into every later message. Keep each one short and imperative.",
             parameters: {
                 type: "object",
                 properties: {
-                    text: { type: "string", description: "The rule, short and imperative (one sentence)." },
+                    text: {
+                        type: "string",
+                        description: "The rule, short and imperative (one sentence).",
+                    },
                 },
                 required: ["text"],
             },
@@ -90,7 +113,8 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "clear_guardrails",
-            description: "Remove ALL guardrails for THIS chat session (when the user asks to clear/remove the guardrails). Returns how many were removed. After this, no guardrails are injected until new ones are added.",
+            description:
+                "Remove ALL guardrails for THIS chat session (when the user asks to clear/remove the guardrails). Returns how many were removed. After this, no guardrails are injected until new ones are added.",
             parameters: { type: "object", properties: {}, required: [] },
         },
     },
@@ -106,12 +130,21 @@ const HUB_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "add_task",
-            description: "Create one or more session tasks (a plan), shown in the Tasks panel. Use this the MOMENT the user approves a multi-step plan you proposed: record EACH step as a task BEFORE you start acting, so the plan is tracked and you can mark each task_complete as you finish. Use it whenever you commit to a new multi-step piece of work.",
+            description:
+                "Create one or more session tasks (a plan), shown in the Tasks panel. Use this the MOMENT the user approves a multi-step plan you proposed: record EACH step as a task BEFORE you start acting, so the plan is tracked and you can mark each task_complete as you finish. Use it whenever you commit to a new multi-step piece of work.",
             parameters: {
                 type: "object",
                 properties: {
-                    tasks: { type: "array", items: { type: "string" }, description: "One short title per step/task, in order." },
-                    user_requested: { type: "boolean", description: "Set true when user explicitly requested this task. Default false (agent-created). User-requested tasks require user confirmation before completion." },
+                    tasks: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "One short title per step/task, in order.",
+                    },
+                    user_requested: {
+                        type: "boolean",
+                        description:
+                            "Set true when user explicitly requested this task. Default false (agent-created). User-requested tasks require user confirmation before completion.",
+                    },
                 },
                 required: ["tasks"],
             },
@@ -121,12 +154,21 @@ const HUB_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "TaskCreate",
-            description: "Create one or more session tasks (a plan), shown in the Tasks panel. Alias for add_task, compatible with Claude Code naming. Use this the MOMENT the user approves a multi-step plan you proposed: record EACH step as a task BEFORE you start acting, so the plan is tracked and you can mark TaskUpdate(done=true) as you finish.",
+            description:
+                "Create one or more session tasks (a plan), shown in the Tasks panel. Alias for add_task, compatible with Claude Code naming. Use this the MOMENT the user approves a multi-step plan you proposed: record EACH step as a task BEFORE you start acting, so the plan is tracked and you can mark TaskUpdate(done=true) as you finish.",
             parameters: {
                 type: "object",
                 properties: {
-                    tasks: { type: "array", items: { type: "string" }, description: "One short title per step/task, in order." },
-                    user_requested: { type: "boolean", description: "Set true when user explicitly requested this task. Default false (agent-created). User-requested tasks require user confirmation before completion." },
+                    tasks: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "One short title per step/task, in order.",
+                    },
+                    user_requested: {
+                        type: "boolean",
+                        description:
+                            "Set true when user explicitly requested this task. Default false (agent-created). User-requested tasks require user confirmation before completion.",
+                    },
                 },
                 required: ["tasks"],
             },
@@ -136,11 +178,16 @@ const HUB_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "list_tasks",
-            description: "List this chat session's tasks (task-anchor / task-checkpoint memory items bound to the session). Returns PENDING tasks by default; pass all=true to include completed ones too.",
+            description:
+                "List this chat session's tasks (task-anchor / task-checkpoint memory items bound to the session). Returns PENDING tasks by default; pass all=true to include completed ones too.",
             parameters: {
                 type: "object",
                 properties: {
-                    all: { type: "boolean", description: "Include completed tasks as well. Default false (pending only)." },
+                    all: {
+                        type: "boolean",
+                        description:
+                            "Include completed tasks as well. Default false (pending only).",
+                    },
                 },
                 required: [],
             },
@@ -150,12 +197,20 @@ const HUB_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "task_complete",
-            description: "Mark a session task as completed, by its exact id — NEVER by title or a text description. REQUIRED: id (a UUID; copy it verbatim from the '→ CURRENT (id=...)' line in your task reminder, or from list_tasks — do not guess or omit it). Optional: summary, a short note on what you did, saved with the completion. WORKFLOW: (1) Agent-created tasks (default): call IMMEDIATELY after finishing - don't wait. (2) User-requested tasks: present justification why task is complete and WAIT for user confirmation before calling this. The task drops from pending Tasks panel. Returns the new current task + remaining pending ones so you never need a separate list_tasks call to know what's next. Tasks created together in ONE add_task call are a numbered plan, done in order: completing a later one auto-completes the earlier ones in that same call too (a safety net, response includes `cascaded`) — but still call this on each step as you actually finish it; don't rely on the cascade as a shortcut to skip the intermediate calls.",
+            description:
+                "Mark a session task as completed, by its exact id — NEVER by title or a text description. REQUIRED: id (a UUID; copy it verbatim from the '→ CURRENT (id=...)' line in your task reminder, or from list_tasks — do not guess or omit it). Optional: summary, a short note on what you did, saved with the completion. WORKFLOW: (1) Agent-created tasks (default): call IMMEDIATELY after finishing - don't wait. (2) User-requested tasks: present justification why task is complete and WAIT for user confirmation before calling this. The task drops from pending Tasks panel. Returns the new current task + remaining pending ones so you never need a separate list_tasks call to know what's next. Tasks created together in ONE add_task call are a numbered plan, done in order: completing a later one auto-completes the earlier ones in that same call too (a safety net, response includes `cascaded`) — but still call this on each step as you actually finish it; don't rely on the cascade as a shortcut to skip the intermediate calls.",
             parameters: {
                 type: "object",
                 properties: {
-                    id: { type: "string", description: "REQUIRED. The exact task observation id (UUID) — from the '→ CURRENT (id=...)' reminder or list_tasks. Not the task's title." },
-                    summary: { type: "string", description: "Optional short note on what you did, saved onto the task." },
+                    id: {
+                        type: "string",
+                        description:
+                            "REQUIRED. The exact task observation id (UUID) — from the '→ CURRENT (id=...)' reminder or list_tasks. Not the task's title.",
+                    },
+                    summary: {
+                        type: "string",
+                        description: "Optional short note on what you did, saved onto the task.",
+                    },
                 },
                 required: ["id"],
             },
@@ -165,13 +220,24 @@ const HUB_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "TaskUpdate",
-            description: "Mark a session task as completed, by its exact id — NEVER by title or a text description. Alias for task_complete, compatible with Claude Code naming. REQUIRED: id (a UUID; copy it verbatim from the '→ CURRENT (id=...)' line in your task reminder, or from list_tasks — do not guess or omit it), done=true. Optional: summary, a short note on what you did. Returns the new current task + remaining pending ones so you never need a separate list_tasks call to know what's next. Tasks created together in ONE add_task/TaskCreate call are a numbered plan, done in order: completing a later one auto-completes the earlier ones in that same call too (a safety net, response includes `cascaded`) — but still call this on each step as you actually finish it; don't rely on the cascade as a shortcut to skip the intermediate calls.",
+            description:
+                "Mark a session task as completed, by its exact id — NEVER by title or a text description. Alias for task_complete, compatible with Claude Code naming. REQUIRED: id (a UUID; copy it verbatim from the '→ CURRENT (id=...)' line in your task reminder, or from list_tasks — do not guess or omit it), done=true. Optional: summary, a short note on what you did. Returns the new current task + remaining pending ones so you never need a separate list_tasks call to know what's next. Tasks created together in ONE add_task/TaskCreate call are a numbered plan, done in order: completing a later one auto-completes the earlier ones in that same call too (a safety net, response includes `cascaded`) — but still call this on each step as you actually finish it; don't rely on the cascade as a shortcut to skip the intermediate calls.",
             parameters: {
                 type: "object",
                 properties: {
-                    id: { type: "string", description: "REQUIRED. The exact task observation id (UUID) — from the '→ CURRENT (id=...)' reminder or list_tasks/TaskCreate. Not the task's title." },
-                    done: { type: "boolean", description: "Set true to mark as completed. Default true." },
-                    summary: { type: "string", description: "Optional short note on what you did, saved onto the task." },
+                    id: {
+                        type: "string",
+                        description:
+                            "REQUIRED. The exact task observation id (UUID) — from the '→ CURRENT (id=...)' reminder or list_tasks/TaskCreate. Not the task's title.",
+                    },
+                    done: {
+                        type: "boolean",
+                        description: "Set true to mark as completed. Default true.",
+                    },
+                    summary: {
+                        type: "string",
+                        description: "Optional short note on what you did, saved onto the task.",
+                    },
                 },
                 required: ["id"],
             },
@@ -181,7 +247,8 @@ const HUB_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "web_search",
-            description: "Search the public web via the Sufficit gateway. Returns results with titles, urls and snippets.",
+            description:
+                "Search the public web via the Sufficit gateway. Returns results with titles, urls and snippets.",
             parameters: {
                 type: "object",
                 properties: {
@@ -207,7 +274,9 @@ export const AI_TOOLS: OpenAITool[] = [...UNIVERSAL_MEMORY_TOOLS, ...HUB_TOOLS];
 export const AI_TOOLS_RESPONSES = AI_TOOLS.map(toResponsesShape);
 
 /** All AI tool names this bridge can expose. */
-export const ALL_AI_TOOL_NAMES = [...AI_TOOLS, ...LOCAL_TOOLS, ...SUBAGENT_TOOLS].map((t) => t.function.name);
+export const ALL_AI_TOOL_NAMES = [...AI_TOOLS, ...LOCAL_TOOLS, ...SUBAGENT_TOOLS].map(
+    (t) => t.function.name,
+);
 
 /**
  * Maps an agent-def's declared capability tokens to the concrete AI tool names
@@ -223,43 +292,74 @@ export function aiToolsForAgent(declared: string[]): string[] {
     // earlier/compacted context when the user says "reread the history".
     names.add("read_session");
     // Session task tools are always safe (scoped to this session, no secrets).
-    names.add("add_task"); names.add("TaskCreate"); names.add("list_tasks"); names.add("task_complete"); names.add("TaskUpdate");
+    names.add("add_task");
+    names.add("TaskCreate");
+    names.add("list_tasks");
+    names.add("task_complete");
+    names.add("TaskUpdate");
     // Guardrails are session-scoped self-constraints: always available so any
     // agent can lock in a hard rule the user gave it (the user can still remove).
-    names.add("add_guardrail"); names.add("clear_guardrails");
+    names.add("add_guardrail");
+    names.add("clear_guardrails");
     // Workspace bootstrap is a per-folder config file (read/replace), always safe.
-    names.add("get_workspace_bootstrap"); names.add("set_workspace_bootstrap");
+    names.add("get_workspace_bootstrap");
+    names.add("set_workspace_bootstrap");
     if (has(/^sufficit-ai\b|^sufficit-ai\/|^memory\b/i)) {
-        names.add("memory_search"); names.add("memory_get_observations"); names.add("memory_save");
+        names.add("memory_search");
+        names.add("memory_get_observations");
+        names.add("memory_save");
     }
     if (has(/^web\b|^search\b|^web_search\b|^browse\b|^fetch\b/i)) {
-        names.add("web_search"); names.add("fetch_url"); names.add("open_url");
+        names.add("web_search");
+        names.add("fetch_url");
+        names.add("open_url");
     }
     // Full shell/filesystem parity, enabled by a shell/exec/bash/terminal capability.
     if (has(/^shell\b|^exec\b|^bash\b|^terminal\b/i)) {
-        for (const n of LOCAL_TOOL_NAMES) { names.add(n); }
+        for (const n of LOCAL_TOOL_NAMES) {
+            names.add(n);
+        }
     }
     // Granular file access: read/write/edit/fs/filesystem give the file tools
     // (read_file/write_file/list_dir) WITHOUT exposing the shell — so an agent
     // can author files/plans for you without arbitrary command execution.
     if (has(/^fs\b|^filesystem\b/i)) {
-        names.add("read_file"); names.add("write_file"); names.add("edit_file"); names.add("list_dir");
+        names.add("read_file");
+        names.add("write_file");
+        names.add("edit_file");
+        names.add("list_dir");
     }
-    if (has(/^read\b|^read_file\b/i)) { names.add("read_file"); names.add("list_dir"); }
+    if (has(/^read\b|^read_file\b/i)) {
+        names.add("read_file");
+        names.add("list_dir");
+    }
     if (has(/^write\b|^write_file\b|^edit\b|^edit_file\b/i)) {
-        names.add("write_file"); names.add("edit_file"); names.add("read_file"); names.add("list_dir");
+        names.add("write_file");
+        names.add("edit_file");
+        names.add("read_file");
+        names.add("list_dir");
     }
-    if (has(/^list\b|^list_dir\b|^ls\b/i)) { names.add("list_dir"); }
+    if (has(/^list\b|^list_dir\b|^ls\b/i)) {
+        names.add("list_dir");
+    }
     // Subagent orchestration: an agent that declares agents/spawn/orchestrate may
     // itself delegate to other agent-defs (bounded by depth/concurrency guards).
     if (has(/^agents?\b|^spawn\b|^orchestrate\b|^subagents?\b|^delegate\b/i)) {
-        for (const n of SUBAGENT_TOOL_NAMES) { names.add(n); }
+        for (const n of SUBAGENT_TOOL_NAMES) {
+            names.add(n);
+        }
     }
     return [...names];
 }
 
 /** Filters tool definitions to an allowlist of names (undefined = all). */
-export function filterTools<T extends { function?: { name: string; description?: string }; name?: string; description?: string }>(tools: T[], allow?: string[]): T[] {
+export function filterTools<
+    T extends {
+        function?: { name: string; description?: string };
+        name?: string;
+        description?: string;
+    },
+>(tools: T[], allow?: string[]): T[] {
     if (!allow) {
         return tools;
     }

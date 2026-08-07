@@ -37,35 +37,52 @@ export function readUserSetting(context: vscode.ExtensionContext, key: string): 
     }
 }
 
-export function writeUserSetting(context: vscode.ExtensionContext, key: string, value: unknown): void {
+export function writeUserSetting(
+    context: vscode.ExtensionContext,
+    key: string,
+    value: unknown,
+): void {
     const userDir = path.resolve(context.globalStorageUri.fsPath, "..", "..");
     const file = path.join(userDir, "settings.json");
 
     let raw = "";
-    try { raw = fs.readFileSync(file, "utf8"); } catch { /* first write */ }
+    try {
+        raw = fs.readFileSync(file, "utf8");
+    } catch {
+        /* first write */
+    }
 
     let obj: Record<string, unknown> = {};
     if (raw.trim()) {
         obj = tryParse(raw) ?? tryParse(stripJsonc(raw)) ?? {};
     }
 
-    obj[key] = value;   // flat dotted key — settings.json stores keys unnested
+    obj[key] = value; // flat dotted key — settings.json stores keys unnested
     fs.mkdirSync(userDir, { recursive: true });
     fs.writeFileSync(file, JSON.stringify(obj, null, 2) + "\n", "utf8");
 }
 
 /** Opens settings.json and reveals the line for `key` (creating it empty if
  *  absent), so raw values can be edited by hand. */
-export async function openUserSettingAt(context: vscode.ExtensionContext, key: string): Promise<void> {
+export async function openUserSettingAt(
+    context: vscode.ExtensionContext,
+    key: string,
+): Promise<void> {
     const userDir = path.resolve(context.globalStorageUri.fsPath, "..", "..");
     const file = path.join(userDir, "settings.json");
-    if (readUserSetting(context, key) === undefined) { writeUserSetting(context, key, ""); }
+    if (readUserSetting(context, key) === undefined) {
+        writeUserSetting(context, key, "");
+    }
     let line = 0;
     try {
         const lines = fs.readFileSync(file, "utf8").split("\n");
         const i = lines.findIndex((l) => l.includes(`"${key}"`));
-        if (i >= 0) { line = i; }
-    } catch { /* open at top if unreadable */ }
+        if (i >= 0) {
+            line = i;
+        }
+    } catch {
+        /* open at top if unreadable */
+    }
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
     const editor = await vscode.window.showTextDocument(doc);
     const pos = new vscode.Position(line, 0);
@@ -76,8 +93,10 @@ export async function openUserSettingAt(context: vscode.ExtensionContext, key: s
 function tryParse(text: string): Record<string, unknown> | undefined {
     try {
         const v = JSON.parse(text);
-        return v && typeof v === "object" ? v as Record<string, unknown> : undefined;
-    } catch { return undefined; }
+        return v && typeof v === "object" ? (v as Record<string, unknown>) : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 /** Strips // and /* *\/ comments and trailing commas so JSONC parses as JSON. */

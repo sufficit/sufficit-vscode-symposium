@@ -20,14 +20,14 @@ test("revert restores the captured baseline", async () => {
     const ok = await snapshots.revert("sess1", f);
     assert.equal(ok, true);
     assert.equal(fs.readFileSync(f, "utf8"), "original");
-    assert.equal(snapshots.has("sess1", f), false);   // consumed
+    assert.equal(snapshots.has("sess1", f), false); // consumed
 });
 
 test("capture keeps the EARLIEST baseline (idempotent)", async () => {
     const f = tmpFile("b.txt", "v1");
     snapshots.capture("s2", f);
     fs.writeFileSync(f, "v2");
-    snapshots.capture("s2", f);   // must not overwrite the baseline with v2
+    snapshots.capture("s2", f); // must not overwrite the baseline with v2
     await snapshots.revert("s2", f);
     assert.equal(fs.readFileSync(f, "utf8"), "v1");
 });
@@ -35,7 +35,7 @@ test("capture keeps the EARLIEST baseline (idempotent)", async () => {
 test("revert of a file that did not exist deletes it (new file)", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symp-snap-"));
     const f = path.join(dir, "created.txt");
-    snapshots.capture("s3", f);   // file absent → baseline null
+    snapshots.capture("s3", f); // file absent → baseline null
     fs.writeFileSync(f, "agent created this");
     const ok = await snapshots.revert("s3", f);
     assert.equal(ok, true);

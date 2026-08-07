@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ControllerEventHandler } from "../ui/controllerEventHandler";
+import { ControllerEventHandler } from "../application/controllerEventHandler";
 
 function handlerState() {
     const state = { busy: true, warning: false, error: false };
     const handler = new ControllerEventHandler({
         isBusy: () => state.busy,
-        setBusy: (value) => { state.busy = value; },
+        setBusy: (value) => {
+            state.busy = value;
+        },
         armWatchdog: () => undefined,
         clearWatchdog: () => undefined,
         emit: () => undefined,
@@ -14,8 +16,12 @@ function handlerState() {
         recordChanged: () => undefined,
         setTodos: () => undefined,
         trackingMode: () => undefined,
-        markTurnFailed: () => { state.error = true; },
-        markTurnWarning: () => { state.warning = true; },
+        markTurnFailed: () => {
+            state.error = true;
+        },
+        markTurnWarning: () => {
+            state.warning = true;
+        },
         setLogicalTurnId: () => undefined,
         takeQueued: () => undefined,
         emitQueue: () => undefined,

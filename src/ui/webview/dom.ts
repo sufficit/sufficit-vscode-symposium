@@ -36,7 +36,9 @@ export const sessionsPane = document.getElementById("sessionsPane") as HTMLEleme
 export const resizer = document.getElementById("resizer") as HTMLElement;
 export const progress = document.getElementById("progress") as HTMLElement;
 export const composerEl = document.getElementById("composer") as HTMLElement;
-export const composerBlockedNotice = document.getElementById("composerBlockedNotice") as HTMLElement;
+export const composerBlockedNotice = document.getElementById(
+    "composerBlockedNotice",
+) as HTMLElement;
 export const planEl = document.getElementById("plan") as HTMLElement;
 export const tasksEl = document.getElementById("tasks") as HTMLElement;
 export const guardrailsEl = document.getElementById("guardrails") as HTMLElement;

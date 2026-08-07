@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { DEFAULT_BUSY_SEND_MODE, normalizeBusySendMode } from "../ui/sendMode";
+import { DEFAULT_BUSY_SEND_MODE, normalizeBusySendMode } from "../protocol/sendMode";
 
 const root = resolve(__dirname, "../..");
 

@@ -1,34 +1,25 @@
 import * as vscode from "vscode";
 import { HistoryMessage, SessionInfo, SessionStartOptions } from "../adapters/types";
-import { TerminalSession } from "./terminalSession";
 import { readWorkspaceBootstrap } from "../config/root";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
-import { symposiumLog } from "../extension/log";
-import type { WebviewToHost } from "./protocol";
+import type { WebviewToHost } from "../protocol/chat";
 import { restartFromMessage, retryLastMessage, editResend } from "./surfaceBranching";
 import { handleControllerEvent } from "./surfaceDialoguesAttach";
 import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
-import { DEFAULT_BUSY_SEND_MODE } from "./sendMode";
+import { DEFAULT_BUSY_SEND_MODE } from "../protocol/sendMode";
 import { canonicalReasoning } from "../adapters/reasoning";
+import {
+    openTerminalDialogue as openTerminalDialogueFlow,
+    type TerminalDialogueOptions,
+} from "./surfaceTerminalDialogue";
 
-/**
- * Dialogue lifecycle for a chat surface: opening a dialogue (new / resumed /
- * handed-off-seed), terminal-backed dialogues, read-only follow mirrors, the
- * restore-on-open and default-start flows, and the branch flows (restart from a
- * message, edit & resend). Extracted from ChatSurface as a collaborator; the
- * surface keeps the actual session state (controller/terminal/follow handle)
- * and exposes it here via getters/setters so the surface stays the owner.
- */
+/** Coordinates new, resumed, terminal-backed and read-only dialogues. */
 export type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 
 export class SurfaceDialogues {
-    constructor(private readonly d: SurfaceDialoguesDeps) { }
+    constructor(private readonly d: SurfaceDialoguesDeps) {}
 
-    /**
-     * Bumped whenever this surface binds a different dialogue. followSession()
-     * awaits history; if another dialogue opens meanwhile, the stale history and
-     * tail handle must not attach to the new pane.
-     */
+    /** Prevents an awaited follow operation from attaching to a newer dialogue. */
     private generation = 0;
 
     /** Restores the last active session on open, or starts a default dialogue. */
@@ -42,7 +33,9 @@ export class SurfaceDialogues {
                 this.d.deps.listSessions().catch(() => [] as SessionInfo[]),
                 new Promise<SessionInfo[]>((resolve) => setTimeout(() => resolve([]), 6000)),
             ]);
-            const info = sessions.find((s) => s.sessionId === last.sessionId && s.backend === last.backend);
+            const info = sessions.find(
+                (s) => s.sessionId === last.sessionId && s.backend === last.backend,
+            );
             if (info) {
                 this.openSession(info);
                 return;
@@ -57,7 +50,13 @@ export class SurfaceDialogues {
             ? "openai"
             : this.d.deps.adapterByBackend.keys().next().value;
         if (!backend) {
-            void this.d.webview.postMessage({ type: "boot", id: "session", label: "No backend available", status: "fail", detail: "configure an adapter" });
+            void this.d.webview.postMessage({
+                type: "boot",
+                id: "session",
+                label: "No backend available",
+                status: "fail",
+                detail: "configure an adapter",
+            });
             void this.d.webview.postMessage({ type: "boot", complete: true });
             return;
         }
@@ -91,7 +90,12 @@ export class SurfaceDialogues {
      * Implemented in surfaceBranching.ts.
      */
     editResend(anchorIndex: number, sendMsg: WebviewToHost): void {
-        return editResend(this.d, (b, o, t, i) => this.openDialogue(b, o, t, i), anchorIndex, sendMsg);
+        return editResend(
+            this.d,
+            (b, o, t, i) => this.openDialogue(b, o, t, i),
+            anchorIndex,
+            sendMsg,
+        );
     }
 
     /** Opens a stored session (resume) in this surface. */
@@ -102,7 +106,12 @@ export class SurfaceDialogues {
         }
         this.openDialogue(
             info.backend,
-            { cwd: this.d.deps.cwdFor(info), resumeSessionId: info.sessionId, model: info.model, lineageId: info.lineageId },
+            {
+                cwd: this.d.deps.cwdFor(info),
+                resumeSessionId: info.sessionId,
+                model: info.model,
+                lineageId: info.lineageId,
+            },
             info.title,
             info,
         );
@@ -114,9 +123,14 @@ export class SurfaceDialogues {
      * transcript so new turns appear as they happen. The composer is
      * disabled — sending would fork the session, not drive the original.
      */
-    async followSession(info: SessionInfo, readOnlyReason?: SessionInfo["continuationBlockedReason"]): Promise<void> {
+    async followSession(
+        info: SessionInfo,
+        readOnlyReason?: SessionInfo["continuationBlockedReason"],
+    ): Promise<void> {
         const adapter = this.d.deps.adapterByBackend.get(info.backend);
-        if (!adapter) { return; }
+        if (!adapter) {
+            return;
+        }
         if (!adapter.follow && !readOnlyReason) {
             // No live mirror for this backend — fall back to resume.
             this.openSession(info);
@@ -127,7 +141,9 @@ export class SurfaceDialogues {
         this.d.detachActive();
         this.d.post({ type: "clear" });
         this.d.post({ type: "history-start" });
-        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
+        const sessionsSide = vscode.workspace
+            .getConfiguration("symposium.chat")
+            .get<string>("sessionsSide", "auto");
         this.d.post({
             type: "meta",
             backend: adapter.backend,
@@ -143,10 +159,14 @@ export class SurfaceDialogues {
             title: info.title,
             sessionsSide,
             chatOnly: this.d.chatOnly,
-            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", DEFAULT_BUSY_SEND_MODE),
+            whenBusy: vscode.workspace
+                .getConfiguration("symposium.chat")
+                .get("whenBusy", DEFAULT_BUSY_SEND_MODE),
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
             openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
-            execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
+            execDisplay: vscode.workspace
+                .getConfiguration("symposium.openai")
+                .get<string>("shellExecution", "silent"),
         });
         this.d.activateUsage(adapter);
         if (adapter.history) {
@@ -193,57 +213,9 @@ export class SurfaceDialogues {
      * process the user can also type into. Full two-way control of one live
      * session. `env`/`model` come from the adapter's configuration.
      */
-    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string; reasoning?: string }, title: string): void {
-        const adapter = this.d.deps.adapterByBackend.get(backend);
-        if (!adapter) {
-            return;
-        }
+    openTerminalDialogue(backend: string, options: TerminalDialogueOptions, title: string): void {
         this.generation++;
-        this.d.setSendBlockedReason(undefined);
-        this.d.detachActive();
-        this.d.post({ type: "clear" });
-        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
-        this.d.post({
-            type: "meta",
-            backend: adapter.backend,
-            backendName: adapter.displayName,
-            modelLabels: adapter.modelLabels?.() ?? {},
-            resumed: !!options.resumeSessionId,
-            terminal: true,
-            busy: false,
-            models: [],
-            sessionId: options.resumeSessionId ?? "",
-            title,
-            sessionsSide,
-            chatOnly: this.d.chatOnly,
-            cwd: options.cwd,
-            activeFile: activeEditorContext().path,
-            activeFileStart: activeEditorContext().start,
-            activeFileEnd: activeEditorContext().end,
-            activeFileStartColumn: activeEditorContext().startColumn,
-            activeFileEndColumn: activeEditorContext().endColumn,
-            activeFilePreview: activeEditorContext().preview,
-            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", DEFAULT_BUSY_SEND_MODE),
-            devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
-            openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
-            execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
-        });
-        this.d.activateUsage(adapter);
-        const terminal = new TerminalSession(
-            adapter,
-            { cwd: options.cwd, resumeSessionId: options.resumeSessionId, model: options.model, reasoning: options.reasoning, env: options.env, tmuxName: options.tmuxName },
-            (message) => this.d.post(message),
-            symposiumLog,
-            (sessionId, status) => this.d.deps.runtime.setFollowStatus(sessionId, status),
-        );
-        this.d.setTerminalSession(terminal);
-        if (options.tmuxName) {
-            this.d.post({ type: "event", event: { kind: "tool-start", toolName: "tmux", detail: options.tmuxName + " — survives VS Code closing" } });
-        }
-        void terminal.start();
-        this.d.sync.postCommands(adapter);
-        this.d.sync.refreshModels(adapter);
-        this.d.onTitleChange?.(`▷ ${title} · ${adapter.backend}`);
+        openTerminalDialogueFlow(this.d, backend, options, title);
     }
 
     /**
@@ -251,7 +223,12 @@ export class SurfaceDialogues {
      * running session DETACHES it (it keeps working in the background) instead
      * of stopping it; returning to it re-attaches and replays its output.
      */
-    openDialogue(backend: string, options: SessionStartOptions, title: string, info?: SessionInfo): void {
+    openDialogue(
+        backend: string,
+        options: SessionStartOptions,
+        title: string,
+        info?: SessionInfo,
+    ): void {
         const adapter = this.d.deps.adapterByBackend.get(backend);
         if (!adapter) {
             return;
@@ -268,7 +245,13 @@ export class SurfaceDialogues {
                 // No workspace folder open → write containment is off. Surface a
                 // notice so the user knows the agent is unrestricted (defect 6.3):
                 // a silent unrestricted agent is a footgun.
-                this.d.post({ type: "event", event: { kind: "status-notice", text: "No workspace folder open — write-root containment is OFF. The agent can write to any path." } });
+                this.d.post({
+                    type: "event",
+                    event: {
+                        kind: "status-notice",
+                        text: "No workspace folder open — write-root containment is OFF. The agent can write to any path.",
+                    },
+                });
             }
         }
         const generation = ++this.generation;
@@ -288,7 +271,12 @@ export class SurfaceDialogues {
         if (!options.resumeSessionId) {
             const langHint = this.d.buildLangHint();
             if (langHint) {
-                options = { ...options, systemPrompt: options.systemPrompt ? options.systemPrompt + "\n\n" + langHint : langHint };
+                options = {
+                    ...options,
+                    systemPrompt: options.systemPrompt
+                        ? options.systemPrompt + "\n\n" + langHint
+                        : langHint,
+                };
             }
             const boot = readWorkspaceBootstrap(options.cwd);
             if (boot) {
@@ -310,13 +298,19 @@ export class SurfaceDialogues {
         // and panels reappear — not just text. Skips lossy history reconstruction.
         const seededVisual = !existing && !!options.resumeSessionId && controller.seedRenderLog();
         this.d.setController(controller);
-        void this.d.sync.refreshTasks();   // load this session's tasks into the panel
+        void this.d.sync.refreshTasks(); // load this session's tasks into the panel
         void this.d.sync.refreshGuardrails();
 
-        const sessionsSide = vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto");
-        const configuredReasoning = vscode.workspace.getConfiguration("symposium." + adapter.backend).get<string>("reasoning", "default");
+        const sessionsSide = vscode.workspace
+            .getConfiguration("symposium.chat")
+            .get<string>("sessionsSide", "auto");
+        const configuredReasoning = vscode.workspace
+            .getConfiguration("symposium." + adapter.backend)
+            .get<string>("reasoning", "default");
         const reasoningMap = adapter.reasoningMap?.();
-        const canonicalConfiguredReasoning = reasoningMap ? canonicalReasoning(reasoningMap, configuredReasoning) : configuredReasoning;
+        const canonicalConfiguredReasoning = reasoningMap
+            ? canonicalReasoning(reasoningMap, configuredReasoning)
+            : configuredReasoning;
         this.d.post({
             type: "meta",
             backend: adapter.backend,
@@ -324,18 +318,23 @@ export class SurfaceDialogues {
             modelLabels: adapter.modelLabels?.() ?? {},
             // Inline badge for an agent-def-bound dialogue (once, first turn; null = plain). See SessionStartOptions.
             agentLabels: options.agentName
-                ? { agent: options.agentName, toolsDeclared: options.toolsDeclared ?? [], toolsAllowed: options.toolsAllowed ?? [] }
+                ? {
+                      agent: options.agentName,
+                      toolsDeclared: options.toolsDeclared ?? [],
+                      toolsAllowed: options.toolsAllowed ?? [],
+                  }
                 : null,
-            bootstrapLink: bootstrapLink ?? null,   // per-workspace bootstrap link (null = none)
+            bootstrapLink: bootstrapLink ?? null, // per-workspace bootstrap link (null = none)
             resumed: !!options.resumeSessionId,
             historyPending,
             models: adapter.models?.() ?? [],
             reasoningLevels: adapter.reasoningLevels?.() ?? [],
             // "default" means no explicit CLI/API override. Name the underlying
             // adapter default so the picker is informative (default (medium)).
-            reasoningDefault: configuredReasoning !== "default"
-                ? canonicalConfiguredReasoning
-                : (adapter.defaultReasoning?.() ?? "default"),
+            reasoningDefault:
+                configuredReasoning !== "default"
+                    ? canonicalConfiguredReasoning
+                    : (adapter.defaultReasoning?.() ?? "default"),
             // Built-in defaults live under symposium.<backend>.model; custom
             // adapters keep theirs in symposium.adapters[].model. Read through
             // the shared preference store so the picker reflects either kind.
@@ -363,13 +362,19 @@ export class SurfaceDialogues {
             activeFileStartColumn: activeEditorContext().startColumn,
             activeFileEndColumn: activeEditorContext().endColumn,
             activeFilePreview: activeEditorContext().preview,
-            whenBusy: vscode.workspace.getConfiguration("symposium.chat").get("whenBusy", DEFAULT_BUSY_SEND_MODE),
+            whenBusy: vscode.workspace
+                .getConfiguration("symposium.chat")
+                .get("whenBusy", DEFAULT_BUSY_SEND_MODE),
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
             openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
-            execDisplay: vscode.workspace.getConfiguration("symposium.openai").get<string>("shellExecution", "silent"),
+            execDisplay: vscode.workspace
+                .getConfiguration("symposium.openai")
+                .get<string>("shellExecution", "silent"),
         });
         this.d.activateUsage(adapter);
-        this.d.setControllerDetach(controller.attach((message) => handleControllerEvent(this.d, backend, message)));
+        this.d.setControllerDetach(
+            controller.attach((message) => handleControllerEvent(this.d, backend, message)),
+        );
         if (!existing && info && !seededVisual) {
             void controller.loadHistory(info).finally(() => {
                 if (generation === this.generation) {

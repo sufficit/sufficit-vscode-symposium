@@ -25,7 +25,13 @@ interface PanelState {
 export class RemoteAccessPanel {
     private static current: RemoteAccessPanel | undefined;
     private readonly panel: vscode.WebviewPanel;
-    private state: PanelState = { addresses: [], upnpMapping: null, upnpBusy: false, vpnHostname: undefined, vpnConnected: false };
+    private state: PanelState = {
+        addresses: [],
+        upnpMapping: null,
+        upnpBusy: false,
+        vpnHostname: undefined,
+        vpnConnected: false,
+    };
     private bridge: RemoteBridge;
 
     static async show(context: vscode.ExtensionContext, bridge: RemoteBridge): Promise<void> {
@@ -40,18 +46,39 @@ export class RemoteAccessPanel {
     private constructor(context: vscode.ExtensionContext, bridge: RemoteBridge) {
         this.bridge = bridge;
         this.panel = vscode.window.createWebviewPanel(
-            "symposium.remoteAccess", "Symposium: Remote Access",
-            vscode.ViewColumn.Active, { enableScripts: true },
+            "symposium.remoteAccess",
+            "Symposium: Remote Access",
+            vscode.ViewColumn.Active,
+            { enableScripts: true },
         );
-        this.panel.webview.onDidReceiveMessage(async (m) => {
-            if (m?.type === "refresh") { await this.refresh(); }
-            else if (m?.type === "upnp") { await this.tryUpnp(); }
-            else if (m?.type === "bind-all") { await this.toggleBindAll(); }
-            else if (m?.type === "copy" && m.url) { void vscode.env.clipboard.writeText(m.url); }
-        }, undefined, context.subscriptions);
-        this.panel.onDidDispose(() => { RemoteAccessPanel.current = undefined; }, undefined, context.subscriptions);
+        this.panel.webview.onDidReceiveMessage(
+            async (m) => {
+                if (m?.type === "refresh") {
+                    await this.refresh();
+                } else if (m?.type === "upnp") {
+                    await this.tryUpnp();
+                } else if (m?.type === "bind-all") {
+                    await this.toggleBindAll();
+                } else if (m?.type === "copy" && m.url) {
+                    void vscode.env.clipboard.writeText(m.url);
+                }
+            },
+            undefined,
+            context.subscriptions,
+        );
+        this.panel.onDidDispose(
+            () => {
+                RemoteAccessPanel.current = undefined;
+            },
+            undefined,
+            context.subscriptions,
+        );
         // Auto-refresh when relay URL changes
-        bridge.setRelayUrlCallback(() => { if (RemoteAccessPanel.current === this) { void this.refresh(); } });
+        bridge.setRelayUrlCallback(() => {
+            if (RemoteAccessPanel.current === this) {
+                void this.refresh();
+            }
+        });
     }
 
     private async refresh(): Promise<void> {
@@ -71,7 +98,9 @@ export class RemoteAccessPanel {
 
     private async getTailscaleHostname(): Promise<string | undefined> {
         const ts = await checkTailscaleStatus();
-        if (ts?.BackendState === "Running" && ts.Self?.HostName) { return ts.Self.HostName; }
+        if (ts?.BackendState === "Running" && ts.Self?.HostName) {
+            return ts.Self.HostName;
+        }
         return undefined;
     }
 
@@ -79,10 +108,12 @@ export class RemoteAccessPanel {
         this.state.upnpBusy = true;
         this.panel.webview.html = this.renderHtml(this.bridge.getConnection()!);
         const port = Number(new URL(this.bridge.getConnection()!.url).port || "47600");
-        const lanIp = this.state.addresses.find(a => a.source === "lan")?.address ?? "0.0.0.0";
+        const lanIp = this.state.addresses.find((a) => a.source === "lan")?.address ?? "0.0.0.0";
         const device = await discoverUpnpGateway(5000);
         if (!device) {
-            vscode.window.showWarningMessage("UPnP: no router found. The router may not support UPnP, or it may be disabled.");
+            vscode.window.showWarningMessage(
+                "UPnP: no router found. The router may not support UPnP, or it may be disabled.",
+            );
             this.state.upnpBusy = false;
             this.panel.webview.html = this.renderHtml(this.bridge.getConnection()!);
             return;
@@ -91,7 +122,9 @@ export class RemoteAccessPanel {
         this.state.upnpBusy = false;
         if (mapping) {
             this.state.upnpMapping = mapping;
-            vscode.window.showInformationMessage(`UPnP: port ${mapping.externalPort} opened on ${mapping.externalIp}.`);
+            vscode.window.showInformationMessage(
+                `UPnP: port ${mapping.externalPort} opened on ${mapping.externalIp}.`,
+            );
         } else {
             vscode.window.showWarningMessage("UPnP: failed to open port. Check router settings.");
         }
@@ -99,7 +132,11 @@ export class RemoteAccessPanel {
     }
 
     private isBindAll(): boolean {
-        return vscode.workspace.getConfiguration("symposium.bridge").get<string>("host", "127.0.0.1") === "0.0.0.0";
+        return (
+            vscode.workspace
+                .getConfiguration("symposium.bridge")
+                .get<string>("host", "127.0.0.1") === "0.0.0.0"
+        );
     }
 
     private async toggleBindAll(): Promise<void> {
@@ -110,10 +147,10 @@ export class RemoteAccessPanel {
         vscode.window.showInformationMessage(
             newHost === "0.0.0.0"
                 ? "Bridge: now listening on all interfaces (0.0.0.0). Accessible from LAN/public."
-                : "Bridge: listening on localhost only (127.0.0.1)."
+                : "Bridge: listening on localhost only (127.0.0.1).",
         );
         // Wait for bridge restart, then refresh
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2000));
         await this.refresh();
     }
 
@@ -163,12 +200,13 @@ export class RemoteAccessPanel {
             });
         }
 
-        const urlCards = connUrls.map(c => {
-            const qr = qrcode(0, "M");
-            qr.addData(c.url);
-            qr.make();
-            const svg = qr.createSvgTag({ cellSize: 3, margin: 1, scalable: true });
-            return `
+        const urlCards = connUrls
+            .map((c) => {
+                const qr = qrcode(0, "M");
+                qr.addData(c.url);
+                qr.make();
+                const svg = qr.createSvgTag({ cellSize: 3, margin: 1, scalable: true });
+                return `
                 <div class="card">
                     <div class="cardHead">
                         <span class="badge">${c.badge}</span>
@@ -177,11 +215,12 @@ export class RemoteAccessPanel {
                     </div>
                     <div class="qr">${svg}</div>
                     <div class="urlRow">
-                        <code class="url">${esc(c.url.length > 60 ? c.url.slice(0, 57) + '...' : c.url)}</code>
+                        <code class="url">${esc(c.url.length > 60 ? c.url.slice(0, 57) + "..." : c.url)}</code>
                         <button class="copy" data-url="${esc(c.url)}">Copy</button>
                     </div>
                 </div>`;
-        }).join("");
+            })
+            .join("");
 
         const vpnStatus = this.state.vpnConnected
             ? `<div class="status ok">✓ VPN: <b>${esc(this.state.vpnHostname || "connected")}</b></div>`
@@ -190,8 +229,8 @@ export class RemoteAccessPanel {
         const upnpBtn = this.state.upnpBusy
             ? '<button class="btn" disabled>Opening port...</button>'
             : this.state.upnpMapping
-                ? `<div class="status ok">✓ UPnP: port ${this.state.upnpMapping.externalPort} on ${this.state.upnpMapping.externalIp}</div>`
-                : '<button class="btn" id="upnpBtn">Open port via UPnP</button>';
+              ? `<div class="status ok">✓ UPnP: port ${this.state.upnpMapping.externalPort} on ${this.state.upnpMapping.externalIp}</div>`
+              : '<button class="btn" id="upnpBtn">Open port via UPnP</button>';
 
         return `<html><head><meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -250,5 +289,9 @@ export class RemoteAccessPanel {
 }
 
 function esc(s: string): string {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
 }

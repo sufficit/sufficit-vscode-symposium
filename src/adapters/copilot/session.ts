@@ -17,19 +17,26 @@ export interface CopilotAdapterConfig {
 }
 
 /** Writes a shared MCP config (Playwright + extras) and returns its path, or undefined. */
-function buildMcpConfigFile(cfg: { playwright?: boolean; mcpServers?: Record<string, unknown> }, name: string): string | undefined {
+function buildMcpConfigFile(
+    cfg: { playwright?: boolean; mcpServers?: Record<string, unknown> },
+    name: string,
+): string | undefined {
     const servers: Record<string, unknown> = { ...(cfg.mcpServers ?? {}) };
     if (cfg.playwright && !servers.playwright) {
         servers.playwright = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
     }
-    if (Object.keys(servers).length === 0) { return undefined; }
+    if (Object.keys(servers).length === 0) {
+        return undefined;
+    }
     try {
         const dir = path.join(os.homedir(), ".symposium");
         fs.mkdirSync(dir, { recursive: true });
         const file = path.join(dir, name);
         fs.writeFileSync(file, JSON.stringify({ mcpServers: servers }, null, 2), "utf8");
         return file;
-    } catch { return undefined; }
+    } catch {
+        return undefined;
+    }
 }
 
 /**
@@ -64,7 +71,10 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         const mode = this.options.permission;
         if (mode && mode !== "admin" && mode !== "default" && !this.warnedUnenforcedMode) {
             this.warnedUnenforcedMode = true;
-            this.emit("event", { kind: "status-notice", text: `Permission mode "${mode}" isn't enforced for the Copilot CLI yet (no approval/sandbox flag to hook into) — this session runs with full permissions regardless of the picker.` });
+            this.emit("event", {
+                kind: "status-notice",
+                text: `Permission mode "${mode}" isn't enforced for the Copilot CLI yet (no approval/sandbox flag to hook into) — this session runs with full permissions regardless of the picker.`,
+            });
         }
         const args = ["-p", text, "--output-format", "json"];
         const model = this.options.model || this.config.model;
@@ -78,7 +88,9 @@ export class CopilotSession extends EventEmitter implements AgentSession {
             args.push("--resume", this.sessionId);
         }
         const mcp = buildMcpConfigFile(this.config, "copilot-mcp.json");
-        if (mcp) { args.push("--mcp-config", mcp); }
+        if (mcp) {
+            args.push("--mcp-config", mcp);
+        }
         const child = spawn(resolveExecutable(this.config.executable), args, {
             cwd: this.options.cwd,
             env: { ...process.env, ...this.options.env },
@@ -90,9 +102,14 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         rl.on("line", (line) => this.handleLine(line));
 
         let stderr = "";
-        child.stderr!.on("data", (chunk) => { stderr += String(chunk); });
+        child.stderr!.on("data", (chunk) => {
+            stderr += String(chunk);
+        });
         child.on("error", (error) => {
-            this.emit("event", { kind: "error", message: `copilot spawn failed: ${error.message}` });
+            this.emit("event", {
+                kind: "error",
+                message: `copilot spawn failed: ${error.message}`,
+            });
             this.emit("event", { kind: "turn-end" });
         });
         child.on("exit", (code) => {
@@ -102,7 +119,10 @@ export class CopilotSession extends EventEmitter implements AgentSession {
             }
             if (code !== 0 && code !== null && !this.reportedError) {
                 const detail = stderr.trim().split("\n").slice(-2).join(" ");
-                this.emit("event", { kind: "error", message: `copilot exited with code ${code}: ${detail}` });
+                this.emit("event", {
+                    kind: "error",
+                    message: `copilot exited with code ${code}: ${detail}`,
+                });
             }
             this.emit("event", { kind: "turn-end" });
         });
@@ -122,7 +142,10 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         }
         switch (event.type) {
             case "assistant.message": {
-                const data = typeof event.data === "object" && event.data !== null ? event.data as Record<string, unknown> : {};
+                const data =
+                    typeof event.data === "object" && event.data !== null
+                        ? (event.data as Record<string, unknown>)
+                        : {};
                 const content = data.content;
                 if (typeof content === "string" && content) {
                     this.emit("event", { kind: "text", text: content });
@@ -130,28 +153,58 @@ export class CopilotSession extends EventEmitter implements AgentSession {
                 const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
                 for (const tool of toolRequests) {
                     if (typeof tool === "object" && tool !== null) {
-                        this.emit("event", { kind: "tool-start", toolName: "name" in tool && typeof tool.name === "string" ? tool.name : "tool" });
+                        this.emit("event", {
+                            kind: "tool-start",
+                            toolName:
+                                "name" in tool && typeof tool.name === "string"
+                                    ? tool.name
+                                    : "tool",
+                        });
                     }
                 }
                 break;
             }
             case "tool.execution_start": {
-                const data = typeof event.data === "object" && event.data !== null ? event.data as Record<string, unknown> : {};
+                const data =
+                    typeof event.data === "object" && event.data !== null
+                        ? (event.data as Record<string, unknown>)
+                        : {};
                 this.emit("event", {
                     kind: "tool-start",
-                    toolName: "toolName" in data && typeof data.toolName === "string" ? data.toolName : "tool",
+                    toolName:
+                        "toolName" in data && typeof data.toolName === "string"
+                            ? data.toolName
+                            : "tool",
                 });
                 break;
             }
             case "tool.execution_end": {
-                const data = typeof event.data === "object" && event.data !== null ? event.data as Record<string, unknown> : {};
-                this.emit("event", { kind: "tool-end", toolName: "toolName" in data && typeof data.toolName === "string" ? data.toolName : "tool" });
+                const data =
+                    typeof event.data === "object" && event.data !== null
+                        ? (event.data as Record<string, unknown>)
+                        : {};
+                this.emit("event", {
+                    kind: "tool-end",
+                    toolName:
+                        "toolName" in data && typeof data.toolName === "string"
+                            ? data.toolName
+                            : "tool",
+                });
                 break;
             }
             case "session.error": {
                 this.reportedError = true;
-                const data = typeof event.data === "object" && event.data !== null ? event.data as Record<string, unknown> : {};
-                this.emit("event", { kind: "error", message: "message" in data && typeof data.message === "string" ? data.message : "unknown copilot error" });
+                const data =
+                    typeof event.data === "object" && event.data !== null
+                        ? (event.data as Record<string, unknown>)
+                        : {};
+                this.emit("event", {
+                    kind: "error",
+                    message:
+                        "message" in data && typeof data.message === "string"
+                            ? data.message
+                            : "unknown copilot error",
+                });
                 break;
             }
             case "result":

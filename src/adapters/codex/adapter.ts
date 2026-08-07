@@ -6,7 +6,7 @@ import { builtinCommands } from "../builtins";
 import { resolveExecutable } from "../exec";
 import { scrubJsonlLines, scrubSqliteRows } from "../scrub";
 import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
-import { PERMISSION_MODES } from "../aiTools";
+import { PERMISSION_MODES } from "../aiTools/permissionTiers";
 import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../reasoning";
 import {
     AgentAdapter,
@@ -27,11 +27,17 @@ import { codexUsage } from "./usage";
 
 function runCodexDebugModels(executable: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
-        const child = spawn(resolveExecutable(executable), ["debug", "models"], { stdio: ["ignore", "pipe", "pipe"] });
+        const child = spawn(resolveExecutable(executable), ["debug", "models"], {
+            stdio: ["ignore", "pipe", "pipe"],
+        });
         let stdout = "";
         let stderr = "";
-        child.stdout.on("data", (chunk) => { stdout += String(chunk); });
-        child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+        child.stdout.on("data", (chunk) => {
+            stdout += String(chunk);
+        });
+        child.stderr.on("data", (chunk) => {
+            stderr += String(chunk);
+        });
         child.on("error", reject);
         child.on("exit", (code) => {
             if (code !== 0) {
@@ -51,18 +57,23 @@ export class CodexAdapter implements AgentAdapter {
     readonly backend = "codex" as const;
     readonly usage = codexUsage;
 
-    constructor(private readonly getConfig: () => CodexAdapterConfig) { }
+    constructor(private readonly getConfig: () => CodexAdapterConfig) {}
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
         return new Promise((resolve) => {
-            const child = spawn(resolveExecutable(this.getConfig().executable), ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
+            const child = spawn(resolveExecutable(this.getConfig().executable), ["--version"], {
+                stdio: ["ignore", "pipe", "pipe"],
+            });
             let out = "";
-            child.stdout.on("data", (chunk) => { out += String(chunk); });
+            child.stdout.on("data", (chunk) => {
+                out += String(chunk);
+            });
             child.on("error", (error) => resolve({ ok: false, error: error.message }));
             child.on("exit", (code) =>
                 code === 0
                     ? resolve({ ok: true, version: out.trim().split("\n")[0] })
-                    : resolve({ ok: false, error: `exit code ${code}` }));
+                    : resolve({ ok: false, error: `exit code ${code}` }),
+            );
         });
     }
 
@@ -76,32 +87,58 @@ export class CodexAdapter implements AgentAdapter {
 
     async history(info: SessionInfo): Promise<HistoryMessage[]> {
         const file = info.transcriptPath;
-        if (!file) { return []; }
+        if (!file) {
+            return [];
+        }
         const content = await readJsonlTail(file, 4 * 1024 * 1024);
         const messages: HistoryMessage[] = [];
         let activeModel = info.model;
         for (const line of content.split("\n")) {
-            if (!line.trim()) { continue; }
+            if (!line.trim()) {
+                continue;
+            }
             interface CodexEntry {
                 type: string;
-                payload?: { type: string; role?: string; model?: string; content?: Array<{ type: string; text?: string }> };
+                payload?: {
+                    type: string;
+                    role?: string;
+                    model?: string;
+                    content?: Array<{ type: string; text?: string }>;
+                };
             }
             let entry: CodexEntry;
-            try { entry = JSON.parse(line); } catch { continue; }
+            try {
+                entry = JSON.parse(line);
+            } catch {
+                continue;
+            }
             if (entry.type === "turn_context" && typeof entry.payload?.model === "string") {
                 activeModel = entry.payload.model;
                 continue;
             }
-            if (entry.type !== "response_item" || entry.payload?.type !== "message") { continue; }
+            if (entry.type !== "response_item" || entry.payload?.type !== "message") {
+                continue;
+            }
             const role = entry.payload.role;
-            if (role !== "user" && role !== "assistant") { continue; }
+            if (role !== "user" && role !== "assistant") {
+                continue;
+            }
             const text = (entry.payload.content ?? [])
-                .filter((content) => content.type === "input_text" || content.type === "output_text" || content.type === "text")
+                .filter(
+                    (content) =>
+                        content.type === "input_text" ||
+                        content.type === "output_text" ||
+                        content.type === "text",
+                )
                 .map((content) => content.text)
                 .join("")
                 .trim();
             if (text && !looksInjected(text)) {
-                messages.push({ role, text, model: role === "assistant" ? activeModel : undefined });
+                messages.push({
+                    role,
+                    text,
+                    model: role === "assistant" ? activeModel : undefined,
+                });
             }
         }
         return messages;
@@ -109,11 +146,18 @@ export class CodexAdapter implements AgentAdapter {
 
     start(options: SessionStartOptions): AgentSession {
         const config = this.getConfig();
-        const mappedConfig = { ...config, reasoning: nativeReasoning(REASONING_MAPS.codex, config.reasoning) };
-        const reasoning = options.reasoning === undefined
-            ? undefined
-            : nativeReasoning(REASONING_MAPS.codex, options.reasoning);
-        return new CodexSession(mappedConfig, reasoning === undefined ? options : { ...options, reasoning });
+        const mappedConfig = {
+            ...config,
+            reasoning: nativeReasoning(REASONING_MAPS.codex, config.reasoning),
+        };
+        const reasoning =
+            options.reasoning === undefined
+                ? undefined
+                : nativeReasoning(REASONING_MAPS.codex, options.reasoning);
+        return new CodexSession(
+            mappedConfig,
+            reasoning === undefined ? options : { ...options, reasoning },
+        );
     }
 
     models(): string[] {
@@ -131,7 +175,11 @@ export class CodexAdapter implements AgentAdapter {
             const json = await runCodexDebugModels(cfg.executable);
             const { models, labels } = parseCodexModelCatalog(json, cfg.model);
             if (models.length) {
-                const entry: ModelCacheEntry = { models, labels, lastUpdate: new Date().toISOString() };
+                const entry: ModelCacheEntry = {
+                    models,
+                    labels,
+                    lastUpdate: new Date().toISOString(),
+                };
                 setCached("codex", entry);
                 return { models, labels };
             }
@@ -141,16 +189,22 @@ export class CodexAdapter implements AgentAdapter {
         return { models: this.models(), labels: cached?.labels };
     }
 
-    hasNativeTodo(): boolean { return true; }   // update_plan / todo_list
+    hasNativeTodo(): boolean {
+        return true;
+    } // update_plan / todo_list
 
     // codex -c model_reasoning_effort="<level>" (0.139.0). "default" = omit.
     reasoningLevels(): string[] {
         return ["default", ...Object.keys(REASONING_MAPS.codex)];
     }
 
-    reasoningMap(): Record<string, string> { return { ...REASONING_MAPS.codex }; }
+    reasoningMap(): Record<string, string> {
+        return { ...REASONING_MAPS.codex };
+    }
 
-    defaultReasoning(): string { return DEFAULT_REASONING_EFFORT.codex; }
+    defaultReasoning(): string {
+        return DEFAULT_REASONING_EFFORT.codex;
+    }
 
     // Unified modes shared with every adapter's picker. admin/plan map 1:1 to
     // real native approval_policy+sandbox flags (session.ts's
@@ -191,10 +245,14 @@ export class CodexAdapter implements AgentAdapter {
         if (info.transcriptPath) {
             await fs.promises.rm(info.transcriptPath, { force: true });
         }
-        await scrubJsonlLines(path.join(root, "session_index.jsonl"),
-            (entry) => entry?.id === id || entry?.session_id === id || entry?.thread_id === id);
-        await scrubJsonlLines(path.join(root, "history.jsonl"),
-            (entry) => entry?.session_id === id || entry?.id === id);
+        await scrubJsonlLines(
+            path.join(root, "session_index.jsonl"),
+            (entry) => entry?.id === id || entry?.session_id === id || entry?.thread_id === id,
+        );
+        await scrubJsonlLines(
+            path.join(root, "history.jsonl"),
+            (entry) => entry?.session_id === id || entry?.id === id,
+        );
 
         // Codex also writes an aggregate sqlite log keyed by thread_id (= the
         // session GUID). Delete those rows and VACUUM so nothing lingers in
@@ -207,7 +265,12 @@ export class CodexAdapter implements AgentAdapter {
             // ignore
         }
         for (const dbFile of dbFiles) {
-            const scrubbed = await scrubSqliteRows(path.join(root, dbFile), "logs", "thread_id", id);
+            const scrubbed = await scrubSqliteRows(
+                path.join(root, dbFile),
+                "logs",
+                "thread_id",
+                id,
+            );
             if (!scrubbed) {
                 residual.push(`~/.codex/${dbFile} (install python3 or sqlite3 to scrub)`);
             }

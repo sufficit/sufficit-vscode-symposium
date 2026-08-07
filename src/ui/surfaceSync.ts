@@ -2,21 +2,27 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
-import { lmToolInvocationOptions } from "../adapters/lmToolInvocation";
 import { AgentAdapter, SlashCommand } from "../adapters/types";
 import { HubClient, Observation } from "../sync/hubClient";
 import { fetchSessionTasks, TaskItem } from "../sync/tasks";
 import { applyTaskState, reconcileTaskStateOverrides, TaskStateOverride } from "../sync/taskUi";
 import { fetchSessionGuardrails } from "../sync/guardrails";
 import { ledgerDir } from "../ledger";
+import { attachBrowserPage } from "./surfaceBrowserAttachment";
 
 /**
  * Pushes per-session data to the webview panels (tasks, guardrails, models,
  * commands, account) and a couple of related actions (inspect view, attach
  * browser page). Extracted from ChatSurface as a collaborator.
  */
-interface SyncController { sessionId?: string; cwd: string; backend: string; }
-interface SyncTerminal { backend: string; }
+interface SyncController {
+    sessionId?: string;
+    cwd: string;
+    backend: string;
+}
+interface SyncTerminal {
+    backend: string;
+}
 
 export interface SurfaceSyncDeps {
     post: (message: unknown) => void;
@@ -54,11 +60,12 @@ export class SurfaceSync {
     // long; refreshTasks() re-includes it normally the moment search catches up.
     private static readonly TASK_GHOST_GRACE_MS = 60_000;
 
-    constructor(private readonly d: SurfaceSyncDeps) { }
+    constructor(private readonly d: SurfaceSyncDeps) {}
 
     /** Project-local mirror of this session's tasks (in .vscode, versionable). */
     private taskMirrorFile(): string | undefined {
-        const cwd = this.d.getController()?.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const cwd =
+            this.d.getController()?.cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
         return cwd ? path.join(cwd, ".vscode", "symposium.tasks.json") : undefined;
     }
 
@@ -75,22 +82,31 @@ export class SurfaceSync {
         const mirror = this.taskMirrorFile();
         let items: TaskItem[] = [];
         try {
-            if (!this.hub.configured() || !sessionId) { throw new Error("no hub/session"); }
+            if (!this.hub.configured() || !sessionId) {
+                throw new Error("no hub/session");
+            }
             items = await fetchSessionTasks(this.hub, sessionId);
             items = reconcileTaskStateOverrides(
-                items, this.taskStateOverrides, Date.now(), SurfaceSync.TASK_GHOST_GRACE_MS,
+                items,
+                this.taskStateOverrides,
+                Date.now(),
+                SurfaceSync.TASK_GHOST_GRACE_MS,
             );
             if (mirror) {
                 try {
                     fs.mkdirSync(path.dirname(mirror), { recursive: true });
                     fs.writeFileSync(mirror, JSON.stringify({ sessionId, items }, null, 2), "utf8");
-                } catch { /* mirror best-effort */ }
+                } catch {
+                    /* mirror best-effort */
+                }
             }
         } catch {
             try {
                 const cached = JSON.parse(fs.readFileSync(mirror ?? "", "utf8"));
                 items = cached?.sessionId === sessionId ? (cached.items ?? []) : [];
-            } catch { items = []; }
+            } catch {
+                items = [];
+            }
         }
         // Merge rather than overwrite: the search endpoint is async-indexed, so a
         // task added moments ago (already shown optimistically by bumpTasksByIds)
@@ -101,18 +117,24 @@ export class SurfaceSync {
         const now = Date.now();
         const have = new Set(items.map((t) => t.id));
         for (const t of items) {
-            if (!this.taskFirstSeenAtMs.has(t.id)) { this.taskFirstSeenAtMs.set(t.id, now); }
+            if (!this.taskFirstSeenAtMs.has(t.id)) {
+                this.taskFirstSeenAtMs.set(t.id, now);
+            }
         }
         const stillInGrace = this.lastTasks.filter((t) => {
-            if (have.has(t.id)) { return false; }
+            if (have.has(t.id)) {
+                return false;
+            }
             const firstSeen = this.taskFirstSeenAtMs.get(t.id);
-            return firstSeen != null && (now - firstSeen) < SurfaceSync.TASK_GHOST_GRACE_MS;
+            return firstSeen != null && now - firstSeen < SurfaceSync.TASK_GHOST_GRACE_MS;
         });
         const merged = [...items, ...stillInGrace];
         // Drop bookkeeping for ids no longer present anywhere (expired grace or truly gone).
         const keepIds = new Set(merged.map((t) => t.id));
         for (const id of Array.from(this.taskFirstSeenAtMs.keys())) {
-            if (!keepIds.has(id)) { this.taskFirstSeenAtMs.delete(id); }
+            if (!keepIds.has(id)) {
+                this.taskFirstSeenAtMs.delete(id);
+            }
         }
         this.lastTasks = merged;
         this.d.post({ type: "tasks", items: merged, project: sessionId });
@@ -121,9 +143,14 @@ export class SurfaceSync {
     /** Updates a completed/reopened task immediately, then reconciles via search. */
     setTasksDoneByIds(ids: string[], done: boolean): void {
         const exact = [...new Set(ids.filter(Boolean))];
-        if (!exact.length) { void this.refreshTasks(); return; }
+        if (!exact.length) {
+            void this.refreshTasks();
+            return;
+        }
         const now = Date.now();
-        for (const id of exact) { this.taskStateOverrides.set(id, { done, at: now }); }
+        for (const id of exact) {
+            this.taskStateOverrides.set(id, { done, at: now });
+        }
         this.lastTasks = applyTaskState(this.lastTasks, exact, done);
         const sessionId = this.d.getController()?.sessionId ?? "";
         this.d.post({ type: "tasks", items: this.lastTasks, project: sessionId });
@@ -137,9 +164,13 @@ export class SurfaceSync {
      * async search index to pick it up. Falls back to a full refresh.
      */
     async bumpTasksByIds(ids: string[]): Promise<void> {
-        if (!ids.length) { return this.refreshTasks(); }
+        if (!ids.length) {
+            return this.refreshTasks();
+        }
         try {
-            if (!this.hub.configured()) { return this.refreshTasks(); }
+            if (!this.hub.configured()) {
+                return this.refreshTasks();
+            }
             const obs = await this.hub.getByIds(ids);
             const created: TaskItem[] = obs
                 .filter((o) => o && o.id)
@@ -148,17 +179,26 @@ export class SurfaceSync {
                     type: o.type ?? "task-anchor",
                     title: o.title ?? "",
                     summary: o.summary ?? "",
-                    ts: String((o as Observation & { createdAtUtc?: string }).createdAtUtc ?? Date.now()),
+                    ts: String(
+                        (o as Observation & { createdAtUtc?: string }).createdAtUtc ?? Date.now(),
+                    ),
                     tags: o.tags ?? "",
-                    done: String(o.tags ?? "").split(",").map((t) => t.trim()).includes("status:done"),
+                    done: String(o.tags ?? "")
+                        .split(",")
+                        .map((t) => t.trim())
+                        .includes("status:done"),
                 }));
-            if (!created.length) { return this.refreshTasks(); }
+            if (!created.length) {
+                return this.refreshTasks();
+            }
             // Merge: prepend new ones not already present, keep order stable.
             const have = new Set(this.lastTasks.map((t) => t.id));
             const merged = [...created.filter((t) => !have.has(t.id)), ...this.lastTasks];
             const now = Date.now();
             for (const t of created) {
-                if (!this.taskFirstSeenAtMs.has(t.id)) { this.taskFirstSeenAtMs.set(t.id, now); }
+                if (!this.taskFirstSeenAtMs.has(t.id)) {
+                    this.taskFirstSeenAtMs.set(t.id, now);
+                }
             }
             this.lastTasks = merged;
             const sessionId = this.d.getController()?.sessionId ?? "";
@@ -174,7 +214,10 @@ export class SurfaceSync {
     /** Opens the compact model context or the literal last request as a read-only tab. */
     async openInspectView(target: "context" | "request"): Promise<void> {
         const id = this.d.getController()?.sessionId;
-        if (!id) { void vscode.window.showInformationMessage("Open and use a session first."); return; }
+        if (!id) {
+            void vscode.window.showInformationMessage("Open and use a session first.");
+            return;
+        }
         let file: string | undefined;
         if (target === "request") {
             file = path.join(ledgerDir(id), "request-last.json");
@@ -183,16 +226,24 @@ export class SurfaceSync {
             try {
                 for (const backend of fs.readdirSync(root)) {
                     const f = path.join(root, backend, id + ".json");
-                    if (fs.existsSync(f)) { file = f; break; }
+                    if (fs.existsSync(f)) {
+                        file = f;
+                        break;
+                    }
                 }
-            } catch { /* no store */ }
+            } catch {
+                /* no store */
+            }
         }
         if (!file || !fs.existsSync(file)) {
             void vscode.window.showInformationMessage(
-                "Nothing to inspect yet — send a message first (Sufficit AI / OpenAI backend only).");
+                "Nothing to inspect yet — send a message first (Sufficit AI / OpenAI backend only).",
+            );
             return;
         }
-        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(file), { preview: false });
+        await vscode.commands.executeCommand("vscode.open", vscode.Uri.file(file), {
+            preview: false,
+        });
     }
 
     /** Pushes the session's user guardrails to the panel. */
@@ -201,9 +252,14 @@ export class SurfaceSync {
         let items: { id: string; text: string }[] = [];
         try {
             if (this.hub.configured() && sessionId) {
-                items = (await fetchSessionGuardrails(this.hub, sessionId)).map((g) => ({ id: g.id, text: g.text }));
+                items = (await fetchSessionGuardrails(this.hub, sessionId)).map((g) => ({
+                    id: g.id,
+                    text: g.text,
+                }));
             }
-        } catch { items = []; }
+        } catch {
+            items = [];
+        }
         this.lastGuardrails = items;
         this.d.post({ type: "guardrails", items });
     }
@@ -215,7 +271,9 @@ export class SurfaceSync {
      * from there instead of the hub.
      */
     async bumpGuardrailById(id: string, source?: "hub" | "local"): Promise<void> {
-        if (!id) { return this.refreshGuardrails(); }
+        if (!id) {
+            return this.refreshGuardrails();
+        }
         try {
             let obs: Observation | undefined;
             if (source === "local") {
@@ -223,13 +281,19 @@ export class SurfaceSync {
                 const [o] = await new LocalMemory().getByIds([id]);
                 obs = o;
             } else {
-                if (!this.hub.configured()) { return this.refreshGuardrails(); }
+                if (!this.hub.configured()) {
+                    return this.refreshGuardrails();
+                }
                 [obs] = await this.hub.getByIds([id]);
             }
-            if (!obs || !obs.id) { return this.refreshGuardrails(); }
+            if (!obs || !obs.id) {
+                return this.refreshGuardrails();
+            }
             const created = { id: String(obs.id), text: obs.summary || obs.title || "" };
             const have = new Set(this.lastGuardrails.map((g) => g.id));
-            const merged = have.has(created.id) ? this.lastGuardrails : [...this.lastGuardrails, created];
+            const merged = have.has(created.id)
+                ? this.lastGuardrails
+                : [...this.lastGuardrails, created];
             this.lastGuardrails = merged;
             this.d.post({ type: "guardrails", items: merged });
         } catch {
@@ -237,36 +301,14 @@ export class SurfaceSync {
         }
         // Reconcile via search (hub only; local-only guardrails stay in the
         // optimistic merge above and are re-read on session reopen).
-        if (source !== "local") { void this.refreshGuardrails(); }
+        if (source !== "local") {
+            void this.refreshGuardrails();
+        }
     }
 
     /** Attaches a VS Code integrated-browser page snapshot as a context file. */
     async attachBrowserPage(): Promise<void> {
-        const lm = (vscode as unknown as { lm?: { invokeTool?: (n: string, o: unknown, t: unknown) => Promise<{ content: unknown[] }> } }).lm;
-        if (!lm?.invokeTool) {
-            void vscode.window.showWarningMessage("VS Code does not expose browser tools (open_browser_page) in this version.");
-            return;
-        }
-        const cts = new vscode.CancellationTokenSource();
-        try {
-            const r = await lm.invokeTool("open_browser_page",
-                lmToolInvocationOptions({}), cts.token);
-            const content = r.content as Array<vscode.LanguageModelTextPart | vscode.LanguageModelPromptTsxPart>;
-            const text = content.map((p) => (p instanceof vscode.LanguageModelTextPart ? p.value : "")).join("\n").trim();
-            if (!text || /opted not to share|no .*page/i.test(text)) {
-                void vscode.window.showInformationMessage("No browser page shared.");
-                return;
-            }
-            const dir = path.join(os.homedir(), ".symposium", "context");
-            fs.mkdirSync(dir, { recursive: true });
-            const file = path.join(dir, `browser-page-${Date.now()}.md`);
-            fs.writeFileSync(file, "# Browser page (VS Code)\n\n" + text, "utf8");
-            this.d.post({ type: "attachments-picked", files: [{ path: file, name: "browser-page.md" }] });
-        } catch (err) {
-            void vscode.window.showErrorMessage(`Failed to attach the page: ${err instanceof Error ? err.message : err}`);
-        } finally {
-            cts.dispose();
-        }
+        await attachBrowserPage(this.d.post);
     }
 
     /** Fetches the backend's slash commands/skills and sends them for autocomplete. */
@@ -276,53 +318,77 @@ export class SurfaceSync {
             this.d.post({ type: "commands", items: append });
             return;
         }
-        void adapter.commands()
+        void adapter
+            .commands()
             .then((items) => this.d.post({ type: "commands", items: [...items, ...append] }))
             .catch(() => this.d.post({ type: "commands", items: append }));
     }
 
     /** Async-refreshes remote-discovered models and posts an updated picker list. */
     refreshModels(adapter: AgentAdapter, force = false): void {
-        if (!adapter.refreshModels) { return; }
+        if (!adapter.refreshModels) {
+            return;
+        }
         const backend = adapter.backend;
-        void adapter.refreshModels(force)
+        void adapter
+            .refreshModels(force)
             .then(({ models, labels }) => {
-                const current = this.d.getController()?.backend ?? this.d.getTerminalSession()?.backend;
-                if (current !== backend) { return; }
+                const current =
+                    this.d.getController()?.backend ?? this.d.getTerminalSession()?.backend;
+                if (current !== backend) {
+                    return;
+                }
                 // Post even on an empty result for an EXPLICIT refresh, so the
                 // picker shows feedback instead of looking dead; a background
                 // (non-forced) refresh stays silent on empty to avoid clobbering.
                 if (models?.length || force) {
-                    this.d.post({ type: "models", models: models ?? [], labels: labels ?? {}, refreshed: force });
+                    this.d.post({
+                        type: "models",
+                        models: models ?? [],
+                        labels: labels ?? {},
+                        refreshed: force,
+                    });
                 }
             })
-            .catch(() => { if (force) { this.d.post({ type: "models", models: [], labels: {}, refreshed: force }); } });
+            .catch(() => {
+                if (force) {
+                    this.d.post({ type: "models", models: [], labels: {}, refreshed: force });
+                }
+            });
     }
 
     /** Pushes the Sufficit account (or null) for the sessions-pane footer. */
     pushAccount(): void {
         const account = this.d.getAccount();
-        if (!account) { return; }
-        void account.get().then((profile) => {
-            // If the profile came back empty on the (non-force) read, the token
-            // refresh may still be in flight — a common race right after window
-            // load that leaves the footer stuck on "Entrar na Sufficit" even
-            // though the user is logged in. Force a fresh profile fetch before
-            // settling on logged-out, so a transient null self-corrects without
-            // waiting for (or missing) a later onDidChange.
-            if (profile) {
-                this.d.setLoggedIn(true);
-                this.d.post({ type: "account", profile });
-                return;
-            }
-            void account.get(true).then((forced) => {
-                const final = forced ?? null;
-                this.d.setLoggedIn(!!forced);
-                this.d.post({ type: "account", profile: final });
-            }).catch(() => {
-                this.d.setLoggedIn(false);
-                this.d.post({ type: "account", profile: null });
-            });
-        }).catch(() => undefined);
+        if (!account) {
+            return;
+        }
+        void account
+            .get()
+            .then((profile) => {
+                // If the profile came back empty on the (non-force) read, the token
+                // refresh may still be in flight — a common race right after window
+                // load that leaves the footer stuck on "Entrar na Sufficit" even
+                // though the user is logged in. Force a fresh profile fetch before
+                // settling on logged-out, so a transient null self-corrects without
+                // waiting for (or missing) a later onDidChange.
+                if (profile) {
+                    this.d.setLoggedIn(true);
+                    this.d.post({ type: "account", profile });
+                    return;
+                }
+                void account
+                    .get(true)
+                    .then((forced) => {
+                        const final = forced ?? null;
+                        this.d.setLoggedIn(!!forced);
+                        this.d.post({ type: "account", profile: final });
+                    })
+                    .catch(() => {
+                        this.d.setLoggedIn(false);
+                        this.d.post({ type: "account", profile: null });
+                    });
+            })
+            .catch(() => undefined);
     }
 }

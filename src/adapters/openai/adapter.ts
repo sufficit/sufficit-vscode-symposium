@@ -19,7 +19,9 @@ import { OpenAIAdapterConfig } from "./types";
 import { readStored, storeDir, storePath } from "./store";
 import { contentText } from "./transform";
 import {
-    getDiscoveredLabels, getDiscoveredModels, hasDiscoveredModels,
+    getDiscoveredLabels,
+    getDiscoveredModels,
+    hasDiscoveredModels,
     setDiscovered,
 } from "./models";
 import { friendlyToolDetail, toolPath } from "./toolDetail";
@@ -27,7 +29,7 @@ import { historyFromLedger, ledgerWasCompacted } from "./history";
 import { discoverModels as discoverModelsFromCatalog } from "./discovery";
 import { resolveAuthToken } from "./httpAuth";
 import { OpenAISession } from "./session";
-import { PERMISSION_MODES } from "../aiTools";
+import { PERMISSION_MODES } from "../aiTools/permissionTiers";
 import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../reasoning";
 import { EmptyAdapterUsage } from "../quotaCache";
 import { SufficitPresetUsage } from "./presetUsage";
@@ -48,14 +50,17 @@ export class OpenAIAdapter implements AgentAdapter {
         // preset. Custom OpenAI-compatible endpoints stay isolated and do not
         // inherit a Sufficit-only admin route merely because their API shape is
         // compatible.
-        this.usage = this.backend === "openai"
-            ? new SufficitPresetUsage(this.backend, this.displayName, this.getConfig)
-            : new EmptyAdapterUsage(this.backend, this.displayName);
+        this.usage =
+            this.backend === "openai"
+                ? new SufficitPresetUsage(this.backend, this.displayName, this.getConfig)
+                : new EmptyAdapterUsage(this.backend, this.displayName);
     }
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
         const cfg = this.getConfig();
-        if (!cfg.baseUrl) { return { ok: false, error: `set baseUrl for ${this.displayName}` }; }
+        if (!cfg.baseUrl) {
+            return { ok: false, error: `set baseUrl for ${this.displayName}` };
+        }
         // Best-effort model discovery so the picker is populated when opened.
         const loginToken = await resolveAuthToken(cfg).catch(() => null);
         await discoverModelsFromCatalog(cfg, this.backend, loginToken).catch(() => undefined);
@@ -65,14 +70,26 @@ export class OpenAIAdapter implements AgentAdapter {
     listSessions(): Promise<SessionInfo[]> {
         const dir = storeDir(this.backend);
         let files: string[] = [];
-        try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { /* store dir may not exist yet */ }
+        try {
+            files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
+        } catch {
+            /* store dir may not exist yet */
+        }
         const out: SessionInfo[] = [];
         const seen = new Set<string>();
         for (const f of files) {
             const s = readStored(this.backend, f.slice(0, -5));
             if (s && !ledger.isLedgerDeleted(s.id)) {
                 seen.add(s.id);
-                out.push({ backend: this.backend, sessionId: s.id, title: s.title || "Session", cwd: s.cwd, updatedAt: new Date(s.updatedAt), model: s.model, lineageId: s.lineageId });
+                out.push({
+                    backend: this.backend,
+                    sessionId: s.id,
+                    title: s.title || "Session",
+                    cwd: s.cwd,
+                    updatedAt: new Date(s.updatedAt),
+                    model: s.model,
+                    lineageId: s.lineageId,
+                });
             }
         }
         // Recover orphans: sessions that have a ledger but no store file (created
@@ -80,8 +97,12 @@ export class OpenAIAdapter implements AgentAdapter {
         // a minimal SessionInfo from the ledger's meta.json so they reappear in
         // the UI and can be resumed.
         for (const meta of ledger.listLedgerSessions()) {
-            if (meta.backend !== this.backend) { continue; }
-            if (seen.has(meta.id)) { continue; }
+            if (meta.backend !== this.backend) {
+                continue;
+            }
+            if (seen.has(meta.id)) {
+                continue;
+            }
             out.push({
                 backend: this.backend,
                 sessionId: meta.id,
@@ -102,38 +123,59 @@ export class OpenAIAdapter implements AgentAdapter {
             return Promise.resolve(historyFromLedger(info.sessionId));
         }
         const s = readStored(this.backend, info.sessionId);
-        if (!s) { return Promise.resolve([]); }
+        if (!s) {
+            return Promise.resolve([]);
+        }
         const labels = getDiscoveredLabels(this.getConfig().baseUrl) ?? {};
         // Pair each tool result back to the call that produced it.
         const results = new Map<string, string>();
         for (const m of s.messages) {
-            if (m.role === "tool" && m.tool_call_id) { results.set(m.tool_call_id, contentText(m.content)); }
+            if (m.role === "tool" && m.tool_call_id) {
+                results.set(m.tool_call_id, contentText(m.content));
+            }
         }
         const out: HistoryMessage[] = [];
         for (const m of s.messages) {
             if (m.role === "user") {
                 const t = contentText(m.content);
-                if (t) { out.push({ role: "user", text: t }); }
+                if (t) {
+                    out.push({ role: "user", text: t });
+                }
             } else if (m.role === "assistant") {
                 const t = contentText(m.content);
                 if (t) {
-                    out.push({ role: "assistant", text: t, model: m.model, modelLabel: m.model ? (labels[m.model] ?? m.model) : undefined });
+                    out.push({
+                        role: "assistant",
+                        text: t,
+                        model: m.model,
+                        modelLabel: m.model ? (labels[m.model] ?? m.model) : undefined,
+                    });
                 }
                 // Reconstruct tool rows so a resumed (or reloaded mid-turn)
                 // session shows the same icon+target+diff it had live.
                 for (const tc of m.tool_calls ?? []) {
                     let args: Record<string, unknown> = {};
-                    try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* leave empty */ }
+                    try {
+                        args = JSON.parse(tc.function.arguments || "{}");
+                    } catch {
+                        /* leave empty */
+                    }
                     const counts = diffCounts(tc.function.name, args);
-                    const ap = typeof args.path === "string" && args.path
-                        ? (path.isAbsolute(args.path) ? args.path : path.resolve(s.cwd, args.path))
-                        : undefined;
+                    const ap =
+                        typeof args.path === "string" && args.path
+                            ? path.isAbsolute(args.path)
+                                ? args.path
+                                : path.resolve(s.cwd, args.path)
+                            : undefined;
                     out.push({
-                        role: "tool", text: tc.function.name, toolName: tc.function.name,
+                        role: "tool",
+                        text: tc.function.name,
+                        toolName: tc.function.name,
                         detail: friendlyToolDetail(tc.function.name, args),
                         input: prettyJson(args),
                         result: results.get(tc.id),
-                        added: counts?.added, removed: counts?.removed,
+                        added: counts?.added,
+                        removed: counts?.removed,
                         path: ap ?? toolPath(tc.function.name, args),
                         diff: editDiff(tc.function.name, args),
                     });
@@ -147,36 +189,60 @@ export class OpenAIAdapter implements AgentAdapter {
         // Tombstone first: a delayed writer or stale ledger must never turn a
         // deleted session back into "Session (recovered)" while scrub runs.
         ledger.markLedgerDeleted(info.sessionId);
-        try { fs.rmSync(storePath(this.backend, info.sessionId), { force: true }); } catch { /* ignore */ }
+        try {
+            fs.rmSync(storePath(this.backend, info.sessionId), { force: true });
+        } catch {
+            /* ignore */
+        }
         // Also remove the ledger repo so the session isn't left as an orphan
         // (listSessions only scans the store dir, so a ledger-only session is
         // invisible in the UI but still consumes disk space).
-        try { ledger.removeLedger(info.sessionId); } catch { /* ignore */ }
+        try {
+            ledger.removeLedger(info.sessionId);
+        } catch {
+            /* ignore */
+        }
         return Promise.resolve();
     }
 
     start(options: SessionStartOptions): AgentSession {
-        const reasoning = options.reasoning === undefined
-            ? undefined
-            : nativeReasoning(REASONING_MAPS.openai, options.reasoning);
-        return new OpenAISession(this.backend, this.getConfig(), reasoning === undefined ? options : { ...options, reasoning });
+        const reasoning =
+            options.reasoning === undefined
+                ? undefined
+                : nativeReasoning(REASONING_MAPS.openai, options.reasoning);
+        return new OpenAISession(
+            this.backend,
+            this.getConfig(),
+            reasoning === undefined ? options : { ...options, reasoning },
+        );
     }
 
     /** API backend: takes one-shot app instructions as developer messages. */
-    roleAware(): boolean { return true; }
+    roleAware(): boolean {
+        return true;
+    }
 
     /** Slash commands offered for this backend. `/compact` is intercepted locally
      *  (summarize + shrink the model context); it also re-enables the context
      *  popover's "Compact Conversation" button (gated on a `compact` command). */
     commands(): Promise<SlashCommand[]> {
-        const builtin = [{ name: "compact", description: "Summarize older turns to shrink the model context (full history is preserved)", kind: "builtin" as const }];
+        const builtin = [
+            {
+                name: "compact",
+                description:
+                    "Summarize older turns to shrink the model context (full history is preserved)",
+                kind: "builtin" as const,
+            },
+        ];
         // Inline scan for skills to avoid tree-shaking in bundled extension
         try {
             const skillsDir = path.join(os.homedir(), ".symposium", "repo", "skills");
             let entries: fs.Dirent[] = [];
             try {
                 entries = fs.readdirSync(skillsDir, { withFileTypes: true });
-            } catch { return Promise.resolve(builtin); }
+            } catch {
+                return Promise.resolve(builtin);
+            }
             const skills: SlashCommand[] = [];
             for (const entry of entries) {
                 if (entry.isDirectory()) {
@@ -189,7 +255,9 @@ export class OpenAIAdapter implements AgentAdapter {
                             const description = match[2].split("\n")[0].trim();
                             skills.push({ name, description, kind: "skill" as const });
                         }
-                    } catch { /* skip invalid skills */ }
+                    } catch {
+                        /* skip invalid skills */
+                    }
                 }
             }
             return Promise.resolve([...builtin, ...skills]);
@@ -205,7 +273,9 @@ export class OpenAIAdapter implements AgentAdapter {
      * instead of being handed a file path it reads as binary. The gateway must
      * route to a vision-capable model for the image to be interpreted.
      */
-    supportsImages(): boolean { return true; }
+    supportsImages(): boolean {
+        return true;
+    }
 
     /** Friendly id→name labels for the model picker (from discovery). */
     modelLabels(): Record<string, string> {
@@ -222,7 +292,9 @@ export class OpenAIAdapter implements AgentAdapter {
                 setDiscovered(cfg.baseUrl, stored.models, stored.labels ?? {}, stored.context);
             }
         }
-        const configured = cfg.models.length ? cfg.models : (getDiscoveredModels(cfg.baseUrl) ?? []);
+        const configured = cfg.models.length
+            ? cfg.models
+            : (getDiscoveredModels(cfg.baseUrl) ?? []);
         return buildOpenAIModelList(configured, cfg.model);
     }
 
@@ -234,7 +306,9 @@ export class OpenAIAdapter implements AgentAdapter {
      * models are pinned in settings, discovery is skipped — the configured
      * list wins.
      */
-    async refreshModels(force = false): Promise<{ models: string[]; labels?: Record<string, string> }> {
+    async refreshModels(
+        force = false,
+    ): Promise<{ models: string[]; labels?: Record<string, string> }> {
         const cfg = this.getConfig();
         if (!cfg.models.length && cfg.baseUrl) {
             // Skip network if file cache is fresh and not forced
@@ -250,7 +324,9 @@ export class OpenAIAdapter implements AgentAdapter {
                 const loginToken = await resolveAuthToken(cfg, force);
                 const updated = await discoverModelsFromCatalog(cfg, this.backend, loginToken);
                 if (force && !updated) {
-                    throw new Error(`No models returned by ${cfg.baseUrl.replace(/\/+$/, "")}/models`);
+                    throw new Error(
+                        `No models returned by ${cfg.baseUrl.replace(/\/+$/, "")}/models`,
+                    );
                 }
             }
         }
@@ -262,9 +338,13 @@ export class OpenAIAdapter implements AgentAdapter {
         return ["default", ...Object.keys(REASONING_MAPS.openai)];
     }
 
-    reasoningMap(): Record<string, string> { return { ...REASONING_MAPS.openai }; }
+    reasoningMap(): Record<string, string> {
+        return { ...REASONING_MAPS.openai };
+    }
 
-    defaultReasoning(): string { return DEFAULT_REASONING_EFFORT.openai; }
+    defaultReasoning(): string {
+        return DEFAULT_REASONING_EFFORT.openai;
+    }
 
     // Unified permission modes (same vocabulary/semantics across every
     // adapter): admin (no approval, default), manager (approval only for
@@ -282,6 +362,10 @@ export class OpenAIAdapter implements AgentAdapter {
     }
 
     // No native plan tool over the raw API: inject one and parse a ```todo block.
-    hasNativeTodo(): boolean { return false; }
-    todoInjection(): string { return TODO_INJECTION; }
+    hasNativeTodo(): boolean {
+        return false;
+    }
+    todoInjection(): string {
+        return TODO_INJECTION;
+    }
 }

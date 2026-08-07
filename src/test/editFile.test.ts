@@ -18,13 +18,20 @@ function applyReplacement(content: string, oldStr: string, newStr: string): stri
     return content.split(oldStr).join(newStr);
 }
 
-function replaceOccurrence(content: string, oldStr: string, newStr: string, occurrenceIndex: number): string {
+function replaceOccurrence(
+    content: string,
+    oldStr: string,
+    newStr: string,
+    occurrenceIndex: number,
+): string {
     let seen = 0;
     let cursor = 0;
     let out = "";
     for (;;) {
         const at = content.indexOf(oldStr, cursor);
-        if (at < 0) { return out + content.slice(cursor); }
+        if (at < 0) {
+            return out + content.slice(cursor);
+        }
         seen++;
         out += content.slice(cursor, at);
         out += seen === occurrenceIndex ? newStr : oldStr;

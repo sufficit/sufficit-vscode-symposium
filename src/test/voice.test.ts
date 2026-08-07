@@ -34,7 +34,7 @@ test("voice preferences: valid structure", () => {
         voiceContinuous: true,
         voiceInterimResults: true,
         voiceDotsAnimation: true,
-        voiceSoundFeedback: true
+        voiceSoundFeedback: true,
     };
     assert.ok(VALID_LANGUAGES.includes(prefs.voiceLanguage));
     assert.strictEqual(typeof prefs.voiceContinuous, "boolean");
@@ -47,20 +47,20 @@ test("voice preferences: default values", () => {
         voiceContinuous: false,
         voiceInterimResults: false,
         voiceDotsAnimation: true,
-        voiceSoundFeedback: true
+        voiceSoundFeedback: true,
     };
     assert.strictEqual(defaults.voiceLanguage, "pt-BR");
     assert.strictEqual(defaults.voiceContinuous, false);
 });
 
 test("voice preferences: all languages supported", () => {
-    VALID_LANGUAGES.forEach(lang => {
+    VALID_LANGUAGES.forEach((lang) => {
         const prefs: VoicePreferences = {
             voiceLanguage: lang,
             voiceContinuous: true,
             voiceInterimResults: true,
             voiceDotsAnimation: true,
-            voiceSoundFeedback: true
+            voiceSoundFeedback: true,
         };
         assert.strictEqual(prefs.voiceLanguage, lang);
     });
@@ -73,7 +73,7 @@ test("SpeechRecognition: applies preferences", () => {
         voiceContinuous: true,
         voiceInterimResults: false,
         voiceDotsAnimation: false,
-        voiceSoundFeedback: false
+        voiceSoundFeedback: false,
     };
     recognition.lang = prefs.voiceLanguage;
     recognition.continuous = prefs.voiceContinuous;
@@ -92,7 +92,9 @@ test("SpeechRecognition: single phrase mode", () => {
 
 test("voice state: recording lifecycle", () => {
     let isRecording = false;
-    const toggleRecording = () => { isRecording = !isRecording; };
+    const toggleRecording = () => {
+        isRecording = !isRecording;
+    };
     assert.strictEqual(isRecording, false);
     toggleRecording();
     assert.strictEqual(isRecording, true);
@@ -127,12 +129,13 @@ test("voice results: interim results", () => {
         results: [
             { isFinal: false, transcript: "Hel" },
             { isFinal: false, transcript: "Hello" },
-            { isFinal: true, transcript: "Hello world" }
-        ]
+            { isFinal: true, transcript: "Hello world" },
+        ],
     };
     const transcripts: string[] = [];
     const handleResult = (event: any) => {
-        for (let i = 0; i < event.results.length; i++) transcripts.push(event.results[i].transcript);
+        for (let i = 0; i < event.results.length; i++)
+            transcripts.push(event.results[i].transcript);
     };
     handleResult(mockEvent);
     assert.deepStrictEqual(transcripts, ["Hel", "Hello", "Hello world"]);
@@ -142,7 +145,7 @@ test("voice results: multiple languages", () => {
     const testCases = [
         { lang: "pt-BR", text: "Olá mundo" },
         { lang: "en-US", text: "Hello world" },
-        { lang: "es-ES", text: "Hola mundo" }
+        { lang: "es-ES", text: "Hola mundo" },
     ];
     testCases.forEach(({ lang, text }) => {
         const recognition = new MockSpeechRecognition();
@@ -155,10 +158,12 @@ test("voice results: multiple languages", () => {
 
 test("voice errors: handles error types", () => {
     const errorTypes = ["not-allowed", "no-speech", "network"];
-    errorTypes.forEach(err => {
+    errorTypes.forEach((err) => {
         const mockError = { error: err };
         let capturedError = "";
-        const handleError = (event: any) => { capturedError = event.error; };
+        const handleError = (event: any) => {
+            capturedError = event.error;
+        };
         handleError(mockError);
         assert.strictEqual(capturedError, err);
     });
@@ -166,7 +171,9 @@ test("voice errors: handles error types", () => {
 
 test("voice UI: animation state", () => {
     let animationActive = false;
-    const toggleAnimation = () => { animationActive = !animationActive; };
+    const toggleAnimation = () => {
+        animationActive = !animationActive;
+    };
     assert.strictEqual(animationActive, false);
     toggleAnimation();
     assert.strictEqual(animationActive, true);
@@ -180,10 +187,10 @@ test("voice UI: preferences affect behavior", () => {
         voiceContinuous: false,
         voiceInterimResults: false,
         voiceDotsAnimation: true,
-        voiceSoundFeedback: true
+        voiceSoundFeedback: true,
     };
     const shouldShowAnimation = () => prefs.voiceDotsAnimation;
-    const playSound = () => prefs.voiceSoundFeedback ? "Sound played" : "Sound disabled";
+    const playSound = () => (prefs.voiceSoundFeedback ? "Sound played" : "Sound disabled");
     assert.strictEqual(shouldShowAnimation(), true);
     assert.strictEqual(playSound(), "Sound played");
     prefs.voiceSoundFeedback = false;
@@ -197,14 +204,18 @@ test("voice integration: full recording cycle", () => {
         voiceContinuous: false,
         voiceInterimResults: true,
         voiceDotsAnimation: true,
-        voiceSoundFeedback: true
+        voiceSoundFeedback: true,
     };
     recognition.lang = prefs.voiceLanguage;
     recognition.continuous = prefs.voiceContinuous;
     recognition.interimResults = prefs.voiceInterimResults;
     let state = "idle";
-    recognition.onstart = () => { state = "recording"; };
-    recognition.onend = () => { state = "idle"; };
+    recognition.onstart = () => {
+        state = "recording";
+    };
+    recognition.onend = () => {
+        state = "idle";
+    };
     recognition.onstart!();
     assert.strictEqual(state, "recording");
     recognition.onend!();
@@ -217,7 +228,7 @@ test("voice integration: preferences persistence", () => {
         voiceContinuous: true,
         voiceInterimResults: true,
         voiceDotsAnimation: true,
-        voiceSoundFeedback: true
+        voiceSoundFeedback: true,
     };
     const loadedPrefs = JSON.parse(JSON.stringify(savedPrefs));
     assert.deepStrictEqual(loadedPrefs, savedPrefs);
@@ -253,9 +264,11 @@ test("voice integration: continuous mode", () => {
     };
     const mockEvents = [
         { results: [{ isFinal: true, transcript: "First sentence" }] },
-        { results: [{ isFinal: true, transcript: "Second sentence" }] }
+        { results: [{ isFinal: true, transcript: "Second sentence" }] },
     ];
-    mockEvents.forEach(event => { if (recognition.onresult) recognition.onresult(event); });
+    mockEvents.forEach((event) => {
+        if (recognition.onresult) recognition.onresult(event);
+    });
     assert.strictEqual(finalResults.length, 2);
     assert.strictEqual(finalResults[0], "First sentence");
 });

@@ -1,11 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import { pollDeviceToken } from "../auth/identityDeviceFlow";
-import {
-    isTransientOAuthStatus,
-    OAuthHttpError,
-    parseOAuthJson,
-} from "../auth/oauthHttp";
+import { isTransientOAuthStatus, OAuthHttpError, parseOAuthJson } from "../auth/oauthHttp";
 
 test("OAuth JSON parser accepts valid JSON even with an incorrect content type", async () => {
     const response = new Response('{"access_token":"token"}', {
@@ -16,25 +12,35 @@ test("OAuth JSON parser accepts valid JSON even with an incorrect content type",
 });
 
 test("OAuth JSON parser reports safe HTTP context instead of Unexpected token", async () => {
-    const response = new Response("<html><head><style>secret{}</style></head><body><h1>Bad Gateway</h1></body></html>", {
-        status: 502,
-        headers: { "content-type": "text/html; charset=utf-8" },
-    });
+    const response = new Response(
+        "<html><head><style>secret{}</style></head><body><h1>Bad Gateway</h1></body></html>",
+        {
+            status: 502,
+            headers: { "content-type": "text/html; charset=utf-8" },
+        },
+    );
 
-    await assert.rejects(parseOAuthJson(response, "Sufficit device token endpoint"), (error: unknown) => {
-        assert.ok(error instanceof OAuthHttpError);
-        assert.equal(error.status, 502);
-        assert.equal(error.transient, true);
-        assert.match(error.message, /device token endpoint.*HTTP 502.*text\/html.*Bad Gateway/);
-        assert.doesNotMatch(error.message, /Unexpected token|secret\{\}/);
-        return true;
-    });
+    await assert.rejects(
+        parseOAuthJson(response, "Sufficit device token endpoint"),
+        (error: unknown) => {
+            assert.ok(error instanceof OAuthHttpError);
+            assert.equal(error.status, 502);
+            assert.equal(error.transient, true);
+            assert.match(error.message, /device token endpoint.*HTTP 502.*text\/html.*Bad Gateway/);
+            assert.doesNotMatch(error.message, /Unexpected token|secret\{\}/);
+            return true;
+        },
+    );
 });
 
 test("OAuth JSON parser classifies permanent non-JSON responses", async () => {
     await assert.rejects(
-        parseOAuthJson(new Response("<html>Bad Request</html>", { status: 400 }), "authorization endpoint"),
-        (error: unknown) => error instanceof OAuthHttpError && !error.transient && error.status === 400,
+        parseOAuthJson(
+            new Response("<html>Bad Request</html>", { status: 400 }),
+            "authorization endpoint",
+        ),
+        (error: unknown) =>
+            error instanceof OAuthHttpError && !error.transient && error.status === 400,
     );
     assert.equal(isTransientOAuthStatus(429), true);
     assert.equal(isTransientOAuthStatus(503), true);
@@ -82,10 +88,12 @@ test("Device Flow polling does not retry a permanent OAuth error", async () => {
             expiresInSec: 30,
             fetchImpl: (() => {
                 calls += 1;
-                return Promise.resolve(new Response(
-                    JSON.stringify({ error: "access_denied", error_description: "Denied" }),
-                    { status: 400 },
-                ));
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({ error: "access_denied", error_description: "Denied" }),
+                        { status: 400 },
+                    ),
+                );
             }) as typeof fetch,
             sleep: () => Promise.resolve(),
         }),

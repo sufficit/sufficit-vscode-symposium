@@ -54,7 +54,12 @@ function runPython(dbPath: string, table: string, column: string, value: string)
     return spawnOk("python3", ["-c", script, dbPath, value]);
 }
 
-function runSqliteCli(dbPath: string, table: string, column: string, value: string): Promise<boolean> {
+function runSqliteCli(
+    dbPath: string,
+    table: string,
+    column: string,
+    value: string,
+): Promise<boolean> {
     // Only GUID-shaped values reach here; reject anything else defensively.
     if (!/^[0-9a-fA-F-]{8,}$/.test(value)) {
         return Promise.resolve(false);

@@ -20,7 +20,8 @@ export function buildHeaders(
         h["x-client-version"] = cfg.clientInfo.version;
         h["x-client-hostname"] = cfg.clientInfo.hostname;
         h["x-client-os"] = cfg.clientInfo.os;
-        h["user-agent"] = `${cfg.clientInfo.id}/${cfg.clientInfo.version} (${cfg.clientInfo.os}; ${cfg.clientInfo.hostname})`;
+        h["user-agent"] =
+            `${cfg.clientInfo.id}/${cfg.clientInfo.version} (${cfg.clientInfo.os}; ${cfg.clientInfo.hostname})`;
     }
     const hasAuth = Object.keys(h).some((k) => k.toLowerCase() === "authorization");
     if (!hasAuth && cfg.apiKey) {
@@ -39,11 +40,20 @@ export function buildHeaders(
  *
  * Extracted from OpenAISession.authToken().
  */
-export async function resolveAuthToken(cfg: OpenAIAdapterConfig, forceRefresh = false): Promise<string | null> {
+export async function resolveAuthToken(
+    cfg: OpenAIAdapterConfig,
+    forceRefresh = false,
+): Promise<string | null> {
     const provider = getOpenAITokenProvider();
     const hasAuth = Object.keys(cfg.headers).some((k) => k.toLowerCase() === "authorization");
-    if (hasAuth || cfg.apiKey || !provider) { return null; }
-    try { return await provider(forceRefresh); } catch { return null; }
+    if (hasAuth || cfg.apiKey || !provider) {
+        return null;
+    }
+    try {
+        return await provider(forceRefresh);
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -57,7 +67,5 @@ export function shouldRefreshNativeAuthorization(
     noExplicitAuth: boolean,
     loginToken: string | null | undefined,
 ): boolean {
-    return noExplicitAuth
-        && Boolean(loginToken)
-        && (status === 401 || status === 403);
+    return noExplicitAuth && Boolean(loginToken) && (status === 401 || status === 403);
 }

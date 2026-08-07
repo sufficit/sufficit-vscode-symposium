@@ -1,7 +1,7 @@
 /** Autonomous Sufficit AI setup prompt shared by the config handler and tests. */
 export const SUFFICIT_VOICE_BENCHMARK_PROMPT =
     "Você está numa sessão autônoma, sem ninguém observando — não espere confirmação nem pergunte nada, decida e execute até o fim, depois pare.\n\n" +
-    "TAREFA: neste projeto (extensão VS Code \"Symposium\"), avalie os 4 candidatos locais de reconhecimento de voz e configure o melhor candidato comprovado como padrão.\n\n" +
+    'TAREFA: neste projeto (extensão VS Code "Symposium"), avalie os 4 candidatos locais de reconhecimento de voz e configure o melhor candidato comprovado como padrão.\n\n' +
     "Contexto: Symposium suporta VS Code Speech (provider interativo ms-vscode.vscode-speech, controlado pelo workbench), " +
     "whisper.cpp (binário whisper-cli), faster-whisper (binário whisper-ctranslate2) e vosk (binário vosk-transcriber). " +
     "VS Code Speech captura o microfone diretamente e NÃO aceita WAV externo; os outros 3 recebem WAV pelo host. " +

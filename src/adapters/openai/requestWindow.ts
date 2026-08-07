@@ -31,12 +31,18 @@ export interface ContextWindowAssessment {
  * keeps the full array for persistence/ledger.
  */
 export function windowMessages(messages: ChatMessage[], max: number): ChatMessage[] {
-    if (max === 0) { return messages; }
+    if (max === 0) {
+        return messages;
+    }
     const firstUserIdx = messages.findIndex((m) => m.role === "user");
-    if (firstUserIdx === -1) { return messages; }
+    if (firstUserIdx === -1) {
+        return messages;
+    }
     const prefix = messages.slice(0, firstUserIdx);
     const conv = messages.slice(firstUserIdx);
-    if (conv.length <= max) { return messages; }
+    if (conv.length <= max) {
+        return messages;
+    }
     // The OpenAI protocol treats an assistant tool_call and the following
     // tool result(s) as one structural unit. A plain tail slice can start on a
     // role:"tool" message and orphan it from the assistant call that created
@@ -48,10 +54,14 @@ export function windowMessages(messages: ChatMessage[], max: number): ChatMessag
 /** True when the sliding window is dropping older turns (so the raw task /
  *  earlier steps are no longer in the request — when the anchor matters). */
 export function isWindowTruncated(messages: ChatMessage[], max: number): boolean {
-    if (max === 0) { return false; }
+    if (max === 0) {
+        return false;
+    }
     const firstUserIdx = messages.findIndex((m) => m.role === "user");
-    if (firstUserIdx === -1) { return false; }
-    return (messages.length - firstUserIdx) > max;
+    if (firstUserIdx === -1) {
+        return false;
+    }
+    return messages.length - firstUserIdx > max;
 }
 
 /**
@@ -60,7 +70,11 @@ export function isWindowTruncated(messages: ChatMessage[], max: number): boolean
  * because tool schemas and tool-call history both consume context even though
  * they are not visible as plain chat text in the transcript.
  */
-export function estimateRequest(bodyJson: string, messageCount: number, toolCount: number): RequestEstimate {
+export function estimateRequest(
+    bodyJson: string,
+    messageCount: number,
+    toolCount: number,
+): RequestEstimate {
     return {
         inputTokens: Math.max(1, Math.ceil(bodyJson.length / 4)),
         requestChars: bodyJson.length,
@@ -103,5 +117,7 @@ export function requestEstimateDiagnostic(estimate: RequestEstimate, win: number
         `request_chars=${estimate.requestChars}`,
         `messages=${estimate.messageCount}`,
         `tools=${estimate.toolCount}`,
-    ].filter(Boolean).join(" ");
+    ]
+        .filter(Boolean)
+        .join(" ");
 }

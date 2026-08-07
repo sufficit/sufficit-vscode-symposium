@@ -6,9 +6,14 @@
 // for the memory hub — these run pure, no network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fetchSessionGuardrails, saveGuardrail, clearSessionGuardrails, removeGuardrail } from "../sync/guardrails";
-import { reloadGuardrails } from "../ui/controllerHubState";
-import type { HubStateContext } from "../ui/controllerHubState";
+import {
+    fetchSessionGuardrails,
+    saveGuardrail,
+    clearSessionGuardrails,
+    removeGuardrail,
+} from "../sync/guardrails";
+import { reloadGuardrails } from "../application/controllerHubState";
+import type { HubStateContext } from "../application/controllerHubState";
 
 /** Minimal hub stub: records saves (with sessionId/privacyLevel) and serves them back. */
 function hubStub(opts: { records?: any[]; configured?: boolean; searchThrows?: boolean } = {}) {
@@ -17,8 +22,15 @@ function hubStub(opts: { records?: any[]; configured?: boolean; searchThrows?: b
         p.sessionId ? rows.filter((r) => (r.sessionId ?? "") === p.sessionId) : rows;
     return {
         configured: () => opts.configured !== false,
-        searchMemory(p: { query?: string; type?: string; limit?: number; sessionId?: string }): Promise<any[]> {
-            if (opts.searchThrows) { return Promise.reject(new Error("hub down")); }
+        searchMemory(p: {
+            query?: string;
+            type?: string;
+            limit?: number;
+            sessionId?: string;
+        }): Promise<any[]> {
+            if (opts.searchThrows) {
+                return Promise.reject(new Error("hub down"));
+            }
             return Promise.resolve(filter(store.slice(0, p.limit ?? store.length), p));
         },
         getByIds(ids: string[]): Promise<any[]> {
@@ -27,7 +39,10 @@ function hubStub(opts: { records?: any[]; configured?: boolean; searchThrows?: b
         save(obs: any): Promise<string> {
             if (obs.id) {
                 const i = store.findIndex((r) => String(r.id) === String(obs.id));
-                if (i >= 0) { store[i] = { ...store[i], ...obs }; return Promise.resolve(String(store[i].id)); }
+                if (i >= 0) {
+                    store[i] = { ...store[i], ...obs };
+                    return Promise.resolve(String(store[i].id));
+                }
             }
             const id = "g" + (store.length + 1) + "-" + Date.now();
             store.push({ id, createdAtUtc: new Date().toISOString(), ...obs });
@@ -40,15 +55,43 @@ test("fetchSessionGuardrails: returns only this session's guardrails, oldest fir
     const sid = "sess-A";
     const hub = hubStub({
         records: [
-            { id: "1", type: "guardrail", sessionId: "sess-A", summary: "first", createdAtUtc: "2026-01-03T10:00:00Z" },
-            { id: "2", type: "guardrail", sessionId: "sess-B", summary: "other session", createdAtUtc: "2026-01-03T09:00:00Z" },
-            { id: "3", type: "task-checkpoint", sessionId: "sess-A", summary: "a task", createdAtUtc: "2026-01-03T11:00:00Z" },
-            { id: "4", type: "guardrail", sessionId: "sess-A", summary: "second", createdAtUtc: "2026-01-03T12:00:00Z" },
+            {
+                id: "1",
+                type: "guardrail",
+                sessionId: "sess-A",
+                summary: "first",
+                createdAtUtc: "2026-01-03T10:00:00Z",
+            },
+            {
+                id: "2",
+                type: "guardrail",
+                sessionId: "sess-B",
+                summary: "other session",
+                createdAtUtc: "2026-01-03T09:00:00Z",
+            },
+            {
+                id: "3",
+                type: "task-checkpoint",
+                sessionId: "sess-A",
+                summary: "a task",
+                createdAtUtc: "2026-01-03T11:00:00Z",
+            },
+            {
+                id: "4",
+                type: "guardrail",
+                sessionId: "sess-A",
+                summary: "second",
+                createdAtUtc: "2026-01-03T12:00:00Z",
+            },
         ],
     });
     const items = await fetchSessionGuardrails(hub, sid);
     assert.equal(items.length, 2);
-    assert.deepEqual(items.map((i) => i.text), ["first", "second"], "ordered oldest-first, only this session's guardrails");
+    assert.deepEqual(
+        items.map((i) => i.text),
+        ["first", "second"],
+        "ordered oldest-first, only this session's guardrails",
+    );
 });
 
 test("fetchSessionGuardrails: empty when hub not configured or no session", async () => {
@@ -59,14 +102,20 @@ test("fetchSessionGuardrails: empty when hub not configured or no session", asyn
 test("saveGuardrail: stores with sessionId + privacyLevel internal", async () => {
     const hub = hubStub();
     const sid = "sess-R";
-    let saved: any;   // reassigned inside the save stub below
-    (hub as any).save = (obs: any) => { saved = obs; return Promise.resolve("id-1"); };
+    let saved: any; // reassigned inside the save stub below
+    (hub as any).save = (obs: any) => {
+        saved = obs;
+        return Promise.resolve("id-1");
+    };
     await saveGuardrail(hub, sid, "  never edit the Razor markup  ");
     assert.equal(saved.sessionId, sid, "sessionId field set");
     assert.equal(saved.privacyLevel, "internal", "privacyLevel internal (session-scoped)");
     assert.equal(saved.type, "guardrail");
     assert.equal(saved.summary, "never edit the Razor markup", "text trimmed + stored as summary");
-    assert.ok(!saved.tags || !saved.tags.includes("symposium-session"), "no legacy symposium-session tag");
+    assert.ok(
+        !saved.tags || !saved.tags.includes("symposium-session"),
+        "no legacy symposium-session tag",
+    );
 });
 
 test("removeGuardrail: soft-deletes (past expiry) so the item drops from the list", async () => {
@@ -95,8 +144,20 @@ test("reloadGuardrails: fills the cache with texts and marks loaded", async () =
     const sid = "sess-L";
     const hub = hubStub({
         records: [
-            { id: "a", type: "guardrail", sessionId: "sess-L", summary: "alpha", createdAtUtc: "2026-01-03T10:00:00Z" },
-            { id: "b", type: "guardrail", sessionId: "sess-L", summary: "beta", createdAtUtc: "2026-01-03T11:00:00Z" },
+            {
+                id: "a",
+                type: "guardrail",
+                sessionId: "sess-L",
+                summary: "alpha",
+                createdAtUtc: "2026-01-03T10:00:00Z",
+            },
+            {
+                id: "b",
+                type: "guardrail",
+                sessionId: "sess-L",
+                summary: "beta",
+                createdAtUtc: "2026-01-03T11:00:00Z",
+            },
         ],
     });
     const state: any = { guardrails: [], guardrailsLoaded: false, pendingTasks: [] };
@@ -112,7 +173,11 @@ test("reloadGuardrails: does NOT mark loaded / wipe cache when the hub throws (s
     const state: any = { guardrails: ["pre-existing"], guardrailsLoaded: false, pendingTasks: [] };
     const ctx: HubStateContext = { sessionId: () => sid, hub: () => hub, state };
     await reloadGuardrails(ctx);
-    assert.deepEqual(state.guardrails, ["pre-existing"], "prior cache preserved on transient failure");
+    assert.deepEqual(
+        state.guardrails,
+        ["pre-existing"],
+        "prior cache preserved on transient failure",
+    );
     assert.equal(state.guardrailsLoaded, false, "flag stays false so the next dispatch retries");
 });
 

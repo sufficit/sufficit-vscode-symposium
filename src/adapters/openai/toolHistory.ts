@@ -24,7 +24,9 @@ export function findToolHistoryIssues(messages: ChatMessage[]): ToolHistoryIssue
         const message = messages[i];
         if (message.role === "assistant" && message.tool_calls?.length) {
             for (const toolCall of message.tool_calls) {
-                if (!toolCall.id) { continue; }
+                if (!toolCall.id) {
+                    continue;
+                }
                 seenCalls.add(toolCall.id);
                 pending.set(toolCall.id, { index: i, name: toolCall.function.name });
             }
@@ -107,10 +109,12 @@ export function materializeToolSafeHistory(
             }
 
             foldedOrphanTools++;
-            out.push(toolHistoryNotice(
-                noticeRole,
-                `Tool result "${message.name ?? "unknown"}"${id ? ` (${id})` : ""} was omitted from this live request because its assistant tool_call is not present in the materialized context. The saved session is unchanged.`,
-            ));
+            out.push(
+                toolHistoryNotice(
+                    noticeRole,
+                    `Tool result "${message.name ?? "unknown"}"${id ? ` (${id})` : ""} was omitted from this live request because its assistant tool_call is not present in the materialized context. The saved session is unchanged.`,
+                ),
+            );
             continue;
         }
 
@@ -125,10 +129,14 @@ export function expandStartToToolBoundary(messages: ChatMessage[], startIndex: n
 
     while (start < messages.length && messages[start].role === "tool") {
         const toolCallId = messages[start].tool_call_id;
-        if (!toolCallId) { break; }
+        if (!toolCallId) {
+            break;
+        }
 
         const assistantIndex = findPrecedingAssistantToolCall(messages, start, toolCallId);
-        if (assistantIndex < 0 || assistantIndex === start) { break; }
+        if (assistantIndex < 0 || assistantIndex === start) {
+            break;
+        }
 
         start = assistantIndex;
     }
@@ -141,7 +149,9 @@ function collectToolResultIndexes(messages: ChatMessage[]): Map<string, number[]
 
     for (let i = 0; i < messages.length; i++) {
         const message = messages[i];
-        if (message.role !== "tool" || !message.tool_call_id) { continue; }
+        if (message.role !== "tool" || !message.tool_call_id) {
+            continue;
+        }
         const existing = indexes.get(message.tool_call_id) ?? [];
         existing.push(i);
         indexes.set(message.tool_call_id, existing);
@@ -150,7 +160,11 @@ function collectToolResultIndexes(messages: ChatMessage[]): Map<string, number[]
     return indexes;
 }
 
-function hasToolResultAfter(indexes: Map<string, number[]>, toolCallId: string, messageIndex: number): boolean {
+function hasToolResultAfter(
+    indexes: Map<string, number[]>,
+    toolCallId: string,
+    messageIndex: number,
+): boolean {
     return (indexes.get(toolCallId) ?? []).some((index) => index > messageIndex);
 }
 
@@ -159,7 +173,8 @@ function missingToolResult(toolCallId: string, toolName: string): ChatMessage {
         role: "tool",
         tool_call_id: toolCallId,
         name: toolName,
-        content: "[System: This tool call was not executed because the previous turn ended before it could run. Do not repeat it blindly; reassess the current state and either take a different necessary step or respond to the user.]",
+        content:
+            "[System: This tool call was not executed because the previous turn ended before it could run. Do not repeat it blindly; reassess the current state and either take a different necessary step or respond to the user.]",
     };
 }
 
@@ -170,10 +185,17 @@ function toolHistoryNotice(role: "system" | "developer", detail: string): ChatMe
     };
 }
 
-function findPrecedingAssistantToolCall(messages: ChatMessage[], beforeIndex: number, toolCallId: string): number {
+function findPrecedingAssistantToolCall(
+    messages: ChatMessage[],
+    beforeIndex: number,
+    toolCallId: string,
+): number {
     for (let i = beforeIndex - 1; i >= 0; i--) {
         const message = messages[i];
-        if (message.role === "assistant" && message.tool_calls?.some((toolCall) => toolCall.id === toolCallId)) {
+        if (
+            message.role === "assistant" &&
+            message.tool_calls?.some((toolCall) => toolCall.id === toolCallId)
+        ) {
             return i;
         }
     }

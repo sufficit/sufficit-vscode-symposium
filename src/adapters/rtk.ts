@@ -29,7 +29,10 @@ export function probeRtk(cwd?: string, force = false): Promise<boolean> {
     }
     inFlight = new Promise<boolean>((resolve) => {
         try {
-            const child = spawn("bash", ["-lc", "command -v rtk >/dev/null 2>&1"], { cwd, stdio: "ignore" });
+            const child = spawn("bash", ["-lc", "command -v rtk >/dev/null 2>&1"], {
+                cwd,
+                stdio: "ignore",
+            });
             child.on("error", () => resolve(false));
             child.on("exit", (code) => resolve(code === 0));
         } catch {

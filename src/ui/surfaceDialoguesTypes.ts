@@ -1,6 +1,6 @@
 import type * as vscode from "vscode";
 import type { AgentAdapter, FollowHandle, SessionInfo } from "../adapters/types";
-import type { ChatController } from "./chatController";
+import type { ChatController } from "../application/chatController";
 import type { TerminalSession } from "./terminalSession";
 import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 import type { SurfaceSync } from "./surfaceSync";
@@ -18,7 +18,9 @@ export interface SurfaceDialoguesDeps {
     setTerminalSession: (terminal: TerminalSession | undefined) => void;
     setFollowHandle: (handle: FollowHandle | undefined) => void;
     setFollowedSessionId: (id: string | undefined) => void;
-    setSendBlockedReason: (reason: SessionInfo["continuationBlockedReason"] | "live-follow" | undefined) => void;
+    setSendBlockedReason: (
+        reason: SessionInfo["continuationBlockedReason"] | "live-follow" | undefined,
+    ) => void;
     activateUsage: (adapter: AgentAdapter) => void;
     detachActive: () => void;
     buildLangHint: () => string;

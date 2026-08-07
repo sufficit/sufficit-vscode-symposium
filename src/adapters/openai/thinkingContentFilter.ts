@@ -19,12 +19,16 @@ export class ThinkingContentFilter {
             if (!match) {
                 const tail = this.partialTagTail();
                 const complete = this.pending.slice(0, this.pending.length - tail.length);
-                if (!this.insideThink) { visible += complete; }
+                if (!this.insideThink) {
+                    visible += complete;
+                }
                 this.pending = tail;
                 return visible;
             }
 
-            if (!this.insideThink) { visible += this.pending.slice(0, match.index); }
+            if (!this.insideThink) {
+                visible += this.pending.slice(0, match.index);
+            }
             this.insideThink = /^<\/think/i.test(match[0]) ? false : true;
             this.pending = this.pending.slice(match.index + match[0].length);
         }

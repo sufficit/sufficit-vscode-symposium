@@ -35,6 +35,7 @@ function resolveRelative(from, specifier) {
 }
 
 const graph = new Map(files.map((file) => [file, new Set()]));
+const externalImports = new Map(files.map((file) => [file, new Set()]));
 for (const file of files) {
     const sourceFile = ts.createSourceFile(
         file,
@@ -45,6 +46,7 @@ for (const file of files) {
     function add(specifier) {
         const target = resolveRelative(file, specifier);
         if (target) graph.get(file).add(target);
+        else if (!specifier.startsWith(".")) externalImports.get(file).add(specifier);
     }
     function visit(node) {
         if (
@@ -132,10 +134,24 @@ for (const [source, targets] of graph) {
         const targetName = display(target);
         if (
             (sourceName.startsWith("ui/") && targetName === "extension.ts") ||
-            (sourceName.startsWith("sessions/") && targetName.startsWith("ui/"))
+            (sourceName.startsWith("sessions/") && targetName.startsWith("ui/")) ||
+            (sourceName.startsWith("application/") && targetName.startsWith("ui/")) ||
+            (sourceName.startsWith("adapters/") && (targetName.startsWith("ui/") || targetName === "extension.ts")) ||
+            (sourceName.startsWith("protocol/") && (
+                targetName.startsWith("application/") ||
+                targetName.startsWith("adapters/") ||
+                targetName.startsWith("sessions/") ||
+                targetName.startsWith("ui/")
+            ))
         ) {
             actualBoundaryViolations.add(`${sourceName} -> ${targetName}`);
         }
+    }
+    if (
+        externalImports.get(source)?.has("vscode") &&
+        (sourceName.startsWith("application/") || sourceName.startsWith("protocol/"))
+    ) {
+        actualBoundaryViolations.add(`${sourceName} -> vscode`);
     }
 }
 const allowedBoundaryViolations = new Set(baseline.allowedBoundaryViolations);
@@ -152,7 +168,7 @@ function markReachable(file) {
     reachable.add(file);
     for (const target of graph.get(file) ?? []) markReachable(target);
 }
-for (const entry of ["extension.ts", "ui/webview/index.ts", "ui/webview/pwaShim.ts"]) {
+for (const entry of ["extension.ts", "ui/webview/index.ts", "ui/webview/pwaShim.ts", "ahp/channelStore.ts"]) {
     markReachable(path.join(root, entry));
 }
 const unreachable = new Set(files.filter((file) => !reachable.has(file)).map(display));

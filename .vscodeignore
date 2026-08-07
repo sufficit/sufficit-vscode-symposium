@@ -1,5 +1,8 @@
 src/**
 out/test/**
+coverage/**
+test/**
+.vscode-test/**
 out/_webview-check.js
 out/**/*.map
 node_modules/**

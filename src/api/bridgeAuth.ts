@@ -17,6 +17,8 @@ export function isBridgeAuthorized(
     // EventSource cannot set headers, so allow query-token auth only for
     // GET /sessions/:id/follow SSE consumers. Every other endpoint, including
     // /vault/resolve, must use Authorization: Bearer / X-Symposium-Token.
-    return /^\/sessions\/[^/]+\/follow\/?$/.test(url.pathname)
-        && url.searchParams.get("token") === token;
+    return (
+        /^\/sessions\/[^/]+\/follow\/?$/.test(url.pathname) &&
+        url.searchParams.get("token") === token
+    );
 }

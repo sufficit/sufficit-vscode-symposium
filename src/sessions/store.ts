@@ -63,7 +63,8 @@ export class SessionStore {
         this.parents = migrateKeys(memento.get<Record<string, string>>(PARENTS_KEY, {}));
         this.lineages = migrateKeys(memento.get<Record<string, string>>(LINEAGES_KEY, {}));
         this.compressionPresets = memento.get<Record<string, string>>(COMPRESSION_KEY, {}) || {};
-        this.terminalStatuses = memento.get<Record<string, SessionTerminalStatus>>(TERMINAL_STATUS_KEY, {}) || {};
+        this.terminalStatuses =
+            memento.get<Record<string, SessionTerminalStatus>>(TERMINAL_STATUS_KEY, {}) || {};
         this.deleted = new Set(migrateList(memento.get<string[]>(DELETED_KEY, [])));
         // Consolidate legacy `backend:guid` keys to the bare GUID on disk.
         if (Object.keys(rawTitles).some((k) => k.includes(":"))) {
@@ -111,7 +112,9 @@ export class SessionStore {
     async setPinned(info: SessionInfo, pinned: boolean): Promise<void> {
         const id = this.key(info);
         this.pinned = this.pinned.filter((p) => p !== id);
-        if (pinned) { this.pinned.push(id); }   // newest pin goes to the bottom of the pinned group
+        if (pinned) {
+            this.pinned.push(id);
+        } // newest pin goes to the bottom of the pinned group
         await this.memento.update(PINNED_KEY, this.pinned);
     }
 
@@ -120,7 +123,9 @@ export class SessionStore {
         const id = this.key(info);
         const i = this.pinned.indexOf(id);
         const j = i + dir;
-        if (i < 0 || j < 0 || j >= this.pinned.length) { return; }
+        if (i < 0 || j < 0 || j >= this.pinned.length) {
+            return;
+        }
         [this.pinned[i], this.pinned[j]] = [this.pinned[j], this.pinned[i]];
         await this.memento.update(PINNED_KEY, this.pinned);
     }
@@ -130,7 +135,11 @@ export class SessionStore {
         const set = new Set(this.pinned);
         const next = ids.map(toGuid).filter((id) => set.has(id));
         // Keep any pinned ids not present in the incoming list (safety).
-        for (const id of this.pinned) { if (!next.includes(id)) { next.push(id); } }
+        for (const id of this.pinned) {
+            if (!next.includes(id)) {
+                next.push(id);
+            }
+        }
         this.pinned = next;
         await this.memento.update(PINNED_KEY, this.pinned);
     }
@@ -142,8 +151,12 @@ export class SessionStore {
      */
     setParent(sessionId: string, parentId: string | undefined): void {
         const id = toGuid(sessionId);
-        if (!parentId) { return; }
-        if (this.parents[id] === parentId) { return; }
+        if (!parentId) {
+            return;
+        }
+        if (this.parents[id] === parentId) {
+            return;
+        }
         this.parents[id] = parentId;
         void this.memento.update(PARENTS_KEY, this.parents);
     }
@@ -151,8 +164,12 @@ export class SessionStore {
     /** Persists edit/restart branch membership across extension reloads. */
     setLineage(sessionId: string, lineageId: string | undefined): void {
         const id = toGuid(sessionId);
-        if (!lineageId) { return; }
-        if (this.lineages[id] === lineageId) { return; }
+        if (!lineageId) {
+            return;
+        }
+        if (this.lineages[id] === lineageId) {
+            return;
+        }
         this.lineages[id] = lineageId;
         void this.memento.update(LINEAGES_KEY, this.lineages);
     }
@@ -217,9 +234,14 @@ export class SessionStore {
 
     /** Retains the last stopped warning/error so the sessions list survives reloads. */
     setTerminalStatus(sessionId: string, status: SessionTerminalStatus | undefined): void {
-        if (status === this.terminalStatuses[sessionId]) { return; }
-        if (status) { this.terminalStatuses[sessionId] = status; }
-        else { delete this.terminalStatuses[sessionId]; }
+        if (status === this.terminalStatuses[sessionId]) {
+            return;
+        }
+        if (status) {
+            this.terminalStatuses[sessionId] = status;
+        } else {
+            delete this.terminalStatuses[sessionId];
+        }
         void this.memento.update(TERMINAL_STATUS_KEY, this.terminalStatuses);
     }
 }

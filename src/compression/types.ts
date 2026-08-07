@@ -8,10 +8,10 @@ import { ChatMessage } from "../adapters/openai/types";
  * Estratégia de compressão disponível.
  */
 export type CompressionStrategyType =
-    | "none"           // Sem compressão
-    | "summarize"      // Resume mensagens antigas mantendo as N mais recentes
-    | "aggressive"     // Compactação agressiva (manter apenas 5 mensagens)
-    | "token-budget";  // Baseada em limite de tokens
+    | "none" // Sem compressão
+    | "summarize" // Resume mensagens antigas mantendo as N mais recentes
+    | "aggressive" // Compactação agressiva (manter apenas 5 mensagens)
+    | "token-budget"; // Baseada em limite de tokens
 
 /**
  * Parâmetros para estratégias de compressão.
@@ -143,35 +143,40 @@ export const DEFAULT_PRESETS: CompressionPreset[] = [
     {
         id: "summarize",
         name: "Resumo (Padrão)",
-        description: "Resume mensagens antigas mantendo as 10 mais recentes intactas. Equilíbrio entre contexto e economia.",
+        description:
+            "Resume mensagens antigas mantendo as 10 mais recentes intactas. Equilíbrio entre contexto e economia.",
         strategy: "summarize",
         params: { keepRecent: 10 },
     },
     {
         id: "aggressive",
         name: "Agressiva",
-        description: "Compactação agressiva mantendo apenas as 5 mensagens mais recentes. Máxima economia de tokens.",
+        description:
+            "Compactação agressiva mantendo apenas as 5 mensagens mais recentes. Máxima economia de tokens.",
         strategy: "aggressive",
         params: { keepRecent: 5 },
     },
     {
         id: "token-budget",
         name: "Limite de Tokens",
-        description: "Mantém aproximadamente 4000 tokens de contexto. Ideal para modelos com janela menor.",
+        description:
+            "Mantém aproximadamente 4000 tokens de contexto. Ideal para modelos com janela menor.",
         strategy: "token-budget",
         params: { maxTokens: 4000 },
     },
     {
         id: "dev",
         name: "Desenvolvimento",
-        description: "Preserva mais contexto para tarefas de desenvolvimento (15 mensagens recentes).",
+        description:
+            "Preserva mais contexto para tarefas de desenvolvimento (15 mensagens recentes).",
         strategy: "summarize",
         params: { keepRecent: 15 },
     },
     {
         id: "review",
         name: "Code Review",
-        description: "Otimizado para revisões de código com histórico médio (10 mensagens recentes).",
+        description:
+            "Otimizado para revisões de código com histórico médio (10 mensagens recentes).",
         strategy: "summarize",
         params: { keepRecent: 10 },
     },
@@ -218,7 +223,9 @@ export function isValidCompressionSettings(settings: unknown): settings is Compr
         typeof s.defaultPresetId === "string" &&
         Array.isArray(s.presets) &&
         Array.isArray(s.sectionConfigs) &&
-        (s.showCompressionSelector === undefined || typeof s.showCompressionSelector === "boolean") &&
-        (s.showCompressionDiagnostics === undefined || typeof s.showCompressionDiagnostics === "boolean")
+        (s.showCompressionSelector === undefined ||
+            typeof s.showCompressionSelector === "boolean") &&
+        (s.showCompressionDiagnostics === undefined ||
+            typeof s.showCompressionDiagnostics === "boolean")
     );
 }

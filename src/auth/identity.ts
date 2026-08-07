@@ -1,26 +1,18 @@
 import * as vscode from "vscode";
-import {
-    DEFAULT_IDENTITY_SCOPE,
-    normalizeIdentityScope,
-} from "./identityScopes";
+import { DEFAULT_IDENTITY_SCOPE, normalizeIdentityScope } from "./identityScopes";
 import { IdentityTokenManager, OAuthTokenResponse } from "./identityTokenManager";
-import {
-    Discovery,
-    IDENTITY_PROFILE_KEY as PROFILE_KEY,
-    SufficitProfile,
-} from "./identityTypes";
+import { Discovery, IDENTITY_PROFILE_KEY as PROFILE_KEY, SufficitProfile } from "./identityTypes";
 import { createPkceAuthorization } from "./identityOAuth";
-import { pollDeviceToken } from "./identityDeviceFlow";
+import {
+    pollDeviceToken,
+    presentDeviceAuthorization,
+    requestDeviceAuthorization,
+} from "./identityDeviceFlow";
 import { parseOAuthJson } from "./oauthHttp";
 
 export type { SufficitProfile } from "./identityTypes";
 
-/**
- * Sufficit Identity login. On local desktop VS Code, uses Authorization Code +
- * PKCE with a vscode:// callback (no code to copy). Falls back to Device Flow
- * on remote/SSH/WSL/DevContainer or code-server (where the vscode:// handler
- * can't be reached by the browser).
- */
+/** Sufficit Identity login via desktop PKCE or remote/web Device Flow. */
 
 export class SufficitAuth {
     private profileCache: SufficitProfile | undefined;
@@ -41,7 +33,7 @@ export class SufficitAuth {
 
     constructor(
         private readonly context: vscode.ExtensionContext,
-        private readonly log: (msg: string) => void = () => { },
+        private readonly log: (msg: string) => void = () => {},
     ) {
         this.tokens = new IdentityTokenManager({
             context,
@@ -67,7 +59,9 @@ export class SufficitAuth {
         await this.tokens.startAutoRefresh();
     }
 
-    dispose(): void { this.tokens.dispose(); }
+    dispose(): void {
+        this.tokens.dispose();
+    }
 
     private cfg() {
         return vscode.workspace.getConfiguration("symposium.identity");
@@ -99,15 +93,8 @@ export class SufficitAuth {
         return this.tokens.isLoggedIn();
     }
 
-    /**
-     * Surfaces the device-flow verification URL + user code when the external
-     * browser opener is unavailable (code-server, headless hosts). Offers a
-     * "Copy URL" action so the user can paste it into their browser manually.
-     */
+    /** Shows a copyable device-flow URL when the browser opener is unavailable. */
     private async showLoginUrlModal(url: string, userCode: string): Promise<void> {
-        // Blocking modal (unmissable, unlike a transient toast) that shows the
-        // full verification URL and user code. The URL goes in `detail` so it is
-        // visible and selectable; "Copy URL" also puts it on the clipboard.
         const action = await vscode.window.showInformationMessage(
             `Sufficit login — a browser tab should have opened. If not, open this URL to authorize (code ${userCode}):`,
             { modal: true, detail: url },
@@ -134,10 +121,7 @@ export class SufficitAuth {
         return this.loginWithDeviceFlow();
     }
 
-    /**
-     * Called by the vscode:// URI handler when the browser redirects back
-     * after PKCE auth. Validates state and resolves the pending PKCE promise.
-     */
+    /** Resolves a validated PKCE callback received by the URI handler. */
     handleRedirect(query: Record<string, string>): void {
         if (!this.pendingPkce) {
             this.log("[auth] PKCE redirect received but no pending login.");
@@ -171,7 +155,9 @@ export class SufficitAuth {
 
     private rejectPendingPkce(error: Error): void {
         const pending = this.pendingPkce;
-        if (!pending) { return; }
+        if (!pending) {
+            return;
+        }
         pending.reject(error);
         this.clearPendingPkce();
     }
@@ -193,15 +179,21 @@ export class SufficitAuth {
         }
 
         const pkce = createPkceAuthorization(
-            disco.authorization_endpoint, clientId, this.scope(), vscode.env.uriScheme,
+            disco.authorization_endpoint,
+            clientId,
+            this.scope(),
+            vscode.env.uriScheme,
         );
         const { verifier, state, redirectUri, url: authUrl } = pkce;
 
         // Set up the callback promise (resolved by handleRedirect via the URI handler).
         const authCodePromise = new Promise<string>((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                this.rejectPendingPkce(new Error("PKCE login timed out (5 minutes)."));
-            }, 5 * 60 * 1000);
+            const timeout = setTimeout(
+                () => {
+                    this.rejectPendingPkce(new Error("PKCE login timed out (5 minutes)."));
+                },
+                5 * 60 * 1000,
+            );
 
             this.pendingPkce = { verifier, state, resolve, reject, timeout };
         });
@@ -211,7 +203,9 @@ export class SufficitAuth {
         try {
             const opened = await vscode.env.openExternal(vscode.Uri.parse(authUrl.toString()));
             if (!opened) {
-                this.rejectPendingPkce(new Error("Unable to open the Sufficit authorization page."));
+                this.rejectPendingPkce(
+                    new Error("Unable to open the Sufficit authorization page."),
+                );
             }
         } catch (error) {
             this.rejectPendingPkce(error instanceof Error ? error : new Error(String(error)));
@@ -231,11 +225,13 @@ export class SufficitAuth {
                 code_verifier: verifier,
             }).toString(),
         });
-        const tokenBody = await parseOAuthJson<OAuthTokenResponse & { error?: string; error_description?: string }>(
-            tokenRes, "Sufficit PKCE token endpoint",
-        );
+        const tokenBody = await parseOAuthJson<
+            OAuthTokenResponse & { error?: string; error_description?: string }
+        >(tokenRes, "Sufficit PKCE token endpoint");
         if (!tokenRes.ok) {
-            throw new Error(`PKCE token exchange failed: ${tokenBody.error_description ?? tokenBody.error ?? tokenRes.status}`);
+            throw new Error(
+                `PKCE token exchange failed: ${tokenBody.error_description ?? tokenBody.error ?? tokenRes.status}`,
+            );
         }
 
         await this.tokens.storeResponse(tokenBody, this.scope());
@@ -249,7 +245,9 @@ export class SufficitAuth {
     private async loginWithDeviceFlow(): Promise<SufficitProfile | undefined> {
         const clientId = this.clientId();
         if (!clientId) {
-            void vscode.window.showErrorMessage("Configure symposium.identity.clientId (client OAuth registrado no Sufficit Identity).");
+            void vscode.window.showErrorMessage(
+                "Configure symposium.identity.clientId (client OAuth registrado no Sufficit Identity).",
+            );
             return undefined;
         }
         const disco = await this.discovery();
@@ -257,55 +255,33 @@ export class SufficitAuth {
             throw new Error("Identity does not advertise device_authorization_endpoint.");
         }
 
-        // 1. Request a device + user code.
-        const devRes = await fetch(disco.device_authorization_endpoint, {
-            method: "POST",
-            headers: { "content-type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({ client_id: clientId, scope: this.scope() }).toString(),
-        });
-        const dev = await parseOAuthJson<{ verification_uri_complete?: string; verification_uri?: string; user_code: string; error?: string; device_code?: string; interval?: number; expires_in?: number }>(
-            devRes, "Sufficit device authorization endpoint",
+        const dev = await requestDeviceAuthorization(
+            disco.device_authorization_endpoint,
+            clientId,
+            this.scope(),
         );
-        if (!devRes.ok) {
-            throw new Error(`device authorization failed: ${dev.error ?? devRes.status}`);
-        }
-
-        const verifyUrl: string = dev.verification_uri_complete ?? dev.verification_uri ?? "";
-        if (vscode.env.uiKind === vscode.UIKind.Web) {
-            // code-server / web: open the browser directly (the verification URL
-            // embeds the user code) and only fall back to the blocking URL modal if
-            // openExternal fails — so login doesn't nag once the tab is opening.
-            let opened = false;
-            try { opened = await vscode.env.openExternal(vscode.Uri.parse(verifyUrl)); } catch { opened = false; }
-            if (!opened) { await this.showLoginUrlModal(verifyUrl, dev.user_code); }
-        } else {
-            const pick = await vscode.window.showInformationMessage(
-                `Sufficit: open the browser and confirm the code ${dev.user_code}`, "Open browser", "Copy URL");
-            if (pick === "Open browser") {
-                try {
-                    const opened = await vscode.env.openExternal(vscode.Uri.parse(verifyUrl));
-                    if (!opened) { await this.showLoginUrlModal(verifyUrl, dev.user_code); }
-                } catch {
-                    await this.showLoginUrlModal(verifyUrl, dev.user_code);
-                }
-            } else if (pick === "Copy URL") {
-                await this.showLoginUrlModal(verifyUrl, dev.user_code);
-            }
-        }
+        await presentDeviceAuthorization(dev, (url, code) => this.showLoginUrlModal(url, code));
 
         // 2. Poll the token endpoint until the user approves (or timeout).
-        if (!dev.device_code) { return undefined; }
+        if (!dev.device_code) {
+            return undefined;
+        }
         const tokenResponse = await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: "Sufficit: waiting for approval in the browser…", cancellable: true },
-            (_progress, token) => pollDeviceToken({
-                tokenEndpoint: disco.token_endpoint,
-                clientId,
-                deviceCode: dev.device_code!,
-                intervalSec: dev.interval ?? 5,
-                expiresInSec: dev.expires_in ?? 300,
-                isCancelled: () => token.isCancellationRequested,
-                log: this.log,
-            }),
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: "Sufficit: waiting for approval in the browser…",
+                cancellable: true,
+            },
+            (_progress, token) =>
+                pollDeviceToken({
+                    tokenEndpoint: disco.token_endpoint,
+                    clientId,
+                    deviceCode: dev.device_code!,
+                    intervalSec: dev.interval ?? 5,
+                    expiresInSec: dev.expires_in ?? 300,
+                    isCancelled: () => token.isCancellationRequested,
+                    log: this.log,
+                }),
         );
         if (!tokenResponse) {
             return undefined;
@@ -316,7 +292,7 @@ export class SufficitAuth {
         this.onChangeEmitter.fire();
         // No system keyring (code-server, container, snap): reassure once that the
         // login is saved to the globalState fallback and survives restarts.
-        if (!await this.tokens.isSecretStorageWorking() && !this.persistNoticeShown) {
+        if (!(await this.tokens.isSecretStorageWorking()) && !this.persistNoticeShown) {
             this.persistNoticeShown = true;
             void vscode.window.showInformationMessage(
                 vscode.env.uiKind === vscode.UIKind.Web
@@ -342,7 +318,9 @@ export class SufficitAuth {
     }
 
     async getProfile(force = false): Promise<SufficitProfile | undefined> {
-        if (this.profileCache && !force) { return this.profileCache; }
+        if (this.profileCache && !force) {
+            return this.profileCache;
+        }
         // code-server tokens are server-shared; browser-local profiles are not authoritative.
         if (!force && vscode.env.uiKind === vscode.UIKind.Web) {
             return this.getProfile(true);
@@ -357,7 +335,11 @@ export class SufficitAuth {
             const token = await this.getAccessToken();
             if (saved && token) {
                 this.profileCache = saved;
-                void this.getProfile(true).then((p) => { if (p) { this.onChangeEmitter.fire(); } });
+                void this.getProfile(true).then((p) => {
+                    if (p) {
+                        this.onChangeEmitter.fire();
+                    }
+                });
                 return saved;
             }
             // We have a persisted profile but the token didn't resolve right now
@@ -368,24 +350,42 @@ export class SufficitAuth {
             // event so the UI reflects the actual logged-out state rather than a
             // stale logged-in footer (or vice-versa).
             if (saved) {
-                void this.getProfile(true).then(() => { this.onChangeEmitter.fire(); });
+                void this.getProfile(true).then(() => {
+                    this.onChangeEmitter.fire();
+                });
             }
             return undefined;
         }
         const token = await this.getAccessToken();
-        if (!token) { return undefined; }
+        if (!token) {
+            return undefined;
+        }
         try {
             const disco = await this.discovery();
-            const res = await fetch(disco.userinfo_endpoint ?? `${this.issuer()}/connect/userinfo`, { headers: { authorization: `Bearer ${token}` } });
-            if (!res.ok) { return this.profileCache; }   // keep what we have on a transient failure
-            const j = await parseOAuthJson<{ sub?: string; name?: string; preferred_username?: string; email?: string; picture?: string }>(
-                res, "Sufficit userinfo endpoint",
+            const res = await fetch(
+                disco.userinfo_endpoint ?? `${this.issuer()}/connect/userinfo`,
+                { headers: { authorization: `Bearer ${token}` } },
             );
+            if (!res.ok) {
+                return this.profileCache;
+            } // keep what we have on a transient failure
+            const j = await parseOAuthJson<{
+                sub?: string;
+                name?: string;
+                preferred_username?: string;
+                email?: string;
+                picture?: string;
+            }>(res, "Sufficit userinfo endpoint");
             // Avatar comes from the Sufficit contact endpoint keyed by the user id.
             const picture = j.sub
                 ? `https://endpoints.sufficit.com.br/contact/avatar?contextid=${encodeURIComponent(j.sub)}`
                 : j.picture;
-            this.profileCache = { sub: j.sub ?? "", name: j.name ?? j.preferred_username, email: j.email, picture };
+            this.profileCache = {
+                sub: j.sub ?? "",
+                name: j.name ?? j.preferred_username,
+                email: j.email,
+                picture,
+            };
             await this.context.globalState.update(PROFILE_KEY, this.profileCache);
             return this.profileCache;
         } catch {

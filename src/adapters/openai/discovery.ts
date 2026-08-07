@@ -18,12 +18,16 @@ export async function discoverModels(
     backend: string,
     loginToken?: string | null,
 ): Promise<boolean> {
-    if (cfg.models.length || !cfg.baseUrl) { return false; }
+    if (cfg.models.length || !cfg.baseUrl) {
+        return false;
+    }
     const url = cfg.baseUrl.replace(/\/+$/, "") + "/models";
     const headers = buildHeaders(cfg, loginToken);
     const res = await fetch(url, { headers });
-    if (!res.ok) { return false; }
-    const json = await res.json() as { data?: unknown[]; models?: unknown[] };
+    if (!res.ok) {
+        return false;
+    }
+    const json = (await res.json()) as { data?: unknown[]; models?: unknown[] };
     const raw = json?.data ?? json?.models ?? [];
     const list: string[] = [];
     const labels: Record<string, string> = {};
@@ -34,20 +38,38 @@ export async function discoverModels(
             id = m;
         } else if (typeof m === "object" && m !== null) {
             const obj = m as Record<string, unknown>;
-            id = typeof obj.id === "string" ? obj.id : (typeof obj.name === "string" ? obj.name : "");
+            id = typeof obj.id === "string" ? obj.id : typeof obj.name === "string" ? obj.name : "";
         } else {
             continue;
         }
-        if (!id) { continue; }
+        if (!id) {
+            continue;
+        }
         list.push(id);
-        const name = typeof m === "object" ? (typeof (m as Record<string, unknown>).name === "string" ? (m as Record<string, unknown>).name : typeof (m as Record<string, unknown>).title === "string" ? (m as Record<string, unknown>).title : undefined) : undefined;
-        if (typeof name === "string" && name && name !== id) { labels[id] = name; }
+        const name =
+            typeof m === "object"
+                ? typeof (m as Record<string, unknown>).name === "string"
+                    ? (m as Record<string, unknown>).name
+                    : typeof (m as Record<string, unknown>).title === "string"
+                      ? (m as Record<string, unknown>).title
+                      : undefined
+                : undefined;
+        if (typeof name === "string" && name && name !== id) {
+            labels[id] = name;
+        }
         const ctx = modelContextLength(m);
-        if (ctx) { context[id] = ctx; }
+        if (ctx) {
+            context[id] = ctx;
+        }
     }
     if (list.length) {
         setDiscovered(cfg.baseUrl, list, labels, context);
-        setCached(`openai:${cfg.baseUrl}`, { models: list, labels, context, lastUpdate: new Date().toISOString() });
+        setCached(`openai:${cfg.baseUrl}`, {
+            models: list,
+            labels,
+            context,
+            lastUpdate: new Date().toISOString(),
+        });
         cfg.log?.(`[${backend}] discovered ${list.length} models from ${url}`);
         return true;
     }

@@ -35,7 +35,11 @@ test("buildSufficitMcpSection returns TOML with enabled/disabled and URL/env", (
     assert.ok(enabled.some((l: string) => l.includes("[mcp_servers.sufficit_ai]")));
     assert.ok(enabled.some((l: string) => l.trim() === "enabled = true"));
     assert.ok(enabled.some((l: string) => l.includes(`url = ${JSON.stringify(SUFFICIT_MCP_URL)}`)));
-    assert.ok(enabled.some((l: string) => l.includes(`bearer_token_env_var = ${JSON.stringify(SUFFICIT_MCP_TOKEN_ENV)}`)));
+    assert.ok(
+        enabled.some((l: string) =>
+            l.includes(`bearer_token_env_var = ${JSON.stringify(SUFFICIT_MCP_TOKEN_ENV)}`),
+        ),
+    );
     assert.ok(enabled.includes(`[mcp_servers.${SUFFICIT_MCP_SERVER}.http_headers]`));
     assert.ok(enabled.some((l: string) => l.includes(SUFFICIT_MCP_CONTEXT_ID)));
     assert.ok(enabled.some((l: string) => l.includes(SUFFICIT_MCP_SOURCE_ID)));

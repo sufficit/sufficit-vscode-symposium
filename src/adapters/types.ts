@@ -1,12 +1,9 @@
 import { EventEmitter } from "events";
-import type { SessionInfo } from "./sessionInfo";
+import type { AgentBackend, SessionInfo } from "./sessionInfo";
+import type { AdapterQuotaSnapshot, AdapterUsageProvider } from "./quotaTypes";
 
-export type { SessionInfo, SessionTerminalStatus } from "./sessionInfo";
-
-/** Backend identifiers for the supported agent CLIs. */
-// Built-in backends are "claude" | "codex" | "copilot" | "openai"; custom
-// OpenAI-compatible adapters use their own id, so this is widened to string.
-export type AgentBackend = string;
+export type { AgentBackend, SessionInfo, SessionTerminalStatus } from "./sessionInfo";
+export type { AdapterQuotaSnapshot, AdapterUsageProvider, UsageQuotaWindow } from "./quotaTypes";
 
 /** One entry of an agent's plan/todo list. */
 export interface TodoItem {
@@ -19,45 +16,6 @@ export interface TodoItem {
 /** Visual importance for a system-authored notice in the conversation. */
 export type SystemNoticeSeverity = "info" | "warning" | "error";
 
-/** One rolling account-usage window reported by an adapter CLI. */
-export interface UsageQuotaWindow {
-    /** Stable provider-supplied key (for example primary or five_hour). */
-    id: string;
-    /** Optional provider-supplied display label. */
-    label?: string;
-    /** Percentage consumed, normalized to the inclusive 0..100 range. */
-    usedPercent: number;
-    /** Percentage still available, when the provider reports it directly. */
-    remainingPercent?: number;
-    /** Rolling-window duration when the provider reports it. */
-    windowMinutes?: number;
-    /** Absolute reset time as Unix milliseconds. */
-    resetsAt?: number;
-    /** Provider status such as allowed, warning, or rejected. */
-    status?: string;
-    /** Provider-owned balance or limit detail shown below the progress bar. */
-    detail?: string;
-}
-
-export type AdapterQuotaSnapshot = {
-    backend: AgentBackend;
-    displayName?: string;
-    /** Aggregate health reported for a routed preset; independent of provider quotas. */
-    healthPercent?: number;
-    plan?: string;
-    limitName?: string;
-    windows: UsageQuotaWindow[];
-    updatedAt: number;
-    state?: "ready" | "stale" | "unavailable";
-    message?: string;
-};
-
-export interface AdapterUsageProvider {
-    readonly backend: AgentBackend;
-    readonly displayName: string;
-    read(force?: boolean, context?: { model?: string }): Promise<AdapterQuotaSnapshot>;
-}
-
 /** A normalized event emitted by any adapter while a turn is running. */
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
@@ -65,14 +23,46 @@ export type AgentEvent =
     | { kind: "text"; text: string; model?: string; modelLabel?: string }
     /** System-authored annotation, never assistant output.
      *  anchorIndex: conversation-row index to scroll to/highlight when clicked. */
-    | { kind: "status-notice"; text: string; severity?: SystemNoticeSeverity; anchorIndex?: number; terminal?: boolean; action?: "continue-tool-loop" }
+    | {
+          kind: "status-notice";
+          text: string;
+          severity?: SystemNoticeSeverity;
+          anchorIndex?: number;
+          terminal?: boolean;
+          action?: "continue-tool-loop";
+      }
     | { kind: "thinking"; text: string }
-    | { kind: "tool-start"; toolName: string; detail?: string; toolId?: string; input?: string; added?: number; removed?: number; todos?: TodoItem[]; path?: string; diff?: { old: string; new: string }[]; terminalName?: string }
+    | {
+          kind: "tool-start";
+          toolName: string;
+          detail?: string;
+          toolId?: string;
+          input?: string;
+          added?: number;
+          removed?: number;
+          todos?: TodoItem[];
+          path?: string;
+          diff?: { old: string; new: string }[];
+          terminalName?: string;
+      }
     | { kind: "tool-output"; toolName?: string; toolId?: string; text: string }
-    | { kind: "tool-end"; toolName: string; detail?: string; toolId?: string; result?: string; todos?: TodoItem[] }
+    | {
+          kind: "tool-end";
+          toolName: string;
+          detail?: string;
+          toolId?: string;
+          result?: string;
+          todos?: TodoItem[];
+      }
     /** Inline permission gate (admin/manager/user modes): the turn pauses on
      *  this specific toolId until the webview posts an "approval-response". */
-    | { kind: "approval-request"; toolId: string; toolName: string; detail?: string; tier: "write" | "destructive" }
+    | {
+          kind: "approval-request";
+          toolId: string;
+          toolName: string;
+          detail?: string;
+          tier: "write" | "destructive";
+      }
     | { kind: "approval-resolved"; toolId: string; approved: boolean }
     /** Start of a logical turn; pairs with turn-end. Carries the stable
      *  logicalTurnId (survives retries/reopen) and the controller-assigned
@@ -81,59 +71,65 @@ export type AgentEvent =
     | { kind: "turn-end"; costUsd?: number; durationMs?: number }
     | ({ kind: "quota" } & AdapterQuotaSnapshot)
     | {
-        kind: "usage";
-        /** Prompt/input tokens in the current live context. */
-        inputTokens?: number;
-        /** Completion/output tokens from the last model call. */
-        outputTokens?: number;
-        /** Provider-reported total tokens, when available. */
-        totalTokens?: number;
-        /** Reasoning tokens included in output token details, when available. */
-        reasoningTokens?: number;
-        /** Prompt-cache read tokens, when available. */
-        cacheRead?: number;
-        /** Model context window used by the UI meter. */
-        contextWindow?: number;
-        /** True when these numbers are a local preflight estimate, not provider-reported usage. */
-        estimated?: boolean;
-        /** Approximate serialized request body size sent to the gateway. */
-        requestChars?: number;
-        /** Number of chat/input messages included in the last request body. */
-        requestMessageCount?: number;
-        /** Number of function tools advertised in the last request body. */
-        requestToolCount?: number;
-        /** Effective model id after routing/fallback. */
-        model?: string;
-        /** Friendly label for the effective model id. */
-        modelLabel?: string;
-        /** Configured provider key selected by the gateway. */
-        providerKey?: string;
-        /** Provider connector family, such as claude, codex, openai, or deepseek. */
-        providerType?: string;
-        /** Requested model/preset id before gateway routing. */
-        requestedModel?: string;
-        /** Number of dispatch attempts made for the last model request. */
-        attempts?: number;
-        /** Number of failed attempts before a successful fallback target. */
-        fallbackAttempts?: number;
-        /** Server-side context compression diagnostics for the last request. */
-        compression?: {
-            savedChars?: number;
-            originalChars?: number;
-            compressedChars?: number;
-            truncatedMessages?: number;
-            removedMessages?: number;
-            prunedToolCalls?: number;
-            foldedToolResults?: number;
-        };
-        /** Duration of the last HTTP model call, measured locally. */
-        durationMs?: number;
-        /** Time to first byte/headers for the last model call, measured locally. */
-        ttfbMs?: number;
-        /** Time until first streamed text/tool delta, measured locally. */
-        firstDeltaMs?: number;
-    }
-    | { kind: "error"; message: string; retryable?: boolean; fatal?: boolean; historical?: boolean };
+          kind: "usage";
+          /** Prompt/input tokens in the current live context. */
+          inputTokens?: number;
+          /** Completion/output tokens from the last model call. */
+          outputTokens?: number;
+          /** Provider-reported total tokens, when available. */
+          totalTokens?: number;
+          /** Reasoning tokens included in output token details, when available. */
+          reasoningTokens?: number;
+          /** Prompt-cache read tokens, when available. */
+          cacheRead?: number;
+          /** Model context window used by the UI meter. */
+          contextWindow?: number;
+          /** True when these numbers are a local preflight estimate, not provider-reported usage. */
+          estimated?: boolean;
+          /** Approximate serialized request body size sent to the gateway. */
+          requestChars?: number;
+          /** Number of chat/input messages included in the last request body. */
+          requestMessageCount?: number;
+          /** Number of function tools advertised in the last request body. */
+          requestToolCount?: number;
+          /** Effective model id after routing/fallback. */
+          model?: string;
+          /** Friendly label for the effective model id. */
+          modelLabel?: string;
+          /** Configured provider key selected by the gateway. */
+          providerKey?: string;
+          /** Provider connector family, such as claude, codex, openai, or deepseek. */
+          providerType?: string;
+          /** Requested model/preset id before gateway routing. */
+          requestedModel?: string;
+          /** Number of dispatch attempts made for the last model request. */
+          attempts?: number;
+          /** Number of failed attempts before a successful fallback target. */
+          fallbackAttempts?: number;
+          /** Server-side context compression diagnostics for the last request. */
+          compression?: {
+              savedChars?: number;
+              originalChars?: number;
+              compressedChars?: number;
+              truncatedMessages?: number;
+              removedMessages?: number;
+              prunedToolCalls?: number;
+              foldedToolResults?: number;
+          };
+          /** Duration of the last HTTP model call, measured locally. */
+          durationMs?: number;
+          /** Time to first byte/headers for the last model call, measured locally. */
+          ttfbMs?: number;
+          /** Time until first streamed text/tool delta, measured locally. */
+          firstDeltaMs?: number;
+      }
+    | {
+          kind: "error";
+          message: string;
+          retryable?: boolean;
+          fatal?: boolean;
+          historical?: boolean;
+      };
 
 /** One past message reconstructed from a stored transcript. */
 export interface HistoryMessage {
@@ -285,7 +281,13 @@ export interface AgentSession extends EventEmitter {
      * `developer` messages before the user turn (role-aware backends only; CLIs
      * ignore it — they get the instructions prepended to `text` instead).
      */
-    send(text: string, images?: string[], preamble?: string[], intentId?: string, resumeTurnId?: string): void;
+    send(
+        text: string,
+        images?: string[],
+        preamble?: string[],
+        intentId?: string,
+        resumeTurnId?: string,
+    ): void;
     /**
      * Replaces the model for the next turn. The currently running CLI/API
      * request is intentionally left unchanged.

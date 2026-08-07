@@ -9,31 +9,52 @@ interface TrackedTask {
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
-    return typeof value === "object" && value !== null ? value as Record<string, unknown> : undefined;
+    return typeof value === "object" && value !== null
+        ? (value as Record<string, unknown>)
+        : undefined;
 }
 
 function nativeTaskKind(name: string): TaskKind | undefined {
     switch (String(name).toLowerCase()) {
-        case "taskcreate": return "create";
-        case "taskupdate": return "update";
-        case "tasklist": return "list";
-        case "taskget": return "get";
-        default: return undefined;
+        case "taskcreate":
+            return "create";
+        case "taskupdate":
+            return "update";
+        case "tasklist":
+            return "list";
+        case "taskget":
+            return "get";
+        default:
+            return undefined;
     }
 }
 
 function taskStatus(value: unknown): TaskStatus {
-    switch (String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_")) {
-        case "completed": case "complete": case "done": return "completed";
-        case "in_progress": case "inprogress": case "active": return "in_progress";
-        default: return "pending";
+    switch (
+        String(value ?? "")
+            .trim()
+            .toLowerCase()
+            .replace(/[\s-]+/g, "_")
+    ) {
+        case "completed":
+        case "complete":
+        case "done":
+            return "completed";
+        case "in_progress":
+        case "inprogress":
+        case "active":
+            return "in_progress";
+        default:
+            return "pending";
     }
 }
 
 function taskContent(value: Record<string, unknown>): string | undefined {
     for (const key of ["subject", "content", "title", "description", "activeForm"]) {
         const text = value[key];
-        if (typeof text === "string" && text.trim()) { return text.trim(); }
+        if (typeof text === "string" && text.trim()) {
+            return text.trim();
+        }
     }
     return undefined;
 }
@@ -54,24 +75,40 @@ export class ClaudeTaskTracker {
     /** Records a Claude native task call and returns the current full snapshot when it changed. */
     observeToolUse(toolName: string, input: unknown, toolId?: string): TodoItem[] | undefined {
         const kind = nativeTaskKind(toolName);
-        if (!kind) { return undefined; }
-        if (toolId) { this.toolKinds.set(toolId, kind); }
+        if (!kind) {
+            return undefined;
+        }
+        if (toolId) {
+            this.toolKinds.set(toolId, kind);
+        }
         const payload = record(input) ?? {};
 
         if (kind === "create") {
             const content = taskContent(payload);
-            if (!content) { return undefined; }
+            if (!content) {
+                return undefined;
+            }
             const key = `pending:${toolId || ++this.pendingNumber}`;
             this.tasks.set(key, { content, status: taskStatus(payload.status) });
-            if (toolId) { this.pendingCreates.set(toolId, key); }
+            if (toolId) {
+                this.pendingCreates.set(toolId, key);
+            }
             return this.snapshot();
         }
 
-        if (kind !== "update") { return undefined; }
+        if (kind !== "update") {
+            return undefined;
+        }
         const id = typeof payload.taskId === "string" ? payload.taskId : "";
         const existing = id ? this.tasks.get(id) : undefined;
-        if (!existing) { return undefined; }
-        if (String(payload.status ?? "").trim().toLowerCase() === "deleted") {
+        if (!existing) {
+            return undefined;
+        }
+        if (
+            String(payload.status ?? "")
+                .trim()
+                .toLowerCase() === "deleted"
+        ) {
             this.tasks.delete(id);
         } else {
             this.tasks.set(id, {
@@ -84,10 +121,14 @@ export class ClaudeTaskTracker {
 
     /** Associates TaskCreate's server-assigned id and consumes authoritative TaskList/Get results. */
     observeToolResult(toolId: string | undefined, result: unknown): TodoItem[] | undefined {
-        if (!toolId) { return undefined; }
+        if (!toolId) {
+            return undefined;
+        }
         const kind = this.toolKinds.get(toolId);
         this.toolKinds.delete(toolId);
-        if (!kind) { return undefined; }
+        if (!kind) {
+            return undefined;
+        }
         const payload = record(result) ?? {};
 
         if (kind === "list" && Array.isArray(payload.tasks)) {
@@ -96,7 +137,12 @@ export class ClaudeTaskTracker {
                 const task = record(rawTask);
                 const id = typeof task?.id === "string" ? task.id : "";
                 const content = task ? taskContent(task) : undefined;
-                if (task && id && content && String(task.status ?? "").toLowerCase() !== "deleted") {
+                if (
+                    task &&
+                    id &&
+                    content &&
+                    String(task.status ?? "").toLowerCase() !== "deleted"
+                ) {
                     next.set(id, { content, status: taskStatus(task.status) });
                 }
             }
@@ -108,14 +154,23 @@ export class ClaudeTaskTracker {
         const id = typeof task?.id === "string" ? task.id : "";
         const pendingKey = this.pendingCreates.get(toolId);
         this.pendingCreates.delete(toolId);
-        if (!task || !id) { return undefined; }
+        if (!task || !id) {
+            return undefined;
+        }
 
         const prior = pendingKey ? this.tasks.get(pendingKey) : this.tasks.get(id);
         const content = taskContent(task) ?? prior?.content;
-        if (!content) { return undefined; }
-        if (pendingKey) { this.tasks.delete(pendingKey); }
-        if (String(task.status ?? "").toLowerCase() === "deleted") { this.tasks.delete(id); }
-        else { this.tasks.set(id, { content, status: taskStatus(task.status ?? prior?.status) }); }
+        if (!content) {
+            return undefined;
+        }
+        if (pendingKey) {
+            this.tasks.delete(pendingKey);
+        }
+        if (String(task.status ?? "").toLowerCase() === "deleted") {
+            this.tasks.delete(id);
+        } else {
+            this.tasks.set(id, { content, status: taskStatus(task.status ?? prior?.status) });
+        }
         return this.snapshot();
     }
 

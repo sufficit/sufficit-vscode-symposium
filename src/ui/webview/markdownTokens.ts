@@ -11,10 +11,16 @@ export function inlineTokenRegex(): RegExp {
 
 export function parseMarkdownLinkToken(token: string): MarkdownLinkToken | undefined {
     const match = token.match(/^(!?)\[([^\]]*)\]\(([^)]+)\)$/);
-    if (!match) { return undefined; }
+    if (!match) {
+        return undefined;
+    }
     let href = match[3].trim();
-    if (href.startsWith("<") && href.endsWith(">")) { href = href.slice(1, -1).trim(); }
-    if (!href) { return undefined; }
+    if (href.startsWith("<") && href.endsWith(">")) {
+        href = href.slice(1, -1).trim();
+    }
+    if (!href) {
+        return undefined;
+    }
     return { image: match[1] === "!", label: match[2], href };
 }
 
@@ -31,7 +37,11 @@ export function isInlineMarkdownImage(href: string): boolean {
 }
 
 export function isLocalMarkdownTarget(href: string): boolean {
-    if (!href || href.startsWith("#")) { return false; }
-    if (/^[A-Za-z]:[\\/]/.test(href)) { return true; }
+    if (!href || href.startsWith("#")) {
+        return false;
+    }
+    if (/^[A-Za-z]:[\\/]/.test(href)) {
+        return true;
+    }
     return /^file:/i.test(href) || !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(href);
 }

@@ -15,16 +15,25 @@ function temporaryStore(): { directory: string; store: SharedIdentityTokenStore 
 function browserContext(secret?: string): any {
     const secrets = new Map<string, string>();
     const state = new Map<string, unknown>();
-    if (secret) { secrets.set(IDENTITY_SECRET_KEY, secret); }
+    if (secret) {
+        secrets.set(IDENTITY_SECRET_KEY, secret);
+    }
     return {
         secrets: {
             get: (key: string) => Promise.resolve(secrets.get(key)),
-            delete: (key: string) => { secrets.delete(key); return Promise.resolve(); },
+            delete: (key: string) => {
+                secrets.delete(key);
+                return Promise.resolve();
+            },
         },
         globalState: {
             get: <T>(key: string): T | undefined => state.get(key) as T | undefined,
             update: (key: string, value: unknown) => {
-                if (value === undefined) { state.delete(key); } else { state.set(key, value); }
+                if (value === undefined) {
+                    state.delete(key);
+                } else {
+                    state.set(key, value);
+                }
                 return Promise.resolve();
             },
         },
@@ -40,7 +49,10 @@ test("code-server browsers share one authoritative token file", () => {
 
         browserB.write('{"accessToken":"sol"}');
         assert.equal(browserA.read(), '{"accessToken":"sol"}');
-        assert.equal(fs.statSync(path.join(directory, "identity-fallback.json")).mode & 0o777, 0o600);
+        assert.equal(
+            fs.statSync(path.join(directory, "identity-fallback.json")).mode & 0o777,
+            0o600,
+        );
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }
@@ -64,10 +76,17 @@ test("shared-store logout leaves a tombstone and cannot be resurrected by stale 
 test("authoritative code-server token wins over each browser's local SecretStorage", async () => {
     const { directory, store } = temporaryStore();
     const shared = JSON.stringify({ accessToken: "shared", expiresAtMs: Date.now() + 60_000 });
-    const stale = JSON.stringify({ accessToken: "browser-local", expiresAtMs: Date.now() + 60_000 });
+    const stale = JSON.stringify({
+        accessToken: "browser-local",
+        expiresAtMs: Date.now() + 60_000,
+    });
     store.write(shared);
     const sessionA = new SharedIdentitySession(browserContext(stale), store, () => undefined);
-    const sessionB = new SharedIdentitySession(browserContext(stale), new SharedIdentityTokenStore(directory), () => undefined);
+    const sessionB = new SharedIdentitySession(
+        browserContext(stale),
+        new SharedIdentityTokenStore(directory),
+        () => undefined,
+    );
     try {
         assert.equal((await sessionA.read())?.accessToken, "shared");
         assert.equal((await sessionB.read())?.accessToken, "shared");
@@ -83,7 +102,11 @@ test("first code-server browser migrates once and later browsers cannot replace 
     const first = JSON.stringify({ accessToken: "first", expiresAtMs: Date.now() + 60_000 });
     const second = JSON.stringify({ accessToken: "second", expiresAtMs: Date.now() + 60_000 });
     const sessionA = new SharedIdentitySession(browserContext(first), store, () => undefined);
-    const sessionB = new SharedIdentitySession(browserContext(second), new SharedIdentityTokenStore(directory), () => undefined);
+    const sessionB = new SharedIdentitySession(
+        browserContext(second),
+        new SharedIdentityTokenStore(directory),
+        () => undefined,
+    );
     try {
         assert.equal((await sessionA.read())?.accessToken, "first");
         assert.equal((await sessionB.read())?.accessToken, "first");
@@ -128,7 +151,9 @@ test("two code-server browsers serialize rotating refresh tokens", async () => {
 
 test("shared token replacements remain complete and parseable", () => {
     const { directory, store } = temporaryStore();
-    const payloads = Array.from({ length: 40 }, (_, index) => JSON.stringify({ index, value: "x".repeat(2048) }));
+    const payloads = Array.from({ length: 40 }, (_, index) =>
+        JSON.stringify({ index, value: "x".repeat(2048) }),
+    );
     try {
         for (const [index, payload] of payloads.entries()) {
             store.write(payload);

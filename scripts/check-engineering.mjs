@@ -100,6 +100,22 @@ function exportedObject(file, exportName) {
         ts.ScriptTarget.Latest,
         true,
     );
+    const imported = new Map();
+    for (const statement of sourceFile.statements) {
+        if (
+            ts.isImportDeclaration(statement) &&
+            ts.isStringLiteral(statement.moduleSpecifier) &&
+            statement.importClause?.namedBindings &&
+            ts.isNamedImports(statement.importClause.namedBindings)
+        ) {
+            for (const element of statement.importClause.namedBindings.elements) {
+                imported.set(element.name.text, {
+                    exported: element.propertyName?.text ?? element.name.text,
+                    module: statement.moduleSpecifier.text,
+                });
+            }
+        }
+    }
     for (const statement of sourceFile.statements) {
         if (!ts.isVariableStatement(statement)) continue;
         for (const declaration of statement.declarationList.declarations) {
@@ -111,6 +127,22 @@ function exportedObject(file, exportName) {
             ) {
                 const values = new Map();
                 for (const property of declaration.initializer.properties) {
+                    if (ts.isSpreadAssignment(property) && ts.isIdentifier(property.expression)) {
+                        const source = imported.get(property.expression.text);
+                        if (source?.module.startsWith(".")) {
+                            const dependency = join(
+                                file.slice(0, file.lastIndexOf("/") + 1),
+                                `${source.module}.ts`,
+                            );
+                            for (const [key, value] of exportedObject(
+                                dependency,
+                                source.exported,
+                            )) {
+                                values.set(key, value);
+                            }
+                        }
+                        continue;
+                    }
                     if (!ts.isPropertyAssignment(property)) continue;
                     const key = stringLiteral(property.name) ??
                         (ts.isIdentifier(property.name) ? property.name.text : undefined);

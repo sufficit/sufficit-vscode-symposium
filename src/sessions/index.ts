@@ -24,11 +24,13 @@ export class SessionIndex {
     constructor(options: SessionIndexOptions) {
         this.adapters = options.adapters;
         this.log = options.log ?? (() => undefined);
-        this.repository = options.repository ?? createSessionRepository({
-            storageDir: options.storageDir,
-            log: this.log,
-            disableSqlite: options.disableSqlite,
-        });
+        this.repository =
+            options.repository ??
+            createSessionRepository({
+                storageDir: options.storageDir,
+                log: this.log,
+                disableSqlite: options.disableSqlite,
+            });
         for (const stored of this.repository.list()) {
             this.sessions.set(keyOf(stored), stored);
         }
@@ -41,7 +43,10 @@ export class SessionIndex {
     listCached(): SessionInfo[] {
         return [...this.sessions.values()]
             .map(fromStored)
-            .sort((left, right) => (right.updatedAt?.getTime() ?? 0) - (left.updatedAt?.getTime() ?? 0));
+            .sort(
+                (left, right) =>
+                    (right.updatedAt?.getTime() ?? 0) - (left.updatedAt?.getTime() ?? 0),
+            );
     }
 
     get(backend: string, sessionId: string): SessionInfo | undefined {
@@ -50,11 +55,16 @@ export class SessionIndex {
     }
 
     reconcile(): Promise<SessionInfo[]> {
-        if (this.disposed) { return Promise.resolve(this.listCached()); }
-        if (this.reconcilePromise) { return this.reconcilePromise; }
+        if (this.disposed) {
+            return Promise.resolve(this.listCached());
+        }
+        if (this.reconcilePromise) {
+            return this.reconcilePromise;
+        }
         const generation = ++this.generation;
-        this.reconcilePromise = this.scan(generation)
-            .finally(() => { this.reconcilePromise = undefined; });
+        this.reconcilePromise = this.scan(generation).finally(() => {
+            this.reconcilePromise = undefined;
+        });
         return this.reconcilePromise;
     }
 
@@ -69,12 +79,18 @@ export class SessionIndex {
      */
     forget(backend: string, sessionId: string): void {
         this.generation++;
-        if (!this.sessions.delete(keyOf({ backend, sessionId }))) { return; }
-        const remaining = [...this.sessions.values()].filter((session) => session.backend === backend);
+        if (!this.sessions.delete(keyOf({ backend, sessionId }))) {
+            return;
+        }
+        const remaining = [...this.sessions.values()].filter(
+            (session) => session.backend === backend,
+        );
         try {
             this.repository.replaceProvider(backend, remaining);
         } catch (error) {
-            this.log(`[sessions] failed to persist deletion for ${backend}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`);
+            this.log(
+                `[sessions] failed to persist deletion for ${backend}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
+            );
         }
     }
 
@@ -83,7 +99,7 @@ export class SessionIndex {
         let total = 0;
         for (const [key, session] of this.sessions) {
             // Rough estimate: key length + JSON-serialized session size
-            total += key.length * 2;  // UTF-16 chars
+            total += key.length * 2; // UTF-16 chars
             total += JSON.stringify(session).length * 2;
         }
         return total;
@@ -97,42 +113,63 @@ export class SessionIndex {
 
     private async scan(generation: number): Promise<SessionInfo[]> {
         const startedAt = Date.now();
-        const providerResults = await Promise.all(this.adapters.map(async (adapter) => {
-            try {
-                const cached = [...this.sessions.values()]
-                    .filter((session) => session.backend === adapter.backend)
-                    .map(fromStored);
-                let listed: SessionInfo[];
+        const providerResults = await Promise.all(
+            this.adapters.map(async (adapter) => {
                 try {
-                    listed = adapter.listSessionsIncremental
-                        ? await adapter.listSessionsIncremental(cached)
-                        : await adapter.listSessions();
-                } catch {
-                    listed = await adapter.listSessions().catch(() => []);
+                    const cached = [...this.sessions.values()]
+                        .filter((session) => session.backend === adapter.backend)
+                        .map(fromStored);
+                    let listed: SessionInfo[];
+                    try {
+                        listed = adapter.listSessionsIncremental
+                            ? await adapter.listSessionsIncremental(cached)
+                            : await adapter.listSessions();
+                    } catch {
+                        listed = await adapter.listSessions().catch(() => []);
+                    }
+                    // Guard: if listSessions returned undefined/null, use empty array
+                    if (!Array.isArray(listed)) {
+                        listed = [];
+                    }
+                    return {
+                        backend: adapter.backend,
+                        listed: await Promise.all(listed.map(toStored)),
+                    };
+                } catch (error) {
+                    this.log(
+                        `[sessions] ${adapter.backend} reconciliation failed: ${error instanceof Error ? error.message : String(error)}`,
+                    );
+                    return undefined;
                 }
-                // Guard: if listSessions returned undefined/null, use empty array
-                if (!Array.isArray(listed)) { listed = []; }
-                return { backend: adapter.backend, listed: await Promise.all(listed.map(toStored)) };
-            } catch (error) {
-                this.log(`[sessions] ${adapter.backend} reconciliation failed: ${error instanceof Error ? error.message : String(error)}`);
-                return undefined;
-            }
-        }));
+            }),
+        );
 
-        if (this.disposed || generation !== this.generation) { return this.listCached(); }
+        if (this.disposed || generation !== this.generation) {
+            return this.listCached();
+        }
         for (const result of providerResults) {
-            if (!result) { continue; }
+            if (!result) {
+                continue;
+            }
             try {
                 this.repository.replaceProvider(result.backend, result.listed);
                 for (const [key, session] of this.sessions) {
-                    if (session.backend === result.backend) { this.sessions.delete(key); }
+                    if (session.backend === result.backend) {
+                        this.sessions.delete(key);
+                    }
                 }
-                for (const session of result.listed) { this.sessions.set(keyOf(session), session); }
+                for (const session of result.listed) {
+                    this.sessions.set(keyOf(session), session);
+                }
             } catch (error) {
-                this.log(`[sessions] ${result.backend} persistence failed: ${error instanceof Error ? error.message : String(error)}`);
+                this.log(
+                    `[sessions] ${result.backend} persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
             }
         }
-        this.log(`[sessions] reconciled ${this.sessions.size} sessions in ${Date.now() - startedAt} ms (${this.repository.kind})`);
+        this.log(
+            `[sessions] reconciled ${this.sessions.size} sessions in ${Date.now() - startedAt} ms (${this.repository.kind})`,
+        );
         return this.listCached();
     }
 }
@@ -149,7 +186,9 @@ async function toStored(info: SessionInfo): Promise<StoredSession> {
             const stat = await fs.promises.stat(info.transcriptPath);
             sourceSize = stat.size;
             sourceMtimeMs = stat.mtimeMs;
-        } catch { /* transient/missing transcripts remain indexable */ }
+        } catch {
+            /* transient/missing transcripts remain indexable */
+        }
     }
     const { updatedAt, status: _status, deleting: _deleting, ...rest } = info;
     return {
@@ -161,11 +200,6 @@ async function toStored(info: SessionInfo): Promise<StoredSession> {
 }
 
 function fromStored(stored: StoredSession): SessionInfo {
-    const {
-        updatedAt,
-        sourceSize: _sourceSize,
-        sourceMtimeMs: _sourceMtimeMs,
-        ...rest
-    } = stored;
+    const { updatedAt, sourceSize: _sourceSize, sourceMtimeMs: _sourceMtimeMs, ...rest } = stored;
     return { ...rest, updatedAt: updatedAt === undefined ? undefined : new Date(updatedAt) };
 }

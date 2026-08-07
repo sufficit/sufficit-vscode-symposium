@@ -20,11 +20,18 @@ export function followClaudeSession(
     let lastStatus: "working" | "idle" | undefined;
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     const emitStatus = (s: "working" | "idle") => {
-        if (s === lastStatus) { return; }
+        if (s === lastStatus) {
+            return;
+        }
         lastStatus = s;
         statusCb?.(s);
     };
-    const clearIdleTimer = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = undefined; } };
+    const clearIdleTimer = () => {
+        if (idleTimer) {
+            clearTimeout(idleTimer);
+            idleTimer = undefined;
+        }
+    };
     const setStatus = (s: "working" | "idle") => {
         if (s === "working") {
             emitStatus("working");
@@ -36,20 +43,28 @@ export function followClaudeSession(
         }
     };
     const inferInitialStatus = async (): Promise<"working" | "idle" | undefined> => {
-        if (!file) { return undefined; }
+        if (!file) {
+            return undefined;
+        }
         const stat = await fs.promises.stat(file);
         const start = Math.max(0, stat.size - 65536);
         const tail = await fs.promises.readFile(file, "utf8").then((s) => s.slice(start));
         for (const line of tail.split("\n").reverse()) {
             const t = rawLineType(line);
-            if (t === "result") { return "idle"; }
-            if (t === "user" || t === "assistant") { return "working"; }
+            if (t === "result") {
+                return "idle";
+            }
+            if (t === "user" || t === "assistant") {
+                return "working";
+            }
         }
         return undefined;
     };
 
     const drain = async () => {
-        if (closed || reading || !file) { return; }
+        if (closed || reading || !file) {
+            return;
+        }
         reading = true;
         try {
             const stat = await fs.promises.stat(file);
@@ -65,8 +80,11 @@ export function followClaudeSession(
                     carry = lines.pop() ?? "";
                     for (const line of lines) {
                         const t = rawLineType(line);
-                        if (t === "result") { setStatus("idle"); }
-                        else if (t === "user" || t === "assistant") { setStatus("working"); }
+                        if (t === "result") {
+                            setStatus("idle");
+                        } else if (t === "user" || t === "assistant") {
+                            setStatus("working");
+                        }
                         for (const message of parseTranscriptLine(line)) {
                             onMessage(message);
                         }
@@ -86,15 +104,21 @@ export function followClaudeSession(
         if (!file) {
             file = await findTranscript(info.sessionId);
         }
-        if (!file || closed) { return; }
+        if (!file || closed) {
+            return;
+        }
         try {
             offset = (await fs.promises.stat(file)).size;
             const initial = await inferInitialStatus();
-            if (initial) { setStatus(initial); }
+            if (initial) {
+                setStatus(initial);
+            }
         } catch {
             offset = 0;
         }
-        if (closed) { return; }
+        if (closed) {
+            return;
+        }
         try {
             watcher = fs.watch(file, () => void drain());
         } catch {
@@ -109,7 +133,12 @@ export function followClaudeSession(
     void begin();
 
     return {
-        onStatus: (cb) => { statusCb = cb; if (lastStatus) { cb(lastStatus); } },
+        onStatus: (cb) => {
+            statusCb = cb;
+            if (lastStatus) {
+                cb(lastStatus);
+            }
+        },
         dispose: () => {
             closed = true;
             clearIdleTimer();

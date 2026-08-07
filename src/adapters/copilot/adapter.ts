@@ -6,7 +6,7 @@ import { builtinCommands } from "../builtins";
 import { resolveExecutable } from "../exec";
 import { findNamedDirs, loadSlashCommands, mergeCommands } from "../skills";
 import { TODO_INJECTION } from "../todos";
-import { PERMISSION_MODES } from "../aiTools";
+import { PERMISSION_MODES } from "../aiTools/permissionTiers";
 import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../reasoning";
 import {
     AgentAdapter,
@@ -30,18 +30,23 @@ export class CopilotAdapter implements AgentAdapter {
     readonly backend = "copilot" as const;
     readonly usage = copilotUsage;
 
-    constructor(private readonly getConfig: () => CopilotAdapterConfig) { }
+    constructor(private readonly getConfig: () => CopilotAdapterConfig) {}
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
         return new Promise((resolve) => {
-            const child = spawn(resolveExecutable(this.getConfig().executable), ["--version"], { stdio: ["ignore", "pipe", "pipe"] });
+            const child = spawn(resolveExecutable(this.getConfig().executable), ["--version"], {
+                stdio: ["ignore", "pipe", "pipe"],
+            });
             let out = "";
-            child.stdout.on("data", (chunk) => { out += String(chunk); });
+            child.stdout.on("data", (chunk) => {
+                out += String(chunk);
+            });
             child.on("error", (error) => resolve({ ok: false, error: error.message }));
             child.on("exit", (code) =>
                 code === 0
                     ? resolve({ ok: true, version: out.trim().split("\n")[0] })
-                    : resolve({ ok: false, error: `exit code ${code}` }));
+                    : resolve({ ok: false, error: `exit code ${code}` }),
+            );
         });
     }
 
@@ -60,14 +65,20 @@ export class CopilotAdapter implements AgentAdapter {
                 sessionId: id,
                 title: e.label,
                 updatedAt: e.updatedTs ? new Date(e.updatedTs) : undefined,
-                transcriptPath: e.isTranscript ? copilotTranscriptFiles().find((f) => path.basename(f, ".jsonl") === id) : undefined,
+                transcriptPath: e.isTranscript
+                    ? copilotTranscriptFiles().find((f) => path.basename(f, ".jsonl") === id)
+                    : undefined,
             });
         }
-        return Promise.resolve(out.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0)));
+        return Promise.resolve(
+            out.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0)),
+        );
     }
 
     history(info: SessionInfo): Promise<HistoryMessage[]> {
-        const file = info.transcriptPath ?? copilotTranscriptFiles().find((p) => path.basename(p, ".jsonl") === info.sessionId);
+        const file =
+            info.transcriptPath ??
+            copilotTranscriptFiles().find((p) => path.basename(p, ".jsonl") === info.sessionId);
         return Promise.resolve(file ? transcriptHistory(file) : []);
     }
 
@@ -76,10 +87,14 @@ export class CopilotAdapter implements AgentAdapter {
     }
 
     start(options: SessionStartOptions): AgentSession {
-        const reasoning = options.reasoning === undefined
-            ? undefined
-            : nativeReasoning(REASONING_MAPS.copilot, options.reasoning);
-        return new CopilotSession(this.getConfig(), reasoning === undefined ? options : { ...options, reasoning });
+        const reasoning =
+            options.reasoning === undefined
+                ? undefined
+                : nativeReasoning(REASONING_MAPS.copilot, options.reasoning);
+        return new CopilotSession(
+            this.getConfig(),
+            reasoning === undefined ? options : { ...options, reasoning },
+        );
     }
 
     models(): string[] {
@@ -88,7 +103,13 @@ export class CopilotAdapter implements AgentAdapter {
         const base = cached?.models ?? [];
         const configured = cfg.model;
         // "auto" is always first: Copilot's own model-routing mode
-        return [...new Set(["auto", ...(configured && configured !== "auto" ? [configured] : []), ...base])];
+        return [
+            ...new Set([
+                "auto",
+                ...(configured && configured !== "auto" ? [configured] : []),
+                ...base,
+            ]),
+        ];
     }
 
     /**
@@ -98,69 +119,123 @@ export class CopilotAdapter implements AgentAdapter {
      */
     refreshModels(): Promise<{ models: string[]; labels?: Record<string, string> }> {
         try {
-            const wsStorage = path.join(os.homedir(), ".config", "Code", "User", "workspaceStorage");
-            if (!fs.existsSync(wsStorage)) { return Promise.resolve({ models: this.models() }); }
+            const wsStorage = path.join(
+                os.homedir(),
+                ".config",
+                "Code",
+                "User",
+                "workspaceStorage",
+            );
+            if (!fs.existsSync(wsStorage)) {
+                return Promise.resolve({ models: this.models() });
+            }
             // Find all models.json files under copilot debug-logs
             const candidates: { mtime: number; file: string }[] = [];
             for (const ws of fs.readdirSync(wsStorage)) {
                 const logsDir = path.join(wsStorage, ws, "GitHub.copilot-chat", "debug-logs");
-                if (!fs.existsSync(logsDir)) { continue; }
+                if (!fs.existsSync(logsDir)) {
+                    continue;
+                }
                 for (const session of fs.readdirSync(logsDir)) {
                     const f = path.join(logsDir, session, "models.json");
                     try {
                         const st = fs.statSync(f);
                         candidates.push({ mtime: st.mtimeMs, file: f });
-                    } catch { /* skip */ }
+                    } catch {
+                        /* skip */
+                    }
                 }
             }
-            if (!candidates.length) { return Promise.resolve({ models: this.models() }); }
+            if (!candidates.length) {
+                return Promise.resolve({ models: this.models() });
+            }
             candidates.sort((a, b) => b.mtime - a.mtime);
-            const json = JSON.parse(fs.readFileSync(candidates[0].file, "utf8")) as { models?: unknown[] } | unknown[];
-            const raw = Array.isArray(json) ? json : (typeof json === "object" && json !== null && "models" in json && Array.isArray(json.models) ? json.models : []);
-            const list: Array<{ id?: string; name?: string; capabilities?: { type?: string } }> = [];
+            const json = JSON.parse(fs.readFileSync(candidates[0].file, "utf8")) as
+                | { models?: unknown[] }
+                | unknown[];
+            const raw = Array.isArray(json)
+                ? json
+                : typeof json === "object" &&
+                    json !== null &&
+                    "models" in json &&
+                    Array.isArray(json.models)
+                  ? json.models
+                  : [];
+            const list: Array<{ id?: string; name?: string; capabilities?: { type?: string } }> =
+                [];
             for (const m of raw) {
                 if (typeof m === "object" && m !== null) {
-                    list.push(m as { id?: string; name?: string; capabilities?: { type?: string } });
+                    list.push(
+                        m as { id?: string; name?: string; capabilities?: { type?: string } },
+                    );
                 }
             }
             const models: string[] = [];
             const labels: Record<string, string> = {};
             for (const m of list) {
                 const id: string = m?.id ?? "";
-                if (!id) { continue; }
+                if (!id) {
+                    continue;
+                }
                 // Skip internal routing / embedding models
-                if (m?.capabilities?.type && m.capabilities.type !== "chat") { continue; }
-                if (/-picker$|-secondary$|-tertiary$|trajectory-compaction/.test(id)) { continue; }
+                if (m?.capabilities?.type && m.capabilities.type !== "chat") {
+                    continue;
+                }
+                if (/-picker$|-secondary$|-tertiary$|trajectory-compaction/.test(id)) {
+                    continue;
+                }
                 models.push(id);
                 const name: string = m?.name ?? "";
-                if (name && name !== id) { labels[id] = name; }
+                if (name && name !== id) {
+                    labels[id] = name;
+                }
             }
             if (models.length) {
-                const entry: ModelCacheEntry = { models, labels, lastUpdate: new Date().toISOString() };
+                const entry: ModelCacheEntry = {
+                    models,
+                    labels,
+                    lastUpdate: new Date().toISOString(),
+                };
                 setCached("copilot", entry);
                 const cfg = this.getConfig();
                 const configured = cfg.model;
                 return Promise.resolve({
-                    models: [...new Set(["auto", ...(configured && configured !== "auto" ? [configured] : []), ...models])],
+                    models: [
+                        ...new Set([
+                            "auto",
+                            ...(configured && configured !== "auto" ? [configured] : []),
+                            ...models,
+                        ]),
+                    ],
                     labels,
                 });
             }
-        } catch { /* fall through */ }
+        } catch {
+            /* fall through */
+        }
         return Promise.resolve({ models: this.models(), labels: getCached("copilot")?.labels });
     }
 
     // No native plan/todo tool: Symposium injects one and parses a ```todo block.
-    hasNativeTodo(): boolean { return false; }
-    todoInjection(): string { return TODO_INJECTION; }
+    hasNativeTodo(): boolean {
+        return false;
+    }
+    todoInjection(): string {
+        return TODO_INJECTION;
+    }
 
     // copilot --reasoning-effort <level> (1.0.61). "default" = omit.
     reasoningLevels(): string[] {
         return ["default", ...Object.keys(REASONING_MAPS.copilot)];
     }
 
-    reasoningMap(): Record<string, string> { return { ...REASONING_MAPS.copilot }; }
+    reasoningMap(): Record<string, string> {
+        return { ...REASONING_MAPS.copilot };
+    }
 
-    defaultReasoning(): string { return DEFAULT_REASONING_EFFORT.copilot; }
+    defaultReasoning(): string {
+        return DEFAULT_REASONING_EFFORT.copilot;
+    }
 
     // Unified modes shown for picker consistency with every other adapter.
     // The GitHub Copilot CLI exposes no approval/sandbox flag Symposium can

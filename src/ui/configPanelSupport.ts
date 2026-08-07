@@ -1,8 +1,10 @@
 import * as vscode from "vscode";
 
 export function resolveConfigLanguage(): string {
-    const configured = vscode.workspace.getConfiguration("symposium.chat")
-        .get<string>("preferredLanguage", "").trim();
+    const configured = vscode.workspace
+        .getConfiguration("symposium.chat")
+        .get<string>("preferredLanguage", "")
+        .trim();
     return (configured || vscode.env.language || "en").toLowerCase();
 }
 
@@ -20,10 +22,16 @@ export function reportSyncResult(
 ): void {
     if (result.errors.length) {
         void vscode.window.showWarningMessage(
-            translate("msg.sync.report.error", { label, errors: result.errors.join(" · ") }));
+            translate("msg.sync.report.error", { label, errors: result.errors.join(" · ") }),
+        );
         return;
     }
-    void vscode.window.showInformationMessage(translate("msg.sync.report.success", {
-        label, pulled: result.pulled, pushed: result.pushed, skipped: result.skipped,
-    }));
+    void vscode.window.showInformationMessage(
+        translate("msg.sync.report.success", {
+            label,
+            pulled: result.pulled,
+            pushed: result.pushed,
+            skipped: result.skipped,
+        }),
+    );
 }

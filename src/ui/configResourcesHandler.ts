@@ -11,7 +11,10 @@ import type { ConfigHandlerCtx, ConfigMessage } from "./configTypes";
  * Case bodies are moved verbatim from ConfigPanel; only `this.X` was rewritten
  * to `ctx.X`.
  */
-export async function handleResourcesMessage(message: ConfigMessage, ctx: ConfigHandlerCtx): Promise<boolean> {
+export async function handleResourcesMessage(
+    message: ConfigMessage,
+    ctx: ConfigHandlerCtx,
+): Promise<boolean> {
     const api = ctx.api;
     switch (message.type) {
         case "open-root":
@@ -26,7 +29,10 @@ export async function handleResourcesMessage(message: ConfigMessage, ctx: Config
         case "seed": {
             const created = api.resources.seed();
             void vscode.window.showInformationMessage(
-                created > 0 ? ctx.tr("msg.seed.created", { n: created }) : ctx.tr("msg.seed.existed"));
+                created > 0
+                    ? ctx.tr("msg.seed.created", { n: created })
+                    : ctx.tr("msg.seed.existed"),
+            );
             await ctx.pushState();
             return true;
         }
@@ -34,10 +40,14 @@ export async function handleResourcesMessage(message: ConfigMessage, ctx: Config
             const r = api.resources.importAgents();
             void vscode.window.showInformationMessage(
                 r.created > 0
-                    ? ctx.tr("msg.import.agents.done", { n: r.created }) + (r.skipped ? ctx.tr("msg.import.agents.skippedSuffix", { n: r.skipped }) : "")
-                    : (r.skipped > 0
-                        ? ctx.tr("msg.import.agents.allExisted", { n: r.skipped })
-                        : ctx.tr("msg.import.agents.none")));
+                    ? ctx.tr("msg.import.agents.done", { n: r.created }) +
+                          (r.skipped
+                              ? ctx.tr("msg.import.agents.skippedSuffix", { n: r.skipped })
+                              : "")
+                    : r.skipped > 0
+                      ? ctx.tr("msg.import.agents.allExisted", { n: r.skipped })
+                      : ctx.tr("msg.import.agents.none"),
+            );
             await ctx.pushState();
             return true;
         }
@@ -45,10 +55,14 @@ export async function handleResourcesMessage(message: ConfigMessage, ctx: Config
             const r = api.resources.importTools();
             void vscode.window.showInformationMessage(
                 r.created > 0
-                    ? ctx.tr("msg.import.tools.done", { n: r.created }) + (r.skipped ? ctx.tr("msg.import.tools.skippedSuffix", { n: r.skipped }) : "")
-                    : (r.skipped > 0
-                        ? ctx.tr("msg.import.tools.allExisted", { n: r.skipped })
-                        : ctx.tr("msg.import.tools.none")));
+                    ? ctx.tr("msg.import.tools.done", { n: r.created }) +
+                          (r.skipped
+                              ? ctx.tr("msg.import.tools.skippedSuffix", { n: r.skipped })
+                              : "")
+                    : r.skipped > 0
+                      ? ctx.tr("msg.import.tools.allExisted", { n: r.skipped })
+                      : ctx.tr("msg.import.tools.none"),
+            );
             await ctx.pushState();
             return true;
         }
@@ -56,40 +70,69 @@ export async function handleResourcesMessage(message: ConfigMessage, ctx: Config
             const r = api.resources.importInstructions();
             void vscode.window.showInformationMessage(
                 r.created > 0
-                    ? ctx.tr("msg.import.instructions.done", { n: r.created }) + (r.skipped ? ctx.tr("msg.import.instructions.skippedSuffix", { n: r.skipped }) : "")
-                    : (r.skipped > 0
-                        ? ctx.tr("msg.import.instructions.allExisted", { n: r.skipped })
-                        : ctx.tr("msg.import.instructions.none")));
+                    ? ctx.tr("msg.import.instructions.done", { n: r.created }) +
+                          (r.skipped
+                              ? ctx.tr("msg.import.instructions.skippedSuffix", { n: r.skipped })
+                              : "")
+                    : r.skipped > 0
+                      ? ctx.tr("msg.import.instructions.allExisted", { n: r.skipped })
+                      : ctx.tr("msg.import.instructions.none"),
+            );
             await ctx.pushState();
             return true;
         }
         case "import-skills": {
             const found = api.resources.scanForeignSkills();
             if (!found.length) {
-                void vscode.window.showInformationMessage(
-                    ctx.tr("msg.import.skills.none"));
+                void vscode.window.showInformationMessage(ctx.tr("msg.import.skills.none"));
                 return true;
             }
             const picked = await vscode.window.showQuickPick(
-                found.map((s) => ({ label: s.name, description: s.source, detail: s.description, srcPath: s.path })),
-                { canPickMany: true, placeHolder: ctx.tr("msg.import.skills.pickPlaceholder") });
+                found.map((s) => ({
+                    label: s.name,
+                    description: s.source,
+                    detail: s.description,
+                    srcPath: s.path,
+                })),
+                { canPickMany: true, placeHolder: ctx.tr("msg.import.skills.pickPlaceholder") },
+            );
             if (!picked || !picked.length) {
                 ctx.post({ type: "skill-import-progress", phase: "idle" });
                 return true;
             }
             const paths = picked.map((p) => p.srcPath);
-            ctx.post({ type: "skill-import-progress", phase: "copying", current: 0, total: paths.length });
+            ctx.post({
+                type: "skill-import-progress",
+                phase: "copying",
+                current: 0,
+                total: paths.length,
+            });
             // Let the webview paint the loading state before synchronous file
             // work starts; importSkills yields between bundles thereafter.
             await new Promise<void>((resolve) => setTimeout(resolve, 0));
             const r = await api.resources.importSkills(paths, false, (progress) => {
                 ctx.post({ type: "skill-import-progress", phase: "copying", ...progress });
             });
-            ctx.post({ type: "skill-import-progress", phase: "done", current: paths.length, total: paths.length, imported: r.imported, skipped: r.skipped, errors: r.errors.length });
+            ctx.post({
+                type: "skill-import-progress",
+                phase: "done",
+                current: paths.length,
+                total: paths.length,
+                imported: r.imported,
+                skipped: r.skipped,
+                errors: r.errors.length,
+            });
             void vscode.window.showInformationMessage(
                 ctx.tr("msg.import.skills.done", { n: r.imported }) +
-                (r.skipped ? ctx.tr("msg.import.skills.skippedSuffix", { n: r.skipped }) : "") +
-                (r.errors.length ? ctx.tr("msg.import.skills.failedSuffix", { n: r.errors.length, errors: r.errors.join(", ") }) : "") + ".");
+                    (r.skipped ? ctx.tr("msg.import.skills.skippedSuffix", { n: r.skipped }) : "") +
+                    (r.errors.length
+                        ? ctx.tr("msg.import.skills.failedSuffix", {
+                              n: r.errors.length,
+                              errors: r.errors.join(", "),
+                          })
+                        : "") +
+                    ".",
+            );
             await ctx.pushState();
             return true;
         }
@@ -97,16 +140,23 @@ export async function handleResourcesMessage(message: ConfigMessage, ctx: Config
             const pkg = await vscode.window.showInputBox({
                 prompt: ctx.tr("msg.installSkillSh.prompt"),
                 placeHolder: "vercel-labs/agent-skills",
-                validateInput: (v) => /^[\w.-]+\/[\w.-]+$/.test(v.trim()) ? undefined : ctx.tr("msg.installSkillSh.invalid"),
+                validateInput: (v) =>
+                    /^[\w.-]+\/[\w.-]+$/.test(v.trim())
+                        ? undefined
+                        : ctx.tr("msg.installSkillSh.invalid"),
             });
             if (!pkg) {
                 return true;
             }
-            const term = vscode.window.createTerminal({ name: "skills.sh", env: { DISABLE_TELEMETRY: "1" } });
+            const term = vscode.window.createTerminal({
+                name: "skills.sh",
+                env: { DISABLE_TELEMETRY: "1" },
+            });
             term.show();
             term.sendText(`npx --yes skills add ${pkg.trim()}`);
             void vscode.window.showInformationMessage(
-                ctx.tr("msg.installSkillSh.started", { pkg: pkg.trim() }));
+                ctx.tr("msg.installSkillSh.started", { pkg: pkg.trim() }),
+            );
             return true;
         }
         case "new-resource": {
@@ -114,13 +164,19 @@ export async function handleResourcesMessage(message: ConfigMessage, ctx: Config
                 return true;
             }
             const name = await vscode.window.showInputBox({
-                prompt: ctx.tr("msg.newResource.namePrompt", { kind: ctx.tr("config.kind." + message.kind) }),
-                validateInput: (v) => v.trim() ? undefined : ctx.tr("msg.newResource.nameRequired"),
+                prompt: ctx.tr("msg.newResource.namePrompt", {
+                    kind: ctx.tr("config.kind." + message.kind),
+                }),
+                validateInput: (v) =>
+                    v.trim() ? undefined : ctx.tr("msg.newResource.nameRequired"),
             });
             if (!name) {
                 return true;
             }
-            const description = await vscode.window.showInputBox({ prompt: ctx.tr("msg.newResource.descPrompt") }) ?? "";
+            const description =
+                (await vscode.window.showInputBox({
+                    prompt: ctx.tr("msg.newResource.descPrompt"),
+                })) ?? "";
             const file = api.resources.create(message.kind, name.trim(), description);
             await ctx.pushState();
             const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
@@ -133,7 +189,13 @@ export async function handleResourcesMessage(message: ConfigMessage, ctx: Config
             }
             const del = ctx.tr("msg.deleteResource.confirmAction");
             const ok = await vscode.window.showWarningMessage(
-                ctx.tr("msg.deleteResource.confirm", { kind: ctx.tr("config.kind." + message.kind), name: message.name }), { modal: true }, del);
+                ctx.tr("msg.deleteResource.confirm", {
+                    kind: ctx.tr("config.kind." + message.kind),
+                    name: message.name,
+                }),
+                { modal: true },
+                del,
+            );
             if (ok === del) {
                 api.resources.remove(message.kind, message.name);
                 await ctx.pushState();

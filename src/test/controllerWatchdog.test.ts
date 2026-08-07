@@ -1,9 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-    forceEndStalledTurn,
-    type WatchdogContext,
-} from "../ui/controllerWatchdog";
+import { forceEndStalledTurn, type WatchdogContext } from "../application/controllerWatchdog";
 
 function stalledContext() {
     let busy = true;
@@ -20,8 +17,12 @@ function stalledContext() {
             failed = true;
             calls.push("failed");
         },
-        cancel: () => { calls.push("cancel"); },
-        onStatusChange: () => { calls.push("status"); },
+        cancel: () => {
+            calls.push("cancel");
+        },
+        onStatusChange: () => {
+            calls.push("status");
+        },
         emit: (message) => {
             emitted.push(message);
             calls.push("emit");
@@ -54,7 +55,8 @@ test("stalled turn is canceled, marked failed and exposed as retryable", () => {
             type: "event",
             event: {
                 kind: "error",
-                message: "Turn ended automatically: no activity from the agent for 5 minutes (likely a stalled tool or dropped connection).",
+                message:
+                    "Turn ended automatically: no activity from the agent for 5 minutes (likely a stalled tool or dropped connection).",
                 retryable: true,
             },
         },

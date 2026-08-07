@@ -49,7 +49,11 @@ export class IdentityTokenManager {
         this.useSharedTokenStore = vscode.env.uiKind === vscode.UIKind.Web;
         this.sharedStore = sharedIdentityTokenStore(options.context);
         if (this.useSharedTokenStore) {
-            this.sharedSession = new SharedIdentitySession(options.context, this.sharedStore, options.log);
+            this.sharedSession = new SharedIdentitySession(
+                options.context,
+                this.sharedStore,
+                options.log,
+            );
         }
     }
 
@@ -88,7 +92,7 @@ export class IdentityTokenManager {
             // Persist the requested/granted value so future scope upgrades can
             // invalidate only legacy sessions instead of causing opaque 403s.
             scope: response.scope?.trim() || fallbackScope,
-            expiresAtMs: Date.now() + ((response.expires_in ?? 3600) * 1000),
+            expiresAtMs: Date.now() + (response.expires_in ?? 3600) * 1000,
         };
         await this.writeTokens(tokens, sharedLockHeld);
         return tokens;
@@ -105,8 +109,9 @@ export class IdentityTokenManager {
             const probeKey = SECRET_KEY + ".probe";
             const marker = "symposium-probe";
             await this.options.context.secrets.store(probeKey, marker);
-            this.secretStoragePersists = (await this.options.context.secrets.get(probeKey)) === marker
-                && vscode.env.uiKind !== vscode.UIKind.Web;
+            this.secretStoragePersists =
+                (await this.options.context.secrets.get(probeKey)) === marker &&
+                vscode.env.uiKind !== vscode.UIKind.Web;
             await this.options.context.secrets.delete(probeKey);
         }
         return this.secretStoragePersists;
@@ -149,7 +154,9 @@ export class IdentityTokenManager {
             clearTimeout(this.refreshTimer);
         }
         this.refreshTimer = setTimeout(
-            () => { void this.getAccessToken(true); },
+            () => {
+                void this.getAccessToken(true);
+            },
             Math.max(10_000, expiresAtMs - Date.now() - 300_000),
         );
     }
@@ -165,10 +172,12 @@ export class IdentityTokenManager {
         const raw = await this.options.context.secrets.get(SECRET_KEY);
         if (raw) {
             const parsed = parseStoredTokens(raw);
-            if (parsed) { return parsed; }
+            if (parsed) {
+                return parsed;
+            }
         }
-        const fallback = this.sharedStore.read()
-            ?? this.options.context.globalState.get<string>(FALLBACK_KEY);
+        const fallback =
+            this.sharedStore.read() ?? this.options.context.globalState.get<string>(FALLBACK_KEY);
         if (fallback) {
             return parseStoredTokens(fallback);
         }
@@ -189,14 +198,22 @@ export class IdentityTokenManager {
 
         if (this.secretStoragePersists === undefined) {
             const readBack = await this.options.context.secrets.get(SECRET_KEY);
-            this.secretStoragePersists = readBack === payload
-                && vscode.env.uiKind !== vscode.UIKind.Web;
+            this.secretStoragePersists =
+                readBack === payload && vscode.env.uiKind !== vscode.UIKind.Web;
         }
         if (this.secretStoragePersists) {
-            try { this.sharedStore.removeToken(); } catch { /* best-effort legacy cleanup */ }
+            try {
+                this.sharedStore.removeToken();
+            } catch {
+                /* best-effort legacy cleanup */
+            }
             await this.options.context.globalState.update(FALLBACK_KEY, undefined);
         } else {
-            try { this.sharedStore.write(payload); } catch { /* best-effort desktop fallback */ }
+            try {
+                this.sharedStore.write(payload);
+            } catch {
+                /* best-effort desktop fallback */
+            }
             await this.options.context.globalState.update(FALLBACK_KEY, payload);
         }
         this.scheduleRefresh(tokens.expiresAtMs);
@@ -233,7 +250,10 @@ export class IdentityTokenManager {
         }
     }
 
-    private async refreshCurrent(current: StoredTokens | undefined, forceRefresh: boolean): Promise<StoredTokens | undefined> {
+    private async refreshCurrent(
+        current: StoredTokens | undefined,
+        forceRefresh: boolean,
+    ): Promise<StoredTokens | undefined> {
         if (!forceRefresh && current && Date.now() < current.expiresAtMs - 60_000) {
             return current;
         }
@@ -253,14 +273,19 @@ export class IdentityTokenManager {
             });
             if (response.ok) {
                 const refreshed = await this.storeResponse(
-                    await parseOAuthJson<OAuthTokenResponse>(response, "Sufficit refresh token endpoint"),
+                    await parseOAuthJson<OAuthTokenResponse>(
+                        response,
+                        "Sufficit refresh token endpoint",
+                    ),
                     current.scope ?? this.options.scope(),
                     this.useSharedTokenStore,
                 );
                 this.expiredNoticeShown = false;
                 return refreshed;
             }
-            this.options.log(`[auth] refresh rejected: HTTP ${response.status} ${(await response.text().catch(() => "")).slice(0, 200)}`);
+            this.options.log(
+                `[auth] refresh rejected: HTTP ${response.status} ${(await response.text().catch(() => "")).slice(0, 200)}`,
+            );
         } catch (error) {
             this.options.log(`[auth] refresh failed: ${error}`);
         }
@@ -271,13 +296,19 @@ export class IdentityTokenManager {
         if (this.useSharedTokenStore) {
             try {
                 const cleared = await this.sharedSession!.clear(expected);
-                if (!cleared) { return false; }
+                if (!cleared) {
+                    return false;
+                }
             } catch (error) {
                 this.options.log(`[auth] shared logout coordination failed: ${error}`);
                 return false;
             }
         } else {
-            try { this.sharedStore.removeToken(); } catch { /* best-effort legacy cleanup */ }
+            try {
+                this.sharedStore.removeToken();
+            } catch {
+                /* best-effort legacy cleanup */
+            }
         }
         await this.options.context.secrets.delete(SECRET_KEY);
         await this.options.context.globalState.update(FALLBACK_KEY, undefined);
@@ -287,39 +318,43 @@ export class IdentityTokenManager {
     }
 
     private async clearExpiredSession(expected: StoredTokens): Promise<void> {
-        if (!await this.clearStoredSession(expected)) {
+        if (!(await this.clearStoredSession(expected))) {
             return;
         }
         if (this.expiredNoticeShown) {
             return;
         }
         this.expiredNoticeShown = true;
-        void vscode.window.showWarningMessage(
-            "Your Sufficit session expired and could not be refreshed automatically.",
-            "Sign in again",
-        ).then((choice) => {
-            if (choice === "Sign in again") {
-                void vscode.commands.executeCommand("symposium.login");
-            }
-        });
+        void vscode.window
+            .showWarningMessage(
+                "Your Sufficit session expired and could not be refreshed automatically.",
+                "Sign in again",
+            )
+            .then((choice) => {
+                if (choice === "Sign in again") {
+                    void vscode.commands.executeCommand("symposium.login");
+                }
+            });
     }
 
     private async clearScopeUpgradeSession(expected: StoredTokens): Promise<void> {
-        if (!await this.clearStoredSession(expected)) {
+        if (!(await this.clearStoredSession(expected))) {
             return;
         }
         if (this.scopeUpgradeNoticeShown) {
             return;
         }
         this.scopeUpgradeNoticeShown = true;
-        void vscode.window.showWarningMessage(
-            "Sufficit permissions were updated. Sign in again to authorize AI access.",
-            "Sign in",
-        ).then((choice) => {
-            if (choice === "Sign in") {
-                void vscode.commands.executeCommand("symposium.login");
-            }
-        });
+        void vscode.window
+            .showWarningMessage(
+                "Sufficit permissions were updated. Sign in again to authorize AI access.",
+                "Sign in",
+            )
+            .then((choice) => {
+                if (choice === "Sign in") {
+                    void vscode.commands.executeCommand("symposium.login");
+                }
+            });
     }
 
     private startSharedStoreWatcher(): void {

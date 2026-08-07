@@ -43,7 +43,7 @@ export class TerminalSession {
         private readonly log: (message: string) => void,
         /** Optional: receives working/idle inferred from the followed transcript. */
         private readonly onStatus?: (sessionId: string, status: "working" | "idle") => void,
-    ) { }
+    ) {}
 
     /** Launches the terminal, discovers the session id, then starts mirroring. */
     async start(): Promise<void> {
@@ -73,9 +73,10 @@ export class TerminalSession {
             }
         }
         let cliArgs = args;
-        const resumeSessionId = this.adapter.backend === "claude"
-            ? claudeResumeSessionId(this.options.resumeSessionId)
-            : this.options.resumeSessionId;
+        const resumeSessionId =
+            this.adapter.backend === "claude"
+                ? claudeResumeSessionId(this.options.resumeSessionId)
+                : this.options.resumeSessionId;
         if (resumeSessionId && this.adapter.backend === "codex") {
             cliArgs = ["resume", ...args, resumeSessionId];
             this.sessionId = resumeSessionId;
@@ -83,7 +84,8 @@ export class TerminalSession {
             args.push("--resume", resumeSessionId);
             this.sessionId = resumeSessionId;
         }
-        const cli = `${this.adapter.backend === "claude" ? "claude" : this.adapter.backend} ${cliArgs.join(" ")}`.trim();
+        const cli =
+            `${this.adapter.backend === "claude" ? "claude" : this.adapter.backend} ${cliArgs.join(" ")}`.trim();
         // Persistent mode: run the CLI inside a detached tmux session that
         // survives VS Code. `-A` attaches to it if it already exists (recovery
         // of a live process), or creates it on first launch.
@@ -145,7 +147,11 @@ export class TerminalSession {
         if (!this.sessionId || !this.adapter.history) {
             return [];
         }
-        const info: SessionInfo = { backend: this.adapter.backend, sessionId: this.sessionId, title: "" };
+        const info: SessionInfo = {
+            backend: this.adapter.backend,
+            sessionId: this.sessionId,
+            title: "",
+        };
         try {
             return await this.adapter.history(info);
         } catch {
@@ -172,7 +178,10 @@ export class TerminalSession {
             if (fresh) {
                 this.sessionId = fresh.sessionId;
                 this.log(`[terminal] discovered session ${fresh.sessionId}`);
-                this.post({ type: "event", event: { kind: "session", sessionId: fresh.sessionId } });
+                this.post({
+                    type: "event",
+                    event: { kind: "session", sessionId: fresh.sessionId },
+                });
                 this.attachFollow();
                 this.markBooted();
                 return;
@@ -180,7 +189,9 @@ export class TerminalSession {
             if (Date.now() < deadline) {
                 setTimeout(() => void tick(), 800);
             } else {
-                this.log("[terminal] session id not discovered within timeout; type in the terminal to start it");
+                this.log(
+                    "[terminal] session id not discovered within timeout; type in the terminal to start it",
+                );
                 // Let the user drive the terminal directly; mirror attaches on next try.
                 this.markBooted();
             }
@@ -192,14 +203,23 @@ export class TerminalSession {
         if (!this.sessionId || !this.adapter.follow) {
             return;
         }
-        const info: SessionInfo = { backend: this.adapter.backend, sessionId: this.sessionId, title: "" };
+        const info: SessionInfo = {
+            backend: this.adapter.backend,
+            sessionId: this.sessionId,
+            title: "",
+        };
         // Seed with whatever already exists, then tail.
         if (this.adapter.history) {
-            void this.adapter.history(info).then((messages: HistoryMessage[]) => {
-                if (!this.disposed) {
-                    this.post({ type: "history", messages });
-                }
-            }).catch(() => { /* transcript seed failed; follow tail still attaches */ });
+            void this.adapter
+                .history(info)
+                .then((messages: HistoryMessage[]) => {
+                    if (!this.disposed) {
+                        this.post({ type: "history", messages });
+                    }
+                })
+                .catch(() => {
+                    /* transcript seed failed; follow tail still attaches */
+                });
         }
         this.follow = this.adapter.follow(info, (message) => {
             this.post({ type: "append", message });
@@ -207,7 +227,9 @@ export class TerminalSession {
         // Mirror the inferred turn state to the sessions list (same indicator as
         // live sessions); the surface forwards it to the runtime.
         this.follow.onStatus?.((status) => {
-            if (this.sessionId) { this.onStatus?.(this.sessionId, status); }
+            if (this.sessionId) {
+                this.onStatus?.(this.sessionId, status);
+            }
         });
     }
 

@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canonicalReasoning, nativeReasoning, REASONING_MAPS, SYMPOSIUM_REASONING_LEVELS } from "../adapters/reasoning";
+import {
+    canonicalReasoning,
+    nativeReasoning,
+    REASONING_MAPS,
+    SYMPOSIUM_REASONING_LEVELS,
+} from "../adapters/reasoning";
 
 test("each adapter maps the shared Symposium reasoning vocabulary to native levels", () => {
     assert.deepEqual(SYMPOSIUM_REASONING_LEVELS, ["minimal", "low", "medium", "high", "xhigh"]);

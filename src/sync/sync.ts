@@ -2,8 +2,14 @@ import { createHash } from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 import {
-    ensureScaffold, readState, ResourceKind, resourceContentPath,
-    rootDir, sanitize, scanAll, writeState,
+    ensureScaffold,
+    readState,
+    ResourceKind,
+    resourceContentPath,
+    rootDir,
+    sanitize,
+    scanAll,
+    writeState,
 } from "../config/root";
 import { HubClient, Observation } from "./hubClient";
 
@@ -34,10 +40,18 @@ const KIND_OF: Record<string, ResourceKind> = {
     "agent-bootstrap": "bootstrap",
 };
 
-interface MapEntry { id: string; hash: string; }
+interface MapEntry {
+    id: string;
+    hash: string;
+}
 type SyncMap = Record<string, MapEntry>; // key = "<kind>/<name>"
 
-export interface SyncResult { pushed: number; pulled: number; skipped: number; errors: string[]; }
+export interface SyncResult {
+    pushed: number;
+    pulled: number;
+    skipped: number;
+    errors: string[];
+}
 
 function hashOf(content: string): string {
     return createHash("sha256").update(content, "utf8").digest("hex");
@@ -69,7 +83,7 @@ function readContent(kind: ResourceKind, name: string): string | null {
 }
 
 export class SyncEngine {
-    constructor(private readonly hub: HubClient) { }
+    constructor(private readonly hub: HubClient) {}
 
     /** Push local resources to the hub (health-gated). Returns a summary. */
     async push(): Promise<SyncResult> {
@@ -185,7 +199,9 @@ export class SyncEngine {
         return this.persist(result, true, "pull");
     }
 
-    private parsePayload(payload?: string): { kind: ResourceKind; name: string; content: string } | null {
+    private parsePayload(
+        payload?: string,
+    ): { kind: ResourceKind; name: string; content: string } | null {
         if (!payload) {
             return null;
         }
@@ -205,7 +221,12 @@ export class SyncEngine {
     }
 
     /** Records health + last-sync + last result into state.json so the UI reflects it. */
-    private persist(result: SyncResult, healthy: boolean, label: string, pending: string[] = []): SyncResult {
+    private persist(
+        result: SyncResult,
+        healthy: boolean,
+        label: string,
+        pending: string[] = [],
+    ): SyncResult {
         const state = readState();
         // Reachable (health passed) but the hub rejected the credentials.
         const unauthorized = healthy && result.errors.some((e) => /\b40[13]\b/.test(e));

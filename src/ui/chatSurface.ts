@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
-import { AdapterUsageProvider, AgentAdapter, FollowHandle, SessionInfo, SessionStartOptions } from "../adapters/types";
-import { ChatController } from "./chatController";
-import { WebviewToHost, AgentPickerEntry } from "./protocol";
+import { AgentAdapter, FollowHandle, SessionInfo, SessionStartOptions } from "../adapters/types";
+import { ChatController } from "../application/chatController";
+import { WebviewToHost, AgentPickerEntry } from "../protocol/chat";
 import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
 import { symposiumLog } from "../extension/log";
@@ -11,10 +11,11 @@ import { SurfaceSync } from "./surfaceSync";
 import { SurfaceDialogues } from "./surfaceDialogues";
 import { SurfaceMessages } from "./surfaceMessages";
 import { HubClient } from "../sync/hubClient";
-import { activeEditorContext, isSimpleBrowserOpen, presetQuotaLoadingEvent } from "./chatSurfaceContext";
 import { pushVoicePreferences } from "./voicePreferences";
 import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
-import { responseLanguageName } from "./outboundPrompt";
+import { registerChatSurfaceListeners } from "./chatSurfaceListeners";
+import { buildSurfaceLanguageHint } from "./chatSurfaceLanguage";
+import { SurfaceQuota } from "./surfaceQuota";
 
 export type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
@@ -32,18 +33,45 @@ export class ChatSurface {
     private followedSessionId: string | undefined;
     private sendBlockedReason: SessionInfo["continuationBlockedReason"] | "live-follow" | undefined;
     private ready = false;
-    private loggedIn = false;   // cached Sufficit login state (for system hints)
+    private loggedIn = false; // cached Sufficit login state (for system hints)
     private queue: unknown[] = [];
-    private activeUsage: AdapterUsageProvider | undefined;
-    private activeQuotaModel: string | null | undefined;
-    private quotaGeneration = 0;
-    private quotaRefreshTimer: ReturnType<typeof setInterval> | undefined;
     private readonly hub = new HubClient();
+    private readonly quota = new SurfaceQuota({
+        post: (message) => this.post(message),
+        getModel: () => this.controller?.getModel() || undefined,
+    });
 
     private readonly disposables: vscode.Disposable[] = [];
-    private readonly changedFiles = new ChangedFilesManager({ post: (m) => this.post(m), getCwd: () => this.cwd(), getSid: () => this.sid(), resolveChanged: (p) => this.controller?.resolveChanged(p), getRawItems: () => this.controller?.changedItemsRaw() ?? [] }, this.disposables);
-    private readonly handoff = new BackendHandoff({ getAdapter: (b) => this.deps.adapterByBackend.get(b), listSessions: () => this.deps.listSessions(), cwdFor: (i) => this.deps.cwdFor(i), openDialogue: (b, o, t) => this.openDialogue(b, o, t), post: (m) => this.post(m), getController: () => this.controller, getTerminalSession: () => this.terminalSession, getStore: () => this.deps.store });
-    private readonly sync = new SurfaceSync({ post: (m) => this.post(m), getController: () => this.controller, getTerminalSession: () => this.terminalSession, getAccount: () => this.deps.account, setLoggedIn: (v) => { this.loggedIn = v; }, getCommands: () => this.symposiumCommands });
+    private readonly changedFiles = new ChangedFilesManager(
+        {
+            post: (m) => this.post(m),
+            getCwd: () => this.cwd(),
+            getSid: () => this.sid(),
+            resolveChanged: (p) => this.controller?.resolveChanged(p),
+            getRawItems: () => this.controller?.changedItemsRaw() ?? [],
+        },
+        this.disposables,
+    );
+    private readonly handoff = new BackendHandoff({
+        getAdapter: (b) => this.deps.adapterByBackend.get(b),
+        listSessions: () => this.deps.listSessions(),
+        cwdFor: (i) => this.deps.cwdFor(i),
+        openDialogue: (b, o, t) => this.openDialogue(b, o, t),
+        post: (m) => this.post(m),
+        getController: () => this.controller,
+        getTerminalSession: () => this.terminalSession,
+        getStore: () => this.deps.store,
+    });
+    private readonly sync = new SurfaceSync({
+        post: (m) => this.post(m),
+        getController: () => this.controller,
+        getTerminalSession: () => this.terminalSession,
+        getAccount: () => this.deps.account,
+        setLoggedIn: (v) => {
+            this.loggedIn = v;
+        },
+        getCommands: () => this.symposiumCommands,
+    });
     // Constructor-initialized (not field initializers): they eagerly read
     // parameter properties (deps/webview/chatOnly/onTitleChange) and the
     // field-initialized collaborators, which aren't ready until the body runs.
@@ -68,13 +96,25 @@ export class ChatSurface {
             webview: this.webview,
             post: (m) => this.post(m),
             getController: () => this.controller,
-            setController: (c) => { this.controller = c; },
-            setControllerDetach: (detach) => { this.controllerDetach = detach; },
+            setController: (c) => {
+                this.controller = c;
+            },
+            setControllerDetach: (detach) => {
+                this.controllerDetach = detach;
+            },
             onSessionCreated: (sessionId) => this.onSessionCreated?.(sessionId),
-            setTerminalSession: (t) => { this.terminalSession = t; },
-            setFollowHandle: (h) => { this.followHandle = h; },
-            setFollowedSessionId: (id) => { this.followedSessionId = id; },
-            setSendBlockedReason: (reason) => { this.sendBlockedReason = reason; },
+            setTerminalSession: (t) => {
+                this.terminalSession = t;
+            },
+            setFollowHandle: (h) => {
+                this.followHandle = h;
+            },
+            setFollowedSessionId: (id) => {
+                this.followedSessionId = id;
+            },
+            setSendBlockedReason: (reason) => {
+                this.sendBlockedReason = reason;
+            },
             activateUsage: (adapter) => this.activateUsage(adapter),
             detachActive: () => this.detachActive(),
             buildLangHint: () => this.buildLangHint(),
@@ -89,7 +129,7 @@ export class ChatSurface {
             post: (m) => this.post(m),
             markReady: () => this.markReady(),
             refreshSessions: () => this.refreshSessions(),
-            refreshQuotas: (force) => this.refreshQuotas(force),
+            refreshQuotas: (force) => this.quota.refresh(force),
             openSession: (info) => this.openSession(info),
             restoreFocus: async () => {
                 await this.reveal?.();
@@ -108,36 +148,15 @@ export class ChatSurface {
         webview.options = { enableScripts: true };
         webview.html = renderHtml();
         webview.onDidReceiveMessage((message) => void this.onMessage(message));
-        // Offer the active editor file (+ any line selection) as removable
-        // context; update on editor switch and on selection change.
-        const pushActiveFile = () => this.post({ type: "active-file", ...activeEditorContext() });
-        this.disposables.push(vscode.window.onDidChangeActiveTextEditor(pushActiveFile));
-        this.disposables.push(vscode.window.onDidChangeTextEditorSelection(pushActiveFile));
-        // The "attach browser page" button only makes sense while a Simple
-        // Browser tab is open; toggle it as tabs come and go.
-        this.disposables.push(vscode.window.tabGroups.onDidChangeTabs(
-            () => this.post({ type: "browser-state", open: isSimpleBrowserOpen() })));
-        if (this.deps.account) {
-            this.disposables.push(this.deps.account.onDidChange(() => void this.sync.pushAccount()));
-        }
-        // Live-apply preference changes (e.g. sessions side, voice settings)
-        // without a reload — so a change made in the Config panel is testable
-        // immediately on an already-open chat surface.
-        this.disposables.push(vscode.workspace.onDidChangeConfiguration((e) => {
-            if (e.affectsConfiguration("symposium.chat.sessionsSide")) {
-                this.post({ type: "prefs", sessionsSide: vscode.workspace.getConfiguration("symposium.chat").get<string>("sessionsSide", "auto") });
-            }
-            if (e.affectsConfiguration("symposium.chat.devMode")) {
-                this.post({ type: "prefs", devMode: vscode.workspace.getConfiguration("symposium.chat").get<boolean>("devMode", false) });
-            }
-            if (e.affectsConfiguration("symposium.chat.openIn")) { const openIn = vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor"); this.post({ type: "prefs", openIn, sessionsOnly: !this.chatOnly && openIn === "editor" }); }
-            if (e.affectsConfiguration("symposium.voice") && this.ready) {
-                this.pushVoicePreferences();
-            }
-        }));
-        this.disposables.push(vscode.extensions.onDidChange(() => {
-            if (this.ready) { this.pushVoicePreferences(); }
-        }));
+        registerChatSurfaceListeners({
+            deps: this.deps,
+            disposables: this.disposables,
+            chatOnly: this.chatOnly,
+            isReady: () => this.ready,
+            post: (message) => this.post(message),
+            pushAccount: () => void this.sync.pushAccount(),
+            pushVoicePreferences: () => this.pushVoicePreferences(),
+        });
     }
 
     /** Focuses the chat composer without replacing its current draft. */
@@ -150,11 +169,18 @@ export class ChatSurface {
             this.queue.push(message);
             return;
         }
-        void Promise.resolve(this.webview.postMessage(message)).then((delivered) => {
-            if (!delivered) { symposiumLog("[surface] webview rejected a message"); }
-        }, (error) => {
-            symposiumLog(`[surface] webview post failed: ${error instanceof Error ? error.message : String(error)}`);
-        });
+        void Promise.resolve(this.webview.postMessage(message)).then(
+            (delivered) => {
+                if (!delivered) {
+                    symposiumLog("[surface] webview rejected a message");
+                }
+            },
+            (error) => {
+                symposiumLog(
+                    `[surface] webview post failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+            },
+        );
     }
 
     private onMessage(message: WebviewToHost): Promise<void> {
@@ -164,55 +190,34 @@ export class ChatSurface {
     /** Marks the webview ready: flushes posts queued before the script went live. */
     private markReady(): void {
         this.ready = true;
-        void this.webview.postMessage({ type: "boot", id: "host", label: "Extension host connected", status: "ok" });
+        void this.webview.postMessage({
+            type: "boot",
+            id: "host",
+            label: "Extension host connected",
+            status: "ok",
+        });
         // Localize the webview UI: same precedence as the AI language hint
         // (symposium.chat.preferredLanguage, else VS Code's display language).
         const langCfg = vscode.workspace.getConfiguration("symposium.chat");
-        const lang = langCfg.get<string>("preferredLanguage", "").trim() || vscode.env.language || "en";
+        const lang =
+            langCfg.get<string>("preferredLanguage", "").trim() || vscode.env.language || "en";
         void this.webview.postMessage({ type: "setLang", lang });
 
         this.pushVoicePreferences();
-        const openIn = vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor"); this.post({ type: "prefs", openIn, sessionsOnly: !this.chatOnly && openIn === "editor" });
+        const openIn = vscode.workspace
+            .getConfiguration("symposium.chat")
+            .get<string>("openIn", "editor");
+        this.post({ type: "prefs", openIn, sessionsOnly: !this.chatOnly && openIn === "editor" });
 
         for (const queued of this.queue) {
             void this.webview.postMessage(queued);
         }
         this.queue = [];
-        this.quotaRefreshTimer ??= setInterval(() => void this.refreshQuotas(), 60_000);
+        this.quota.startAutoRefresh();
     }
 
     private activateUsage(adapter: AgentAdapter): void {
-        this.activeUsage = adapter.usage;
-        this.activeQuotaModel = null;
-        this.quotaGeneration++;
-        void this.refreshQuotas();
-    }
-
-    private async refreshQuotas(force = false): Promise<void> {
-        const usage = this.activeUsage;
-        if (!usage) { return; }
-        const generation = this.quotaGeneration;
-        const model = this.controller?.getModel() || undefined;
-        if (usage.backend === "openai" && model !== this.activeQuotaModel) {
-            this.activeQuotaModel = model; this.post(presetQuotaLoadingEvent(usage));
-        }
-        this.post({ type: "quota-loading", loading: true });
-        try {
-            const snapshot = await usage.read(force, { model });
-            if (generation !== this.quotaGeneration || usage !== this.activeUsage) { return; }
-            this.post({ type: "event", event: { kind: "quota", ...snapshot } });
-        } catch (error) {
-            if (generation !== this.quotaGeneration || usage !== this.activeUsage) { return; }
-            symposiumLog(`[quota] Failed to read local adapter usage: ${error instanceof Error ? error.message : String(error)}`);
-            this.post({ type: "quota-loading", loading: false, backend: usage.backend, error: true });
-        } finally {
-            // ALWAYS turn off the loading spinner — even when the session changed
-            // during the await (generation mismatch) or an early return happened.
-            // Without this the spinner can get stuck forever.
-            if (generation === this.quotaGeneration && usage === this.activeUsage) {
-                this.post({ type: "quota-loading", loading: false, backend: usage.backend });
-            }
-        }
+        this.quota.activate(adapter);
     }
 
     /**
@@ -231,23 +236,48 @@ export class ChatSurface {
     // Dialogue lifecycle (open / resume / follow / terminal / branch) lives in
     // SurfaceDialogues; these public entry points are kept as thin delegators
     // for the external callers (commands, chatView, chatPanel, handoff).
-    openSession(info: SessionInfo): void { this.dialogues.openSession(info); }
-    followSession(info: SessionInfo): Promise<void> { return this.dialogues.followSession(info); }
-    openDialogue(backend: string, options: SessionStartOptions, title: string, info?: SessionInfo): void {
+    openSession(info: SessionInfo): void {
+        this.dialogues.openSession(info);
+    }
+    followSession(info: SessionInfo): Promise<void> {
+        return this.dialogues.followSession(info);
+    }
+    openDialogue(
+        backend: string,
+        options: SessionStartOptions,
+        title: string,
+        info?: SessionInfo,
+    ): void {
         this.dialogues.openDialogue(backend, options, title, info);
     }
-    openTerminalDialogue(backend: string, options: SessionStartOptions & { env?: Record<string, string>; tmuxName?: string; reasoning?: string }, title: string): void {
+    openTerminalDialogue(
+        backend: string,
+        options: SessionStartOptions & {
+            env?: Record<string, string>;
+            tmuxName?: string;
+            reasoning?: string;
+        },
+        title: string,
+    ): void {
         this.dialogues.openTerminalDialogue(backend, options, title);
     }
 
     /** Renders the in-chat agent picker; selection returns as `pick-agent`. */
-    showAgentPicker(agents: AgentPickerEntry[]): void { this.post({ type: "agent-picker", agents }); }
+    showAgentPicker(agents: AgentPickerEntry[]): void {
+        this.post({ type: "agent-picker", agents });
+    }
     /** Refreshes probe results without reopening a picker the user already left. */
-    refreshAgentPicker(agents: AgentPickerEntry[]): void { this.post({ type: "agent-picker-update", agents }); }
+    refreshAgentPicker(agents: AgentPickerEntry[]): void {
+        this.post({ type: "agent-picker-update", agents });
+    }
 
     /** Symposium-level slash commands injected into every backend's autocomplete. */
     private readonly symposiumCommands: import("../adapters/types").SlashCommand[] = [
-        { name: "refresh-models", description: "Refresh the model list from the provider API", kind: "builtin" },
+        {
+            name: "refresh-models",
+            description: "Refresh the model list from the provider API",
+            kind: "builtin",
+        },
     ];
 
     async refreshSessions(): Promise<void> {
@@ -264,7 +294,9 @@ export class ChatSurface {
      *  reflected in the chat header, not just the sessions list row). */
     async reMetaActive(): Promise<void> {
         const controller = this.controller;
-        if (!controller?.sessionId) { return; }
+        if (!controller?.sessionId) {
+            return;
+        }
         // Read the decorated title (includes custom renames) from the session list.
         try {
             const sessions = await this.deps.listSessions();
@@ -283,28 +315,7 @@ export class ChatSurface {
      * (the terminal panel itself stays open).
      */
     private buildLangHint(): string {
-        const cfg = vscode.workspace.getConfiguration("symposium.chat");
-        const hints: string[] = [];
-
-        // 1) Language preference.
-        const setting = cfg.get<string>("preferredLanguage", "").trim();
-        const lang = setting || vscode.env.language || "en";
-        const responseLanguage = responseLanguageName(lang);
-        hints.push(`The user prefers responses in "${responseLanguage}". Unless the user explicitly requests another language for the current response, reply in ${responseLanguage}.`);
-
-        // 2) User's manual system instruction (free text), when provided.
-        const custom = cfg.get<string>("systemInstruction", "").trim();
-        if (custom) {
-            hints.push(custom);
-        }
-
-        // 3) Logged-in users: search Sufficit memory before asking the user.
-        if (this.loggedIn) {
-            const memoryHint = vscode.workspace.getConfiguration("symposium.chat").get<string>("memoryInstruction", "").trim();
-            if (memoryHint) { hints.push(memoryHint); }
-        }
-
-        return hints.join("\n\n");
+        return buildSurfaceLanguageHint(this.loggedIn);
     }
 
     /** Tears down the view follow while preserving the last live status. */
@@ -332,7 +343,9 @@ export class ChatSurface {
 
     /** Close the active pane when its session is deleted elsewhere. */
     sessionDeleted(sessionId: string): void {
-        if (this.activeSessionId() !== sessionId) { return; }
+        if (this.activeSessionId() !== sessionId) {
+            return;
+        }
         // Deletion is the one lifecycle transition that must remove the
         // last-known follow status; a normal section switch must preserve it.
         this.deps.runtime.clearFollowStatus(sessionId);
@@ -346,9 +359,11 @@ export class ChatSurface {
 
     /** Working directory of the active session (for git operations). */
     private cwd(): string {
-        return this.controller?.cwd
-            ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
-            ?? process.cwd();
+        return (
+            this.controller?.cwd ??
+            vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ??
+            process.cwd()
+        );
     }
 
     /** Active session id (snapshots are keyed by it). */
@@ -357,42 +372,15 @@ export class ChatSurface {
     }
 
     /** Exact session currently rendered by this surface, including mirrors. */
-    private activeSessionId(): string { return this.sid() || this.terminalSession?.currentSessionId || this.followedSessionId || ""; }
-
-    /**
-     * Accepts a file's changes. The session snapshot baseline is dropped so it
-     * can't be reverted anymore; if the file is in a git repo we also stage it.
-     */
-
-    /**
-     * Filters the controller's raw edited-files set against live git status and
-     * pushes the result to the webview. Also (re)arms a watcher on the repos'
-     * index so staging/unstaging in git or the SCM view syncs back here.
-     */
-
-    /** Recomputes the displayed set from the controller's current raw set. */
-
-    /** Watches workspace git indexes so external stage/unstage re-syncs the list. */
-
-    /**
-     * Reverts a file to its pre-edit state. Prefers the session snapshot (works
-     * with or without git, even for new files); falls back to git restore for
-     * resumed sessions that have no snapshot.
-     */
-
-    /**
-     * Diffs an edited file against its baseline: the session snapshot if we have
-     * one, else the git HEAD version. New files with no baseline just open.
-     */
+    private activeSessionId(): string {
+        return this.sid() || this.terminalSession?.currentSessionId || this.followedSessionId || "";
+    }
 
     dispose(): void {
         // Detach only — the runtime owns controller lifetimes so sessions
         // survive the view/panel being closed.
         this.detachActive();
-        if (this.quotaRefreshTimer) {
-            clearInterval(this.quotaRefreshTimer);
-            this.quotaRefreshTimer = undefined;
-        }
+        this.quota.dispose();
         this.disposables.forEach((d) => d.dispose());
         this.disposables.length = 0;
     }

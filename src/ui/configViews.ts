@@ -13,7 +13,8 @@ import { configViewsCompression } from "./configViewsCompression";
 import { configViewsVoice } from "./configViewsVoice";
 import { configViewsSufficit } from "./configViewsSufficit";
 
-export const configViews = `    function resourceList(kind) {
+export const configViews =
+    `    function resourceList(kind) {
         const items = (state?.resources[kind]) || [];
         const importingSkills = kind === "skill" && skillImportBusy();
         const toolbar = '<div class="toolbar"><button id="new-res">' + esc(t("config.btn.new." + kind)) + "</button>"
@@ -349,4 +350,7 @@ export const configViews = `    function resourceList(kind) {
     }
 
 
-` + configViewsCompression + configViewsVoice + configViewsSufficit;
+` +
+    configViewsCompression +
+    configViewsVoice +
+    configViewsSufficit;

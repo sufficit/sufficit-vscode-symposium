@@ -67,7 +67,7 @@ export interface ServerManifest {
     url?: string;
     /** HTTP headers for SSE/remote transports (auth tokens, etc.). */
     headers?: Record<string, string>;
-    builtin?: boolean;  // true for native Sufficit MCP
+    builtin?: boolean; // true for native Sufficit MCP
 }
 
 export interface Server {
@@ -148,9 +148,10 @@ function listServerItems(serverName: string, type: "tools" | "prompts" | "resour
     if (!fs.existsSync(dir)) {
         return [];
     }
-    return fs.readdirSync(dir)
-        .filter(f => f.endsWith(".md") || f.endsWith(".json"))
-        .map(f => f.replace(/\.(md|json)$/, ""));
+    return fs
+        .readdirSync(dir)
+        .filter((f) => f.endsWith(".md") || f.endsWith(".json"))
+        .map((f) => f.replace(/\.(md|json)$/, ""));
 }
 
 /**
@@ -163,7 +164,7 @@ export function writeManifest(serverName: string, manifest: ServerManifest): voi
         fs.mkdirSync(server, { recursive: true });
     }
 
-    ["tools", "prompts", "resources"].forEach(type => {
+    ["tools", "prompts", "resources"].forEach((type) => {
         const subdir = path.join(server, type);
         if (!fs.existsSync(subdir)) {
             fs.mkdirSync(subdir, { recursive: true });
@@ -181,7 +182,7 @@ export function writeServerItem(
     serverName: string,
     type: "tools" | "prompts" | "resources",
     name: string,
-    content: string
+    content: string,
 ): void {
     const dir = serverSubdir(serverName, type);
     if (!fs.existsSync(dir)) {
@@ -247,7 +248,7 @@ export function ensureSufficitNativeServer(): void {
         { name: "agent_stop", desc: "Stop a subagent" },
     ];
 
-    sufficitTools.forEach(tool => {
+    sufficitTools.forEach((tool) => {
         const content = `---
 name: ${tool.name}
 description: ${tool.desc}
@@ -332,8 +333,8 @@ function importFromToml(tomlPath: string, result: ImportServersResult): void {
 
         if (!currentServer) continue;
 
-        const keyVal = /^(\w+)\s*=\s*"([^"]*)"$/.exec(trimmed) ||
-                       /^(\w+)\s*=\s*([^\s]+)$/.exec(trimmed);
+        const keyVal =
+            /^(\w+)\s*=\s*"([^"]*)"$/.exec(trimmed) || /^(\w+)\s*=\s*([^\s]+)$/.exec(trimmed);
         if (keyVal) {
             serverConfig[keyVal[1]] = keyVal[2];
         }
@@ -363,7 +364,7 @@ function importFromJson(jsonPath: string, result: ImportServersResult): void {
 function createServerFromConfig(
     name: string,
     config: Record<string, string | undefined>,
-    result: ImportServersResult
+    result: ImportServersResult,
 ): void {
     if (isSufficitNativeMcpIdentity(name)) {
         result.serversSkipped++;

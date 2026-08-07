@@ -3,10 +3,6 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 
-// Re-export the agent-def frontmatter readers so existing `./root` imports keep
-// resolving after they were moved to agentFrontmatter.ts (no config barrel).
-export * from "./agentFrontmatter";
-
 /**
  * Local storage root for Symposium's vendor-neutral agent knowledge.
  *
@@ -50,7 +46,14 @@ export interface SyncState {
     /** Resource names with local edits not yet pushed to the hub. */
     pendingPush: string[];
     /** Summary of the most recent push/pull attempt, for the UI. */
-    lastResult?: { label: string; pushed: number; pulled: number; skipped: number; errors: string[]; at: string };
+    lastResult?: {
+        label: string;
+        pushed: number;
+        pulled: number;
+        skipped: number;
+        errors: string[];
+        at: string;
+    };
 }
 
 const DEFAULT_STATE: SyncState = { health: "unknown", pendingPush: [] };
@@ -231,7 +234,9 @@ export function workspaceKey(cwd: string): string {
  * when neither exists. Curated in Sufficit memory and synced down as a
  * `bootstrap` resource.
  */
-export function readWorkspaceBootstrap(cwd: string): { text: string; path: string; name: string } | undefined {
+export function readWorkspaceBootstrap(
+    cwd: string,
+): { text: string; path: string; name: string } | undefined {
     const candidates = [workspaceKey(cwd), "default"];
     for (const name of candidates) {
         const file = resourceContentPath("bootstrap", name);
@@ -253,7 +258,14 @@ function template(kind: ResourceKind, name: string, description: string): string
     if (kind === "agent") {
         // `backend` is the subagent run-target preference: empty = inherit the
         // spawning conversation's backend; may be a name, comma-list, or wildcard.
-        fm.push("model: default", "backend: ''", "bootstrap: true", "tools: []", "skills: []", "instructions: []");
+        fm.push(
+            "model: default",
+            "backend: ''",
+            "bootstrap: true",
+            "tools: []",
+            "skills: []",
+            "instructions: []",
+        );
         return `---\n${fm.join("\n")}\n---\n\n# ${name}\n\nAgent instructions here.\n`;
     }
     if (kind === "tool") {
@@ -291,7 +303,10 @@ function foreignSkillRoots(): { source: string; dir: string }[] {
     const home = os.homedir();
     const roots: { source: string; dir: string }[] = [];
     for (const f of vscode.workspace.workspaceFolders ?? []) {
-        roots.push({ source: "claude-workspace", dir: path.join(f.uri.fsPath, ".claude", "skills") });
+        roots.push({
+            source: "claude-workspace",
+            dir: path.join(f.uri.fsPath, ".claude", "skills"),
+        });
     }
     roots.push({ source: "claude", dir: path.join(home, ".claude", "skills") });
     roots.push({ source: "codex", dir: path.join(home, ".codex", "skills") });
@@ -304,19 +319,36 @@ function foreignSkillRoots(): { source: string; dir: string }[] {
  * bundles are dereferenced (the Claude→.agents Superpowers layout uses them);
  * broken links and non-directories are skipped.
  */
-export function scanForeignSkills(): { source: string; name: string; description: string; path: string }[] {
+export function scanForeignSkills(): {
+    source: string;
+    name: string;
+    description: string;
+    path: string;
+}[] {
     const out: { source: string; name: string; description: string; path: string }[] = [];
     for (const { source, dir } of foreignSkillRoots()) {
         let entries: fs.Dirent[];
-        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+        try {
+            entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+            continue;
+        }
         for (const e of entries) {
-            if (e.name.startsWith(".")) { continue; }
+            if (e.name.startsWith(".")) {
+                continue;
+            }
             let bundle: string;
             try {
                 bundle = fs.realpathSync(path.join(dir, e.name));
-                if (!fs.statSync(bundle).isDirectory()) { continue; }
-            } catch { continue; }
-            if (!fs.existsSync(path.join(bundle, "SKILL.md"))) { continue; }
+                if (!fs.statSync(bundle).isDirectory()) {
+                    continue;
+                }
+            } catch {
+                continue;
+            }
+            if (!fs.existsSync(path.join(bundle, "SKILL.md"))) {
+                continue;
+            }
             const b = readSkillBundle(bundle);
             out.push({ source, name: b.name, description: b.description, path: bundle });
         }
@@ -325,12 +357,17 @@ export function scanForeignSkills(): { source: string; name: string; description
 }
 
 /** Copies a foreign skill bundle directory into repo/skills/. Skips if present unless overwrite. */
-export function importSkill(srcDir: string, overwrite = false): { name: string; status: "imported" | "skipped" | "error" } {
+export function importSkill(
+    srcDir: string,
+    overwrite = false,
+): { name: string; status: "imported" | "skipped" | "error" } {
     ensureScaffold();
     const b = readSkillBundle(srcDir);
     const dest = path.join(repoDir(), KIND_DIR.skill, sanitize(b.name));
     try {
-        if (fs.existsSync(dest) && !overwrite) { return { name: b.name, status: "skipped" }; }
+        if (fs.existsSync(dest) && !overwrite) {
+            return { name: b.name, status: "skipped" };
+        }
         fs.cpSync(srcDir, dest, { recursive: true, dereference: true, force: true });
         return { name: b.name, status: "imported" };
     } catch {

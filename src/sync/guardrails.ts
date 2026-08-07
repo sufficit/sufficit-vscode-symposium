@@ -22,21 +22,47 @@ export interface GuardrailItem {
 }
 
 /** Lists a session's guardrails, oldest first (definition order). */
-export async function fetchSessionGuardrails(hub: HubClient, sessionId: string): Promise<GuardrailItem[]> {
-    if (!hub.configured() || !sessionId) { return []; }
+export async function fetchSessionGuardrails(
+    hub: HubClient,
+    sessionId: string,
+): Promise<GuardrailItem[]> {
+    if (!hub.configured() || !sessionId) {
+        return [];
+    }
     // Search is scoped to the session by the native sessionId field on the
     // server (EFMemoryService filters by session_id). Pull recent records and
     // keep only the guardrail type for this session. Limit 200 keeps a margin so
     // the (few) guardrails aren't diluted out by the many task-checkpoints.
     const recs = await hub.searchMemory({ limit: 200, sessionId });
-    return (recs as Array<{ type: string; sessionId?: string; id: unknown; summary?: string; title?: string; createdAtUtc?: string | number }>)
+    return (
+        recs as Array<{
+            type: string;
+            sessionId?: string;
+            id: unknown;
+            summary?: string;
+            title?: string;
+            createdAtUtc?: string | number;
+        }>
+    )
         .filter((r) => r.type === GUARDRAIL_TYPE && (r.sessionId ?? "") === sessionId)
-        .sort((a, b) => Date.parse(String(a.createdAtUtc || "0")) - Date.parse(String(b.createdAtUtc || "0")))
-        .map((r) => ({ id: String(r.id), text: r.summary || r.title || "", ts: String(r.createdAtUtc || "") }));
+        .sort(
+            (a, b) =>
+                Date.parse(String(a.createdAtUtc || "0")) -
+                Date.parse(String(b.createdAtUtc || "0")),
+        )
+        .map((r) => ({
+            id: String(r.id),
+            text: r.summary || r.title || "",
+            ts: String(r.createdAtUtc || ""),
+        }));
 }
 
 /** Adds a guardrail for the session (privacy level internal, session-scoped). Returns the new id. */
-export async function saveGuardrail(hub: HubClient, sessionId: string, text: string): Promise<string> {
+export async function saveGuardrail(
+    hub: HubClient,
+    sessionId: string,
+    text: string,
+): Promise<string> {
     const t = text.trim();
     return hub.save({
         type: GUARDRAIL_TYPE,
@@ -49,9 +75,13 @@ export async function saveGuardrail(hub: HubClient, sessionId: string, text: str
 
 /** Removes one guardrail (soft-delete via past expiry, mirroring tasks). */
 export async function removeGuardrail(hub: HubClient, id: string): Promise<boolean> {
-    if (!hub.configured() || !id) { return false; }
+    if (!hub.configured() || !id) {
+        return false;
+    }
     const [obs] = await hub.getByIds([id]);
-    if (!obs) { return false; }
+    if (!obs) {
+        return false;
+    }
     await hub.save({ ...obs, expiresAtUtc: new Date(Date.now() - 1000).toISOString() });
     return true;
 }
@@ -61,7 +91,13 @@ export async function clearSessionGuardrails(hub: HubClient, sessionId: string):
     const items = await fetchSessionGuardrails(hub, sessionId);
     let n = 0;
     for (const g of items) {
-        try { if (await removeGuardrail(hub, g.id)) { n++; } } catch { /* best-effort */ }
+        try {
+            if (await removeGuardrail(hub, g.id)) {
+                n++;
+            }
+        } catch {
+            /* best-effort */
+        }
     }
     return n;
 }

@@ -1,8 +1,10 @@
 import { ApiUsage } from "./types";
-import type { TurnRunnerDeps } from "./turnRunner";
+import type { TurnRunnerDeps } from "./turnRunnerDeps";
 
 export function emitTurnUsage(d: TurnRunnerDeps, usage: ApiUsage): void {
-    if (!(usage.inputTokens || usage.outputTokens)) { return; }
+    if (!(usage.inputTokens || usage.outputTokens)) {
+        return;
+    }
     d.setLastInputTokens(usage.inputTokens || d.getLastInputTokens());
     d.emit({
         kind: "usage",

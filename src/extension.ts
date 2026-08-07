@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { createVscodeApplicationPorts } from "./infrastructure/vscode/applicationPorts";
 import { ClaudeAdapter } from "./adapters/claude";
 import { CodexAdapter } from "./adapters/codex";
 import { CopilotAdapter } from "./adapters/copilot";
@@ -19,7 +20,14 @@ import { SufficitAuthProvider } from "./auth/provider";
 import { setHubTokenProvider, HubClient } from "./sync/hubClient";
 import { ensureTailnetJoined } from "./net/tailnet";
 import { symposiumLog, setSymposiumOutput } from "./extension/log";
-import { claudeConfig, codexConfig, copilotConfig, openaiConfig, normalizeAdapterDefs, buildCustomAdapters } from "./extension/config";
+import {
+    claudeConfig,
+    codexConfig,
+    copilotConfig,
+    openaiConfig,
+    normalizeAdapterDefs,
+    buildCustomAdapters,
+} from "./extension/config";
 import { buildChatSurfaceDeps } from "./extension/surfaceDeps";
 import { registerCommands } from "./extension/commands";
 import { initSttStorage } from "./voice/sttService";
@@ -35,7 +43,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     setSymposiumOutput(output);
     context.subscriptions.push(output);
     void migrateLegacySettings().catch((error) => {
-        symposiumLog(`[settings] legacy migration failed: ${error instanceof Error ? error.message : String(error)}`);
+        symposiumLog(
+            `[settings] legacy migration failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
     });
 
     // Local speech-to-text model storage (downloaded on demand under global storage).
@@ -51,51 +61,65 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         ...buildCustomAdapters(context, normalizeAdapterDefs()),
     ];
     const adapterByBackend = new Map<string, AgentAdapter>(
-        adapters.map((adapter) => [adapter.backend, adapter]));
+        adapters.map((adapter) => [adapter.backend, adapter]),
+    );
 
     // Live backend registry: when the user adds/imports/removes a custom backend
     // (symposium.adapters), rebuild the custom adapters IN PLACE so they're usable
     // immediately — no window reload. Built-ins (claude/codex/copilot/openai) stay.
     const BUILTIN_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
-    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
-        if (!e.affectsConfiguration("symposium.adapters")) { return; }
-        const defs = normalizeAdapterDefs();
-        const wantIds = new Set(defs.map((d) => d.id));
-        for (let i = adapters.length - 1; i >= 0; i--) {
-            const id = adapters[i].backend;
-            if (!BUILTIN_BACKENDS.has(id) && !wantIds.has(id)) {
-                adapters.splice(i, 1);
-                adapterByBackend.delete(id);
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (!e.affectsConfiguration("symposium.adapters")) {
+                return;
             }
-        }
-        const have = new Set(adapters.map((a) => a.backend));
-        for (const ad of buildCustomAdapters(context, defs)) {
-            if (!have.has(ad.backend)) {
-                adapters.push(ad);
-                adapterByBackend.set(ad.backend, ad);
+            const defs = normalizeAdapterDefs();
+            const wantIds = new Set(defs.map((d) => d.id));
+            for (let i = adapters.length - 1; i >= 0; i--) {
+                const id = adapters[i].backend;
+                if (!BUILTIN_BACKENDS.has(id) && !wantIds.has(id)) {
+                    adapters.splice(i, 1);
+                    adapterByBackend.delete(id);
+                }
             }
-        }
-        symposiumLog(`[adapters] rebuilt custom backends live (${adapters.length} total)`);
-    }));
+            const have = new Set(adapters.map((a) => a.backend));
+            for (const ad of buildCustomAdapters(context, defs)) {
+                if (!have.has(ad.backend)) {
+                    adapters.push(ad);
+                    adapterByBackend.set(ad.backend, ad);
+                }
+            }
+            symposiumLog(`[adapters] rebuilt custom backends live (${adapters.length} total)`);
+        }),
+    );
 
     const store = new SessionStore(context.globalState);
     // Forward-declared so the runtime can trigger a (debounced) sessions
     // refresh whenever an agent starts/stops working.
-    let notifyStatus = () => { };
-    const runtime = new LiveSessions(() => notifyStatus());
+    let notifyStatus = () => {};
+    const runtime = new LiveSessions(createVscodeApplicationPorts(context), () => notifyStatus());
     context.subscriptions.push({ dispose: () => runtime.disposeAll() });
     // Public API consumers (in-process exports + remote bridge) subscribe here.
     const sessionsChanged = new vscode.EventEmitter<void>();
     context.subscriptions.push(sessionsChanged);
     // Public API facade (in-process exports, config UI and remote bridge all
     // share this object so every surface stays in lock-step).
-    const api = createSymposiumApi({ live: runtime, adapters, onSessionsChanged: sessionsChanged.event });
+    const api = createSymposiumApi({
+        live: runtime,
+        adapters,
+        onSessionsChanged: sessionsChanged.event,
+    });
 
     // Subagent host: lets the native Sufficit AI backend delegate to other
     // agent-defs as real sessions (spawn_agent / agent_* tools). Late-bound so
     // the low-level tool layer never imports the runtime directly.
-    setSubagentHost(new SubagentManager(runtime, adapterByBackend,
-        () => vscode.workspace.getConfiguration("symposium.subagents").get<number>("timeoutMs", 300000)));
+    setSubagentHost(
+        new SubagentManager(runtime, adapterByBackend, () =>
+            vscode.workspace
+                .getConfiguration("symposium.subagents")
+                .get<number>("timeoutMs", 300000),
+        ),
+    );
     context.subscriptions.push({ dispose: () => setSubagentHost(undefined) });
 
     // Live transcript reader: lets read_session pull a running session's freshest
@@ -121,10 +145,14 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     );
     context.subscriptions.push(auth.onDidChange(() => ConfigPanel.refresh()));
     context.subscriptions.push({ dispose: () => auth.dispose() });
-    void auth.startAutoRefresh();   // silent token refresh so the session never lapses
+    void auth.startAutoRefresh(); // silent token refresh so the session never lapses
     // Plug the Sufficit token into the Codex MCP sufficit_ai server automatically.
     setCodexSufficitTokenProvider((forceRefresh) => auth.getAccessToken(forceRefresh));
-    context.subscriptions.push(auth.onDidChange(async () => { await syncCodexSufficitMcp(); }));
+    context.subscriptions.push(
+        auth.onDidChange(async () => {
+            await syncCodexSufficitMcp();
+        }),
+    );
     void syncCodexSufficitMcp();
     // Native Accounts-menu integration (avatar/login at the bottom of the activity bar).
     SufficitAuthProvider.register(context, auth);
@@ -142,7 +170,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
                 const r = await sufficitAdapter.available();
                 symposiumLog(`[sufficit-ai] health: ${r.ok ? "ok" : "FAIL " + (r.error ?? "")}`);
                 if (!r.ok && (await auth.isLoggedIn())) {
-                    void vscode.window.showWarningMessage(`Sufficit AI unavailable: ${r.error ?? "check the connection"}`);
+                    void vscode.window.showWarningMessage(
+                        `Sufficit AI unavailable: ${r.error ?? "check the connection"}`,
+                    );
                 }
             } catch (e) {
                 symposiumLog(`[sufficit-ai] health check error: ${e}`);
@@ -160,7 +190,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     let autoSyncing = false;
     const autoSync = (reason: string) => {
         void (async () => {
-            if (autoSyncing || !api.sync.configured() || !(await auth.isLoggedIn())) { return; }
+            if (autoSyncing || !api.sync.configured() || !(await auth.isLoggedIn())) {
+                return;
+            }
             autoSyncing = true;
             try {
                 const r = await api.sync.pull();
@@ -181,7 +213,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // net/tailnet.ts for why login failures here must never surface to the user.
     const joinTailnet = (reason: string) => {
         void (async () => {
-            if (!(await auth.isLoggedIn())) { return; }
+            if (!(await auth.isLoggedIn())) {
+                return;
+            }
             await ensureTailnetJoined(new HubClient(), (msg) => symposiumLog(`${msg} (${reason})`));
         })();
     };
@@ -194,15 +228,31 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // consent — it auto-approves ALL chat tools editor-wide, including terminal.
     void (async () => {
         const FLAG = "symposium.autoApproveDefaulted";
-        if (context.globalState.get<boolean>(FLAG)) { return; }
+        if (context.globalState.get<boolean>(FLAG)) {
+            return;
+        }
         const c = vscode.workspace.getConfiguration();
         if (c.inspect("chat.tools.global.autoApprove")?.globalValue === undefined) {
             const choice = await vscode.window.showWarningMessage(
                 "Symposium: enable auto-approve for chat agent tool calls (chat.tools.global.autoApprove)? This applies to ALL chat extensions and includes terminal commands.",
-                "Yes", "No");
+                "Yes",
+                "No",
+            );
             if (choice === "Yes") {
-                await c.update("chat.tools.global.autoApprove.optIn", true, vscode.ConfigurationTarget.Global).then(undefined, () => undefined);
-                await c.update("chat.tools.global.autoApprove", true, vscode.ConfigurationTarget.Global).then(undefined, () => undefined);
+                await c
+                    .update(
+                        "chat.tools.global.autoApprove.optIn",
+                        true,
+                        vscode.ConfigurationTarget.Global,
+                    )
+                    .then(undefined, () => undefined);
+                await c
+                    .update(
+                        "chat.tools.global.autoApprove",
+                        true,
+                        vscode.ConfigurationTarget.Global,
+                    )
+                    .then(undefined, () => undefined);
                 symposiumLog("[setup] enabled chat.tools.global.autoApprove (user consented)");
             }
         }
@@ -226,7 +276,9 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     let lastReconcileAt = 0;
     const RECONCILE_INTERVAL_MS = 5_000;
     const rawSessions = (): Promise<SessionInfo[]> => {
-        if (!sessionIndex) { return Promise.resolve([]); }
+        if (!sessionIndex) {
+            return Promise.resolve([]);
+        }
         const cached = sessionIndex.listCached();
         if (indexPrimed) {
             if (Date.now() - lastReconcileAt >= RECONCILE_INTERVAL_MS) {
@@ -236,13 +288,23 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
             return Promise.resolve(cached);
         }
         lastReconcileAt = Date.now();
-        return sessionIndex.reconcile().then((sessions: import("./adapters/types").SessionInfo[]) => {
-            indexPrimed = true;
-            return sessions;
-        });
+        return sessionIndex
+            .reconcile()
+            .then((sessions: import("./adapters/types").SessionInfo[]) => {
+                indexPrimed = true;
+                return sessions;
+            });
     };
 
-    const surfaceDeps = buildChatSurfaceDeps({ context, runtime, store, adapterByBackend, auth, deleting, rawSessions });
+    const surfaceDeps = buildChatSurfaceDeps({
+        context,
+        runtime,
+        store,
+        adapterByBackend,
+        auth,
+        deleting,
+        rawSessions,
+    });
     const chatView = new ChatViewProvider(surfaceDeps);
 
     const refreshAll = () => {
@@ -270,23 +332,41 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const bridge = new RemoteBridge(api, (msg) => output.appendLine(msg));
     void bridge.start();
     context.subscriptions.push({ dispose: () => bridge.stop() });
-    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => {
-        if (!e.affectsConfiguration("symposium.bridge")) { return; }
-        bridge.stop();
-        void (async () => {
-            const url = await bridge.start();
-            output.appendLine(url
-                ? `[bridge] configuration changed; restarted on ${url}`
-                : "[bridge] configuration changed; bridge is disabled");
-        })();
-    }));
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (!e.affectsConfiguration("symposium.bridge")) {
+                return;
+            }
+            bridge.stop();
+            void (async () => {
+                const url = await bridge.start();
+                output.appendLine(
+                    url
+                        ? `[bridge] configuration changed; restarted on ${url}`
+                        : "[bridge] configuration changed; bridge is disabled",
+                );
+            })();
+        }),
+    );
 
     registerCommands({
-        context, adapters, adapterByBackend, surfaceDeps, chatView,
-        runtime, sessionIndex, store, api, auth, bridge, deleting, refreshAll, output,
+        context,
+        adapters,
+        adapterByBackend,
+        surfaceDeps,
+        chatView,
+        runtime,
+        sessionIndex,
+        store,
+        api,
+        auth,
+        bridge,
+        deleting,
+        refreshAll,
+        output,
     });
 
     return api;
 }
 
-export function deactivate(): void { }
+export function deactivate(): void {}

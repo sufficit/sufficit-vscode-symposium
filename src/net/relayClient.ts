@@ -51,10 +51,19 @@ export function getMachineId(): string {
     const file = path.join(os.homedir(), ".symposium", "relay-machine-id");
     try {
         const id = fs.readFileSync(file, "utf8").trim();
-        if (id) { return id; }
-    } catch { /* not yet created */ }
+        if (id) {
+            return id;
+        }
+    } catch {
+        /* not yet created */
+    }
     const id = randomUUID();
-    try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, id, { mode: 0o600 }); } catch { /* best-effort */ }
+    try {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, id, { mode: 0o600 });
+    } catch {
+        /* best-effort */
+    }
     return id;
 }
 
@@ -65,8 +74,10 @@ export function getMachineId(): string {
 export function parseRelayMessage(raw: string): Record<string, unknown> | undefined {
     try {
         const obj = JSON.parse(raw);
-        return typeof obj === "object" && obj !== null && typeof (obj as Record<string, unknown>).type === "string"
-            ? obj as Record<string, unknown>
+        return typeof obj === "object" &&
+            obj !== null &&
+            typeof (obj as Record<string, unknown>).type === "string"
+            ? (obj as Record<string, unknown>)
             : undefined;
     } catch {
         return undefined;
@@ -91,7 +102,7 @@ export class RelayClient {
     private ws: WebSocket | undefined;
     private heartbeat: ReturnType<typeof setInterval> | undefined;
     private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
-    private backoff = 1000;   // ms, doubles up to 60_000
+    private backoff = 1000; // ms, doubles up to 60_000
     private running = false;
     private publicUrl: string | undefined;
     private readonly machineId: string;
@@ -101,11 +112,15 @@ export class RelayClient {
     }
 
     /** The public URL the gateway assigned, or undefined until registered. */
-    getPublicUrl(): string | undefined { return this.publicUrl; }
+    getPublicUrl(): string | undefined {
+        return this.publicUrl;
+    }
 
     /** Opens the outbound connection and keeps it alive (reconnect on drop). */
     async start(): Promise<void> {
-        if (this.running) { return; }
+        if (this.running) {
+            return;
+        }
         this.running = true;
         this.backoff = 1000;
         await this.connect();
@@ -114,19 +129,33 @@ export class RelayClient {
     /** Closes the connection and stops reconnecting. Idempotent. */
     stop(): void {
         this.running = false;
-        if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = undefined; }
-        if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = undefined;
+        }
+        if (this.heartbeat) {
+            clearInterval(this.heartbeat);
+            this.heartbeat = undefined;
+        }
         if (this.ws) {
-            try { this.ws.close(); } catch { /* best-effort */ }
+            try {
+                this.ws.close();
+            } catch {
+                /* best-effort */
+            }
             this.ws = undefined;
         }
         this.publicUrl = undefined;
     }
 
-    private log(msg: string): void { this.opts.log?.(`[relay] ${msg}`); }
+    private log(msg: string): void {
+        this.opts.log?.(`[relay] ${msg}`);
+    }
 
     private async connect(): Promise<void> {
-        if (!this.running) { return; }
+        if (!this.running) {
+            return;
+        }
         const token = await this.opts.getToken();
         if (!token) {
             this.log("no Sufficit token — not logged in; will retry");
@@ -146,14 +175,16 @@ export class RelayClient {
         this.ws = ws;
         ws.addEventListener("open", () => {
             this.log("connected, registering");
-            this.backoff = 1000;   // reset on successful connect
+            this.backoff = 1000; // reset on successful connect
             ws.send(buildRegisterMessage(this.machineId));
             this.startHeartbeat();
         });
         ws.addEventListener("message", (ev: MessageEvent) => {
             const raw = typeof ev.data === "string" ? ev.data : "";
             const msg = parseRelayMessage(raw);
-            if (!msg) { return; }
+            if (!msg) {
+                return;
+            }
             this.handleMessage(msg);
         });
         ws.addEventListener("close", () => {
@@ -170,25 +201,40 @@ export class RelayClient {
     }
 
     private startHeartbeat(): void {
-        if (this.heartbeat) { clearInterval(this.heartbeat); }
+        if (this.heartbeat) {
+            clearInterval(this.heartbeat);
+        }
         this.heartbeat = setInterval(() => {
             if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                try { this.ws.send(buildHeartbeatMessage()); } catch { /* best-effort */ }
+                try {
+                    this.ws.send(buildHeartbeatMessage());
+                } catch {
+                    /* best-effort */
+                }
             }
         }, 25_000);
     }
 
     private stopHeartbeat(): void {
-        if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
+        if (this.heartbeat) {
+            clearInterval(this.heartbeat);
+            this.heartbeat = undefined;
+        }
     }
 
     private scheduleReconnect(): void {
-        if (!this.running) { return; }
-        if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); }
+        if (!this.running) {
+            return;
+        }
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+        }
         const delay = this.backoff;
         this.backoff = Math.min(this.backoff * 2, 60_000);
         this.log(`reconnecting in ${Math.round(delay / 1000)}s`);
-        this.reconnectTimer = setTimeout(() => { void this.connect(); }, delay);
+        this.reconnectTimer = setTimeout(() => {
+            void this.connect();
+        }, delay);
     }
 
     private handleMessage(msg: Record<string, unknown>): void {
@@ -222,32 +268,62 @@ export class RelayClient {
                 ...(body && method !== "GET" && method !== "HEAD" ? { body } : {}),
             });
             const resHeaders: Record<string, string> = {};
-            res.headers.forEach((value, key) => { resHeaders[key] = value; });
+            res.headers.forEach((value, key) => {
+                resHeaders[key] = value;
+            });
             const contentType = res.headers.get("content-type") || "";
             // SSE / streaming: relay chunk-by-chunk, then a done marker.
             if (contentType.includes("text/event-stream") && res.body) {
-                this.send({ type: "response", id, status: res.status, headers: resHeaders, stream: true });
+                this.send({
+                    type: "response",
+                    id,
+                    status: res.status,
+                    headers: resHeaders,
+                    stream: true,
+                });
                 const reader = res.body.getReader();
                 const decoder = new TextDecoder();
                 while (true) {
                     const { done, value } = await reader.read();
-                    if (done) { break; }
-                    this.send({ type: "response-chunk", id, chunk: decoder.decode(value, { stream: true }) });
+                    if (done) {
+                        break;
+                    }
+                    this.send({
+                        type: "response-chunk",
+                        id,
+                        chunk: decoder.decode(value, { stream: true }),
+                    });
                 }
                 this.send({ type: "response-chunk", id, chunk: "", done: true });
                 return;
             }
             // Regular response: read fully and send.
             const text = await res.text();
-            this.send({ type: "response", id, status: res.status, headers: resHeaders, body: text });
+            this.send({
+                type: "response",
+                id,
+                status: res.status,
+                headers: resHeaders,
+                body: text,
+            });
         } catch (e) {
-            this.send({ type: "response", id, status: 502, headers: {}, body: `relay proxy error: ${e}` });
+            this.send({
+                type: "response",
+                id,
+                status: 502,
+                headers: {},
+                body: `relay proxy error: ${e}`,
+            });
         }
     }
 
     private send(msg: Record<string, unknown>): void {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            try { this.ws.send(JSON.stringify(msg)); } catch { /* best-effort */ }
+            try {
+                this.ws.send(JSON.stringify(msg));
+            } catch {
+                /* best-effort */
+            }
         }
     }
 }

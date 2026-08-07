@@ -1,7 +1,7 @@
-import { vscode } from "./vscode";
+import { postMessage } from "./vscode";
 import { svgIcon } from "./icons";
 
-const MANUAL_TOKENS = new Map([
+const MANUAL_TOKENS = new Map<string, string>([
     ["folded_orphan_tools", "openai-history"],
     ["folded_missing_tool_calls", "openai-history"],
     ["repaired_missing_tool_calls", "openai-history"],
@@ -9,13 +9,16 @@ const MANUAL_TOKENS = new Map([
     ["missing_tool_results", "openai-history"],
 ]);
 
-function renderText(el, text) {
+function renderText(el: HTMLElement, text: string): void {
     const value = String(text ?? "");
-    const tokenPattern = /\b(folded_orphan_tools|folded_missing_tool_calls|repaired_missing_tool_calls|orphan_tools|missing_tool_results)(?==)/g;
+    const tokenPattern =
+        /\b(folded_orphan_tools|folded_missing_tool_calls|repaired_missing_tool_calls|orphan_tools|missing_tool_results)(?==)/g;
     let last = 0;
-    let match;
+    let match: RegExpExecArray | null;
     while ((match = tokenPattern.exec(value)) !== null) {
-        if (match.index > last) { el.appendChild(document.createTextNode(value.slice(last, match.index))); }
+        if (match.index > last) {
+            el.appendChild(document.createTextNode(value.slice(last, match.index)));
+        }
         const token = match[1];
         const manualId = MANUAL_TOKENS.get(token);
         const btn = document.createElement("button");
@@ -24,12 +27,16 @@ function renderText(el, text) {
         btn.textContent = token;
         btn.title = "Open manual";
         btn.addEventListener("click", () => {
-            if (manualId) { vscode.postMessage({ type: "show-manual", manualId }); }
+            if (manualId) {
+                postMessage({ type: "show-manual", manualId });
+            }
         });
         el.appendChild(btn);
         last = match.index + token.length;
     }
-    if (last < value.length) { el.appendChild(document.createTextNode(value.slice(last))); }
+    if (last < value.length) {
+        el.appendChild(document.createTextNode(value.slice(last)));
+    }
 }
 
 export interface SystemNoticeAction {
@@ -39,7 +46,13 @@ export interface SystemNoticeAction {
 }
 
 /** Builds a system-owned conversation event with an explicit semantic level. */
-export function createSystemNotice(text, severity = "info", anchorIndex = undefined, onAnchor: (index: number) => void = (_index) => {}, action?: SystemNoticeAction) {
+export function createSystemNotice(
+    text: string,
+    severity: "info" | "warning" | "error" = "info",
+    anchorIndex?: number,
+    onAnchor: (index: number) => void = (_index) => {},
+    action?: SystemNoticeAction,
+): HTMLDivElement {
     const level = severity === "warning" || severity === "error" ? severity : "info";
     const labelText = level === "warning" ? "Warning" : level === "error" ? "Error" : "System";
     const el = document.createElement("div");

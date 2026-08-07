@@ -62,8 +62,8 @@ export class SummarizeCompressionStrategy implements CompressionStrategy {
     }
 
     private summarizeMessages(messages: ChatMessage[]): string {
-        const userMsgs = messages.filter(m => m.role === "user").length;
-        const assistantMsgs = messages.filter(m => m.role === "assistant").length;
+        const userMsgs = messages.filter((m) => m.role === "user").length;
+        const assistantMsgs = messages.filter((m) => m.role === "assistant").length;
         return `Mantidos ${userMsgs} pedidos do usuário e ${assistantMsgs} respostas. O contexto completo pode ser recuperado via search na memória Sufficit.`;
     }
 }
@@ -121,7 +121,10 @@ export class TokenBudgetCompressionStrategy implements CompressionStrategy {
 /**
  * Factory para criar estratégias de compressão baseadas no tipo.
  */
-export function createCompressionStrategy(strategyType: CompressionStrategyType, params?: CompressionStrategyParams): CompressionStrategy {
+export function createCompressionStrategy(
+    strategyType: CompressionStrategyType,
+    params?: CompressionStrategyParams,
+): CompressionStrategy {
     switch (strategyType) {
         case "none":
             return new NoneCompressionStrategy();
@@ -142,7 +145,7 @@ export function createCompressionStrategy(strategyType: CompressionStrategyType,
 export function compressMessages(
     messages: ChatMessage[],
     strategyType: CompressionStrategyType,
-    params?: CompressionStrategyParams
+    params?: CompressionStrategyParams,
 ): ChatMessage[] {
     const strategy = createCompressionStrategy(strategyType, params);
     return strategy.compress(messages);

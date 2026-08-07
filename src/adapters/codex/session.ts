@@ -6,7 +6,12 @@ import { contextWindowFor, parseCodexUsage } from "../parse";
 import { parseAdapterQuota } from "../quota";
 import { parseNativeTodos } from "../todos";
 import { AgentSession, SessionStartOptions } from "../types";
-import { CodexAdapterConfig, codexWorkspaceArgs, loadVscodeMcpServers, mapUnifiedToCodexFlags } from "./codexMcpConfig";
+import {
+    CodexAdapterConfig,
+    codexWorkspaceArgs,
+    loadVscodeMcpServers,
+    mapUnifiedToCodexFlags,
+} from "./codexMcpConfig";
 import { syncCodexSufficitMcp } from "./sufficitMcp";
 
 /** Resolve a picker value into the explicit model argument for one Codex turn. */
@@ -55,7 +60,9 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.effectiveModel = this.options.model || this.config.model;
     }
 
-    getModel(): string { return this.effectiveModel || this.options.model || this.config.model; }
+    getModel(): string {
+        return this.effectiveModel || this.options.model || this.config.model;
+    }
 
     send(text: string): void {
         // A mid-turn send must not leave two `codex exec` processes writing
@@ -68,7 +75,10 @@ export class CodexSession extends EventEmitter implements AgentSession {
         const sequence = ++this.turnSequence;
         void this.spawnTurn(text, sequence).catch((error) => {
             if (!this.disposed && sequence === this.turnSequence) {
-                this.emit("event", { kind: "error", message: `Codex turn failed: ${error instanceof Error ? error.message : String(error)}` });
+                this.emit("event", {
+                    kind: "error",
+                    message: `Codex turn failed: ${error instanceof Error ? error.message : String(error)}`,
+                });
                 this.emit("event", { kind: "turn-end" });
             }
         });
@@ -90,11 +100,18 @@ export class CodexSession extends EventEmitter implements AgentSession {
             ...codexWorkspaceArgs(this.options.cwd, this.config.workspaceDirs),
         ];
         base.push(...codexModelArgs(this.options.model, this.config.model));
-        const requestedMode = (this.options.permission || this.config.approvalPolicy || "admin").replace(/^default$/, "admin");
+        const requestedMode = (
+            this.options.permission ||
+            this.config.approvalPolicy ||
+            "admin"
+        ).replace(/^default$/, "admin");
         const mapped = mapUnifiedToCodexFlags(requestedMode, this.config.sandboxMode);
         if (mapped.unenforced && !this.warnedUnenforcedMode) {
             this.warnedUnenforcedMode = true;
-            this.emit("event", { kind: "status-notice", text: "Manager/user approval enforcement isn't implemented yet for the Codex CLI — this session is running with full permissions (admin) until that's built. The inline approval flow is live today for the Sufficit AI / OpenAI-compatible backend." });
+            this.emit("event", {
+                kind: "status-notice",
+                text: "Manager/user approval enforcement isn't implemented yet for the Codex CLI — this session is running with full permissions (admin) until that's built. The inline approval flow is live today for the Sufficit AI / OpenAI-compatible backend.",
+            });
         }
         if (mapped.approvalPolicy && mapped.approvalPolicy !== "default") {
             base.push("-c", `approval_policy="${mapped.approvalPolicy}"`);
@@ -107,7 +124,9 @@ export class CodexSession extends EventEmitter implements AgentSession {
             base.push("-c", `model_reasoning_effort="${reasoning}"`);
         }
         // MCP servers (Playwright browser tools + extras + VSCode MCP servers) as `-c` TOML overrides.
-        const servers: Record<string, { command?: string; args?: string[] }> = { ...(this.config.mcpServers ?? {}) };
+        const servers: Record<string, { command?: string; args?: string[] }> = {
+            ...(this.config.mcpServers ?? {}),
+        };
         if (this.config.playwright && !servers.playwright) {
             servers.playwright = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
         }
@@ -118,8 +137,12 @@ export class CodexSession extends EventEmitter implements AgentSession {
             }
         }
         for (const [name, s] of Object.entries(servers)) {
-            if (s.command) { base.push("-c", `mcp_servers.${name}.command=${JSON.stringify(s.command)}`); }
-            if (s.args) { base.push("-c", `mcp_servers.${name}.args=${JSON.stringify(s.args)}`); }
+            if (s.command) {
+                base.push("-c", `mcp_servers.${name}.command=${JSON.stringify(s.command)}`);
+            }
+            if (s.args) {
+                base.push("-c", `mcp_servers.${name}.args=${JSON.stringify(s.args)}`);
+            }
         }
         // Read every prompt from stdin. Backend handoffs can contain a transcript
         // larger than the operating system's argv limit (spawn E2BIG).
@@ -143,14 +166,19 @@ export class CodexSession extends EventEmitter implements AgentSession {
         });
 
         let stderr = "";
-        child.stderr!.on("data", (chunk) => { stderr += String(chunk); });
+        child.stderr!.on("data", (chunk) => {
+            stderr += String(chunk);
+        });
         child.on("error", (error) => {
             if (this.current !== child) {
                 return;
             }
             this.current = undefined;
             if (!this.cancelled) {
-                this.emit("event", { kind: "error", message: `codex spawn failed: ${error.message}` });
+                this.emit("event", {
+                    kind: "error",
+                    message: `codex spawn failed: ${error.message}`,
+                });
             }
             this.cancelled = false;
             this.emit("event", { kind: "turn-end" });
@@ -165,7 +193,10 @@ export class CodexSession extends EventEmitter implements AgentSession {
             }
             if (!this.cancelled && code !== 0 && code !== null && !this.reportedError) {
                 const detail = stderr.trim().split("\n").slice(-2).join(" ");
-                this.emit("event", { kind: "error", message: `codex exited with code ${code}: ${detail}` });
+                this.emit("event", {
+                    kind: "error",
+                    message: `codex exited with code ${code}: ${detail}`,
+                });
             }
             this.cancelled = false;
             this.emit("event", { kind: "turn-end" });
@@ -183,37 +214,76 @@ export class CodexSession extends EventEmitter implements AgentSession {
             return; // non-JSON log lines (codex prints some ERROR lines plainly)
         }
         const quota = parseAdapterQuota(event, this.backend);
-        if (quota) { this.emit("event", { kind: "quota", ...quota }); }
+        if (quota) {
+            this.emit("event", { kind: "quota", ...quota });
+        }
         switch (event.type) {
             case "thread.started":
                 if (typeof event.thread_id === "string" && !this.sessionId) {
                     this.sessionId = event.thread_id;
-                    this.emit("event", { kind: "session", sessionId: event.thread_id, model: this.effectiveModel || undefined });
+                    this.emit("event", {
+                        kind: "session",
+                        sessionId: event.thread_id,
+                        model: this.effectiveModel || undefined,
+                    });
                 }
                 break;
             case "item.started":
             case "item.completed": {
-                const item = typeof event.item === "object" && event.item !== null ? event.item as Record<string, unknown> : {};
-                const itemType = typeof item.type === "string" ? item.type : (typeof item.item_type === "string" ? item.item_type : undefined);
+                const item =
+                    typeof event.item === "object" && event.item !== null
+                        ? (event.item as Record<string, unknown>)
+                        : {};
+                const itemType =
+                    typeof item.type === "string"
+                        ? item.type
+                        : typeof item.item_type === "string"
+                          ? item.item_type
+                          : undefined;
                 // Codex's plan/todo updates (e.g. update_plan / todo_list).
                 const todos = parseNativeTodos(itemType ?? "", item);
                 if (todos) {
-                    this.emit("event", { kind: "tool-start", toolName: "TodoWrite", detail: "", todos });
+                    this.emit("event", {
+                        kind: "tool-start",
+                        toolName: "TodoWrite",
+                        detail: "",
+                        todos,
+                    });
                     break;
                 }
                 if (event.type !== "item.completed") {
                     if (itemType === "command_execution" && typeof item.command === "string") {
-                        this.emit("event", { kind: "tool-start", toolName: "exec", detail: item.command });
+                        this.emit("event", {
+                            kind: "tool-start",
+                            toolName: "exec",
+                            detail: item.command,
+                        });
                     }
                     break;
                 }
                 if (itemType === "agent_message" && typeof item.text === "string") {
-                    this.emit("event", { kind: "text", text: item.text, model: this.effectiveModel || undefined });
+                    this.emit("event", {
+                        kind: "text",
+                        text: item.text,
+                        model: this.effectiveModel || undefined,
+                    });
                 } else if (itemType === "reasoning" && typeof item.text === "string") {
-                    this.emit("event", { kind: "text", text: item.text, model: this.effectiveModel || undefined });
+                    this.emit("event", {
+                        kind: "text",
+                        text: item.text,
+                        model: this.effectiveModel || undefined,
+                    });
                 } else if (itemType === "command_execution" && typeof item.command === "string") {
-                    this.emit("event", { kind: "tool-end", toolName: "exec", detail: item.command });
-                } else if (itemType === "file_change" || itemType === "mcp_tool_call" || itemType === "web_search") {
+                    this.emit("event", {
+                        kind: "tool-end",
+                        toolName: "exec",
+                        detail: item.command,
+                    });
+                } else if (
+                    itemType === "file_change" ||
+                    itemType === "mcp_tool_call" ||
+                    itemType === "web_search"
+                ) {
                     this.emit("event", { kind: "tool-end", toolName: itemType });
                 }
                 break;
@@ -225,8 +295,15 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 this.emitUsage(event);
                 break;
             case "turn_context": {
-                const payload = typeof event.payload === "object" && event.payload !== null ? event.payload as Record<string, unknown> : {};
-                if (typeof payload.model === "string" && payload.model && payload.model !== this.effectiveModel) {
+                const payload =
+                    typeof event.payload === "object" && event.payload !== null
+                        ? (event.payload as Record<string, unknown>)
+                        : {};
+                if (
+                    typeof payload.model === "string" &&
+                    payload.model &&
+                    payload.model !== this.effectiveModel
+                ) {
                     this.effectiveModel = payload.model;
                     this.emit("event", { kind: "model", model: this.effectiveModel });
                 }
@@ -243,8 +320,17 @@ export class CodexSession extends EventEmitter implements AgentSession {
                     break;
                 }
                 this.reportedError = true;
-                const error = typeof event.error === "object" && event.error !== null ? event.error as Record<string, unknown> : {};
-                this.emit("event", { kind: "error", message: "message" in error && typeof error.message === "string" ? error.message : "codex turn failed" });
+                const error =
+                    typeof event.error === "object" && event.error !== null
+                        ? (event.error as Record<string, unknown>)
+                        : {};
+                this.emit("event", {
+                    kind: "error",
+                    message:
+                        "message" in error && typeof error.message === "string"
+                            ? error.message
+                            : "codex turn failed",
+                });
                 this.emit("event", { kind: "turn-end" });
                 break;
             }
@@ -272,13 +358,16 @@ export class CodexSession extends EventEmitter implements AgentSession {
      */
     private emitUsage(event: unknown): void {
         const u = parseCodexUsage(event);
-        if (!u) { return; }
+        if (!u) {
+            return;
+        }
         this.emit("event", {
             kind: "usage",
             inputTokens: u.inputTokens,
             outputTokens: u.outputTokens,
             cacheRead: u.cacheRead,
-            contextWindow: u.contextWindow ?? contextWindowFor(this.options.model || this.config.model),
+            contextWindow:
+                u.contextWindow ?? contextWindowFor(this.options.model || this.config.model),
             model: this.effectiveModel || undefined,
         });
     }

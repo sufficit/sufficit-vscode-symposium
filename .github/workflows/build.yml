@@ -29,7 +29,12 @@ jobs:
         run: npm ci
 
       - name: Verify
+        env:
+          COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: npm run verify
+
+      - name: Extension Host integration
+        run: xvfb-run -a npm run test:extension-host
 
       - name: Package VSIX
         run: npm run package:vsix

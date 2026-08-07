@@ -17,27 +17,38 @@ export function summarizeToolInput(input: unknown): string {
         const parts = String(p).split("/").filter(Boolean);
         return parts.slice(-2).join("/") || String(p);
     };
-    const filePath = typeof o.file_path === "string" ? o.file_path
-        : typeof o.notebook_path === "string" ? o.notebook_path
-            : typeof o.path === "string" ? o.path : undefined;
+    const filePath =
+        typeof o.file_path === "string"
+            ? o.file_path
+            : typeof o.notebook_path === "string"
+              ? o.notebook_path
+              : typeof o.path === "string"
+                ? o.path
+                : undefined;
     let s = "";
     // A human-readable description (e.g. Bash tool's `description`) is the intent
     // the user cares about — prefer it over the raw command/args.
-    if (typeof o.description === "string" && o.description.trim()) { s = o.description.trim(); }
-    else if (filePath) {
+    if (typeof o.description === "string" && o.description.trim()) {
+        s = o.description.trim();
+    } else if (filePath) {
         s = short(filePath);
         if (typeof o.offset === "number") {
             const end = typeof o.limit === "number" ? o.offset + o.limit : undefined;
             s += ":" + o.offset + (end ? "-" + end : "");
         }
-    }
-    else if (typeof o.command === "string") { s = o.command.trim().replace(/\s+/g, " "); }
-    else if (typeof o.pattern === "string") { s = '"' + o.pattern + '"' + (typeof o.path === "string" ? " in " + short(o.path) : ""); }
-    else if (typeof o.url === "string") { s = o.url; }
-    else if (typeof o.query === "string") { s = o.query; }
-    else if (typeof o.description === "string") { s = o.description; }
-    else if (typeof o.prompt === "string") { s = o.prompt; }
-    else {
+    } else if (typeof o.command === "string") {
+        s = o.command.trim().replace(/\s+/g, " ");
+    } else if (typeof o.pattern === "string") {
+        s = '"' + o.pattern + '"' + (typeof o.path === "string" ? " in " + short(o.path) : "");
+    } else if (typeof o.url === "string") {
+        s = o.url;
+    } else if (typeof o.query === "string") {
+        s = o.query;
+    } else if (typeof o.description === "string") {
+        s = o.description;
+    } else if (typeof o.prompt === "string") {
+        s = o.prompt;
+    } else {
         const first = Object.values(o).find((v) => typeof v === "string") as string | undefined;
         s = first ?? "";
     }
@@ -47,7 +58,9 @@ export function summarizeToolInput(input: unknown): string {
 /** Context window (tokens) for a Claude model; default 200k. */
 export function contextWindowFor(model: string): number {
     const m = (model || "").toLowerCase();
-    if (m.includes("[1m]") || m.includes("-1m")) { return 1000000; }
+    if (m.includes("[1m]") || m.includes("-1m")) {
+        return 1000000;
+    }
     return 200000;
 }
 
@@ -74,17 +87,23 @@ export function parseCodexUsage(event: unknown): CodexUsage | undefined {
     const e = (event ?? {}) as Record<string, unknown>;
     // Shape 2: token_count carries the richest data (incl. context window).
     const info = e.info ?? (e.payload as { info?: unknown })?.info;
-    const u = (info as { last_token_usage?: unknown; total_token_usage?: unknown })?.last_token_usage ??
-              (info as { last_token_usage?: unknown; total_token_usage?: unknown })?.total_token_usage ??
-              e.usage ??
-              ((e.message as { usage?: unknown })?.usage);
-    if (!u || typeof u !== "object") { return undefined; }
+    const u =
+        (info as { last_token_usage?: unknown; total_token_usage?: unknown })?.last_token_usage ??
+        (info as { last_token_usage?: unknown; total_token_usage?: unknown })?.total_token_usage ??
+        e.usage ??
+        (e.message as { usage?: unknown })?.usage;
+    if (!u || typeof u !== "object") {
+        return undefined;
+    }
     const uObj = u as Record<string, unknown>;
-    const infoObj = typeof info === "object" && info !== null ? info as Record<string, unknown> : null;
+    const infoObj =
+        typeof info === "object" && info !== null ? (info as Record<string, unknown>) : null;
     const input = Number(uObj.input_tokens ?? 0);
     const output = Number(uObj.output_tokens ?? 0);
     const cached = Number(uObj.cached_input_tokens ?? uObj.cache_read_input_tokens ?? 0);
-    if (!input && !output && !cached) { return undefined; }
+    if (!input && !output && !cached) {
+        return undefined;
+    }
     const win = Number(infoObj?.model_context_window ?? 0) || undefined;
     return { inputTokens: input, outputTokens: output, cacheRead: cached, contextWindow: win };
 }
@@ -105,7 +124,10 @@ export function lineCount(s: unknown): number {
  * Approximate added/removed line counts for a write/edit tool. Edit: new vs old
  * string; MultiEdit: summed; Write: whole content added.
  */
-export function diffCounts(name: string, input: unknown): { added: number; removed: number } | undefined {
+export function diffCounts(
+    name: string,
+    input: unknown,
+): { added: number; removed: number } | undefined {
     const o = (input ?? {}) as Record<string, unknown>;
     if (name === "Write" || name === "write_file") {
         return { added: lineCount(o.content), removed: 0 };
@@ -114,7 +136,8 @@ export function diffCounts(name: string, input: unknown): { added: number; remov
         return { added: lineCount(o.new_string), removed: lineCount(o.old_string) };
     }
     if (name === "MultiEdit" && Array.isArray(o.edits)) {
-        let added = 0, removed = 0;
+        let added = 0,
+            removed = 0;
         for (const e of o.edits as Array<{ new_string?: string; old_string?: string }>) {
             added += lineCount(e?.new_string);
             removed += lineCount(e?.old_string);
@@ -162,9 +185,15 @@ export function toolResultText(content: unknown): string {
     if (typeof content === "string") {
         s = content;
     } else if (Array.isArray(content)) {
-        s = content.map((b: string | { text?: string }) => (typeof b === "string" ? b : b?.text ?? "")).join("");
+        s = content
+            .map((b: string | { text?: string }) => (typeof b === "string" ? b : (b?.text ?? "")))
+            .join("");
     } else {
-        try { s = JSON.stringify(content); } catch { s = String(content ?? ""); }
+        try {
+            s = JSON.stringify(content);
+        } catch {
+            s = String(content ?? "");
+        }
     }
     return s.length > 6000 ? s.slice(0, 6000) + "\n…(truncated)" : s;
 }
@@ -175,37 +204,85 @@ export function toolResultText(content: unknown): string {
  */
 export function mimeTypeFor(path: string): string | undefined {
     const m = /\.([a-z0-9]+)$/i.exec(path.trim());
-    if (!m) { return undefined; }
+    if (!m) {
+        return undefined;
+    }
     const ext = m[1].toLowerCase();
     const map: Record<string, string> = {
         // text / code
-        txt: "text/plain", md: "text/markdown", markdown: "text/markdown",
-        json: "application/json", jsonc: "application/json",
-        yaml: "application/yaml", yml: "application/yaml", toml: "application/toml",
-        xml: "application/xml", html: "text/html", htm: "text/html",
-        css: "text/css", csv: "text/csv", tsv: "text/tab-separated-values",
-        js: "text/javascript", mjs: "text/javascript", cjs: "text/javascript",
-        ts: "text/typescript", tsx: "text/typescript", jsx: "text/javascript",
-        py: "text/x-python", rb: "text/x-ruby", go: "text/x-go", rs: "text/x-rust",
-        java: "text/x-java", c: "text/x-c", h: "text/x-c", cpp: "text/x-c++", cc: "text/x-c++",
-        cs: "text/x-csharp", php: "text/x-php", sh: "application/x-sh", bash: "application/x-sh",
-        sql: "application/sql", ini: "text/plain", cfg: "text/plain", conf: "text/plain",
-        log: "text/plain", env: "text/plain", svg: "image/svg+xml",
+        txt: "text/plain",
+        md: "text/markdown",
+        markdown: "text/markdown",
+        json: "application/json",
+        jsonc: "application/json",
+        yaml: "application/yaml",
+        yml: "application/yaml",
+        toml: "application/toml",
+        xml: "application/xml",
+        html: "text/html",
+        htm: "text/html",
+        css: "text/css",
+        csv: "text/csv",
+        tsv: "text/tab-separated-values",
+        js: "text/javascript",
+        mjs: "text/javascript",
+        cjs: "text/javascript",
+        ts: "text/typescript",
+        tsx: "text/typescript",
+        jsx: "text/javascript",
+        py: "text/x-python",
+        rb: "text/x-ruby",
+        go: "text/x-go",
+        rs: "text/x-rust",
+        java: "text/x-java",
+        c: "text/x-c",
+        h: "text/x-c",
+        cpp: "text/x-c++",
+        cc: "text/x-c++",
+        cs: "text/x-csharp",
+        php: "text/x-php",
+        sh: "application/x-sh",
+        bash: "application/x-sh",
+        sql: "application/sql",
+        ini: "text/plain",
+        cfg: "text/plain",
+        conf: "text/plain",
+        log: "text/plain",
+        env: "text/plain",
+        svg: "image/svg+xml",
         // images
-        png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
-        webp: "image/webp", bmp: "image/bmp", ico: "image/x-icon",
-        tif: "image/tiff", tiff: "image/tiff", avif: "image/avif", heic: "image/heic",
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        webp: "image/webp",
+        bmp: "image/bmp",
+        ico: "image/x-icon",
+        tif: "image/tiff",
+        tiff: "image/tiff",
+        avif: "image/avif",
+        heic: "image/heic",
         // docs / archives / media
-        pdf: "application/pdf", zip: "application/zip", gz: "application/gzip",
-        tar: "application/x-tar", "7z": "application/x-7z-compressed", rar: "application/vnd.rar",
+        pdf: "application/pdf",
+        zip: "application/zip",
+        gz: "application/gzip",
+        tar: "application/x-tar",
+        "7z": "application/x-7z-compressed",
+        rar: "application/vnd.rar",
         doc: "application/msword",
         docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         xls: "application/vnd.ms-excel",
         xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ppt: "application/vnd.ms-powerpoint",
         pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        mp3: "audio/mpeg", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac",
-        mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", mkv: "video/x-matroska",
+        mp3: "audio/mpeg",
+        wav: "audio/wav",
+        ogg: "audio/ogg",
+        flac: "audio/flac",
+        mp4: "video/mp4",
+        webm: "video/webm",
+        mov: "video/quicktime",
+        mkv: "video/x-matroska",
         wasm: "application/wasm",
     };
     return map[ext];

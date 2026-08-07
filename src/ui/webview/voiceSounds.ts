@@ -1,5 +1,5 @@
 export function playStartSound() {
-    const audioCtx = new (window as any).AudioContext();
+    const audioCtx = new AudioContext();
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
 
@@ -16,7 +16,7 @@ export function playStartSound() {
 }
 
 export function playStopSound() {
-    const audioCtx = new (window as any).AudioContext();
+    const audioCtx = new AudioContext();
     const oscillator = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
 

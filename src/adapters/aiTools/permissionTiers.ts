@@ -15,15 +15,22 @@ export type ToolTier = "read" | "write" | "destructive";
 
 /** Never mutates anything; always safe, in every mode including "user". */
 const READ_TOOLS = new Set([
-    "memory_search", "memory_get_observations", "list_tasks", "web_search",
-    "read_file", "list_dir", "fetch_url", "open_url", "read_session",
-    "get_workspace_bootstrap", "list_agents", "agent_status",
+    "memory_search",
+    "memory_get_observations",
+    "list_tasks",
+    "web_search",
+    "read_file",
+    "list_dir",
+    "fetch_url",
+    "open_url",
+    "read_session",
+    "get_workspace_bootstrap",
+    "list_agents",
+    "agent_status",
 ]);
 
 /** Irreversible or arbitrary-execution: gated even in "manager" mode. */
-const DESTRUCTIVE_TOOLS = new Set([
-    "shell", "clear_guardrails", "agent_stop",
-]);
+const DESTRUCTIVE_TOOLS = new Set(["shell", "clear_guardrails", "agent_stop"]);
 
 /**
  * Bridged VS Code Language Model tools (runInTerminal/runTask/runTests/
@@ -36,8 +43,12 @@ const LM_DESTRUCTIVE_PATTERN = /terminal|exec|shell|command/i;
 
 /** Classifies one of Symposium's own tools (aiTools/defs.ts, localDefs.ts, subagentDefs.ts). */
 export function classifyTool(name: string): ToolTier {
-    if (READ_TOOLS.has(name)) { return "read"; }
-    if (DESTRUCTIVE_TOOLS.has(name)) { return "destructive"; }
+    if (READ_TOOLS.has(name)) {
+        return "read";
+    }
+    if (DESTRUCTIVE_TOOLS.has(name)) {
+        return "destructive";
+    }
     return "write";
 }
 
@@ -58,8 +69,11 @@ export const PERMISSION_MODES: PermissionMode[] = ["admin", "manager", "user", "
  */
 export function needsApproval(mode: string | undefined, tier: ToolTier): boolean {
     switch (mode) {
-        case "user": return tier !== "read";
-        case "manager": return tier === "destructive";
-        default: return false; // "admin", "plan", unset
+        case "user":
+            return tier !== "read";
+        case "manager":
+            return tier === "destructive";
+        default:
+            return false; // "admin", "plan", unset
     }
 }

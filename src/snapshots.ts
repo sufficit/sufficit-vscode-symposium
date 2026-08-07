@@ -18,17 +18,28 @@ class SnapshotStore {
 
     private bucket(sessionId: string): Map<string, Snapshot> {
         let m = this.bySession.get(sessionId);
-        if (!m) { m = new Map(); this.bySession.set(sessionId, m); }
+        if (!m) {
+            m = new Map();
+            this.bySession.set(sessionId, m);
+        }
         return m;
     }
 
     /** Records the file's current content as the baseline, once per session+file. */
     capture(sessionId: string, filePath: string): void {
-        if (!sessionId || !filePath) { return; }
+        if (!sessionId || !filePath) {
+            return;
+        }
         const bucket = this.bucket(sessionId);
-        if (bucket.has(filePath)) { return; }   // keep the earliest baseline
+        if (bucket.has(filePath)) {
+            return;
+        } // keep the earliest baseline
         let original: string | null = null;
-        try { original = fs.readFileSync(filePath, "utf8"); } catch { original = null; }
+        try {
+            original = fs.readFileSync(filePath, "utf8");
+        } catch {
+            original = null;
+        }
         bucket.set(filePath, { original });
     }
 
@@ -45,7 +56,9 @@ class SnapshotStore {
     /** Reverts the file to its baseline (or deletes it if it was newly created). */
     async revert(sessionId: string, filePath: string): Promise<boolean> {
         const snap = this.bySession.get(sessionId)?.get(filePath);
-        if (!snap) { return false; }
+        if (!snap) {
+            return false;
+        }
         try {
             if (snap.original === null) {
                 await fs.promises.rm(filePath, { force: true });

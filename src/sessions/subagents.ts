@@ -1,9 +1,15 @@
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { aiToolsForAgent } from "../adapters/aiTools/defs";
 import { SubagentHandle, SubagentHost, SubagentStatus } from "../adapters/aiTools/types";
-import { readAgentBackend, readAgentBody, readAgentModel, readAgentTools, agentExists } from "../config/root";
+import {
+    readAgentBackend,
+    readAgentBody,
+    readAgentModel,
+    readAgentTools,
+    agentExists,
+} from "../config/agentFrontmatter";
 import { resolveSubagentModel } from "./subagentModel";
-import { ChatController } from "../ui/chatController";
+import { ChatController } from "../application/chatController";
 import { LiveSessions } from "./runtime";
 
 /**
@@ -44,7 +50,10 @@ interface Rec {
 
 /** Splits a `a, b, c` constraint string into trimmed, non-empty patterns. */
 function parseList(s: string): string[] {
-    return s.split(",").map((x) => x.trim()).filter(Boolean);
+    return s
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
 }
 
 function isWildcard(p: string): boolean {
@@ -54,7 +63,13 @@ function isWildcard(p: string): boolean {
 /** Glob-style match: `*` → any run, `?` → one char. Case-insensitive, anchored. */
 function matchWildcard(pattern: string, value: string): boolean {
     const re = new RegExp(
-        "^" + pattern.trim().replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$",
+        "^" +
+            pattern
+                .trim()
+                .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+                .replace(/\*/g, ".*")
+                .replace(/\?/g, ".") +
+            "$",
         "i",
     );
     return re.test(value);
@@ -63,7 +78,9 @@ function matchWildcard(pattern: string, value: string): boolean {
 /** True when `value` satisfies a (possibly multi-pattern, wildcard) constraint. */
 function matchAny(constraint: string, value: string): boolean {
     const ps = parseList(constraint);
-    if (!ps.length) { return true; }
+    if (!ps.length) {
+        return true;
+    }
     return ps.some((p) => p === "*" || matchWildcard(p, value));
 }
 
@@ -83,32 +100,60 @@ export class SubagentManager implements SubagentHost {
          *  no-activity turn cap so a slow foreground spawn degrades to background
          *  instead of stalling (and killing) the parent turn. */
         private readonly timeoutMs: () => number = () => 120000,
-    ) { }
+    ) {}
 
     async spawn(opts: {
-        agent: string; task: string; backend?: string; model?: string;
-        cwd: string; background: boolean; permission?: string; parentSessionId?: string; parentBackend?: string;
+        agent: string;
+        task: string;
+        backend?: string;
+        model?: string;
+        cwd: string;
+        background: boolean;
+        permission?: string;
+        parentSessionId?: string;
+        parentBackend?: string;
     }): Promise<SubagentStatus> {
         const agent = String(opts.agent ?? "").trim();
         const task = String(opts.task ?? "").trim();
-        if (!agent) { return this.err("", agent, "", "agent name is required"); }
-        if (!task) { return this.err("", agent, "", "task is required"); }
+        if (!agent) {
+            return this.err("", agent, "", "agent name is required");
+        }
+        if (!task) {
+            return this.err("", agent, "", "task is required");
+        }
         // The agent-def must exist locally; otherwise readAgentBody() silently
         // returns "" and we'd run a hollow, prompt-less session. Fail loudly and
         // point at Sync → Pull / Configuration → Agents instead.
         if (!agentExists(agent)) {
-            return this.err("", agent, "", `agent '${agent}' not found under ~/.symposium/repo/agents — run Sync → Pull or check Configuration → Agents`);
+            return this.err(
+                "",
+                agent,
+                "",
+                `agent '${agent}' not found under ~/.symposium/repo/agents — run Sync → Pull or check Configuration → Agents`,
+            );
         }
 
         // Depth + concurrency guards keep a delegation tree bounded.
-        const parentDepth = opts.parentSessionId ? (this.recs.get(opts.parentSessionId)?.depth ?? 0) : 0;
+        const parentDepth = opts.parentSessionId
+            ? (this.recs.get(opts.parentSessionId)?.depth ?? 0)
+            : 0;
         const depth = parentDepth + 1;
         if (depth > MAX_DEPTH) {
-            return this.err("", agent, "", `max subagent depth (${MAX_DEPTH}) reached — this agent is already a subagent`);
+            return this.err(
+                "",
+                agent,
+                "",
+                `max subagent depth (${MAX_DEPTH}) reached — this agent is already a subagent`,
+            );
         }
         const active = [...this.recs.values()].filter((r) => r.status === "working").length;
         if (active >= MAX_CONCURRENT) {
-            return this.err("", agent, "", `too many active subagents (${active}/${MAX_CONCURRENT}); wait or agent_stop one first`);
+            return this.err(
+                "",
+                agent,
+                "",
+                `too many active subagents (${active}/${MAX_CONCURRENT}); wait or agent_stop one first`,
+            );
         }
 
         // Resolve backend against the def constraint + arg + parent fallback.
@@ -116,15 +161,31 @@ export class SubagentManager implements SubagentHost {
         const requested = String(opts.backend ?? "").trim();
         const backend = requested || firstConcrete(defBackend) || opts.parentBackend || "openai";
         if (defBackend && !matchAny(defBackend, backend)) {
-            return this.err("", agent, backend, `agent '${agent}' restricts backend to '${defBackend}'; '${backend}' is not allowed`);
+            return this.err(
+                "",
+                agent,
+                backend,
+                `agent '${agent}' restricts backend to '${defBackend}'; '${backend}' is not allowed`,
+            );
         }
         const adapter = this.adapterByBackend.get(backend);
-        if (!adapter) { return this.err("", agent, backend, `unknown backend '${backend}'`); }
+        if (!adapter) {
+            return this.err("", agent, backend, `unknown backend '${backend}'`);
+        }
 
         // Resolve model the same way (def pin / arg, wildcard-validated).
-        const modelResult = await resolveSubagentModel(adapter, readAgentModel(agent), String(opts.model ?? ""));
+        const modelResult = await resolveSubagentModel(
+            adapter,
+            readAgentModel(agent),
+            String(opts.model ?? ""),
+        );
         if (modelResult.error) {
-            return this.err("", agent, backend, `${modelResult.error}; refresh the model catalog or use a provider/model route`);
+            return this.err(
+                "",
+                agent,
+                backend,
+                `${modelResult.error}; refresh the model catalog or use a provider/model route`,
+            );
         }
         const model = modelResult.model;
 
@@ -142,15 +203,27 @@ export class SubagentManager implements SubagentHost {
         const { key, controller } = this.live.createWithKey(adapter, options);
         const id = controller.sessionId ?? key;
         const rec: Rec = {
-            id, key, agent, backend, title: `Subagent: ${agent}`, controller,
-            output: "", steps: 0, status: "working", parentSessionId: opts.parentSessionId,
-            depth, unsub: () => { }, waiters: [],
+            id,
+            key,
+            agent,
+            backend,
+            title: `Subagent: ${agent}`,
+            controller,
+            output: "",
+            steps: 0,
+            status: "working",
+            parentSessionId: opts.parentSessionId,
+            depth,
+            unsub: () => {},
+            waiters: [],
         };
         rec.unsub = controller.subscribe((m) => this.onMessage(rec, m));
         this.recs.set(id, rec);
         controller.sendText(task);
 
-        if (opts.background) { return this.snapshot(rec); }
+        if (opts.background) {
+            return this.snapshot(rec);
+        }
         return this.waitIdle(rec, this.timeoutMs());
     }
 
@@ -161,7 +234,9 @@ export class SubagentManager implements SubagentHost {
 
     send(id: string, text: string): boolean {
         const rec = this.find(id);
-        if (!rec || rec.status === "gone") { return false; }
+        if (!rec || rec.status === "gone") {
+            return false;
+        }
         rec.status = "working";
         rec.controller.sendText(String(text ?? ""));
         return true;
@@ -169,7 +244,9 @@ export class SubagentManager implements SubagentHost {
 
     stop(id: string): boolean {
         const rec = this.find(id);
-        if (!rec) { return false; }
+        if (!rec) {
+            return false;
+        }
         rec.controller.interrupt();
         this.live.disposeBySessionId(rec.controller.sessionId ?? rec.key);
         rec.status = "gone";
@@ -184,14 +261,29 @@ export class SubagentManager implements SubagentHost {
 
     list(parentSessionId?: string): SubagentHandle[] {
         return [...this.recs.values()]
-            .filter((r) => r.status !== "gone" && (!parentSessionId || r.parentSessionId === parentSessionId))
-            .map((r) => ({ id: r.id, agent: r.agent, backend: r.backend, status: r.status, title: r.title }));
+            .filter(
+                (r) =>
+                    r.status !== "gone" &&
+                    (!parentSessionId || r.parentSessionId === parentSessionId),
+            )
+            .map((r) => ({
+                id: r.id,
+                agent: r.agent,
+                backend: r.backend,
+                status: r.status,
+                title: r.title,
+            }));
     }
 
     /** Accumulate output/steps and resolve foreground waiters on turn end. */
     private onMessage(rec: Rec, m: unknown): void {
-        const msg = m as { type?: string; event?: { kind?: string; text?: string; message?: string } };
-        if (!msg || msg.type !== "event" || !msg.event) { return; }
+        const msg = m as {
+            type?: string;
+            event?: { kind?: string; text?: string; message?: string };
+        };
+        if (!msg || msg.type !== "event" || !msg.event) {
+            return;
+        }
         const ev = msg.event;
         if (ev.kind === "text" && typeof ev.text === "string") {
             rec.output = (rec.output + ev.text).slice(-MAX_OUTPUT);
@@ -208,22 +300,39 @@ export class SubagentManager implements SubagentHost {
                 rec.id = sid;
                 this.recs.set(sid, rec);
             }
-            if (rec.status !== "gone") { rec.status = "idle"; }
+            if (rec.status !== "gone") {
+                rec.status = "idle";
+            }
             this.flush(rec);
         }
     }
 
     private waitIdle(rec: Rec, timeoutMs: number): Promise<SubagentStatus> {
-        if (rec.status !== "working") { return Promise.resolve(this.snapshot(rec)); }
+        if (rec.status !== "working") {
+            return Promise.resolve(this.snapshot(rec));
+        }
         return new Promise((resolve) => {
-            const waiter = (s: SubagentStatus) => { clearTimeout(timer); resolve(s); };
-            const timer = setTimeout(() => {
-                const i = rec.waiters.indexOf(waiter);
-                if (i >= 0) { rec.waiters.splice(i, 1); }
-                // Timed out waiting: leave it running and return the partial state so
-                // the caller can keep polling with agent_status.
-                resolve({ ...this.snapshot(rec), error: rec.error ?? "foreground wait timed out — still running in the background" });
-            }, Math.max(1000, timeoutMs));
+            const waiter = (s: SubagentStatus) => {
+                clearTimeout(timer);
+                resolve(s);
+            };
+            const timer = setTimeout(
+                () => {
+                    const i = rec.waiters.indexOf(waiter);
+                    if (i >= 0) {
+                        rec.waiters.splice(i, 1);
+                    }
+                    // Timed out waiting: leave it running and return the partial state so
+                    // the caller can keep polling with agent_status.
+                    resolve({
+                        ...this.snapshot(rec),
+                        error:
+                            rec.error ??
+                            "foreground wait timed out — still running in the background",
+                    });
+                },
+                Math.max(1000, timeoutMs),
+            );
             rec.waiters.push(waiter);
         });
     }
@@ -235,12 +344,22 @@ export class SubagentManager implements SubagentHost {
 
     private find(id: string): Rec | undefined {
         const key = String(id ?? "");
-        return this.recs.get(key)
-            ?? [...this.recs.values()].find((r) => r.key === key || r.controller.sessionId === key);
+        return (
+            this.recs.get(key) ??
+            [...this.recs.values()].find((r) => r.key === key || r.controller.sessionId === key)
+        );
     }
 
     private snapshot(rec: Rec): SubagentStatus {
-        return { id: rec.id, agent: rec.agent, backend: rec.backend, status: rec.status, output: rec.output, steps: rec.steps, error: rec.error };
+        return {
+            id: rec.id,
+            agent: rec.agent,
+            backend: rec.backend,
+            status: rec.status,
+            output: rec.output,
+            steps: rec.steps,
+            error: rec.error,
+        };
     }
 
     private err(id: string, agent: string, backend: string, error: string): SubagentStatus {

@@ -12,13 +12,28 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import {
-    STT_ENGINES, ALL_MODELS, SttEngineId, SttModelSpec, findModel, toShortLang,
+    STT_ENGINES,
+    ALL_MODELS,
+    SttEngineId,
+    SttModelSpec,
+    findModel,
+    toShortLang,
 } from "./sttCatalog";
 import {
-    initModelStorage, modelsDir, modelPath, isInstalled, downloadModel, deleteModel, DownloadProgress,
+    initModelStorage,
+    modelsDir,
+    modelPath,
+    isInstalled,
+    downloadModel,
+    deleteModel,
+    DownloadProgress,
 } from "./sttModels";
 import {
-    toWav16k, transcribeWhisperCpp, transcribeFasterWhisper, transcribeVosk, commandAvailable,
+    toWav16k,
+    transcribeWhisperCpp,
+    transcribeFasterWhisper,
+    transcribeVosk,
+    commandAvailable,
 } from "./sttEngines";
 import { getVscodeSpeechStatus, isVscodeSpeechAvailable } from "./vscodeSpeechBridge";
 
@@ -27,8 +42,23 @@ export interface SttSettings {
     language: string;
     modelsDir: string;
     ffmpegPath: string;
-    whisper: { binaryPath: string; model: string; threads: number; translate: boolean; beamSize: number; temperature: number; initialPrompt: string };
-    fasterWhisper: { binaryPath: string; model: string; device: string; computeType: string; beamSize: number; vad: boolean };
+    whisper: {
+        binaryPath: string;
+        model: string;
+        threads: number;
+        translate: boolean;
+        beamSize: number;
+        temperature: number;
+        initialPrompt: string;
+    };
+    fasterWhisper: {
+        binaryPath: string;
+        model: string;
+        device: string;
+        computeType: string;
+        beamSize: number;
+        vad: boolean;
+    };
     vosk: { binaryPath: string; model: string };
 }
 
@@ -73,7 +103,14 @@ function resolvedRoot(s: SttSettings): string {
 
 /** Picks the concrete local engine to run. "auto"/"webspeech" fall back to whisper.cpp on the host. */
 export function resolveLocalEngine(s: SttSettings): SttEngineId {
-    if (s.engine === "vscode-speech" || s.engine === "whisper-cpp" || s.engine === "faster-whisper" || s.engine === "vosk") { return s.engine; }
+    if (
+        s.engine === "vscode-speech" ||
+        s.engine === "whisper-cpp" ||
+        s.engine === "faster-whisper" ||
+        s.engine === "vosk"
+    ) {
+        return s.engine;
+    }
     return "whisper-cpp";
 }
 
@@ -103,7 +140,8 @@ export async function isLocalSttReady(): Promise<boolean> {
         return isVscodeSpeechAvailable();
     }
     // ffmpeg is required for every local path (capture → 16 kHz mono WAV).
-    const cmd = (fallback: string, override: string) => (override && override.trim() ? override.trim() : fallback);
+    const cmd = (fallback: string, override: string) =>
+        override && override.trim() ? override.trim() : fallback;
     const probes: Promise<boolean>[] = [
         commandAvailable(s.ffmpegPath && s.ffmpegPath.trim() ? s.ffmpegPath.trim() : "ffmpeg"),
     ];
@@ -115,11 +153,15 @@ export async function isLocalSttReady(): Promise<boolean> {
         probes.push(commandAvailable(cmd("vosk-transcriber", s.vosk.binaryPath)));
     }
     const results = await Promise.all(probes);
-    if (!results.every(Boolean)) { return false; }
+    if (!results.every(Boolean)) {
+        return false;
+    }
     // At least one installed model for this engine. faster-whisper fetches its
     // own models on first use (no managed download), so it counts as ready on
     // binary presence alone; whisper-cpp and vosk need a managed model file.
-    if (engine === "faster-whisper") { return true; }
+    if (engine === "faster-whisper") {
+        return true;
+    }
     return ALL_MODELS.some((m) => m.engine === engine && isInstalled(m, root));
 }
 
@@ -127,7 +169,8 @@ export async function isLocalSttReady(): Promise<boolean> {
 export async function getSttState(): Promise<Record<string, unknown>> {
     const s = readSettings();
     const root = resolvedRoot(s);
-    const cmd = (fallback: string, override: string) => (override && override.trim() ? override.trim() : fallback);
+    const cmd = (fallback: string, override: string) =>
+        override && override.trim() ? override.trim() : fallback;
     const [ffmpegOk, whisperOk, fasterOk, voskOk] = await Promise.all([
         commandAvailable(s.ffmpegPath && s.ffmpegPath.trim() ? s.ffmpegPath.trim() : "ffmpeg"),
         commandAvailable(cmd("whisper-cli", s.whisper.binaryPath)),
@@ -137,7 +180,11 @@ export async function getSttState(): Promise<Record<string, unknown>> {
     const vscodeSpeechStatus = getVscodeSpeechStatus();
     const vscodeSpeechOk = vscodeSpeechStatus.supported && vscodeSpeechStatus.installed;
     const models = ALL_MODELS.map((m) => ({
-        id: m.id, engine: m.engine, label: m.label, size: m.size, languages: m.languages,
+        id: m.id,
+        engine: m.engine,
+        label: m.label,
+        size: m.size,
+        languages: m.languages,
         installed: isInstalled(m, root),
     }));
     return {
@@ -146,12 +193,21 @@ export async function getSttState(): Promise<Record<string, unknown>> {
         engines: STT_ENGINES,
         models,
         vscodeSpeechStatus,
-        availability: { ffmpeg: ffmpegOk, "vscode-speech": vscodeSpeechOk, "whisper-cpp": whisperOk, "faster-whisper": fasterOk, vosk: voskOk },
+        availability: {
+            ffmpeg: ffmpegOk,
+            "vscode-speech": vscodeSpeechOk,
+            "whisper-cpp": whisperOk,
+            "faster-whisper": fasterOk,
+            vosk: voskOk,
+        },
     };
 }
 
 /** Downloads a model by id, forwarding progress. Returns the installed path. */
-export async function downloadSttModel(modelId: string, onProgress: (p: DownloadProgress) => void): Promise<string> {
+export async function downloadSttModel(
+    modelId: string,
+    onProgress: (p: DownloadProgress) => void,
+): Promise<string> {
     const s = readSettings();
     return downloadModel(modelId, resolvedRoot(s), onProgress);
 }
@@ -173,7 +229,9 @@ export async function transcribeWav(wav: string): Promise<string> {
     const s = readSettings();
     const engine = resolveLocalEngine(s);
     if (engine === "vscode-speech") {
-        throw new Error("VS Code Speech captures audio through the VS Code UI; it cannot transcribe an external WAV file.");
+        throw new Error(
+            "VS Code Speech captures audio through the VS Code UI; it cannot transcribe an external WAV file.",
+        );
     }
     const lang = toShortLang(s.language);
     try {
@@ -208,7 +266,11 @@ export async function transcribeWav(wav: string): Promise<string> {
             modelPath: spec ? specPath(spec, s) : "",
         });
     } finally {
-        try { fs.unlinkSync(wav); } catch { /* ignore */ }
+        try {
+            fs.unlinkSync(wav);
+        } catch {
+            /* ignore */
+        }
     }
 }
 
@@ -223,8 +285,12 @@ export async function transcribeAudio(base64: string, mime: string): Promise<str
     fs.writeFileSync(input, Buffer.from(base64, "base64"));
     try {
         const wav = await toWav16k(input, s.ffmpegPath);
-        return await transcribeWav(wav);   // deletes the wav
+        return await transcribeWav(wav); // deletes the wav
     } finally {
-        try { fs.unlinkSync(input); } catch { /* ignore */ }
+        try {
+            fs.unlinkSync(input);
+        } catch {
+            /* ignore */
+        }
     }
 }
