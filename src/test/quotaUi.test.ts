@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { mergeQuotaSnapshot } from "../ui/quotaSnapshot";
+import { mergeQuotaSnapshot, resolveStatusbarData } from "../ui/quotaSnapshot";
 
 const statusbar = readFileSync(resolve(__dirname, "../../src/ui/webview/statusbar.ts"), "utf8");
 const events = readFileSync(resolve(__dirname, "../../src/ui/webview/events.ts"), "utf8");
@@ -95,6 +95,17 @@ test("quota badge renders only the current conversation adapter", () => {
     assert.match(statusbar, /type: "refresh-quotas"/);
     assert.match(statusbar, /quotaPopoverOpen/);
     assert.match(css, /\.quotaMeter\.quotaEmpty/);
+});
+
+test("quota redraw preserves the active backend instead of looking up an empty key", () => {
+    const codex = { backend: "codex", backendName: "Codex", cwd: "/workspace" };
+    assert.strictEqual(resolveStatusbarData(codex, {}), codex);
+    assert.strictEqual(resolveStatusbarData(codex), codex);
+    assert.deepEqual(
+        resolveStatusbarData(codex, { backend: "claude", backendName: "Claude" }),
+        { backend: "claude", backendName: "Claude" },
+    );
+    assert.match(statusbar, /resolveStatusbarData\(lastStatusData, data\)/);
 });
 
 test("chat surface asks only the active adapter usage singleton", () => {

@@ -7,7 +7,7 @@ import { modelLabel } from "./models";
 import { svgIcon } from "./icons";
 import { hideCtx } from "./menus";
 import { send } from "./composer";
-import { mergeQuotaSnapshot } from "../quotaSnapshot";
+import { mergeQuotaSnapshot, resolveStatusbarData } from "../quotaSnapshot";
 
 let lastUsage = null;
 let lastStatusData: any = {};
@@ -78,8 +78,8 @@ function meter(percent, label, onOpen, className = "", displayedPercent = percen
     return button;
 }
 
-export function renderStatusbar(data: any = {}) {
-    lastStatusData = data || lastStatusData;
+export function renderStatusbar(data?: any) {
+    lastStatusData = resolveStatusbarData(lastStatusData, data);
     data = lastStatusData;
     const quotaPopoverOpen = ctxMenu.style.display === "block" && !!ctxMenu.querySelector(".quotaPop");
     statusbar.textContent = "";
