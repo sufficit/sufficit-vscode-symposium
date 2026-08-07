@@ -2,21 +2,7 @@ import * as vscode from "vscode";
 import * as fs from "fs";
 import * as path from "path";
 import { listServers, deleteServer, importServersFromConfig, writeManifest, serverSubdir, readManifest, ServerManifest } from "../config/servers";
-import type { ConfigHandlerCtx, ConfigMessage } from "./configPanel";
-
-/** Payload from the in-panel MCP add/edit form (configViews mcpFormModal). */
-export interface McpFormPayload {
-    mode?: "add" | "edit";
-    originalName?: string;
-    name?: string;
-    transport?: string;
-    description?: string;
-    command?: string;
-    args?: string;
-    url?: string;
-    headers?: string;
-    env?: string;
-}
+import type { ConfigHandlerCtx, ConfigMessage, McpFormPayload } from "./configTypes";
 
 /**
  * Handles MCP (Model Context Protocol) server webview messages for a live

@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import type { CompressionPreset, CompressionStrategyType } from "../compression/types";
-import type { ConfigHandlerCtx, ConfigMessage } from "./configPanel";
+import type { ConfigHandlerCtx, ConfigMessage } from "./configTypes";
 
 /**
  * Handles compression-preset webview messages for a live ConfigPanel. Mirrors

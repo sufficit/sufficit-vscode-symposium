@@ -4,7 +4,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import type { AdapterUsageProvider } from "../adapters/types";
-import { symposiumLog } from "../extension";
+import { symposiumLog } from "../extension/log";
 
 export interface ActiveEditorContext {
     path?: string;

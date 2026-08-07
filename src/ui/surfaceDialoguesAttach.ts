@@ -1,4 +1,4 @@
-import { SurfaceDialoguesDeps } from "./surfaceDialogues";
+import { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import { completedTaskIds } from "../sync/taskUi";
 
 /**

@@ -8,7 +8,7 @@
  */
 import * as vscode from "vscode";
 import type { WebviewToHost } from "./protocol";
-import type { SurfaceMessagesDeps } from "./surfaceMessages";
+import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
 /** Handles session-action / session-list-backends / session-switch-backend. Returns true if handled. */
 export async function handleSessionMessage(message: WebviewToHost, d: SurfaceMessagesDeps): Promise<boolean> {

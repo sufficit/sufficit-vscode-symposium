@@ -22,3 +22,7 @@ yarn.lock
 pnpm-lock.yaml
 scripts/**
 .mjs-cache/**
+examples/**
+voice-ptbr-*/**
+voice-ptbr-extension.*
+voice-ptbr-package.json

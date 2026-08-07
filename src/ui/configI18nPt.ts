@@ -5,6 +5,7 @@
 type Dict = Record<string, string>;
 
 export const CONFIG_PT: Dict = {
+    "config.tab.vscode": "VS Code",
     "config.title": "Symposium · Configuração",
     "config.header.hubUnknown": "hub: —",
     "config.header.hubPrefix": "hub: ",

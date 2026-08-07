@@ -7,7 +7,7 @@
  * back to the webview. Behavior is identical to the inline case bodies.
  */
 import type { WebviewToHost } from "./protocol";
-import type { SurfaceMessagesDeps } from "./surfaceMessages";
+import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
 /** Handles voice-start/stop/cancel/stt-transcribe. Returns true if handled. */
 export async function handleVoiceMessage(message: WebviewToHost, d: SurfaceMessagesDeps): Promise<boolean> {

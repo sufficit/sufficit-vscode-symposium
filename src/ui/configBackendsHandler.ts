@@ -4,7 +4,7 @@ import * as path from "path";
 import { rootDir } from "../config/root";
 import { AdapterPatch } from "../api/symposiumApi";
 import { HubClient } from "../sync/hubClient";
-import type { ConfigHandlerCtx, ConfigMessage } from "./configPanel";
+import type { ConfigHandlerCtx, ConfigMessage } from "./configTypes";
 
 type StoredAdapterEntry = AdapterPatch & {
     id?: string;

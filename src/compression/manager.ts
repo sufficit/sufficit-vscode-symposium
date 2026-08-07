@@ -62,12 +62,12 @@ export class CompressionManager {
 
     getDefaultPresetId(): string {
         const config = vscode.workspace.getConfiguration("symposium.compression");
-        return config.get<string>("defaultPreset", "none");
+        return config.get<string>("defaultPresetId", "none");
     }
 
     async setDefaultPreset(id: string): Promise<void> {
         const config = vscode.workspace.getConfiguration("symposium.compression");
-        await config.update("defaultPreset", id, vscode.ConfigurationTarget.Global);
+        await config.update("defaultPresetId", id, vscode.ConfigurationTarget.Global);
     }
 
     isPerSessionEnabled(): boolean {

@@ -65,42 +65,31 @@ async function build() {
   // out/test/ by tsc and consumed by `node --test out/test/*.test.js` in the
   // `test` script. Removing them broke npm test (it reported 0 tests because
   // the files were deleted before node --test ran).
-  const dirsToRemove = ['adapters', 'api', 'auth', 'chat', 'commands', 'compression', 'config', 'extension', 'sessions', 'sync'];
-  dirsToRemove.forEach(dir => {
-    const dirPath = path.join(outDir, dir);
-    if (fs.existsSync(dirPath)) {
-      fs.rmSync(dirPath, { recursive: true, force: true });
+  // The extension host is fully bundled into extension.js. Keep only outputs
+  // that are loaded as independent browser assets plus compiled tests used by
+  // `npm test`. Discover directories dynamically so new namespaces cannot leak
+  // duplicate JavaScript into the VSIX when the source tree grows.
+  const keepDirs = new Set(['pwa', 'test', 'ui']);
+  for (const entry of fs.readdirSync(outDir, { withFileTypes: true })) {
+    if (entry.isDirectory() && !keepDirs.has(entry.name)) {
+      fs.rmSync(path.join(outDir, entry.name), { recursive: true, force: true });
     }
-  });
+  }
 
-  // Remove top-level JS files and maps (except extension.js and its map)
-  const filesToRemove = [
-    'git.js', 'git.js.map',
-    'ledger.js', 'ledger.js.map',
-    'renderLog.js', 'renderLog.js.map',
-    'sessionReader.js', 'sessionReader.js.map',
-    'snapshots.js', 'snapshots.js.map'
-  ];
-  filesToRemove.forEach(file => {
-    const filePath = path.join(outDir, file);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-  });
+  // Remove top-level TypeScript outputs; extension.js is the sole host entry.
+  for (const file of fs.readdirSync(outDir)) {
+    if (!/\.js(?:\.map)?$/.test(file)) continue;
+    if (file === 'extension.js' || file === 'extension.js.map') continue;
+    fs.unlinkSync(path.join(outDir, file));
+  }
 
   // Remove UI compiled files (keep only webview.bundle.js and webview.css)
   const uiDir = path.join(outDir, 'ui');
   if (fs.existsSync(uiDir)) {
-    const uiFiles = fs.readdirSync(uiDir);
-    uiFiles.forEach(file => {
-      if (file !== 'webview.bundle.js' && file !== 'webview.css') {
-        const filePath = path.join(uiDir, file);
-        const stats = fs.statSync(filePath);
-        if (stats.isFile()) {
-          fs.unlinkSync(filePath);
-        }
-      }
-    });
+    for (const entry of fs.readdirSync(uiDir, { withFileTypes: true })) {
+      if (entry.name === 'webview.bundle.js' || entry.name === 'webview.css') continue;
+      fs.rmSync(path.join(uiDir, entry.name), { recursive: true, force: true });
+    }
   }
 
   console.log('✅ Bundle created successfully!');

@@ -4,7 +4,7 @@ import { ChatController } from "./chatController";
 import { WebviewToHost, AgentPickerEntry } from "./protocol";
 import { renderHtml } from "./chatHtml";
 import { TerminalSession } from "./terminalSession";
-import { symposiumLog } from "../extension";
+import { symposiumLog } from "../extension/log";
 import { ChangedFilesManager } from "./changedFiles";
 import { BackendHandoff } from "./backendHandoff";
 import { SurfaceSync } from "./surfaceSync";

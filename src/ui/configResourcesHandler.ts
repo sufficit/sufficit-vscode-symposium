@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { rootDir } from "../config/root";
-import type { ConfigHandlerCtx, ConfigMessage } from "./configPanel";
+import type { ConfigHandlerCtx, ConfigMessage } from "./configTypes";
 
 /**
  * Handles resource-management webview messages (seed/import/new/delete agents,

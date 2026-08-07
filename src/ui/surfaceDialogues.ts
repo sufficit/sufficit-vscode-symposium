@@ -3,7 +3,7 @@ import { HistoryMessage, SessionInfo, SessionStartOptions } from "../adapters/ty
 import { TerminalSession } from "./terminalSession";
 import { readWorkspaceBootstrap } from "../config/root";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
-import { symposiumLog } from "../extension";
+import { symposiumLog } from "../extension/log";
 import type { WebviewToHost } from "./protocol";
 import { restartFromMessage, retryLastMessage, editResend } from "./surfaceBranching";
 import { handleControllerEvent } from "./surfaceDialoguesAttach";

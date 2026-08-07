@@ -7,7 +7,7 @@
  * identical to the inline case bodies.
  */
 import type { WebviewToHost } from "./protocol";
-import type { SurfaceMessagesDeps } from "./surfaceMessages";
+import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 import { writeDroppedFile, writePastedImage, attachmentFromUri } from "./chatSurfaceContext";
 
 /** Handles paste-image / drop-file / drop-files / drop-uris. Returns true if handled. */

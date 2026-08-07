@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { ConfigHandlerCtx, ConfigMessage } from "./configPanel";
+import type { ConfigHandlerCtx, ConfigMessage } from "./configTypes";
 import { getSttState, readSettings } from "../voice/sttService";
 import { buildSttDiagnostic, SttDiagnosticSnapshot } from "../voice/sttDiagnostic";
 import { buildSttRecoveryPrompt, getSttRecoveryTarget } from "../voice/sttRecovery";

@@ -3,7 +3,20 @@ import { ResourceKind } from "../config/root";
 import { SymposiumApi } from "../api/symposiumApi";
 import { SufficitAuth } from "../auth/identity";
 import type { ChatViewProvider } from "./chatView";
-import type { McpFormPayload } from "./configMcpHandler";
+
+/** Payload from the in-panel MCP add/edit form. */
+export interface McpFormPayload {
+    mode?: "add" | "edit";
+    originalName?: string;
+    name?: string;
+    transport?: string;
+    description?: string;
+    command?: string;
+    args?: string;
+    url?: string;
+    headers?: string;
+    env?: string;
+}
 
 export interface ConfigPanelDeps {
     api: SymposiumApi;
@@ -11,6 +24,8 @@ export interface ConfigPanelDeps {
     /** Lets config handlers reveal a session they created programmatically
      *  (e.g. the automated Sufficit AI voice diagnostic). */
     chatView?: ChatViewProvider;
+    /** Session-index diagnostics injected by the extension composition root. */
+    sessionCacheStats?: () => { memoryUsageBytes: number; count: number };
 }
 
 /** Shape of the messages dispatched from the config webview to the host. */

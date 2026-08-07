@@ -27,10 +27,7 @@ import { initVscodeSpeechBridge } from "./voice/vscodeSpeechBridge";
 import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/codex/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
 
-// Re-exported so consumers (e.g. ui/chatSurface) can keep importing from here.
-export { symposiumLog } from "./extension/log";
-
-/** SessionIndex singleton (set during activate, read by configPanel). */
+/** SessionIndex singleton initialized during activation and shared with command wiring. */
 export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
 
 export function activate(context: vscode.ExtensionContext): SymposiumApi {

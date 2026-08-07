@@ -9,7 +9,7 @@
 export const configViewsCompression = `
     function compressionView() {
         const presets = (state && state.compression && state.compression.presets) || [];
-        const defaultPresetId = (state && state.compression && state.compression.defaultPresetId) || "builtin-standard";
+        const defaultPresetId = (state && state.compression && state.compression.defaultPresetId) || "none";
         const p = (state && state.prefs) || {};
 
         const sel = (key, value, opts) =>

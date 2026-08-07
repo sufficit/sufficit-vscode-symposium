@@ -7,15 +7,17 @@
 // string catches that before install.
 import { renderConfigScript } from "../out/ui/configScript.js";
 import { makeConfigDict } from "../out/ui/configI18n.js";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
 
-const tmp = `${process.cwd()}/out/_config-script-check.js`;
-try {
-    const script = renderConfigScript(makeConfigDict("pt-br"));
-    writeFileSync(tmp, script);
-    execSync(`node --check ${tmp}`, { stdio: "inherit" });
-    console.log("✓ config webview inline script is valid JS");
-} finally {
-    try { unlinkSync(tmp); } catch { /* already gone */ }
+for (const language of ["en", "pt-br"]) {
+    const tmp = `${process.cwd()}/out/_config-script-check-${language}.js`;
+    try {
+        const script = renderConfigScript(makeConfigDict(language));
+        writeFileSync(tmp, script);
+        execFileSync(process.execPath, ["--check", tmp], { stdio: "inherit" });
+    } finally {
+        try { unlinkSync(tmp); } catch { /* already gone */ }
+    }
 }
+console.log("✓ config webview inline scripts are valid JS for EN and PT-BR");

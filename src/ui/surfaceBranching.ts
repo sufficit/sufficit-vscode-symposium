@@ -1,5 +1,5 @@
 import type { SessionInfo, SessionStartOptions } from "../adapters/types";
-import type { SurfaceDialoguesDeps } from "./surfaceDialogues";
+import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import type { WebviewToHost } from "./protocol";
 
 /**

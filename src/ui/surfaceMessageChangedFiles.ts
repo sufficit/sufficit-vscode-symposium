@@ -8,7 +8,7 @@
  */
 import * as vscode from "vscode";
 import type { WebviewToHost } from "./protocol";
-import type { SurfaceMessagesDeps } from "./surfaceMessages";
+import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
 /** Handles file-approve/reject/approve-all/reject-all. Returns true if handled. */
 export async function handleChangedFilesMessage(message: WebviewToHost, d: SurfaceMessagesDeps): Promise<boolean> {

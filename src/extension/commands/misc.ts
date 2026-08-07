@@ -14,7 +14,16 @@ function sleep(ms: number): Promise<void> {
 
 /** View registration + diagnostics, settings, auth, seed and bridge commands. */
 export function registerMiscCommands(ctx: CommandContext): void {
-    const { context, chatView, api, auth, bridge, refreshAll, output } = ctx;
+    const { context, chatView, api, auth, bridge, refreshAll, output, sessionIndex } = ctx;
+    const configPanelDeps = {
+        api,
+        auth,
+        chatView,
+        sessionCacheStats: () => ({
+            memoryUsageBytes: sessionIndex.memoryUsageBytes() ?? 0,
+            count: sessionIndex.listCached().length,
+        }),
+    };
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(ChatViewProvider.viewId, chatView,
@@ -69,7 +78,7 @@ export function registerMiscCommands(ctx: CommandContext): void {
 
         // Dynamic configuration surface: agents/skills/tools/backends/sync.
         vscode.commands.registerCommand("symposium.openConfig", () =>
-            ConfigPanel.show(context, { api, auth, chatView })),
+            ConfigPanel.show(context, configPanelDeps)),
 
         // Sufficit Identity login / logout via the native auth provider (also
         // shows in the VS Code Accounts menu).
@@ -95,7 +104,7 @@ export function registerMiscCommands(ctx: CommandContext): void {
                 created > 0
                     ? `Symposium: created ${created} example(s) in ~/.symposium/repo.`
                     : "Symposium: examples already existed (nothing created).");
-            ConfigPanel.show(context, { api, auth, chatView });
+            ConfigPanel.show(context, configPanelDeps);
         }),
 
         // Manual recovery action; bridge setting changes are also applied live.

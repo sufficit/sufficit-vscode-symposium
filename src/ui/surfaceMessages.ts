@@ -7,7 +7,7 @@ import { handleVoiceMessage } from "./surfaceMessageVoice";
 import { handleFileMessage } from "./surfaceMessageFiles";
 import { handleChangedFilesMessage } from "./surfaceMessageChangedFiles";
 import { handleSessionMessage } from "./surfaceMessageSessions";
-import { symposiumLog } from "../extension";
+import { symposiumLog } from "../extension/log";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 import { handleMarkdownImageMessage } from "./surfaceMessageMarkdown";
 import { resolveLocalFileTarget } from "./markdownImages";
