@@ -40,9 +40,12 @@ export class SurfaceMessages {
                     void this.d.sync.pushAccount();
                     void this.d.sync.refreshTasks();
                     void this.d.sync.refreshGuardrails();
-                    // Nothing bound yet (view just opened): restore the last
-                    // active session if we have one, else start a fresh dialogue.
+                    // Only the sidebar restores its last session on first load.
+                    // An editor panel is always explicit (open session, terminal,
+                    // or new-session picker); restoring here would overwrite that
+                    // request with the last active session and add a network wait.
                     if (
+                        !this.d.chatOnly &&
                         !this.d.getController() &&
                         !this.d.getFollowHandle() &&
                         !this.d.getTerminalSession()

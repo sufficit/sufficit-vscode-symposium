@@ -11,6 +11,7 @@ const panels = source("ui/webview/panels.ts");
 const meta = source("ui/webview/meta.ts");
 const dispatch = source("ui/webview/dispatch.ts");
 const commandHelpers = source("extension/commands/helpers.ts");
+const surfaceMessages = source("ui/surfaceMessages.ts");
 const surfaceListeners = source("ui/chatSurfaceListeners.ts");
 const events = source("ui/webview/events.ts");
 const status = source("ui/webview/status.ts");
@@ -79,6 +80,17 @@ test("new-session actions honor editor mode even while the sidebar is visible", 
     assert.match(
         commandHelpers,
         /hidden chat column,[\s\S]*configured destination is authoritative/,
+    );
+});
+
+test("editor panels do not restore the last session over an explicit new session", () => {
+    assert.match(
+        surfaceMessages,
+        /if \([\s\S]*!this\.d\.chatOnly[\s\S]*!this\.d\.getController\(\)[\s\S]*restoreOrStart\(\)/,
+    );
+    assert.match(
+        surfaceMessages,
+        /editor panel is always explicit[\s\S]*restoring here would overwrite that/,
     );
 });
 
