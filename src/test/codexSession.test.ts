@@ -98,6 +98,63 @@ test("Codex exposes the latest effective model for session restoration", () => {
     session.dispose();
 });
 
+test("Codex keeps the reported context window and ignores cumulative thread totals", () => {
+    const session = new CodexSession(
+        {
+            executable: "codex",
+            model: "gpt-5.6-luna",
+            reasoning: "default",
+            approvalPolicy: "admin",
+            sandboxMode: "danger-full-access",
+        },
+        { cwd: process.cwd(), model: "gpt-5.6-luna" },
+    );
+    const events: Array<Record<string, unknown>> = [];
+    session.on("event", (event) => events.push(event as Record<string, unknown>));
+    const handleLine = (event: unknown) =>
+        (session as unknown as { handleLine(line: string): void }).handleLine(
+            JSON.stringify(event),
+        );
+
+    handleLine({
+        type: "event_msg",
+        payload: {
+            type: "token_count",
+            info: {
+                last_token_usage: { input_tokens: 198_673, output_tokens: 969 },
+                model_context_window: 258_400,
+            },
+        },
+    });
+    handleLine({
+        type: "event_msg",
+        payload: {
+            type: "token_count",
+            info: {
+                total_token_usage: { input_tokens: 476_945_930, output_tokens: 1_045_566 },
+                model_context_window: 258_400,
+            },
+        },
+    });
+    handleLine({
+        type: "turn.completed",
+        usage: { input_tokens: 199_000, output_tokens: 1_000 },
+    });
+
+    const usageEvents = events.filter((event) => event.kind === "usage");
+    assert.deepEqual(
+        usageEvents.map((event) => ({
+            inputTokens: event.inputTokens,
+            contextWindow: event.contextWindow,
+        })),
+        [
+            { inputTokens: 198_673, contextWindow: 258_400 },
+            { inputTokens: 199_000, contextWindow: 258_400 },
+        ],
+    );
+    session.dispose();
+});
+
 test("reasoning picker places the effective default without duplicating its level", () => {
     assert.deepEqual(
         buildReasoningMenuOptions(

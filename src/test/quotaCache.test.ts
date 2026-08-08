@@ -113,3 +113,20 @@ test("discovers camelCase rateLimits JSON without provider-specific window names
         },
     ]);
 });
+
+test("live quota observations survive an empty forced refresh", async () => {
+    const usage = new JsonlAdapterUsage("codex", "Codex", () => []);
+    usage.observe({
+        backend: "codex",
+        plan: "pro",
+        windows: [{ id: "primary", usedPercent: 23, windowMinutes: 10_080 }],
+        updatedAt: 123,
+    });
+
+    const result = await usage.read(true);
+
+    assert.equal(result.state, "stale");
+    assert.equal(result.displayName, "Codex");
+    assert.equal(result.updatedAt, 123);
+    assert.deepEqual(result.windows, [{ id: "primary", usedPercent: 23, windowMinutes: 10_080 }]);
+});

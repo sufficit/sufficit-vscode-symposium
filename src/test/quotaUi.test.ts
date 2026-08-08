@@ -89,6 +89,31 @@ test("ready Claude quota clears a stale authentication message and limit label",
     );
 });
 
+test("an unavailable refresh preserves the last live limits as stale", () => {
+    const current = mergeQuotaSnapshot(
+        {
+            backend: "codex",
+            displayName: "Codex",
+            plan: "pro",
+            windows: [{ id: "primary", usedPercent: 17, windowMinutes: 10_080 }],
+            updatedAt: 10,
+        },
+        {
+            backend: "codex",
+            displayName: "Codex",
+            windows: [],
+            updatedAt: 20,
+            state: "unavailable",
+            message: "No recent limits were found.",
+        },
+    );
+
+    assert.equal(current.state, "stale");
+    assert.equal(current.updatedAt, 10);
+    assert.equal(current.message, "No recent limits were found.");
+    assert.deepEqual(current.windows, [{ id: "primary", usedPercent: 17, windowMinutes: 10_080 }]);
+});
+
 test("quota panel renders semantic dynamic progress bars", () => {
     assert.match(events, /ev\.kind === "quota"/);
     assert.match(quotaPopover, /setAttribute\("role", "progressbar"\)/);

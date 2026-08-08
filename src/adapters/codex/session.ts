@@ -13,6 +13,7 @@ import {
     mapUnifiedToCodexFlags,
 } from "./codexMcpConfig";
 import { syncCodexSufficitMcp } from "./sufficitMcp";
+import { codexUsage } from "./usage";
 
 /** Resolve a picker value into the explicit model argument for one Codex turn. */
 export function codexModelArgs(selected: string | undefined, configured: string): string[] {
@@ -41,6 +42,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
     private warnedUnenforcedMode = false; // emitted the manager/user "not yet enforced" notice once
     private turnSequence = 0;
     private effectiveModel: string;
+    private lastContextWindow: number | undefined;
     private vscodeMcpServers: Record<string, { command: string; args: string[] }>;
 
     constructor(
@@ -215,7 +217,18 @@ export class CodexSession extends EventEmitter implements AgentSession {
         }
         const quota = parseAdapterQuota(event, this.backend);
         if (quota) {
+            codexUsage.observe(quota);
             this.emit("event", { kind: "quota", ...quota });
+        }
+        const payload =
+            typeof event.payload === "object" && event.payload !== null
+                ? (event.payload as Record<string, unknown>)
+                : undefined;
+        if (
+            event.type === "token_count" ||
+            (event.type === "event_msg" && payload?.type === "token_count")
+        ) {
+            this.emitUsage(event);
         }
         switch (event.type) {
             case "thread.started":
@@ -288,12 +301,6 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 }
                 break;
             }
-            case "token_count":
-                // Streamed during a turn (event_msg/token_count). Carries the
-                // richest usage incl. model_context_window — surface it live so
-                // the Context Window meter fills before the turn even ends.
-                this.emitUsage(event);
-                break;
             case "turn_context": {
                 const payload =
                     typeof event.payload === "object" && event.payload !== null
@@ -361,13 +368,18 @@ export class CodexSession extends EventEmitter implements AgentSession {
         if (!u) {
             return;
         }
+        if (u.contextWindow) {
+            this.lastContextWindow = u.contextWindow;
+        }
         this.emit("event", {
             kind: "usage",
             inputTokens: u.inputTokens,
             outputTokens: u.outputTokens,
             cacheRead: u.cacheRead,
             contextWindow:
-                u.contextWindow ?? contextWindowFor(this.options.model || this.config.model),
+                u.contextWindow ??
+                this.lastContextWindow ??
+                contextWindowFor(this.options.model || this.config.model),
             model: this.effectiveModel || undefined,
         });
     }
