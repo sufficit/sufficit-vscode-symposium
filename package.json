@@ -2,7 +2,7 @@
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
     "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.808.1",
+    "version": "2026.808.2",
     "publisher": "sufficit",
     "license": "MIT",
     "icon": "media/symposium-icon.png",
@@ -992,7 +992,8 @@
         }
     },
     "scripts": {
-        "verify": "npm run format:check && npm run lint && npm run typecheck && npm run typecheck:webview && npm test && npm run compile",
+        "verify": "npm run check:release && npm run format:check && npm run lint && npm run typecheck && npm run typecheck:webview && npm test && npm run compile",
+        "check:release": "node scripts/check-release-guardrail.mjs",
         "verify:package": "npm run verify && npm run package:vsix && npm run check:vsix",
         "test": "npm run compile:test && npm run coverage:run && npm run check:webview && npm run check:configscript && npm run check:size && npm run check:complexity && npm run check:engineering && npm run check:architecture",
         "test:unit": "node --require ./test/register-vscode-stub.cjs --test out/test/*.test.js test/*.test.cjs",

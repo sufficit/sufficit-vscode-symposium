@@ -10,6 +10,7 @@ const choiceMenu = source("ui/webview/choiceMenu.ts");
 const panels = source("ui/webview/panels.ts");
 const meta = source("ui/webview/meta.ts");
 const dispatch = source("ui/webview/dispatch.ts");
+const commandHelpers = source("extension/commands/helpers.ts");
 const surfaceListeners = source("ui/chatSurfaceListeners.ts");
 const events = source("ui/webview/events.ts");
 const status = source("ui/webview/status.ts");
@@ -65,6 +66,19 @@ test("editor-open preference leaves only the sessions navigator in the sidebar",
     assert.match(
         css,
         /#root\.narrow\.sessions-only #sessionsPane \{[\s\S]*?display: flex; position: static;/,
+    );
+});
+
+test("new-session actions honor editor mode even while the sidebar is visible", () => {
+    assert.match(
+        commandHelpers,
+        /const inEditor = \(\) =>[\s\S]*?getConfiguration\("symposium\.chat"\)/,
+    );
+    assert.match(commandHelpers, /getConfiguration\("symposium\.chat"\)[\s\S]*?===\s*"editor";/);
+    assert.doesNotMatch(commandHelpers, /===\s*\n?\s*"editor";[\s\S]*&& !chatView\.visible/);
+    assert.match(
+        commandHelpers,
+        /hidden chat column,[\s\S]*configured destination is authoritative/,
     );
 });
 

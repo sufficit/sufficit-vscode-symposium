@@ -46,6 +46,15 @@ jobs:
             exit 1
           fi
 
+      - name: Check release tag is based on develop
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          git fetch origin develop --depth=1
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "origin/develop"; then
+            echo "Release tags must point to a commit already published on develop." >&2
+            exit 1
+          fi
+
       - name: Verify
         run: npm run verify
 

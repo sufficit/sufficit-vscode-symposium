@@ -62,12 +62,14 @@ export function buildCommandContext(d: CommandDeps): CommandContext {
     const infoOf = (item: { info?: SessionInfo } | SessionInfo): SessionInfo =>
         "info" in item && item.info ? item.info : (item as SessionInfo);
 
-    // Open in the editor only when configured to AND the sidebar isn't the
-    // surface in use: if the user acts from the visible sidebar view, the new
-    // session stays there instead of jumping to a central editor panel.
+    // The sidebar becomes a sessions-only navigator when editor mode is
+    // configured. Routing a new-session action back into that sidebar would
+    // render the agent picker inside its hidden chat column, making the button
+    // appear inert. The configured destination is authoritative here, even
+    // when the sidebar is currently visible.
     const inEditor = () =>
         vscode.workspace.getConfiguration("symposium.chat").get<string>("openIn", "editor") ===
-            "editor" && !chatView.visible;
+        "editor";
 
     // Per-backend env for terminal-backed sessions (e.g. gateway routing).
     const envFor = (backend: string): Record<string, string> =>
