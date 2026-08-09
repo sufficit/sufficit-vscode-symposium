@@ -1,13 +1,12 @@
 # Agent Host Protocol adoption
 
-Status: incremental adoption approved; Phase 0 foundation implemented.
+Status: incremental adoption approved; only the Phase 0 foundation is implemented.
 
 Target protocol: AHP `0.6.0`, pinned through
 `@microsoft/agent-host-protocol@0.6.0`.
 
-The implementation backlog, file-level work breakdown, validation gates and
-rollback points are tracked in
-[PLAN-AHP-PHASES-1-6.md](PLAN-AHP-PHASES-1-6.md).
+The implementation backlog is split into independently executable plans listed
+below. Completed work is archived under `docs/activities/`.
 
 ## Decision
 
@@ -179,6 +178,35 @@ Adopt optional surfaces only after the core is interoperable:
 - customizations for Symposium agents, skills, instructions and MCP servers;
 - client-provided tools/active clients;
 - OTLP telemetry channels.
+
+## Execution backlog
+
+The 2026-08-09 implementation audit confirmed that Phase 0 is the only shipped
+AHP scope. Remaining work is tracked by delivery boundary:
+
+### Core host and clients
+
+1. [Host runtime and channel models](PLAN-AHP-host-runtime-and-channel-models.md)
+2. [Normalized agent-event projection](PLAN-AHP-agent-event-projection.md)
+3. [Shadow projection and parity diagnostics](PLAN-AHP-shadow-projection.md)
+4. [Persistence and restart recovery](PLAN-AHP-persistence-and-restart.md)
+5. [Authenticated WebSocket transport](PLAN-AHP-authenticated-websocket.md)
+6. [PWA client migration](PLAN-AHP-pwa-client-migration.md)
+7. [Editor and sidebar migration](PLAN-AHP-editor-sidebar-migration.md)
+8. [Legacy transport retirement](PLAN-AHP-legacy-transport-retirement.md)
+
+### Optional capability packages
+
+- [Changeset channel](PLAN-AHP-changeset-channel.md)
+- [Terminal channel](PLAN-AHP-terminal-channel.md)
+- [Resource and attachment channels](PLAN-AHP-resource-channel.md)
+- [Customization channels](PLAN-AHP-customization-channels.md)
+- [Client-provided tools](PLAN-AHP-client-tools.md)
+- [Telemetry measurements](PLAN-AHP-telemetry.md)
+
+Each plan owns its acceptance criteria, validation and rollback boundary. When
+completed, it should be replaced by one dated activity rather than retained as
+a finished plan.
 
 ## Required invariants
 
