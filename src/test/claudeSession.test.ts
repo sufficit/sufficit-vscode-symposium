@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import { ClaudeSession } from "../adapters/claude/session";
 import { claudeResumeSessionId } from "../adapters/claude/resume";
 import type { AgentEvent } from "../adapters/types";
@@ -52,6 +55,75 @@ test("Claude retries spawn after ENOENT instead of reusing the dead child", asyn
         }
     } finally {
         session.dispose();
+    }
+});
+
+test("Claude applies a model picker change to the next turn in the same conversation", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-claude-model-"));
+    const executable = path.join(dir, "fake-claude.cjs");
+    const argsLog = path.join(dir, "args.jsonl");
+    await fs.writeFile(
+        executable,
+        `#!/usr/bin/env node
+const fs = require("node:fs");
+const readline = require("node:readline");
+const args = process.argv.slice(2);
+const log = process.env.SYMPOSIUM_CLAUDE_ARGS;
+if (log) fs.appendFileSync(log, JSON.stringify(args) + "\\n");
+const modelIndex = args.indexOf("--model");
+const model = modelIndex >= 0 ? args[modelIndex + 1] : "default";
+const sessionId = "fake-claude-model-session";
+process.stdout.write(JSON.stringify({ type: "system", subtype: "init", session_id: sessionId, model }) + "\\n");
+readline.createInterface({ input: process.stdin }).on("line", () => {
+    process.stdout.write(JSON.stringify({ type: "assistant", message: { model, content: [{ type: "text", text: "ok" }] } }) + "\\n");
+    process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok" }) + "\\n");
+});
+`,
+        { mode: 0o755 },
+    );
+
+    const session = new ClaudeSession(
+        {
+            executable,
+            model: "model-a",
+            permissionMode: "plan",
+            env: { SYMPOSIUM_CLAUDE_ARGS: argsLog },
+        },
+        { cwd: process.cwd(), model: "model-a" },
+    );
+
+    try {
+        const first = waitForTurnEnd(session);
+        session.send("first turn");
+        await first;
+
+        session.setModel("model-b");
+        assert.equal(session.getModel(), "model-b");
+
+        const second = waitForTurnEnd(session);
+        session.send("second turn");
+        await second;
+
+        const launches = (await fs.readFile(argsLog, "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as string[]);
+        assert.equal(launches.length, 2);
+        assert.deepEqual(
+            launches[0].slice(launches[0].indexOf("--model"), launches[0].indexOf("--model") + 2),
+            ["--model", "model-a"],
+        );
+        assert.deepEqual(
+            launches[1].slice(launches[1].indexOf("--model"), launches[1].indexOf("--model") + 2),
+            ["--model", "model-b"],
+        );
+        assert.deepEqual(
+            launches[1].slice(launches[1].indexOf("--resume"), launches[1].indexOf("--resume") + 2),
+            ["--resume", "fake-claude-model-session"],
+        );
+    } finally {
+        session.dispose();
+        await fs.rm(dir, { recursive: true, force: true });
     }
 });
 

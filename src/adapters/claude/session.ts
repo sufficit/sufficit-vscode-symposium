@@ -32,6 +32,8 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     // be spawned before the old one emits its final result/exit events.
     private readonly cancelledChildren = new WeakSet<ChildProcessWithoutNullStreams>();
     private spawnedPermission = ""; // permission mode the live child was spawned with
+    private spawnedModel = ""; // model passed to the live child at spawn time
+    private turnChild: ChildProcessWithoutNullStreams | undefined;
     // Tool calls seen this turn with no matching tool_result yet. A backgrounded
     // Task/Agent call's own result can arrive well after the top-level "result"
     // line (the CLI keeps streaming the delegated work's events down the same
@@ -55,6 +57,9 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             },
             setTurnActive: (active) => {
                 this.turnActive = active;
+                if (!active) {
+                    this.turnChild = undefined;
+                }
             },
             emit: (event) => this.emit("event", event),
         });
@@ -109,6 +114,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             "--verbose",
         ];
         const model = this.options.model || this.config.model;
+        this.spawnedModel = model;
         if (model) {
             args.push("--model", model);
         }
@@ -198,13 +204,19 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             if (this.child === child) {
                 this.child = undefined;
             }
-            this.turnActive = false;
-            this.parser.resetPending();
+            if (this.turnChild === child) {
+                this.turnActive = false;
+                this.turnChild = undefined;
+                this.parser.resetPending();
+            }
             this.cancelledChildren.delete(child);
-            this.emit("event", { kind: "turn-end" });
+            if (this.turnChild === undefined) {
+                this.emit("event", { kind: "turn-end" });
+            }
         });
         child.on("exit", (code) => {
             const cancelled = this.cancelledChildren.has(child);
+            const ownsTurn = this.turnChild === child;
             // SIGINT from cancel/steer → exit code 130 (or null). Don't emit a
             // crash error; the queue will drain the steered message on turn-end.
             if (!this.disposed && !cancelled && code !== 0 && code !== null) {
@@ -220,11 +232,14 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             }
             // The process ended (incl. SIGINT from cancel/steer) without a final
             // result event — close the turn so the UI unblocks and the queue runs.
-            if (this.turnActive && !this.disposed) {
+            if (ownsTurn && this.turnActive && !this.disposed) {
                 this.turnActive = false;
+                this.turnChild = undefined;
                 this.emit("event", { kind: "turn-end" });
             }
-            this.parser.resetPending();
+            if (ownsTurn || this.child === undefined) {
+                this.parser.resetPending();
+            }
         });
         return child;
     }
@@ -235,6 +250,10 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     }
 
     send(text: string, images?: string[]): void {
+        // Claude pins the model at process startup. If the picker changes in an
+        // existing conversation, restart only the CLI child and resume the same
+        // Claude session so the next message uses the newly selected model.
+        const desiredModel = this.options.model || this.config.model;
         // Permission mode is pinned at spawn (a CLI flag), so a mid-conversation
         // change in the picker would otherwise only apply to a brand-new session.
         // When it changes, kill the live child and let ensureStarted() respawn with
@@ -243,15 +262,25 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         const desired = mapUnifiedToClaudeFlag(
             this.options.permission || this.config.permissionMode || "admin",
         ).flag;
-        if (this.child && desired !== this.spawnedPermission) {
-            this.config.log?.(
-                `[claude] permission ${this.spawnedPermission} -> ${desired}; respawning with --resume`,
-            );
-            this.child.kill();
+        if (
+            this.child &&
+            (desired !== this.spawnedPermission || desiredModel !== this.spawnedModel)
+        ) {
+            const reason =
+                desiredModel !== this.spawnedModel
+                    ? `model ${this.spawnedModel || "default"} -> ${desiredModel || "default"}`
+                    : `permission ${this.spawnedPermission} -> ${desired}`;
+            this.config.log?.(`[claude] ${reason}; respawning with --resume`);
+            if (!this.turnActive) {
+                this.turnChild = undefined;
+            }
+            this.cancelledChildren.add(this.child);
+            this.child.kill("SIGINT");
             this.child = undefined;
         }
         this.turnActive = true;
         const child = this.ensureStarted();
+        this.turnChild = child;
         const content: Array<{
             type: string;
             text?: string;
@@ -266,6 +295,16 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         content.push({ type: "text", text });
         const message = { type: "user", message: { role: "user", content } };
         child.stdin.write(JSON.stringify(message) + "\n");
+    }
+
+    setModel(model: string): void {
+        // The model is a process-level Claude CLI flag. `send()` detects the
+        // difference from the live child and respawns it with --resume.
+        this.options.model = model === "default" ? undefined : model;
+    }
+
+    getModel(): string {
+        return this.options.model || this.config.model;
     }
 
     cancel(): void {
