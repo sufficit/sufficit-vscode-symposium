@@ -99,3 +99,15 @@ test("effective model changes do not get hidden behind the next queued model", (
     assert.match(events, /if \(!queued\) \{\s*setModelValue\(model\);\s*setModelLabel\(\);\s*\}/);
     assert.match(status, /"thinking\.\.\." \+ \(activeModel \? " · " \+ modelLabel\(activeModel\)/);
 });
+
+test("an adapter error does not release the busy composer before turn-end", () => {
+    const errorBranch = events
+        .split('else if (ev.kind === "error")')[1]
+        ?.split('else if (ev.kind === "session")')[0];
+    assert.ok(errorBranch, "error branch must remain present");
+    assert.match(
+        events,
+        /else if \(ev\.kind === "error"\)[\s\S]*?Errors are observations, not lifecycle boundaries[\s\S]*?renderError\(ev\.message, ev\.historical, ev\.retryable\);/,
+    );
+    assert.doesNotMatch(errorBranch, /setBusy\(false\)/);
+});

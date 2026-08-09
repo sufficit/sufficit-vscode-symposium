@@ -99,13 +99,21 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         this.current = child;
 
         const rl = readline.createInterface({ input: child.stdout! });
-        rl.on("line", (line) => this.handleLine(line));
+        rl.on("line", (line) => {
+            if (this.current === child) {
+                this.handleLine(line);
+            }
+        });
 
         let stderr = "";
         child.stderr!.on("data", (chunk) => {
             stderr += String(chunk);
         });
         child.on("error", (error) => {
+            if (this.current !== child) {
+                return;
+            }
+            this.current = undefined;
             this.emit("event", {
                 kind: "error",
                 message: `copilot spawn failed: ${error.message}`,
@@ -113,6 +121,9 @@ export class CopilotSession extends EventEmitter implements AgentSession {
             this.emit("event", { kind: "turn-end" });
         });
         child.on("exit", (code) => {
+            if (this.current !== child) {
+                return;
+            }
             this.current = undefined;
             if (this.disposed) {
                 return;

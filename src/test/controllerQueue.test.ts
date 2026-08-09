@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ChatQueue, MessageDedup, recoverPersistedQueue } from "../application/controllerQueue";
+import { routeControllerSend } from "../application/controllerSendRouter";
 
 test("ChatQueue restores persisted messages and keeps ids monotonic", () => {
     const queue = new ChatQueue();
@@ -115,4 +116,32 @@ test("steer would clear the queue, but redirect does not", () => {
     redirectQueue.enqueue({ text: "queued", attachments: [] });
     redirectQueue.unshift({ text: "redirect-msg", attachments: [] }); // no clear
     assert.equal(redirectQueue.items().length, 2); // original queue kept
+});
+
+test("a busy controller always queues a normal send instead of dispatching it", () => {
+    const queue = new ChatQueue();
+    const dispatched: string[] = [];
+    let emitted = 0;
+
+    routeControllerSend(
+        { text: "second turn", attachments: [], clientMessageId: "second" },
+        "queue",
+        {
+            queue,
+            dedup: new MessageDedup(),
+            busy: () => true,
+            cancel: () => undefined,
+            dispatch: (message) => dispatched.push(message.text),
+            emitQueue: () => {
+                emitted++;
+            },
+        },
+    );
+
+    assert.deepEqual(dispatched, []);
+    assert.equal(emitted, 1);
+    assert.deepEqual(
+        queue.items().map((message) => message.text),
+        ["second turn"],
+    );
 });

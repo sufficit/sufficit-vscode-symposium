@@ -246,6 +246,12 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
 
     /** Test seam and JSONL callback retained while parsing lives in ClaudeEventParser. */
     private handleLine(line: string, sourceChild?: ChildProcessWithoutNullStreams): void {
+        // A canceled Claude child can flush JSON after the replacement child
+        // has become the active turn. Do not let that stale result close the
+        // replacement turn or mutate its pending-tool accounting.
+        if (sourceChild && this.turnChild && this.turnChild !== sourceChild) {
+            return;
+        }
         this.parser.handleLine(line, !!sourceChild && this.cancelledChildren.has(sourceChild));
     }
 

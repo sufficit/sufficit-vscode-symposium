@@ -28,12 +28,14 @@ import { shouldRefreshNativeAuthorization } from "./httpAuth";
 import { executeToolCallBatch } from "./turnToolBatch";
 import { TurnCompression } from "./turnCompression";
 import { prepareTurnAccess } from "./turnAccess";
+import { RunSequence } from "./runSequence";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
 export class TurnRunner {
     private abort: AbortController | undefined;
     private pendingTasksCompact = false;
+    private readonly runSequence = new RunSequence();
 
     constructor(private readonly d: TurnRunnerDeps) {}
 
@@ -42,18 +44,13 @@ export class TurnRunner {
     }
 
     async run(): Promise<void> {
+        const isCurrentRun = this.runSequence.start();
         const messages = this.d.getMessages();
         const progress = this.d.getProgress();
         this.abort = new AbortController();
-        // Assign a stable logicalTurnId for this turn (survives retries/reopen).
-        // A Retry passes resumeTurnId so the adapter REUSES the original turn's id
-        // instead of allocating a new one (delivery 1C).
         const logicalTurnId = this.d.resumeTurn(this.d.getResumeTurnId?.());
         const intentId = this.d.getIntentId();
         const turnStartedAt = Date.now();
-        // turn-start pairs with turn-end below; carries the stable ids so the
-        // render pipeline (renderStream/controllerTranscript) and any future
-        // retry/redirect logic can associate deltas with the right turn.
         this.d.emit({ kind: "turn-start", logicalTurnId, ...(intentId ? { intentId } : {}) });
         const emitTurnEnd = () =>
             this.d.emit({ kind: "turn-end", durationMs: Date.now() - turnStartedAt });
@@ -65,7 +62,9 @@ export class TurnRunner {
         const requestMessages = (): ChatMessage[] => compression.apply(messages);
         const access = await prepareTurnAccess(this.d, responses);
         if (!access) {
-            emitTurnEnd();
+            if (isCurrentRun()) {
+                emitTurnEnd();
+            }
             return;
         }
         let { loginToken } = access;
@@ -157,9 +156,6 @@ export class TurnRunner {
                     contextAssessment.shouldCompact &&
                     (await this.d.maybeAutoCompact(estimate.inputTokens))
                 ) {
-                    // The compactor rewrote the live history. Rebuild this same
-                    // hop from that smaller state before recording or sending
-                    // anything; compaction must not consume a tool-hop budget.
                     hop--;
                     continue;
                 }
@@ -180,8 +176,6 @@ export class TurnRunner {
                 this.d.cfg.log?.(
                     `[${this.d.backend}] POST ${url} api=${this.d.cfg.api} model=${this.d.model()} tools=${toolList.length} hop=${hop}`,
                 );
-                // One attemptId per model POST (hop) within this logical turn, so a
-                // multi-hop turn and a retried turn are distinguishable downstream.
                 const attemptId = makeAttemptId(logicalTurnId, hop + 1);
                 ledger.recordRequest(this.d.sessionId, body, attemptId);
                 const requestStartedAt = Date.now();
@@ -371,6 +365,9 @@ export class TurnRunner {
                 this.d.markPausedForContinuation?.();
             }
         } catch (error) {
+            if (!isCurrentRun()) {
+                return;
+            }
             if ((error as { name?: string })?.name !== "AbortError") {
                 const msg = error instanceof Error ? error.message : String(error);
                 // Network/transport failures (DNS, connection reset, timeout,
@@ -382,6 +379,9 @@ export class TurnRunner {
                     );
                 this.d.emit({ kind: "error", message: msg, retryable });
             }
+        }
+        if (!isCurrentRun()) {
+            return;
         }
         this.d.safePersist();
         // Include the stable logicalTurnId in the commit subject so `git log`
