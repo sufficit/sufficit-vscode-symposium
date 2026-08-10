@@ -11,6 +11,7 @@ import {
     stableAhpUuid,
     type AhpProjectionAction,
 } from "../ahp";
+import { ahpChatToLegacy } from "../ahp/client/legacyView";
 
 const STREAM: AgentEvent[] = [
     { kind: "turn-start", logicalTurnId: "turn-1" },
@@ -84,6 +85,67 @@ test("projection keeps tool approval correlation and excludes arbitrary provider
     assert.equal(session.inputNeeded?.length ?? 0, 0);
     assert.equal(serialized.includes("process.env"), false);
     assert.equal(serialized.includes("credential"), false);
+});
+
+// A terminal notice is why the turn stopped. Projected as activity only it was
+// overwritten by the next event, so the transcript never explained the stop
+// while the session badge still reported one.
+test("a terminal status notice survives as a transcript part, not just activity", () => {
+    const state = runStream("openai", [
+        { kind: "turn-start", logicalTurnId: "turn-1" },
+        { kind: "text", text: "working" },
+        {
+            kind: "status-notice",
+            text: "Stopped because the model repeated the same tool call.",
+            severity: "warning",
+            terminal: true,
+        },
+        { kind: "turn-end", durationMs: 5 },
+    ]);
+
+    const parts = state.turns.flatMap((turn) => turn.responseParts) as unknown as Record<
+        string,
+        unknown
+    >[];
+    const notice = parts.find((part) => part.kind === "notice");
+    assert.ok(notice, "the terminal notice is a durable response part");
+    assert.equal(notice.content, "Stopped because the model repeated the same tool call.");
+    assert.deepEqual(notice._meta, { severity: "warning" });
+
+    assert.deepEqual(
+        ahpChatToLegacy(state).filter(
+            (m) => (m as { event?: { kind?: string } }).event?.kind === "status-notice",
+        ),
+        [
+            {
+                type: "event",
+                event: {
+                    kind: "status-notice",
+                    text: "Stopped because the model repeated the same tool call.",
+                    severity: "warning",
+                    terminal: true,
+                },
+            },
+        ],
+        "and replays to the webview as the notice event it started as",
+    );
+});
+
+test("a non-terminal notice stays transient activity", () => {
+    const state = runStream("openai", [
+        { kind: "turn-start", logicalTurnId: "turn-1" },
+        { kind: "status-notice", text: "compacting before the next request." },
+        { kind: "turn-end", durationMs: 5 },
+    ]);
+
+    const parts = state.turns.flatMap((turn) => turn.responseParts) as unknown as Record<
+        string,
+        unknown
+    >[];
+    assert.equal(
+        parts.some((part) => part.kind === "notice"),
+        false,
+    );
 });
 
 function runStream(provider: string, events: AgentEvent[]): ChatState {

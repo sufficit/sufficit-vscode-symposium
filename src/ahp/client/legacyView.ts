@@ -125,6 +125,10 @@ export function ahpActionToLegacy(
                 },
             ];
         }
+        case "chat/responsePart":
+            // Only notice parts carry their content here; markdown/reasoning
+            // parts arrive empty and are filled by the deltas below.
+            return partMessages(action.part as Parameters<typeof partMessages>[0]);
         case "chat/delta":
             return [{ type: "event", event: { kind: "text", text: String(action.content ?? "") } }];
         case "chat/reasoning":
@@ -278,6 +282,20 @@ function partMessages(part: ChatState["turns"][number]["responseParts"][number])
     }
     if (value.kind === "reasoning") {
         return [{ type: "event", event: { kind: "thinking", text: String(value.content ?? "") } }];
+    }
+    if (value.kind === "notice") {
+        const meta = (value._meta ?? {}) as { severity?: unknown };
+        return [
+            {
+                type: "event",
+                event: {
+                    kind: "status-notice",
+                    text: String(value.content ?? ""),
+                    severity: meta.severity,
+                    terminal: true,
+                },
+            },
+        ];
     }
     if (value.kind !== "toolCall") return [];
     const tool = (value.toolCall ?? {}) as Record<string, unknown>;
