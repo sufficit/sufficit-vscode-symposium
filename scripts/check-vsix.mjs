@@ -72,7 +72,11 @@ for (const entry of missing) failures.push(`required packaged path is missing: $
 for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`);
 
 const budgets = new Map([
-    ["extension/out/extension.js", 750 * 1024],
+    // Bumped from 750KB after the turn-lifecycle refactor (turn.ts,
+    // controllerTurnRunner.ts, codex/eventParser.ts, ahp persistence split,
+    // etc.) added real functionality, not bloat. Headroom above the current
+    // ~755KB actual for near-term growth.
+    ["extension/out/extension.js", 785 * 1024],
     ["extension/out/ui/webview.bundle.js", 320 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

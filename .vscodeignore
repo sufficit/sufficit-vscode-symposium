@@ -20,6 +20,7 @@ docs/**
 eslint.config.mjs
 .prettierrc.json
 .prettierignore
+knip.json
 *.tsbuildinfo
 package-lock.json
 yarn.lock
