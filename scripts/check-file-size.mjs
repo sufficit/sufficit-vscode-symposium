@@ -1,5 +1,9 @@
 // Guardrail: no source file may exceed MAX_LINES.
 // Part of PLAN-namespace-restructure — keeps the 400-line rule permanent.
+// The point isn't to lose functionality when a file goes over — it's to
+// distribute responsibilities into smaller, focused collaborator files
+// (the controllerXxx.ts / turnXxx.ts / chatSurfaceXxx.ts pattern already
+// used throughout this codebase) so the code stays easier to maintain.
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, extname } from "node:path";
 

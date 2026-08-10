@@ -1,18 +1,22 @@
 import * as fs from "fs";
 import * as path from "path";
-import type { ActionEnvelope, ChatState, Snapshot, URI } from "@microsoft/agent-host-protocol";
-import { AHP_ROOT_URI, parseAhpUri } from "./channelUris";
-import type { AhpHostRuntime, AhpRuntimeExport, AhpSessionHandle } from "./hostRuntime";
+import type { Snapshot, URI } from "@microsoft/agent-host-protocol";
+import type { AhpHostRuntime, AhpRuntimeExport } from "./hostRuntime";
+import {
+    type AhpCompactionLimits,
+    resnapshotOversizedSessions,
+    trimRetained,
+} from "./persistenceCompaction";
+import {
+    AHP_PROTOCOL_VERSION,
+    AHP_SCHEMA_VERSION,
+    isRecord,
+    type PersistenceEnvelope,
+    validateEnvelope,
+    validateRuntime,
+} from "./persistenceValidation";
 
-export const AHP_PROTOCOL_VERSION = "0.6.0";
-export const AHP_SCHEMA_VERSION = 1;
-
-interface PersistenceEnvelope {
-    protocolVersion: string;
-    schemaVersion: number;
-    savedAt: string;
-    runtime: AhpRuntimeExport;
-}
+export { AHP_PROTOCOL_VERSION, AHP_SCHEMA_VERSION } from "./persistenceValidation";
 
 export interface AhpPersistenceOptions {
     maxBytes?: number;
@@ -132,7 +136,7 @@ export class AhpPersistence {
 
     private serializeAndWrite(exported: AhpRuntimeExport): void {
         const reSnapshotted = this.autoCompact
-            ? this.resnapshotOversizedSessions(exported)
+            ? resnapshotOversizedSessions(exported, this.compactionLimits())
             : exported;
         const state = redactRuntime(reSnapshotted);
         validateRuntime(state, this.maxSessionBytes);
@@ -147,7 +151,7 @@ export class AhpPersistence {
             if (!this.autoCompact) {
                 throw new Error("AHP persistence exceeds total byte limit");
             }
-            const trimmed = this.trimRetained(state);
+            const trimmed = trimRetained(state, this.compactionLimits());
             const trimmedEnvelope: PersistenceEnvelope = { ...envelope, runtime: trimmed };
             serialized = JSON.stringify(trimmedEnvelope);
             if (Buffer.byteLength(serialized) > this.maxBytes) {
@@ -238,136 +242,14 @@ export class AhpPersistence {
         }
     }
 
-    /**
-     * Re-snapshots any session whose owned snapshots exceed the per-session
-     * cap, so validateRuntime does not throw on a long-running host. If a fresh
-     * snapshot still exceeds the cap (because the live chat turn history itself
-     * is too large), the oldest turns are trimmed from the persisted view until
-     * it fits — the authoritative history is never lost, since it lives in the
-     * JSON session repository and is re-loaded on each open. Returns the
-     * runtime export with snapshots potentially replaced/trimmed. Complexity is
-     * O(sessions * snapshots) plus a bounded turn-trim pass per oversized chat.
-     */
-    private resnapshotOversizedSessions(state: AhpRuntimeExport): AhpRuntimeExport {
-        const snapshotFn = this.options.snapshotResources;
-        if (!snapshotFn) return state;
-        const snapshots = state.snapshots;
-        const oversized = state.sessions.filter((handle) => {
-            const owned = sessionOwnedSnapshots(snapshots, handle);
-            return owned.length > 0 && byteLength(owned) > this.maxSessionBytes;
-        });
-        if (oversized.length === 0) return state;
-        const replacements = new Map<URI, Snapshot>();
-        let resnapshotCount = 0;
-        let trimmedTurns = 0;
-        for (const handle of oversized) {
-            const ownedResources = sessionOwnedSnapshots(snapshots, handle).map((s) => s.resource);
-            for (const snapshot of snapshotFn(ownedResources)) {
-                // Clamp fromSeq to the exported serverSeq: the runtime may have
-                // advanced between exportState() (tick N) and this deferred
-                // serialization (tick N+1), which would make the fresh snapshot's
-                // fromSeq exceed state.serverSeq and fail validation.
-                const clamped =
-                    snapshot.fromSeq > state.serverSeq
-                        ? { ...snapshot, fromSeq: state.serverSeq }
-                        : snapshot;
-                replacements.set(clamped.resource, clamped);
-                resnapshotCount++;
-            }
-            // If the fresh snapshot is still oversized (live state is large),
-            // trim oldest chat turns until the session's owned bytes fit. Only
-            // chat snapshots carry a `turns` array; others are left untouched.
-            const ownedFresh = sessionOwnedSnapshots(
-                snapshots.map((s) => replacements.get(s.resource) ?? s),
-                handle,
-            );
-            if (byteLength(ownedFresh) <= this.maxSessionBytes) continue;
-            const budget =
-                this.maxSessionBytes -
-                byteLength(
-                    ownedFresh.filter(
-                        (s) => !Array.isArray((s.state as { turns?: unknown }).turns),
-                    ),
-                );
-            for (const snapshot of ownedFresh) {
-                const chatState = snapshot.state as Partial<ChatState>;
-                if (!Array.isArray(chatState.turns) || chatState.turns.length === 0) continue;
-                let turns = [...chatState.turns];
-                while (
-                    turns.length > 1 &&
-                    Buffer.byteLength(JSON.stringify(turns)) > Math.max(0, budget)
-                ) {
-                    turns = turns.slice(1);
-                }
-                if (turns.length < chatState.turns.length) {
-                    trimmedTurns += chatState.turns.length - turns.length;
-                    replacements.set(snapshot.resource, {
-                        ...snapshot,
-                        state: { ...chatState, turns } as ChatState,
-                    });
-                }
-            }
-        }
-        if (replacements.size === 0) return state;
-        const parts = [`re-snapshoted ${resnapshotCount} channel(s)`];
-        if (trimmedTurns > 0) parts.push(`trimmed ${trimmedTurns} old turn(s)`);
-        this.options.onDiagnostic?.(
-            `[ahp] ${parts.join(", ")} across ${oversized.length} oversized session(s) before persisting`,
-        );
+    /** Byte caps and collaborators handed to the compaction passes. */
+    private compactionLimits(): AhpCompactionLimits {
         return {
-            ...state,
-            snapshots: snapshots.map((s) => replacements.get(s.resource) ?? s),
+            maxBytes: this.maxBytes,
+            maxSessionBytes: this.maxSessionBytes,
+            snapshotResources: this.options.snapshotResources,
+            onDiagnostic: this.options.onDiagnostic,
         };
-    }
-
-    /**
-     * Trims the oldest retained actions until the serialized payload fits under
-     * the total cap. Amortized O(retainedActions) via an average-bytes-per-action
-     * estimate plus bounded refinement — never the O(n²) per-removal
-     * re-serialization that previously pegged the extension host.
-     */
-    private trimRetained(state: AhpRuntimeExport): AhpRuntimeExport {
-        const retainedActions = state.retainedActions;
-        if (retainedActions.length <= 1) return state;
-
-        // Measure the immutable base (everything except retained actions) once,
-        // then trim retained actions by count rather than by re-serializing the
-        // whole state per removal.
-        const baseBytes = byteLength({ ...state, retainedActions: [] as ActionEnvelope[] });
-        const retainedBytes = byteLength(retainedActions);
-        if (baseBytes + retainedBytes <= this.maxBytes) return state;
-
-        const avgPerAction = Math.max(1, Math.ceil(retainedBytes / retainedActions.length));
-        const overage = baseBytes + retainedBytes - this.maxBytes;
-        const estimatedRemovals = Math.min(
-            retainedActions.length - 1,
-            Math.ceil(overage / avgPerAction) + 1,
-        );
-        let trimmed = retainedActions.slice(estimatedRemovals);
-        let iterations = 0;
-        while (
-            trimmed.length > 1 &&
-            baseBytes + byteLength(trimmed) > this.maxBytes &&
-            iterations++ < 32
-        ) {
-            trimmed = trimmed.slice(Math.max(1, Math.ceil(trimmed.length / 10)));
-        }
-        while (
-            trimmed.length > 1 &&
-            baseBytes + byteLength(trimmed) < this.maxBytes - avgPerAction &&
-            iterations++ < 32
-        ) {
-            const reAdd = retainedActions.length - trimmed.length - 1;
-            if (reAdd < 0) break;
-            trimmed = retainedActions.slice(reAdd);
-        }
-        const removed = retainedActions.length - trimmed.length;
-        if (removed <= 0) return state;
-        const newFloor = trimmed[0]?.serverSeq ?? 0;
-        this.options.onDiagnostic?.(
-            `[ahp] trimmed ${removed} retained action(s) to stay under the ${this.maxBytes}-byte persistence cap (new floor serverSeq=${newFloor})`,
-        );
-        return { ...state, retainedActions: trimmed };
     }
 
     maybeSave(runtime: AhpHostRuntime): boolean {
@@ -398,121 +280,6 @@ export class AhpPersistence {
     }
 }
 
-function validateEnvelope(value: unknown, maxSessionBytes: number): PersistenceEnvelope {
-    if (!isRecord(value)) throw new Error("AHP persistence root is not an object");
-    if (value.protocolVersion !== AHP_PROTOCOL_VERSION) {
-        throw new Error(`Unsupported AHP protocol ${String(value.protocolVersion)}`);
-    }
-    if (value.schemaVersion !== AHP_SCHEMA_VERSION) {
-        throw new Error(`Unsupported AHP persistence schema ${String(value.schemaVersion)}`);
-    }
-    const runtime = validateRuntime(value.runtime, maxSessionBytes);
-    return {
-        protocolVersion: AHP_PROTOCOL_VERSION,
-        schemaVersion: AHP_SCHEMA_VERSION,
-        savedAt: typeof value.savedAt === "string" ? value.savedAt : "",
-        runtime,
-    };
-}
-
-function validateRuntime(value: unknown, maxSessionBytes: number): AhpRuntimeExport {
-    if (!isRecord(value)) throw new Error("AHP runtime state is not an object");
-    const serverSeq = safeInteger(value.serverSeq, "serverSeq");
-    const sessions = asArray<AhpSessionHandle>(value.sessions, "sessions");
-    const snapshots = asArray<Snapshot>(value.snapshots, "snapshots");
-    const retainedActions = asArray<ActionEnvelope>(value.retainedActions, "retainedActions");
-    validateSnapshots(snapshots, serverSeq);
-    validateActions(retainedActions, serverSeq);
-    validateHandles(sessions, snapshots, maxSessionBytes);
-    return { serverSeq, sessions, snapshots, retainedActions };
-}
-
-function validateSnapshots(snapshots: Snapshot[], serverSeq: number): void {
-    const resources = new Set<string>();
-    for (const snapshot of snapshots) {
-        if (!snapshot || typeof snapshot.resource !== "string") {
-            throw new Error("AHP snapshot has no resource");
-        }
-        if (resources.has(snapshot.resource)) throw new Error("Duplicate AHP snapshot resource");
-        resources.add(snapshot.resource);
-        if (snapshot.resource !== AHP_ROOT_URI) parseAhpUri(snapshot.resource);
-        const fromSeq = safeInteger(snapshot.fromSeq, "snapshot.fromSeq");
-        if (fromSeq > serverSeq) throw new Error("AHP snapshot sequence exceeds server sequence");
-        if (!isRecord(snapshot.state)) throw new Error("AHP snapshot state is not an object");
-    }
-    if (!resources.has(AHP_ROOT_URI)) throw new Error("AHP root snapshot is missing");
-}
-
-function validateActions(actions: ActionEnvelope[], serverSeq: number): void {
-    let previous = 0;
-    for (const envelope of actions) {
-        const sequence = safeInteger(envelope?.serverSeq, "action.serverSeq");
-        if (sequence <= previous || sequence > serverSeq) {
-            throw new Error("AHP retained actions are not strictly monotonic");
-        }
-        if (typeof envelope.channel !== "string") throw new Error("AHP action channel is missing");
-        if (envelope.channel !== AHP_ROOT_URI) parseAhpUri(envelope.channel);
-        if (!isRecord(envelope.action) || typeof envelope.action.type !== "string") {
-            throw new Error("AHP action payload is invalid");
-        }
-        previous = sequence;
-    }
-}
-
-function validateHandles(
-    handles: AhpSessionHandle[],
-    snapshots: Snapshot[],
-    maxSessionBytes: number,
-): void {
-    const resources = new Set(snapshots.map((item) => item.resource));
-    const seen = new Set<string>();
-    for (const handle of handles) {
-        if (
-            !handle ||
-            typeof handle.nativeSessionId !== "string" ||
-            typeof handle.provider !== "string"
-        ) {
-            throw new Error("AHP session handle is invalid");
-        }
-        const session = parseAhpUri(handle.sessionResource);
-        const chat = parseAhpUri(handle.chatResource);
-        if (session.kind !== "session" || chat.kind !== "chat") {
-            throw new Error("AHP session handle has cross-kind URIs");
-        }
-        if (session.id !== handle.sessionId || chat.id !== handle.chatId) {
-            throw new Error("AHP session handle identity does not match its URIs");
-        }
-        if (seen.has(handle.sessionResource)) throw new Error("Duplicate AHP session handle");
-        seen.add(handle.sessionResource);
-        if (!resources.has(handle.sessionResource) || !resources.has(handle.chatResource)) {
-            throw new Error("AHP session handle references missing snapshots");
-        }
-        const owned = sessionOwnedSnapshots(snapshots, handle);
-        if (Buffer.byteLength(JSON.stringify(owned)) > maxSessionBytes) {
-            throw new Error(`AHP session ${handle.sessionId} exceeds byte limit`);
-        }
-    }
-}
-
-/**
- * Snapshots owned by a session: its session channel, its chat channel, and any
- * descendant channel namespaced under the session resource. The same ownership
- * predicate powers both validation and auto-compaction.
- */
-function sessionOwnedSnapshots(snapshots: Snapshot[], handle: AhpSessionHandle): Snapshot[] {
-    return snapshots.filter(
-        (item) =>
-            item.resource === handle.sessionResource ||
-            item.resource === handle.chatResource ||
-            item.resource.startsWith(`${handle.sessionResource}/`),
-    );
-}
-
-/** UTF-8 byte length of the JSON serialization of `value`. */
-function byteLength(value: unknown): number {
-    return Buffer.byteLength(JSON.stringify(value));
-}
-
 function redactRuntime(runtime: AhpRuntimeExport): AhpRuntimeExport {
     return redact(runtime) as AhpRuntimeExport;
 }
@@ -536,22 +303,6 @@ function isProtectedKey(key: string): boolean {
     );
 }
 
-function asArray<T>(value: unknown, name: string): T[] {
-    if (!Array.isArray(value)) throw new Error(`AHP ${name} is not an array`);
-    return value as T[];
-}
-
-function safeInteger(value: unknown, name: string): number {
-    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-        throw new Error(`AHP ${name} is invalid`);
-    }
-    return value;
-}
-
 function positive(value: number | undefined, fallback: number): number {
     return Number.isSafeInteger(value) && (value ?? 0) > 0 ? (value as number) : fallback;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
 }

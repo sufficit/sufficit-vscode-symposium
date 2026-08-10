@@ -2,9 +2,7 @@ import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import * as readline from "readline";
 import { resolveExecutable } from "../exec";
-import { contextWindowFor, parseCodexUsage } from "../parse";
-import { parseAdapterQuota } from "../quota";
-import { parseNativeTodos } from "../todos";
+import { contextWindowFor } from "../parse";
 import { AgentSession, SessionStartOptions } from "../types";
 import { isTransientErrorMessage } from "../transientError";
 import {
@@ -13,8 +11,8 @@ import {
     loadVscodeMcpServers,
     mapUnifiedToCodexFlags,
 } from "./codexMcpConfig";
+import { CodexEventParser } from "./eventParser";
 import { syncCodexSufficitMcp } from "./sufficitMcp";
-import { codexUsage } from "./usage";
 
 /** Resolve a picker value into the explicit model argument for one Codex turn. */
 export function codexModelArgs(selected: string | undefined, configured: string): string[] {
@@ -54,8 +52,8 @@ export class CodexSession extends EventEmitter implements AgentSession {
      *  straggler from a superseded turn by id, not just by busy-state). */
     private currentTurnId: string | undefined;
     private effectiveModel: string;
-    private lastContextWindow: number | undefined;
     private vscodeMcpServers: Record<string, { command: string; args: string[] }>;
+    private readonly parser: CodexEventParser;
 
     constructor(
         private readonly config: CodexAdapterConfig,
@@ -65,6 +63,24 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.vscodeMcpServers = loadVscodeMcpServers();
         this.sessionId = options.resumeSessionId;
         this.effectiveModel = options.model || config.model;
+        this.parser = new CodexEventParser({
+            model: () => this.effectiveModel,
+            setModel: (model) => {
+                this.effectiveModel = model;
+            },
+            getSessionId: () => this.sessionId,
+            setSessionId: (id) => {
+                this.sessionId = id;
+            },
+            isCancelled: () => this.cancelled,
+            setReportedError: () => {
+                this.reportedError = true;
+            },
+            configuredContextWindow: () =>
+                contextWindowFor(this.options.model || this.config.model),
+            emit: (event) => this.emit("event", event),
+            emitTurnEnd: () => this.emitTurnEnd(),
+        });
     }
 
     setModel(model: string): void {
@@ -237,188 +253,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
     }
 
     private handleLine(line: string): void {
-        if (!line.trim()) {
-            return;
-        }
-        let event: { type: string; [key: string]: unknown };
-        try {
-            event = JSON.parse(line);
-        } catch {
-            return; // non-JSON log lines (codex prints some ERROR lines plainly)
-        }
-        const quota = parseAdapterQuota(event, this.backend);
-        if (quota) {
-            codexUsage.observe(quota);
-            this.emit("event", { kind: "quota", ...quota });
-        }
-        const payload =
-            typeof event.payload === "object" && event.payload !== null
-                ? (event.payload as Record<string, unknown>)
-                : undefined;
-        if (
-            event.type === "token_count" ||
-            (event.type === "event_msg" && payload?.type === "token_count")
-        ) {
-            this.emitUsage(event);
-        }
-        switch (event.type) {
-            case "thread.started":
-                if (typeof event.thread_id === "string" && !this.sessionId) {
-                    this.sessionId = event.thread_id;
-                    this.emit("event", {
-                        kind: "session",
-                        sessionId: event.thread_id,
-                        model: this.effectiveModel || undefined,
-                    });
-                }
-                break;
-            case "item.started":
-            case "item.completed": {
-                const item =
-                    typeof event.item === "object" && event.item !== null
-                        ? (event.item as Record<string, unknown>)
-                        : {};
-                const itemType =
-                    typeof item.type === "string"
-                        ? item.type
-                        : typeof item.item_type === "string"
-                          ? item.item_type
-                          : undefined;
-                // Codex's plan/todo updates (e.g. update_plan / todo_list).
-                const todos = parseNativeTodos(itemType ?? "", item);
-                if (todos) {
-                    this.emit("event", {
-                        kind: "tool-start",
-                        toolName: "TodoWrite",
-                        detail: "",
-                        todos,
-                    });
-                    break;
-                }
-                if (event.type !== "item.completed") {
-                    if (itemType === "command_execution" && typeof item.command === "string") {
-                        this.emit("event", {
-                            kind: "tool-start",
-                            toolName: "exec",
-                            detail: item.command,
-                        });
-                    }
-                    break;
-                }
-                if (itemType === "agent_message" && typeof item.text === "string") {
-                    this.emit("event", {
-                        kind: "text",
-                        text: item.text,
-                        model: this.effectiveModel || undefined,
-                    });
-                } else if (itemType === "reasoning" && typeof item.text === "string") {
-                    this.emit("event", {
-                        kind: "text",
-                        text: item.text,
-                        model: this.effectiveModel || undefined,
-                    });
-                } else if (itemType === "command_execution" && typeof item.command === "string") {
-                    this.emit("event", {
-                        kind: "tool-end",
-                        toolName: "exec",
-                        detail: item.command,
-                    });
-                } else if (
-                    itemType === "file_change" ||
-                    itemType === "mcp_tool_call" ||
-                    itemType === "web_search"
-                ) {
-                    this.emit("event", { kind: "tool-end", toolName: itemType });
-                }
-                break;
-            }
-            case "turn_context": {
-                const payload =
-                    typeof event.payload === "object" && event.payload !== null
-                        ? (event.payload as Record<string, unknown>)
-                        : {};
-                if (
-                    typeof payload.model === "string" &&
-                    payload.model &&
-                    payload.model !== this.effectiveModel
-                ) {
-                    this.effectiveModel = payload.model;
-                    this.emit("event", { kind: "model", model: this.effectiveModel });
-                }
-                break;
-            }
-            case "turn.completed":
-                // turn.completed may carry { usage: {...} }. Emit usage (if any)
-                // BEFORE turn-end so the meter reflects the final totals.
-                this.emitUsage(event);
-                this.emitTurnEnd();
-                break;
-            case "turn.failed": {
-                if (this.cancelled) {
-                    break;
-                }
-                this.reportedError = true;
-                const error =
-                    typeof event.error === "object" && event.error !== null
-                        ? (event.error as Record<string, unknown>)
-                        : {};
-                const failMessage =
-                    "message" in error && typeof error.message === "string"
-                        ? error.message
-                        : "codex turn failed";
-                this.emit("event", {
-                    kind: "error",
-                    message: failMessage,
-                    retryable: isTransientErrorMessage(failMessage),
-                });
-                this.emitTurnEnd();
-                break;
-            }
-            case "error": {
-                const message = typeof event.message === "string" ? event.message : "codex error";
-                // "Reconnecting... N/5" are transient retry notices, not failures;
-                // the terminal error (or turn.failed) is surfaced separately.
-                if (/^Reconnecting\.\.\./.test(message)) {
-                    break;
-                }
-                if (this.cancelled) {
-                    break;
-                }
-                this.reportedError = true;
-                this.emit("event", {
-                    kind: "error",
-                    message,
-                    retryable: isTransientErrorMessage(message),
-                });
-                break;
-            }
-        }
-    }
-
-    /**
-     * Normalize a Codex usage-bearing event and emit a `usage` UI event. Falls
-     * back to the configured model's context window when Codex doesn't report
-     * one (older exec streams omit model_context_window).
-     */
-    private emitUsage(event: unknown): void {
-        const u = parseCodexUsage(event);
-        if (!u) {
-            return;
-        }
-        if (u.contextWindow) {
-            this.lastContextWindow = u.contextWindow;
-        }
-        this.emit("event", {
-            kind: "usage",
-            inputTokens: u.inputTokens,
-            outputTokens: u.outputTokens,
-            cacheRead: u.cacheRead,
-            contextWindow:
-                u.contextWindow ??
-                this.lastContextWindow ??
-                contextWindowFor(this.options.model || this.config.model),
-            model: this.effectiveModel || undefined,
-        });
+        this.parser.handleLine(line);
     }
 
     cancel(): void {

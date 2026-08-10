@@ -58,7 +58,11 @@ export function completeTurn(
         const heldCount = ctx.queuedCount();
         ctx.log?.(`[turn] ${turn.describe()} — holding ${heldCount} queued message(s)`);
         if (heldCount > 0) {
-            ctx.holdQueue({ reason: "turn-failed", turnId: turn.backendId ?? turn.id, at: Date.now() });
+            ctx.holdQueue({
+                reason: "turn-failed",
+                turnId: turn.backendId ?? turn.id,
+                at: Date.now(),
+            });
             ctx.emitQueue();
             ctx.emit({
                 type: "event",

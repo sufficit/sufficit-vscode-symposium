@@ -144,7 +144,12 @@ export class Turn {
         this._phase = "ended";
         this._endedAt = at;
         this._outcome =
-            outcome ?? (this._attention === "error" ? "failed" : this._cancelRequested ? "cancelled" : "completed");
+            outcome ??
+            (this._attention === "error"
+                ? "failed"
+                : this._cancelRequested
+                  ? "cancelled"
+                  : "completed");
         return true;
     }
 

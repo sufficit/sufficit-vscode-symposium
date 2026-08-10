@@ -12,6 +12,10 @@ import {
     openTerminalDialogue as openTerminalDialogueFlow,
     type TerminalDialogueOptions,
 } from "./surfaceTerminalDialogue";
+import {
+    restoreOrStart as restoreOrStartFlow,
+    startDefaultDialogue as startDefaultDialogueFlow,
+} from "./surfaceDialoguesStartup";
 import { ensureAllowedWriteRoots } from "./surfaceWriteRoots";
 
 /** Coordinates new, resumed, terminal-backed and read-only dialogues. */
@@ -23,46 +27,24 @@ export class SurfaceDialogues {
     /** Prevents an awaited follow operation from attaching to a newer dialogue. */
     private generation = 0;
 
-    /** Restores the last active session on open, or starts a default dialogue. */
-    async restoreOrStart(): Promise<void> {
-        const last = this.d.deps.lastActive.get();
-        if (last) {
-            // Time-bound: a backend's listSessions() (e.g. HTTP model discovery)
-            // can hang on code-server with no network/auth; never let it block
-            // startup and trap the UI on the boot screen.
-            const sessions = await Promise.race([
-                this.d.deps.listSessions().catch(() => [] as SessionInfo[]),
-                new Promise<SessionInfo[]>((resolve) => setTimeout(() => resolve([]), 6000)),
-            ]);
-            const info = sessions.find(
-                (s) => s.sessionId === last.sessionId && s.backend === last.backend,
-            );
-            if (info) {
-                this.openSession(info);
-                return;
-            }
-        }
-        this.startDefaultDialogue();
+    /**
+     * Restores the last active session on open, or starts a default dialogue.
+     * Implemented in surfaceDialoguesStartup.ts.
+     */
+    restoreOrStart(): Promise<void> {
+        return restoreOrStartFlow(
+            this.d,
+            (info) => this.openSession(info),
+            () => this.startDefaultDialogue(),
+        );
     }
 
-    /** Starts a new dialogue with Sufficit AI by default, then falls back to any available backend. */
+    /**
+     * Starts a new dialogue with Sufficit AI by default, then falls back to any
+     * available backend. Implemented in surfaceDialoguesStartup.ts.
+     */
     startDefaultDialogue(): void {
-        const backend = this.d.deps.adapterByBackend.has("openai")
-            ? "openai"
-            : this.d.deps.adapterByBackend.keys().next().value;
-        if (!backend) {
-            void this.d.webview.postMessage({
-                type: "boot",
-                id: "session",
-                label: "No backend available",
-                status: "fail",
-                detail: "configure an adapter",
-            });
-            void this.d.webview.postMessage({ type: "boot", complete: true });
-            return;
-        }
-        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
-        this.openDialogue(backend, { cwd }, "New dialogue");
+        return startDefaultDialogueFlow(this.d, (b, o, t) => this.openDialogue(b, o, t));
     }
 
     /**

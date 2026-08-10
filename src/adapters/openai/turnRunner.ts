@@ -22,6 +22,8 @@ import {
     REPEAT_TOOL_CALL_LIMIT,
     repeatedToolCallWithoutProgress,
     toolCallBatchFingerprint,
+    toolHistoryMaterializationNotice,
+    toolHistoryPairingNotice,
     toolHopLimitNotice,
 } from "./turnNotices";
 import { TurnRunnerDeps } from "./turnRunnerDeps";
@@ -102,28 +104,14 @@ export class TurnRunner {
                     this.d.cfg.supportsDeveloperRole !== false ? "developer" : "system",
                 );
                 const outMessages = materialized.messages;
-                if (
-                    !toolHistoryMaterializationNoticeEmitted &&
-                    (materialized.foldedOrphanTools > 0 ||
-                        materialized.foldedMissingToolCalls > 0 ||
-                        materialized.repairedMissingToolCalls > 0)
-                ) {
-                    this.d.emit({
-                        kind: "status-notice",
-                        text: `OpenAI request history materialized from saved session; persisted transcript unchanged. folded_orphan_tools=${materialized.foldedOrphanTools} folded_missing_tool_calls=${materialized.foldedMissingToolCalls} repaired_missing_tool_calls=${materialized.repairedMissingToolCalls}`,
-                    });
+                const materializationNotice = toolHistoryMaterializationNotice(materialized);
+                if (materializationNotice && !toolHistoryMaterializationNoticeEmitted) {
+                    this.d.emit(materializationNotice);
                     toolHistoryMaterializationNoticeEmitted = true;
                 }
-                const toolHistoryIssues = findToolHistoryIssues(outMessages);
-                if (toolHistoryIssues.length > 0) {
-                    const orphanCount = toolHistoryIssues.filter(
-                        (issue) => issue.type === "orphan_tool_message",
-                    ).length;
-                    const missingCount = toolHistoryIssues.length - orphanCount;
-                    this.d.emit({
-                        kind: "status-notice",
-                        text: `OpenAI dispatch history has invalid tool pairing; request sent unchanged. orphan_tools=${orphanCount} missing_tool_results=${missingCount}`,
-                    });
+                const pairingNotice = toolHistoryPairingNotice(findToolHistoryIssues(outMessages));
+                if (pairingNotice) {
+                    this.d.emit(pairingNotice);
                 }
                 const body: Record<string, unknown> = responses
                     ? { model: this.d.model(), input: toResponsesInput(outMessages), stream: true }
@@ -375,7 +363,11 @@ export class TurnRunner {
             }
             if ((error as { name?: string })?.name !== "AbortError") {
                 const msg = error instanceof Error ? error.message : String(error);
-                this.d.emit({ kind: "error", message: msg, retryable: isTransientErrorMessage(msg) });
+                this.d.emit({
+                    kind: "error",
+                    message: msg,
+                    retryable: isTransientErrorMessage(msg),
+                });
             }
         }
         if (!isCurrentRun()) {

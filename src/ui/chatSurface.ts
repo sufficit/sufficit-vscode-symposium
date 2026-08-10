@@ -14,7 +14,7 @@ import { HubClient } from "../sync/hubClient";
 import { pushVoicePreferences } from "./voicePreferences";
 import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 import { registerChatSurfaceListeners } from "./chatSurfaceListeners";
-import { buildSurfaceLanguageHint } from "./chatSurfaceLanguage";
+import { buildSurfaceLanguageHint, resolveSurfaceLanguage } from "./chatSurfaceLanguage";
 import { SurfaceQuota } from "./surfaceQuota";
 import { AhpMessagePortTransport } from "../ahp/messagePortTransport";
 import { createSurfaceAhpPort } from "./surfaceAhp";
@@ -211,12 +211,8 @@ export class ChatSurface {
             label: "Extension host connected",
             status: "ok",
         });
-        // Localize the webview UI: same precedence as the AI language hint
-        // (symposium.chat.preferredLanguage, else VS Code's display language).
-        const langCfg = vscode.workspace.getConfiguration("symposium.chat");
-        const lang =
-            langCfg.get<string>("preferredLanguage", "").trim() || vscode.env.language || "en";
-        void this.webview.postMessage({ type: "setLang", lang });
+        // Localize the webview UI: same precedence as the AI language hint.
+        void this.webview.postMessage({ type: "setLang", lang: resolveSurfaceLanguage() });
 
         this.pushVoicePreferences();
         const openIn = vscode.workspace

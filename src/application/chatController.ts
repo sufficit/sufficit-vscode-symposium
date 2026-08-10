@@ -22,11 +22,6 @@ import {
     pendingTasksSummary as hubPendingTasksSummary,
 } from "./controllerHubState";
 import {
-    WatchdogContext,
-    armWatchdog as armWatchdogFn,
-    clearWatchdog as clearWatchdogFn,
-} from "./controllerWatchdog";
-import {
     persistEmit as persistEmitFn,
     seedRenderLog as seedRenderLogFn,
 } from "./controllerPersist";
@@ -35,19 +30,9 @@ import { loadControllerHistory } from "./controllerHistory";
 import { stableSessionKey } from "./sessionIdentity";
 import type { ApplicationPorts } from "./ports";
 import { routeControllerSend } from "./controllerSendRouter";
-import { dispatchControllerMessage } from "./controllerDispatch";
 import { ControllerLiveState } from "./controllerLiveState";
 import { ControllerClientActions } from "./controllerClientActions";
-import { completeTurn, TurnCompletionContext } from "./controllerTurnCompletion";
-import type { TurnOrigin } from "./turn";
-
-/** id is assigned only by ChatQueue.enqueue — its presence means this
- *  message spent time in the queue before reaching dispatch(). */
-function turnOriginOf(message: PendingMessage): TurnOrigin {
-    if (message.retryOf) return "retry";
-    if (message.id != null) return "queue";
-    return "user";
-}
+import { ControllerTurnRunner } from "./controllerTurnRunner";
 
 export class ChatController {
     private runtimeKey: string | undefined;
@@ -72,10 +57,6 @@ export class ChatController {
     private readonly queue = new ChatQueue();
     // Replayable and persisted render stream.
     private readonly stream = new RenderStream((m) => this.persistEmit(m));
-    // Force-ends a silent turn that would otherwise stay working forever.
-    private readonly watchdogState = {
-        timer: undefined as ReturnType<typeof setTimeout> | undefined,
-    };
 
     private readonly persistState = { count: 0 };
     private readonly hubState: HubState = {
@@ -86,8 +67,8 @@ export class ChatController {
     /** Prevents processing an accepted clientMessageId twice. */
     private readonly dedup = new MessageDedup();
     private readonly live = new ControllerLiveState({
-        armWatchdog: () => this.armWatchdog(),
-        clearWatchdog: () => this.clearWatchdog(),
+        armWatchdog: () => this.runner.armWatchdog(),
+        clearWatchdog: () => this.runner.clearWatchdog(),
         emit: (message) => this.emit(message),
         statusChanged: () => this.onStatusChange?.(),
         recordChanged: (file, added, removed) => {
@@ -97,7 +78,7 @@ export class ChatController {
         takeQueued: () => (this.queue.isHeld ? undefined : this.queue.shift()),
         emitQueue: () => this.emitQueue(),
         dispatch: (message) => {
-            void this.dispatch(message);
+            void this.runner.dispatch(message);
         },
         holdQueue: (hold) => this.queue.hold(hold),
         queuedCount: () => this.queue.length,
@@ -110,8 +91,9 @@ export class ChatController {
         statusChanged: () => this.onStatusChange?.(),
         onSend: (message, mode) => this.onSend(message, mode),
         emitQueue: () => this.emitQueue(),
-        dispatch: (message) => void this.dispatch(message),
+        dispatch: (message) => void this.runner.dispatch(message),
     });
+    private readonly runner: ControllerTurnRunner;
 
     constructor(
         private readonly adapter: AgentAdapter,
@@ -120,6 +102,33 @@ export class ChatController {
         private readonly onStatusChange?: () => void,
         private readonly onLog?: (message: string) => void,
     ) {
+        this.runner = new ControllerTurnRunner({
+            adapter,
+            options,
+            ports,
+            hub: this.hub,
+            hubState: this.hubState,
+            promptState: this.promptState,
+            live: this.live,
+            queue: this.queue,
+            sessionId: () => this.sessionId,
+            getSession: () => this.session,
+            setSession: (session) => {
+                this.session = session;
+            },
+            reloadGuardrails: () => this.reloadGuardrails(),
+            reloadTasks: () => this.reloadTasks(),
+            checkpointId: () => this.injectedCheckpointId,
+            setCheckpointId: (id) => {
+                this.injectedCheckpointId = id;
+            },
+            aiToolsInfo: () => this.aiToolsInfo(),
+            pendingTasksSummary: () => this.pendingTasksSummary(),
+            emit: (message) => this.emit(message),
+            emitQueue: () => this.emitQueue(),
+            statusChanged: () => this.onStatusChange?.(),
+            log: (message) => this.onLog?.(message),
+        });
         void probeRtk(options.cwd);
     }
 
@@ -149,43 +158,6 @@ export class ChatController {
 
     get lastTurnId(): string | undefined {
         return this.live.lastLogicalTurnId;
-    }
-
-    private armWatchdog(): void {
-        armWatchdogFn(this.watchdogContext(), this.watchdogState);
-    }
-
-    private clearWatchdog(): void {
-        clearWatchdogFn(this.watchdogState);
-    }
-
-    private watchdogContext(): WatchdogContext {
-        return {
-            turns: this.live.turns,
-            completeTurn: (turn, outcome) =>
-                completeTurn(turn, this.turnCompletionContext(), { outcome, emitTurnEnd: true }),
-            cancel: () => this.session?.cancel(),
-            emit: (m) => this.emit(m),
-            silenceMinutes: () =>
-                this.ports.configuration.get("symposium", "turnSilenceMinutes", 5),
-        };
-    }
-
-    /** Shared by the watchdog and dispatch's catch path — every way a turn
-     *  can end outside the adapter-event reducer routes through here. */
-    private turnCompletionContext(): TurnCompletionContext {
-        return {
-            turns: this.live.turns,
-            clearWatchdog: () => this.clearWatchdog(),
-            statusChanged: () => this.onStatusChange?.(),
-            emit: (m) => this.emit(m),
-            takeQueued: () => (this.queue.isHeld ? undefined : this.queue.shift()),
-            emitQueue: () => this.emitQueue(),
-            dispatch: (message) => void this.dispatch(message),
-            holdQueue: (hold) => this.queue.hold(hold),
-            queuedCount: () => this.queue.length,
-            log: (message) => this.onLog?.(message),
-        };
     }
 
     private hubContext(): HubStateContext {
@@ -242,8 +214,8 @@ export class ChatController {
     /** Binds this controller to one webview sink and replays its render log. */
     attach(sink: (message: unknown) => void): () => void {
         // A reattached busy controller may need its watchdog rearmed.
-        if (this.live.busy && !this.watchdogState.timer) {
-            this.armWatchdog();
+        if (this.live.busy && !this.runner.watching) {
+            this.runner.armWatchdog();
         }
         const detach = this.stream.bindSink(sink);
         // Edited-file approval state is separate from the replay log.
@@ -330,7 +302,7 @@ export class ChatController {
                 stream: this.stream,
                 emitQueue: () => this.emitQueue(),
                 dispatch: (queued) => {
-                    void this.dispatch(queued);
+                    void this.runner.dispatch(queued);
                 },
                 onSend: (pending, mode) => this.onSend(pending, mode),
                 resolveApproval: (toolId, approved) =>
@@ -346,7 +318,7 @@ export class ChatController {
             dedup: this.dedup,
             busy: () => this.live.busy,
             cancel: () => this.session?.cancel(),
-            dispatch: (message) => void this.dispatch(message),
+            dispatch: (message) => void this.runner.dispatch(message),
             emitQueue: () => this.emitQueue(),
             log: (message) => this.onLog?.(message),
         });
@@ -374,51 +346,6 @@ export class ChatController {
         return hubPendingTasksSummary(this.hubContext()) ?? todosSummary(this.live.todos);
     }
 
-    private dispatch(message: PendingMessage): Promise<void> {
-        // Any dispatch (a normal send, a promoted queue item, a retry) is an
-        // explicit user action — release a prior turn-failure hold so the
-        // queue resumes normal FIFO draining from here.
-        this.queue.release();
-        const turn = this.live.turns.begin(turnOriginOf(message), {
-            intentId: message.intentId,
-            expectedBackendId: message.retryOf,
-        });
-        return dispatchControllerMessage(message, {
-            adapter: this.adapter,
-            options: this.options,
-            ports: this.ports,
-            hub: this.hub,
-            hubState: this.hubState,
-            promptState: this.promptState,
-            sessionId: () => this.sessionId,
-            getSession: () => this.session,
-            setSession: (session) => {
-                this.session = session;
-            },
-            onSessionEvent: this.live.eventHandler.handle,
-            reloadGuardrails: () => this.reloadGuardrails(),
-            reloadTasks: () => this.reloadTasks(),
-            checkpointId: () => this.injectedCheckpointId,
-            setCheckpointId: (id) => {
-                this.injectedCheckpointId = id;
-            },
-            aiToolsInfo: () => this.aiToolsInfo(),
-            pendingTasksSummary: () => this.pendingTasksSummary(),
-            setTrackingMode: (mode) => {
-                this.live.trackingMode = mode;
-            },
-            hasFirstTitle: () => !!this.live.firstTitle,
-            setFirstTitle: (title) => {
-                this.live.firstTitle = title;
-            },
-            armWatchdog: () => this.armWatchdog(),
-            statusChanged: () => this.onStatusChange?.(),
-            emit: (outbound) => this.emit(outbound),
-            turn,
-            completion: this.turnCompletionContext(),
-        });
-    }
-
     private emitChanged(): void {
         this.stream.toSink({ type: "changed-files", items: this.changedItemsRaw() });
     }
@@ -438,7 +365,7 @@ export class ChatController {
     }
 
     dispose(): void {
-        this.clearWatchdog();
+        this.runner.clearWatchdog();
         this.session?.dispose();
         this.session = undefined;
         this.queue.clear();

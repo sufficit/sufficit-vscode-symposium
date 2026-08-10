@@ -1,5 +1,6 @@
 import type { AgentEvent } from "../types";
 import type { ChatMessage } from "./types";
+import type { MaterializedToolHistory, ToolHistoryIssue } from "./toolHistory";
 
 /** Number of identical tool-call batches allowed before stopping the turn. */
 export const REPEAT_TOOL_CALL_LIMIT = 6;
@@ -112,6 +113,40 @@ export function toolHopLimitNotice(maxHops: number): AgentEvent {
         text: `Paused after ${maxHops} tool steps. Continue to let the tool loop make the next request.`,
         terminal: true,
         action: "continue-tool-loop",
+    };
+}
+
+/**
+ * Reports that the dispatched history had to be repaired to satisfy the tool
+ * pairing contract. Only the request is affected — the persisted transcript is
+ * left untouched — so the notice exists to make that divergence visible.
+ * Returns undefined when nothing was folded or repaired.
+ */
+export function toolHistoryMaterializationNotice(
+    materialized: MaterializedToolHistory,
+): AgentEvent | undefined {
+    if (
+        materialized.foldedOrphanTools === 0 &&
+        materialized.foldedMissingToolCalls === 0 &&
+        materialized.repairedMissingToolCalls === 0
+    ) {
+        return undefined;
+    }
+    return {
+        kind: "status-notice",
+        text: `OpenAI request history materialized from saved session; persisted transcript unchanged. folded_orphan_tools=${materialized.foldedOrphanTools} folded_missing_tool_calls=${materialized.foldedMissingToolCalls} repaired_missing_tool_calls=${materialized.repairedMissingToolCalls}`,
+    };
+}
+
+/** Reports tool pairing still invalid after materialization; the request is sent unchanged. */
+export function toolHistoryPairingNotice(issues: ToolHistoryIssue[]): AgentEvent | undefined {
+    if (issues.length === 0) {
+        return undefined;
+    }
+    const orphanCount = issues.filter((issue) => issue.type === "orphan_tool_message").length;
+    return {
+        kind: "status-notice",
+        text: `OpenAI dispatch history has invalid tool pairing; request sent unchanged. orphan_tools=${orphanCount} missing_tool_results=${issues.length - orphanCount}`,
     };
 }
 
