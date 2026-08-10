@@ -16,15 +16,12 @@ import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 import { registerChatSurfaceListeners } from "./chatSurfaceListeners";
 import { buildSurfaceLanguageHint } from "./chatSurfaceLanguage";
 import { SurfaceQuota } from "./surfaceQuota";
+import { AhpMessagePortTransport } from "../ahp/messagePortTransport";
+import { createSurfaceAhpPort } from "./surfaceAhp";
 
 export type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
-/**
- * Wires one webview (sidebar view or editor panel) to the chat machinery:
- * ready handshake with queued posts (postMessage before the webview script
- * is live is silently dropped), the in-webview sessions list, and dialogue
- * switching without rebuilding the HTML.
- */
+/** Wires one sidebar/editor webview to the shared chat machinery. */
 export class ChatSurface {
     private controller: ChatController | undefined;
     private controllerDetach: (() => void) | undefined;
@@ -42,6 +39,7 @@ export class ChatSurface {
     });
 
     private readonly disposables: vscode.Disposable[] = [];
+    private readonly ahpPort: AhpMessagePortTransport | undefined;
     private readonly changedFiles = new ChangedFilesManager(
         {
             post: (m) => this.post(m),
@@ -90,6 +88,11 @@ export class ChatSurface {
         // sessions list beside it.
         private readonly chatOnly = false,
     ) {
+        this.ahpPort = createSurfaceAhpPort(
+            this.deps,
+            (message) => this.post(message),
+            this.onSessionCreated,
+        );
         this.dialogues = new SurfaceDialogues({
             deps: this.deps,
             chatOnly: this.chatOnly,
@@ -102,6 +105,12 @@ export class ChatSurface {
             setControllerDetach: (detach) => {
                 this.controllerDetach = detach;
             },
+            bindAhp: this.ahpPort
+                ? (backend, controller) => {
+                      const sessionId = controller.sessionKey ?? controller.sessionId;
+                      return sessionId ? this.ahpPort?.bind(backend, sessionId) : undefined;
+                  }
+                : undefined,
             onSessionCreated: (sessionId) => this.onSessionCreated?.(sessionId),
             setTerminalSession: (t) => {
                 this.terminalSession = t;
@@ -144,6 +153,7 @@ export class ChatSurface {
             handoff: this.handoff,
             changedFiles: this.changedFiles,
             hub: this.hub,
+            ahp: this.ahpPort,
         });
         webview.options = { enableScripts: true };
         webview.html = renderHtml();
@@ -381,6 +391,7 @@ export class ChatSurface {
         // survive the view/panel being closed.
         this.detachActive();
         this.quota.dispose();
+        this.ahpPort?.dispose();
         this.disposables.forEach((d) => d.dispose());
         this.disposables.length = 0;
     }

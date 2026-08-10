@@ -1,12 +1,20 @@
 import type * as vscode from "vscode";
 import type { AgentAdapter, SessionInfo } from "../adapters/types";
 import type { LiveSessions } from "../sessions/runtime";
+import type { AhpHostRuntime } from "../ahp/hostRuntime";
+import type { SymposiumApi } from "../api/symposiumApi";
 
 export interface ChatSurfaceDeps {
     adapterByBackend: Map<string, AgentAdapter>;
     listSessions(): Promise<SessionInfo[]>;
     cwdFor(info: SessionInfo): string;
     runtime: LiveSessions;
+    ahp?: {
+        api: SymposiumApi;
+        runtime(): AhpHostRuntime | undefined;
+        sync(): void;
+        rebuild(provider: string, sessionId: string): void;
+    };
     lastActive: {
         get(): { backend: string; sessionId: string } | undefined;
         set(value: { backend: string; sessionId: string } | undefined): void;

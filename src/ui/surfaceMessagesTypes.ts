@@ -8,6 +8,7 @@ import type { SurfaceDialogues } from "./surfaceDialogues";
 import type { BackendHandoff } from "./backendHandoff";
 import type { ChangedFilesManager } from "./changedFiles";
 import type { HubClient } from "../sync/hubClient";
+import type { AhpMessagePortTransport } from "../ahp/messagePortTransport";
 
 export interface SurfaceMessagesDeps {
     webview: vscode.Webview;
@@ -31,4 +32,5 @@ export interface SurfaceMessagesDeps {
     handoff: BackendHandoff;
     changedFiles: ChangedFilesManager;
     hub: HubClient;
+    ahp?: AhpMessagePortTransport;
 }

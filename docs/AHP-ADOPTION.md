@@ -179,34 +179,34 @@ Adopt optional surfaces only after the core is interoperable:
 - client-provided tools/active clients;
 - OTLP telemetry channels.
 
-## Execution backlog
+## Delivery record and remaining gate
 
-The 2026-08-09 implementation audit confirmed that Phase 0 is the only shipped
-AHP scope. Remaining work is tracked by delivery boundary:
+The 2026-08-09 implementation completed the host, projections, persistence,
+authenticated transports and all three clients:
 
-### Core host and clients
+1. [Host runtime and channel models](activities/20260809201446-ahp-host-runtime-and-channel-models.md)
+2. [Normalized agent-event projection](activities/20260809201447-ahp-agent-event-projection.md)
+3. [Shadow projection and parity diagnostics](activities/20260809201448-ahp-shadow-projection.md)
+4. [Persistence and restart recovery](activities/20260809201449-ahp-persistence-and-restart.md)
+5. [Authenticated WebSocket transport](activities/20260809201450-ahp-authenticated-websocket.md)
+6. [PWA client migration](activities/20260809202643-ahp-pwa-client-migration.md)
+7. [Editor and sidebar migration](activities/20260809210800-ahp-editor-sidebar-migration.md)
 
-1. [Host runtime and channel models](PLAN-AHP-host-runtime-and-channel-models.md)
-2. [Normalized agent-event projection](PLAN-AHP-agent-event-projection.md)
-3. [Shadow projection and parity diagnostics](PLAN-AHP-shadow-projection.md)
-4. [Persistence and restart recovery](PLAN-AHP-persistence-and-restart.md)
-5. [Authenticated WebSocket transport](PLAN-AHP-authenticated-websocket.md)
-6. [PWA client migration](PLAN-AHP-pwa-client-migration.md)
-7. [Editor and sidebar migration](PLAN-AHP-editor-sidebar-migration.md)
-8. [Legacy transport retirement](PLAN-AHP-legacy-transport-retirement.md)
+Optional capability packages are also implemented behind explicit host
+enablement and advertised capability gates:
 
-### Optional capability packages
+- [Changeset channel](activities/20260809210801-ahp-changeset-channel.md)
+- [Terminal channel](activities/20260809210803-ahp-terminal-channel.md)
+- [Resource and attachment channels](activities/20260809210802-ahp-resource-channel.md)
+- [Customization channels](activities/20260809210804-ahp-customization-channels.md)
+- [Client-provided tools](activities/20260809210805-ahp-client-tools.md)
+- [Telemetry measurements](activities/20260809210806-ahp-telemetry.md)
 
-- [Changeset channel](PLAN-AHP-changeset-channel.md)
-- [Terminal channel](PLAN-AHP-terminal-channel.md)
-- [Resource and attachment channels](PLAN-AHP-resource-channel.md)
-- [Customization channels](PLAN-AHP-customization-channels.md)
-- [Client-provided tools](PLAN-AHP-client-tools.md)
-- [Telemetry measurements](PLAN-AHP-telemetry.md)
-
-Each plan owns its acceptance criteria, validation and rollback boundary. When
-completed, it should be replaced by one dated activity rather than retained as
-a finished plan.
+The only open delivery boundary is [legacy transport
+retirement](plans/PLAN-AHP-legacy-transport-retirement.md). Its own safety gate
+requires the PWA, editor and sidebar AHP clients to remain stable for at least
+one released version before compatibility paths and rollback switches are
+removed.
 
 ## Required invariants
 

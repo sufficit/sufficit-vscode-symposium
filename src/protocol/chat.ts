@@ -139,9 +139,9 @@ export type WebviewToHost =
     | { type: "cancel" }
     /** Releases a local tool-loop pause without creating a model-visible message. */
     | { type: "continue" }
-    | { type: "queue-remove"; id: number }
-    | { type: "queue-edit"; id: number }
-    | { type: "queue-promote"; id: number }
+    | { type: "queue-remove"; id: number | string }
+    | { type: "queue-edit"; id: number | string }
+    | { type: "queue-promote"; id: number | string }
     | { type: "pick-attachments" }
     /** Reply to an inline "approval-request" event (admin/manager/user modes). */
     | { type: "approval-response"; toolId: string; approved: boolean };
@@ -176,6 +176,7 @@ export const HOST_MESSAGE_TYPES = [
     "event",
     "focus-input",
     "guardrails",
+    "ahp-frame",
     "history",
     "history-end",
     "history-start",

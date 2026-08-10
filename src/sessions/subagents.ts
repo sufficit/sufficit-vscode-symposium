@@ -219,7 +219,7 @@ export class SubagentManager implements SubagentHost {
         };
         rec.unsub = controller.subscribe((m) => this.onMessage(rec, m));
         this.recs.set(id, rec);
-        controller.sendText(task);
+        controller.client.sendText(task);
 
         if (opts.background) {
             return this.snapshot(rec);
@@ -238,7 +238,7 @@ export class SubagentManager implements SubagentHost {
             return false;
         }
         rec.status = "working";
-        rec.controller.sendText(String(text ?? ""));
+        rec.controller.client.sendText(String(text ?? ""));
         return true;
     }
 
@@ -247,7 +247,7 @@ export class SubagentManager implements SubagentHost {
         if (!rec) {
             return false;
         }
-        rec.controller.interrupt();
+        rec.controller.client.interrupt();
         this.live.disposeBySessionId(rec.controller.sessionId ?? rec.key);
         rec.status = "gone";
         rec.unsub();

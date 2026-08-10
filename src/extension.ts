@@ -34,6 +34,7 @@ import { initSttStorage } from "./voice/sttService";
 import { initVscodeSpeechBridge } from "./voice/vscodeSpeechBridge";
 import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/codex/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
+import { registerExtensionAhpRuntime } from "./extension/ahpRuntime";
 
 /** SessionIndex singleton initialized during activation and shared with command wiring. */
 export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
@@ -109,6 +110,8 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         adapters,
         onSessionsChanged: sessionsChanged.event,
     });
+
+    const ahp = registerExtensionAhpRuntime(context, api, symposiumLog);
 
     // Subagent host: lets the native Sufficit AI backend delegate to other
     // agent-defs as real sessions (spawn_agent / agent_* tools). Late-bound so
@@ -304,6 +307,10 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         auth,
         deleting,
         rawSessions,
+        api,
+        ahpRuntime: ahp.runtime,
+        syncAhp: ahp.sync,
+        rebuildAhp: ahp.rebuild,
     });
     const chatView = new ChatViewProvider(surfaceDeps);
 
@@ -329,7 +336,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     };
 
     // Opt-in remote control bridge (off unless symposium.bridge.enabled).
-    const bridge = new RemoteBridge(api, (msg) => output.appendLine(msg));
+    const bridge = new RemoteBridge(api, (msg) => output.appendLine(msg), ahp.runtime, ahp.sync);
     void bridge.start();
     context.subscriptions.push({ dispose: () => bridge.stop() });
     context.subscriptions.push(

@@ -1508,6 +1508,8 @@
     .menubtn .lbl { max-width: 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
     .menubtn svg { width: 11px; height: 11px; opacity: 0.7; flex-shrink: 0; }
     #status { opacity: 0.55; font-size: 0.82em; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    #ahpConnectionStatus { color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap; }
+    #ahpConnectionStatus[data-state="failed"] { color: var(--vscode-errorForeground); }
     .iconBtn {
         background: none; border: none; cursor: pointer; padding: 3px 5px;
         color: var(--vscode-icon-foreground, var(--vscode-foreground));

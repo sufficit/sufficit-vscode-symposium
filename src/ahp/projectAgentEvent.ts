@@ -1,0 +1,342 @@
+import type { AgentEvent } from "../adapters/types";
+
+export interface AhpProjectionAction {
+    channel: "chat" | "session";
+    action: Record<string, unknown>;
+}
+
+export interface AhpProjectionState {
+    turnId?: string;
+    startedAt?: number;
+    pendingUser?: { text: string; model?: string; attachments?: string[]; id?: string };
+    textPartId?: string;
+    reasoningPartId?: string;
+    failed?: boolean;
+    tools: Set<string>;
+    sequence: number;
+}
+
+export function createProjectionState(): AhpProjectionState {
+    return { tools: new Set(), sequence: 0 };
+}
+
+export function rememberProjectedUser(
+    state: AhpProjectionState,
+    text: string,
+    model?: string,
+    attachments?: string[],
+    id?: string,
+): void {
+    state.pendingUser = { text, model, attachments, id };
+}
+
+export function projectAgentEvent(
+    state: AhpProjectionState,
+    event: AgentEvent,
+): AhpProjectionAction[] {
+    switch (event.kind) {
+        case "turn-start":
+            return startTurn(state, event.logicalTurnId);
+        case "text":
+            return projectText(state, event.text);
+        case "thinking":
+            return projectReasoning(state, event.text);
+        case "tool-start":
+            return projectToolStart(state, event);
+        case "tool-output":
+            return projectToolOutput(state, event.toolId, event.text);
+        case "tool-end":
+            return projectToolEnd(state, event.toolId, event.toolName, event.result);
+        case "approval-request":
+            return projectApproval(state, event, false);
+        case "approval-resolved":
+            return projectApprovalResolved(state, event.toolId, event.approved);
+        case "usage":
+            return projectUsage(state, event);
+        case "error":
+            return projectError(state, event.message, event.retryable);
+        case "turn-end":
+            return endTurn(state, event.durationMs);
+        case "status-notice":
+            return activity(event.text);
+        case "session":
+        case "model":
+        case "quota":
+            return [];
+    }
+}
+
+export function cancelProjectedTurn(
+    state: AhpProjectionState,
+    duration = elapsed(state),
+): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    const action = chatAction("chat/turnCancelled", state.turnId, { duration });
+    resetTurn(state);
+    return [action, ...activity(undefined)];
+}
+
+function startTurn(state: AhpProjectionState, logicalTurnId: string): AhpProjectionAction[] {
+    const actions = state.turnId ? cancelProjectedTurn(state) : [];
+    state.turnId = logicalTurnId;
+    state.startedAt = Date.now();
+    state.textPartId = undefined;
+    state.reasoningPartId = undefined;
+    state.failed = false;
+    state.tools.clear();
+    const pending = state.pendingUser ?? { text: "" };
+    state.pendingUser = undefined;
+    actions.push({
+        channel: "chat",
+        action: {
+            type: "chat/turnStarted",
+            turnId: logicalTurnId,
+            queuedMessageId: pending.id,
+            startedAt: new Date(state.startedAt).toISOString(),
+            message: {
+                text: pending.text,
+                origin: { kind: "user" },
+                model: pending.model ? { id: pending.model } : undefined,
+                attachments: pending.attachments?.map((path, index) => ({
+                    kind: "simple",
+                    id: `${logicalTurnId}-attachment-${index + 1}`,
+                    representation: "path",
+                    value: path,
+                })),
+            },
+        },
+    });
+    actions.push(...activity("Thinking"));
+    return actions;
+}
+
+function projectText(state: AhpProjectionState, text: string): AhpProjectionAction[] {
+    if (!state.turnId || !text) return [];
+    const actions: AhpProjectionAction[] = [];
+    if (!state.textPartId) {
+        state.textPartId = partId(state, "text");
+        actions.push(
+            chatAction("chat/responsePart", state.turnId, {
+                part: { kind: "markdown", id: state.textPartId, content: "" },
+            }),
+        );
+    }
+    actions.push(
+        chatAction("chat/delta", state.turnId, {
+            partId: state.textPartId,
+            content: text,
+        }),
+    );
+    return actions;
+}
+
+function projectReasoning(state: AhpProjectionState, text: string): AhpProjectionAction[] {
+    if (!state.turnId || !text) return [];
+    const actions: AhpProjectionAction[] = [];
+    if (!state.reasoningPartId) {
+        state.reasoningPartId = partId(state, "reasoning");
+        actions.push(
+            chatAction("chat/responsePart", state.turnId, {
+                part: { kind: "reasoning", id: state.reasoningPartId, content: "" },
+            }),
+        );
+    }
+    actions.push(
+        chatAction("chat/reasoning", state.turnId, {
+            partId: state.reasoningPartId,
+            content: text,
+        }),
+    );
+    return actions;
+}
+
+function projectToolStart(
+    state: AhpProjectionState,
+    event: Extract<AgentEvent, { kind: "tool-start" }>,
+): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    const id = event.toolId ?? partId(state, `tool-${event.toolName}`);
+    state.tools.add(id);
+    return [
+        chatAction("chat/toolCallStart", state.turnId, {
+            toolCallId: id,
+            toolName: event.toolName,
+            displayName: event.toolName,
+            intention: event.detail,
+            _meta: safeMeta({ path: event.path, added: event.added, removed: event.removed }),
+        }),
+        chatAction("chat/toolCallReady", state.turnId, {
+            toolCallId: id,
+            invocationMessage: event.detail ?? event.toolName,
+            toolInput: event.input,
+            confirmed: "not-needed",
+        }),
+        ...activity(`Running ${event.toolName}`),
+    ];
+}
+
+function projectToolOutput(
+    state: AhpProjectionState,
+    toolId: string | undefined,
+    text: string,
+): AhpProjectionAction[] {
+    if (!state.turnId || !toolId || !state.tools.has(toolId)) return [];
+    return [
+        chatAction("chat/toolCallContentChanged", state.turnId, {
+            toolCallId: toolId,
+            content: [{ kind: "text", text }],
+        }),
+    ];
+}
+
+function projectToolEnd(
+    state: AhpProjectionState,
+    toolId: string | undefined,
+    toolName: string,
+    result: string | undefined,
+): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    const id = toolId ?? [...state.tools].find((candidate) => candidate.includes(toolName));
+    if (!id) return [];
+    state.tools.delete(id);
+    return [
+        chatAction("chat/toolCallComplete", state.turnId, {
+            toolCallId: id,
+            result: { success: true, content: result ? [{ kind: "text", text: result }] : [] },
+        }),
+        ...activity(state.tools.size ? "Running tools" : "Thinking"),
+    ];
+}
+
+function projectApproval(
+    state: AhpProjectionState,
+    event: Extract<AgentEvent, { kind: "approval-request" }>,
+    approved: boolean,
+): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    return [
+        chatAction("chat/toolCallReady", state.turnId, {
+            toolCallId: event.toolId,
+            invocationMessage: event.detail ?? event.toolName,
+            confirmationTitle: event.toolName,
+            _meta: { symposium: { tier: event.tier } },
+        }),
+        {
+            channel: "session",
+            action: {
+                type: "session/inputNeededSet",
+                request: {
+                    id: `approval:${event.toolId}`,
+                    kind: "toolConfirmation",
+                    chat: "",
+                    turnId: state.turnId,
+                    toolCallId: event.toolId,
+                    approved,
+                },
+            },
+        },
+        ...activity("Approval required"),
+    ];
+}
+
+function projectApprovalResolved(
+    state: AhpProjectionState,
+    toolId: string,
+    approved: boolean,
+): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    return [
+        chatAction("chat/toolCallConfirmed", state.turnId, {
+            toolCallId: toolId,
+            approved,
+            ...(approved ? { confirmed: "user" } : { reason: "denied" }),
+        }),
+        {
+            channel: "session",
+            action: { type: "session/inputNeededRemoved", id: `approval:${toolId}` },
+        },
+        ...activity(approved ? "Running tool" : "Thinking"),
+    ];
+}
+
+function projectUsage(
+    state: AhpProjectionState,
+    event: Extract<AgentEvent, { kind: "usage" }>,
+): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    return [
+        chatAction("chat/usage", state.turnId, {
+            usage: {
+                inputTokens: event.inputTokens,
+                outputTokens: event.outputTokens,
+                cacheReadTokens: event.cacheRead,
+                model: event.model,
+                _meta: safeMeta({
+                    totalTokens: event.totalTokens,
+                    reasoningTokens: event.reasoningTokens,
+                    estimated: event.estimated,
+                }),
+            },
+        }),
+    ];
+}
+
+function projectError(
+    state: AhpProjectionState,
+    message: string,
+    retryable: boolean | undefined,
+): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    state.failed = true;
+    const action = chatAction("chat/error", state.turnId, {
+        duration: elapsed(state),
+        error: { errorType: "agent", message, _meta: { retryable: retryable === true } },
+    });
+    resetTurn(state);
+    return [action, ...activity(undefined)];
+}
+
+function endTurn(state: AhpProjectionState, duration: number | undefined): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    const action = chatAction("chat/turnComplete", state.turnId, {
+        duration: duration ?? elapsed(state),
+    });
+    resetTurn(state);
+    return [action, ...activity(undefined)];
+}
+
+function activity(value: string | undefined): AhpProjectionAction[] {
+    return [
+        { channel: "chat", action: { type: "chat/activityChanged", activity: value } },
+        { channel: "session", action: { type: "session/activityChanged", activity: value } },
+    ];
+}
+
+function chatAction(
+    type: string,
+    turnId: string,
+    values: Record<string, unknown>,
+): AhpProjectionAction {
+    return { channel: "chat", action: { type, turnId, ...values } };
+}
+
+function partId(state: AhpProjectionState, kind: string): string {
+    return `${state.turnId ?? "turn"}:${kind}:${++state.sequence}`;
+}
+
+function elapsed(state: AhpProjectionState): number {
+    return state.startedAt ? Math.max(0, Date.now() - state.startedAt) : 0;
+}
+
+function resetTurn(state: AhpProjectionState): void {
+    state.turnId = undefined;
+    state.startedAt = undefined;
+    state.textPartId = undefined;
+    state.reasoningPartId = undefined;
+    state.tools.clear();
+}
+
+function safeMeta(values: Record<string, unknown>): Record<string, unknown> | undefined {
+    const entries = Object.entries(values).filter(([, value]) => value !== undefined);
+    return entries.length ? { symposium: Object.fromEntries(entries) } : undefined;
+}

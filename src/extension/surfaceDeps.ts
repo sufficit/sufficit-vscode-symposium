@@ -6,6 +6,8 @@ import { LiveSessions } from "../sessions/runtime";
 import { ChatSurfaceDeps } from "../ui/chatSurface";
 import { SufficitAuth } from "../auth/identity";
 import { configuredModel, setConfiguredModel } from "./config";
+import type { AhpHostRuntime } from "../ahp/hostRuntime";
+import type { SymposiumApi } from "../api/symposiumApi";
 
 export interface SurfaceDepsArgs {
     context: vscode.ExtensionContext;
@@ -17,6 +19,10 @@ export interface SurfaceDepsArgs {
     deleting: Set<string>;
     /** All persisted sessions across adapters, newest first. */
     rawSessions: () => Promise<SessionInfo[]>;
+    api: SymposiumApi;
+    ahpRuntime: () => AhpHostRuntime | undefined;
+    syncAhp: () => void;
+    rebuildAhp: (provider: string, sessionId: string) => void;
 }
 
 /** Assembles the ChatSurface dependency bundle shared by the sidebar + panel hosts. */
@@ -67,6 +73,12 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                 ? info.cwd
                 : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()),
         runtime,
+        ahp: {
+            api: args.api,
+            runtime: args.ahpRuntime,
+            sync: args.syncAhp,
+            rebuild: args.rebuildAhp,
+        },
         lastActive: {
             // Per-workspace: reopening the window restores the session you were on.
             get: () => context.workspaceState.get("symposium.lastActive"),

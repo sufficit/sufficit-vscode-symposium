@@ -5,6 +5,8 @@ import type { PersistedWebviewState } from "./types";
 import { configurePwaLogin, token, authHeaders, showLogin } from "./pwaLogin";
 import { applyTheme } from "./pwaTheme";
 import type { PwaBackend, PwaBackendResponse, PwaConfig, PwaSession } from "./pwaTypes";
+import { composePwaRestMeta } from "./pwaRestMeta";
+import { closePwaAhp, connectPwaAhp, openPwaAhpSession, routePwaAhp } from "./pwaAhp";
 
 type Msg = WebviewToHost;
 
@@ -18,6 +20,7 @@ const RELAY_BASE =
         ? "/symposium?machineId=" + encodeURIComponent(MACHINE_ID) + "&path="
         : "";
 const BASE: string = RELAY_BASE || cfg.base || "";
+const USE_AHP = cfg.transport !== "rest-sse";
 
 // Namespace localStorage by machineId so different Symposium instances (different
 // workspaces on the same gateway) don't overwrite each other's token/session.
@@ -70,7 +73,10 @@ configurePwaLogin({
     base: BASE,
     tokenKey: "symposium.bridge.token." + MACHINE_ID,
     onReconnect: () => void connect(),
-    onDisconnect: () => es?.close(),
+    onDisconnect: () => {
+        es?.close();
+        void closePwaAhp();
+    },
 });
 
 function deliver(obj: HostToWebview): void {
@@ -108,7 +114,8 @@ function setActiveId(id: string): void {
     }
     activeId = id;
     persistActive(id);
-    openFollow(id);
+    if (USE_AHP) void openPwaAhpSession(id);
+    else openFollow(id);
 }
 
 // ---- connect (reconstructs the host's ready-branch pushes) ----
@@ -125,6 +132,17 @@ async function connect(): Promise<void> {
     }
     connecting = true;
     try {
+        if (USE_AHP) {
+            await connectPwaAhp({
+                base: BASE,
+                machineId: MACHINE_ID,
+                config: cfg,
+                activeId: () => activeId,
+                setActiveId,
+                deliver,
+            });
+            return;
+        }
         // Validate the token before booting the UI so a bad token shows the login,
         // not a silently empty app. 401 inside apiGet also re-opens the login.
         let sessions: PwaSession[] = [];
@@ -156,7 +174,7 @@ async function connect(): Promise<void> {
         }
 
         deliver({ type: "clear" });
-        deliver(await composeMeta(activeId, sessions));
+        deliver(await composePwaRestMeta(activeId, sessions, apiGet));
         openFollow(activeId); // SSE log replay carries history + live events
 
         // Cosmetic panels — safe to start empty (no bridge route yet).
@@ -167,55 +185,6 @@ async function connect(): Promise<void> {
     } finally {
         connecting = false;
     }
-}
-
-/** Minimal `meta` (see meta.ts:applyMeta) composed from REST — bridge has no
- *  session-meta route yet, so title/permission/reasoning are best-effort. */
-async function composeMeta(id: string, sessions: PwaSession[]): Promise<HostToWebview> {
-    const info = sessions.find((s) => (s.sessionId || s.id) === id) || {};
-    let models: string[] = [];
-    let backendName: string = info.backendName || info.backend || "";
-    try {
-        const backends = await apiGet<PwaBackend[] | PwaBackendResponse>("/backends");
-        const list: PwaBackend[] = Array.isArray(backends) ? backends : backends.backends || [];
-        const b = list.find((x) => x.backend === info.backend || x.id === info.backend);
-        if (b) {
-            models = b.models || (b.model ? [b.model] : []);
-            backendName = b.name || b.displayName || backendName;
-        }
-    } catch {
-        /* models stay empty; send still works */
-    }
-
-    const modelDefault = info.model || models[0] || "";
-    return {
-        type: "meta",
-        sessionId: id,
-        backend: info.backend || "",
-        backendName,
-        title: info.title || "Session",
-        resumed: true,
-        models,
-        modelDefault,
-        sessionModel: info.model || "",
-        modelLabels: {},
-        reasoningLevels: [],
-        reasoningDefault: "",
-        permissionModes: ["default"],
-        permission: "default",
-        whenBusy: "queue",
-        busy: false,
-        sessionsSide: "auto",
-        chatOnly: false,
-        agentLabels: null,
-        bootstrapLink: null,
-        pinnedModels: [],
-        browserOpen: false,
-        aiTools: undefined,
-        cwd: info.cwd || "",
-        activeFile: null,
-        execDisplay: undefined,
-    };
 }
 
 async function backendsToAgents(): Promise<
@@ -284,6 +253,7 @@ async function createSession(msg: Msg): Promise<void> {
 
 // ---- outbound router (WebviewToHost → bridge REST) ----
 function route(msg: Msg): void {
+    if (USE_AHP && routePwaAhp(msg)) return;
     switch (msg.type) {
         case "ready":
             void connect();

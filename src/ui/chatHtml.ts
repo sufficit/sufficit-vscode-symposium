@@ -105,6 +105,7 @@ export const chatBodyMarkup = /* html */ `<div id="root">
                     <button id="presencePicker" class="ctl menubtn" title="Presence — can be changed any time" aria-label="Presence — can be changed any time"><span class="picon"></span><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                     <button id="execPicker" class="ctl menubtn" style="display:none" title="Shell execution display" aria-label="Shell execution display"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                     <span id="status"></span>
+                    <span id="ahpConnectionStatus" role="status" aria-live="polite" hidden></span>
                     <span class="grow"></span>
                 </div>
                 <button id="cancelEdit" class="editCancel" title="Cancel edit" aria-label="Cancel edit" style="display:none">

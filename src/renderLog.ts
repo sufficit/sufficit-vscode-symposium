@@ -84,15 +84,3 @@ export function readRender(sessionId: string): unknown[] {
     }
     return out;
 }
-
-/** Deletes a session's render log (called on permanent session delete). */
-export function removeRender(sessionId: string): void {
-    if (!sessionId) {
-        return;
-    }
-    try {
-        fs.rmSync(renderFile(sessionId), { force: true });
-    } catch {
-        /* ignore */
-    }
-}

@@ -47,10 +47,49 @@ import {
 import { resolveMarkdownImage } from "./markdown";
 
 import { handleCatalogMessage } from "./dispatchCatalog";
+import { applyLocalAhpFrame } from "./localAhp";
+import type { AgentEvent, HistoryMessage } from "../../adapters/types";
+import type { HostToWebview } from "../../protocol/chat";
+import type { MetaMessageData, WebviewAttachment } from "./types";
 
 let historyCycle = 0;
 
-window.addEventListener("message", ({ data }) => {
+type DispatchMessage = HostToWebview &
+    Omit<MetaMessageData, "type"> & {
+        type: string;
+        complete: boolean;
+        id: string;
+        label: string | null;
+        status: "pending" | "ok" | "fail" | "warn";
+        detail: string;
+        lang: string;
+        dataUrl?: string;
+        error?: string;
+        agents: Parameters<typeof renderAgentPicker>[0];
+        open: boolean;
+        loading: boolean;
+        path: string;
+        start: number;
+        end: number;
+        preview: boolean;
+        sessionsOnly: boolean;
+        items?: never[];
+        attachments?: string[];
+        message: HistoryMessage;
+        clientMessageId?: string;
+        text: string;
+        files: WebviewAttachment[];
+        project: string;
+        event: AgentEvent;
+    };
+
+export function handleHostMessage(payload: unknown): void {
+    const translated = applyLocalAhpFrame(payload);
+    if (translated) {
+        for (const message of translated) handleHostMessage(message);
+        return;
+    }
+    const data = payload as DispatchMessage;
     if (handleCatalogMessage(data)) return;
     switch (data.type) {
         case "boot": {
@@ -88,11 +127,11 @@ window.addEventListener("message", ({ data }) => {
             break;
         }
         case "meta": {
-            applyMeta(data);
+            applyMeta(data as MetaMessageData);
             break;
         }
         case "title-update": {
-            chatTitle.textContent = data.title || "";
+            chatTitle.textContent = typeof data.title === "string" ? data.title : "";
             break;
         }
         case "browser-state": {
@@ -292,4 +331,6 @@ window.addEventListener("message", ({ data }) => {
             break;
         }
     }
-});
+}
+
+window.addEventListener("message", ({ data }: MessageEvent<unknown>) => handleHostMessage(data));

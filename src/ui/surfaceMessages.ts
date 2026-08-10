@@ -305,6 +305,9 @@ export class SurfaceMessages {
                         // then deliver this message to it.
                         this.d.dialogues.startDefaultDialogue();
                     }
+                    if (this.d.ahp?.handleMessage(message)) {
+                        return;
+                    }
                     await this.d.getController()?.handleMessage(message);
                 }
             }

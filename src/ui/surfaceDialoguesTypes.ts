@@ -14,6 +14,7 @@ export interface SurfaceDialoguesDeps {
     getController: () => ChatController | undefined;
     setController: (controller: ChatController | undefined) => void;
     setControllerDetach: (detach: (() => void) | undefined) => void;
+    bindAhp?: (backend: string, controller: ChatController) => (() => void) | undefined;
     onSessionCreated?: (sessionId: string) => void;
     setTerminalSession: (terminal: TerminalSession | undefined) => void;
     setFollowHandle: (handle: FollowHandle | undefined) => void;

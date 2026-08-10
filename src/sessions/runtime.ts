@@ -139,6 +139,7 @@ export class LiveSessions {
             this.onChange?.(),
         );
         const key = options.resumeSessionId ?? `new-${++this.seq}`;
+        controller.setRuntimeKey(key);
         this.controllers.set(key, controller);
         // A resumed session may have a persisted terminal error in the store.
         // Registering its live controller acknowledges that historical state;

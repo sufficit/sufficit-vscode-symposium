@@ -14,13 +14,23 @@ export function handleControllerEvent(
     backend: string,
     message: unknown,
 ): void {
+    if (handleControllerSideEffect(d, backend, message)) return;
+    d.post(message);
+}
+
+/** Applies local-only side effects without forwarding legacy render output. */
+export function handleControllerSideEffect(
+    d: SurfaceDialoguesDeps,
+    backend: string,
+    message: unknown,
+): boolean {
     // The controller emits the RAW edited-files set; the surface filters
     // it against live git status (so staged files drop, unstaging them
     // brings them back) before showing it.
     const msg = message as Record<string, unknown> | null;
     if (msg?.type === "changed-files" && "items" in msg && Array.isArray(msg.items)) {
         void d.changedFiles.refresh(msg.items);
-        return;
+        return true;
     }
     // Capture a freshly-assigned session id so a brand-new dialogue
     // also becomes the restorable "last active" one.
@@ -123,5 +133,5 @@ export function handleControllerEvent(
         // changed-files signal and the .git/index watcher both miss.
         d.changedFiles.refreshNow();
     }
-    d.post(message);
+    return false;
 }

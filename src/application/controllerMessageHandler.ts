@@ -47,12 +47,12 @@ export async function handleControllerMessage(
             ctx.continueTurn();
             return true;
         case "queue-remove":
-            if (ctx.queue.remove(message.id)) {
+            if (ctx.queue.remove(Number(message.id))) {
                 ctx.emitQueue();
             }
             return true;
         case "queue-edit": {
-            const queued = ctx.queue.take(message.id);
+            const queued = ctx.queue.take(Number(message.id));
             if (queued) {
                 ctx.emitQueue();
                 ctx.stream.toSink({
@@ -64,7 +64,7 @@ export async function handleControllerMessage(
             return true;
         }
         case "queue-promote": {
-            const queued = ctx.queue.take(message.id);
+            const queued = ctx.queue.take(Number(message.id));
             if (!queued) {
                 return true;
             }

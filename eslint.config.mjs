@@ -78,7 +78,7 @@ export default tseslint.config(
         },
     },
     {
-        files: ["src/ui/webview/**/*.ts"],
+        files: ["src/ui/webview/**/*.ts", "src/ahp/client/**/*.ts"],
         languageOptions: {
             parserOptions: {
                 projectService: false,

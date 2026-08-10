@@ -70,6 +70,14 @@ export class RenderStream {
         };
     }
 
+    /** Adds a live-only observer without replaying historical render messages. */
+    addLiveObserver(observer: (message: unknown) => void): () => void {
+        this.observers.add(observer);
+        return () => {
+            this.observers.delete(observer);
+        };
+    }
+
     /** Buffers a render message and fans it out to all sinks + observers. */
     emit(message: unknown): void {
         this.log.push(message);

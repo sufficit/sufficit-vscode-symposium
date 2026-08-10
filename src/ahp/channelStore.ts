@@ -75,6 +75,10 @@ export class AhpStateStore {
         return this.channels.has(resource);
     }
 
+    resources(): URI[] {
+        return [...this.channels.keys()];
+    }
+
     register<S extends AhpState, A extends StateAction>(
         resource: URI,
         initialState: S,
@@ -114,6 +118,38 @@ export class AhpStateStore {
             }
         }
         return { snapshots, missing };
+    }
+
+    allSnapshots(): Snapshot[] {
+        return this.resources().map((resource) => this.snapshot(resource));
+    }
+
+    retainedActions(): ActionEnvelope[] {
+        return [...this.replayBuffer];
+    }
+
+    /** Restores sequence/replay metadata after callers have registered snapshots. */
+    restoreClock(serverSeq: number, retained: readonly ActionEnvelope[] = []): void {
+        if (!Number.isSafeInteger(serverSeq) || serverSeq < this.sequence) {
+            throw new RangeError("serverSeq must be a safe integer at or above current sequence");
+        }
+        let previous = 0;
+        for (const envelope of retained) {
+            if (
+                !Number.isSafeInteger(envelope.serverSeq) ||
+                envelope.serverSeq <= previous ||
+                envelope.serverSeq > serverSeq
+            ) {
+                throw new Error("retained AHP actions must be strictly monotonic and bounded");
+            }
+            previous = envelope.serverSeq;
+        }
+        this.sequence = serverSeq;
+        this.replayBuffer.splice(
+            0,
+            this.replayBuffer.length,
+            ...retained.slice(-this.replayCapacity),
+        );
     }
 
     /**

@@ -157,3 +157,50 @@ test("webview DOM distinguishes live usage, non-fatal errors and actionable syst
     assert.equal(harness.sent.at(-1).type, "continue");
     harness.dom.window.close();
 });
+
+test("webview DOM announces AHP reconciliation and renders a chat snapshot once", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: { kind: "status", generation: 1, status: "reconciling" },
+    });
+    const connection = harness.document.querySelector("#ahpConnectionStatus");
+    assert.equal(connection.getAttribute("role"), "status");
+    assert.equal(connection.hidden, false);
+    assert.match(connection.textContent, /Synchronizing/);
+
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource: "ahp-chat:/11111111-1111-5111-8111-111111111111",
+                fromSeq: 4,
+                state: {
+                    resource: "ahp-chat:/11111111-1111-5111-8111-111111111111",
+                    title: "Alpha",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [
+                        {
+                            id: "turn-1",
+                            startedAt: new Date(0).toISOString(),
+                            duration: 1,
+                            state: "complete",
+                            message: { text: "AHP question", origin: { kind: "user" } },
+                            responseParts: [
+                                { kind: "markdown", id: "part-1", content: "AHP answer" },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+    });
+    assert.match(harness.document.querySelector("#log").textContent, /AHP question/);
+    assert.match(harness.document.querySelector("#log").textContent, /AHP answer/);
+    harness.dom.window.close();
+});

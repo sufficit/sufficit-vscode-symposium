@@ -186,19 +186,8 @@ export class OpenAIAdapter implements AgentAdapter {
     }
 
     deleteSession(info: SessionInfo): Promise<void> {
-        // Tombstone first: a delayed writer or stale ledger must never turn a
-        // deleted session back into "Session (recovered)" while scrub runs.
-        ledger.markLedgerDeleted(info.sessionId);
         try {
             fs.rmSync(storePath(this.backend, info.sessionId), { force: true });
-        } catch {
-            /* ignore */
-        }
-        // Also remove the ledger repo so the session isn't left as an orphan
-        // (listSessions only scans the store dir, so a ledger-only session is
-        // invisible in the UI but still consumes disk space).
-        try {
-            ledger.removeLedger(info.sessionId);
         } catch {
             /* ignore */
         }

@@ -9,6 +9,8 @@ import { removeBridgeAdvertisement, writeBridgeAdvertisement } from "./bridgeAdv
 import { handleBridgeRequest } from "./bridgeRequest";
 import { loadBridgeTlsMaterial } from "./bridgeTls";
 import type { SymposiumApi } from "./symposiumApi";
+import { configuredBridgePolicy } from "./bridgeConfiguration";
+import { AhpWebSocketServer, type AhpHostRuntime } from "../ahp";
 
 type HostRejection = {
     at: string;
@@ -24,11 +26,14 @@ export class RemoteBridge {
     private connection: { url: string; token: string; https: boolean } | undefined;
     private lastRejection: HostRejection | undefined;
     private relay: RelayClient | undefined;
+    private ahp: AhpWebSocketServer | undefined;
     private onRelayUrlChange?: (url: string | undefined) => void;
 
     constructor(
         private readonly api: SymposiumApi,
         private readonly log: (message: string) => void,
+        private readonly getAhpRuntime?: () => AhpHostRuntime | undefined,
+        private readonly syncAhpRuntime?: () => void,
     ) {}
 
     setRelayUrlCallback(callback: (url: string | undefined) => void): void {
@@ -59,6 +64,25 @@ export class RemoteBridge {
         const handler = (request: http.IncomingMessage, response: http.ServerResponse) =>
             void this.handle(request, response, token);
         this.server = tls ? https.createServer(tls, handler) : http.createServer(handler);
+        const pwaUsesAhp =
+            config.get<boolean>("pwa", false) &&
+            config.get<string>("pwaTransport", "ahp") === "ahp";
+        if (config.get<boolean>("ahp", false) || pwaUsesAhp) {
+            const runtime = this.getAhpRuntime?.();
+            if (runtime) {
+                this.ahp = new AhpWebSocketServer({
+                    server: this.server,
+                    token,
+                    runtime,
+                    api: this.api,
+                    policy: configuredBridgePolicy(),
+                    log: this.log,
+                    syncRuntime: this.syncAhpRuntime,
+                });
+            } else {
+                this.log("[ahp] endpoint requested but runtime is unavailable");
+            }
+        }
         if (!tls) {
             this.log("[bridge] no TLS cert available — serving plain HTTP.");
         }
@@ -71,6 +95,8 @@ export class RemoteBridge {
     }
 
     stop(): void {
+        this.ahp?.close();
+        this.ahp = undefined;
         this.relay?.stop();
         this.relay = undefined;
         this.server?.close();

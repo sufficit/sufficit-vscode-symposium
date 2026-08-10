@@ -2,7 +2,7 @@
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
     "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.809.3",
+    "version": "2026.809.4",
     "publisher": "sufficit",
     "license": "MIT",
     "icon": "media/symposium-icon.png",
@@ -384,6 +384,15 @@
                     "default": "editor",
                     "description": "Where sessions open: as a full editor panel (default, like the built-in chat sessions viewer) or in the Symposium sidebar Chat view."
                 },
+                "symposium.chat.transport": {
+                    "type": "string",
+                    "enum": [
+                        "ahp",
+                        "legacy"
+                    ],
+                    "default": "ahp",
+                    "description": "Local editor/sidebar state transport. AHP is authoritative; legacy is a release-scoped rollback path. Reload active chat surfaces after changing it."
+                },
                 "symposium.lmTools": {
                     "type": "string",
                     "enum": [
@@ -556,6 +565,21 @@
                     "default": false,
                     "description": "Enable the remote control bridge (HTTP + SSE) that re-publishes the Symposium public API for remote commands and chat following. Off by default."
                 },
+                "symposium.bridge.ahp": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Expose the authenticated Agent Host Protocol WebSocket endpoint at /ahp. The Bridge must also be enabled."
+                },
+                "symposium.ahp.shadow.enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Project live sessions into the experimental Agent Host Protocol runtime without changing the current UI transport."
+                },
+                "symposium.ahp.shadow.diagnostics": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Write bounded, redacted AHP parity diagnostics to the Symposium output channel while shadow projection is enabled."
+                },
                 "symposium.bridge.host": {
                     "type": "string",
                     "default": "127.0.0.1",
@@ -584,6 +608,15 @@
                     "type": "boolean",
                     "default": false,
                     "description": "Serve the installable remote PWA at /pwa. Every data endpoint remains token-gated."
+                },
+                "symposium.bridge.pwaTransport": {
+                    "type": "string",
+                    "enum": [
+                        "ahp",
+                        "rest-sse"
+                    ],
+                    "default": "ahp",
+                    "description": "PWA state transport. AHP is authoritative; rest-sse is a temporary rollback path."
                 },
                 "symposium.bridge.allowedRoots": {
                     "type": "array",
@@ -1023,7 +1056,7 @@
         "check:engineering": "node scripts/check-engineering.mjs",
         "check:architecture": "node scripts/check-architecture.mjs",
         "check:vsix": "node scripts/check-vsix.mjs",
-        "package:vsix": "vsce package --no-dependencies --allow-missing-repository",
+        "package:vsix": "vsce package --allow-missing-repository",
         "vscode:prepublish": "npm run compile && npm run check:webview"
     },
     "devDependencies": {
@@ -1031,6 +1064,7 @@
         "@types/jsdom": "28.0.3",
         "@types/node": "^22.10.2",
         "@types/vscode": "^1.100.0",
+        "@types/ws": "8.18.1",
         "@typescript-eslint/eslint-plugin": "^8.18.2",
         "@typescript-eslint/parser": "^8.18.2",
         "@vscode/test-electron": "3.1.0",
@@ -1044,5 +1078,8 @@
         "qrcode-generator": "2.0.4",
         "typescript": "^5.8.3",
         "typescript-eslint": "^8.62.0"
+    },
+    "dependencies": {
+        "ws": "8.18.3"
     }
 }

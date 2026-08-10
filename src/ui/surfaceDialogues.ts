@@ -4,7 +4,7 @@ import { readWorkspaceBootstrap } from "../config/root";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
 import type { WebviewToHost } from "../protocol/chat";
 import { restartFromMessage, retryLastMessage, editResend } from "./surfaceBranching";
-import { handleControllerEvent } from "./surfaceDialoguesAttach";
+import { handleControllerEvent, handleControllerSideEffect } from "./surfaceDialoguesAttach";
 import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import { DEFAULT_BUSY_SEND_MODE } from "../protocol/sendMode";
 import { canonicalReasoning } from "../adapters/reasoning";
@@ -12,6 +12,7 @@ import {
     openTerminalDialogue as openTerminalDialogueFlow,
     type TerminalDialogueOptions,
 } from "./surfaceTerminalDialogue";
+import { ensureAllowedWriteRoots } from "./surfaceWriteRoots";
 
 /** Coordinates new, resumed, terminal-backed and read-only dialogues. */
 export type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
@@ -233,27 +234,7 @@ export class SurfaceDialogues {
         if (!adapter) {
             return;
         }
-        // Write-root guardrail (delivery 1E): scope the agent's writes to the
-        // open workspace folders so it can't write across repo boundaries or
-        // into files outside the authorized workspace. Empty when no folders
-        // are open (no containment, preserving the unrestricted default).
-        if (!options.allowedWriteRoots || options.allowedWriteRoots.length === 0) {
-            const folders = vscode.workspace.workspaceFolders ?? [];
-            if (folders.length) {
-                options = { ...options, allowedWriteRoots: folders.map((f) => f.uri.fsPath) };
-            } else {
-                // No workspace folder open → write containment is off. Surface a
-                // notice so the user knows the agent is unrestricted (defect 6.3):
-                // a silent unrestricted agent is a footgun.
-                this.d.post({
-                    type: "event",
-                    event: {
-                        kind: "status-notice",
-                        text: "No workspace folder open — write-root containment is OFF. The agent can write to any path.",
-                    },
-                });
-            }
-        }
+        options = ensureAllowedWriteRoots(options, this.d.post);
         const generation = ++this.generation;
         this.d.setSendBlockedReason(undefined);
         this.d.detachActive();
@@ -297,6 +278,9 @@ export class SurfaceDialogues {
         // (replayed when the sink binds below) so tool rows, diffs, status notices
         // and panels reappear — not just text. Skips lossy history reconstruction.
         const seededVisual = !existing && !!options.resumeSessionId && controller.seedRenderLog();
+        if (seededVisual && controller.sessionKey) {
+            this.d.deps.ahp?.rebuild(backend, controller.sessionKey);
+        }
         this.d.setController(controller);
         void this.d.sync.refreshTasks(); // load this session's tasks into the panel
         void this.d.sync.refreshGuardrails();
@@ -372,9 +356,20 @@ export class SurfaceDialogues {
                 .get<string>("shellExecution", "silent"),
         });
         this.d.activateUsage(adapter);
-        this.d.setControllerDetach(
-            controller.attach((message) => handleControllerEvent(this.d, backend, message)),
-        );
+        const ahpDetach = this.d.bindAhp?.(backend, controller);
+        if (ahpDetach) {
+            const sideEffectDetach = controller.subscribeLive((message) =>
+                handleControllerSideEffect(this.d, backend, message),
+            );
+            this.d.setControllerDetach(() => {
+                sideEffectDetach();
+                ahpDetach();
+            });
+        } else {
+            this.d.setControllerDetach(
+                controller.attach((message) => handleControllerEvent(this.d, backend, message)),
+            );
+        }
         if (!existing && info && !seededVisual) {
             void controller.loadHistory(info).finally(() => {
                 if (generation === this.generation) {

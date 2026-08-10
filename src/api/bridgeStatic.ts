@@ -2,6 +2,7 @@ import * as http from "http";
 import * as fs from "fs";
 import * as path from "path";
 import { renderPwaHtml } from "../ui/pwaHtml";
+import * as vscode from "vscode";
 
 const PWA_MIME: Record<string, string> = {
     ".js": "text/javascript",
@@ -15,7 +16,10 @@ const PWA_MIME: Record<string, string> = {
 export function serveBridgeStatic(rel: string, res: http.ServerResponse): void {
     if (rel === "index.html" || rel === "") {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderPwaHtml());
+        const transport = vscode.workspace
+            .getConfiguration("symposium.bridge")
+            .get<"ahp" | "rest-sse">("pwaTransport", "ahp");
+        res.end(renderPwaHtml(transport));
         return;
     }
     const root = path.join(__dirname, "pwa");

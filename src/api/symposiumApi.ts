@@ -24,6 +24,10 @@ import { HubClient } from "../sync/hubClient";
 import { SyncEngine, SyncResult } from "../sync/sync";
 import { BackendsApi, createBackendsApi } from "./backendConfig";
 import { createSettingsApi, SettingsApi } from "./settingsApi";
+import type {
+    PendingMessage,
+    SendMode as ControllerSendMode,
+} from "../application/controllerQueue";
 
 // Re-export the public types of the extracted backend/settings slices so that
 // imports from "./symposiumApi" (bridge.ts, extension.ts, ui/configPanel.ts)
@@ -40,7 +44,8 @@ export interface ApiSessionInfo {
     status: SessionStatus;
 }
 
-export type SendMode = "send" | "queue" | "steer";
+export type SendMode = ControllerSendMode;
+export type ApiSendOptions = Omit<PendingMessage, "text" | "clientMessageId" | "mode">;
 
 /**
  * Stable, transport-agnostic facade over Symposium's session control, chat
@@ -76,9 +81,23 @@ export interface SymposiumApi {
             },
         ): Promise<string | undefined>;
         /** Sends a message to a session. `steer` interrupts the running turn. */
-        send(id: string, text: string, mode?: SendMode): boolean;
+        send(
+            id: string,
+            text: string,
+            mode?: SendMode,
+            clientMessageId?: string,
+            options?: Partial<ApiSendOptions>,
+        ): boolean;
         /** Interrupts the running turn, if any. */
         interrupt(id: string): boolean;
+        /** Releases a local system pause without adding a model-visible user message. */
+        continue(id: string): boolean;
+        /** Disposes a live controller and releases its in-memory resources. */
+        dispose(id: string): boolean;
+        removeQueued(id: string, queuedId: string): boolean;
+        promoteQueued(id: string, queuedId: string): boolean;
+        reorderQueued(id: string, order: readonly string[]): boolean;
+        resolveApproval(id: string, toolId: string, approved: boolean): boolean;
         /**
          * Follows a session's render stream (history + live events). Replays the
          * backlog to the observer, then streams new messages. Returns an
@@ -228,12 +247,28 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                 }
                 return deps.live.createWithKey(adapter, opts).key;
             },
-            send: (id, text, mode = "send") => {
+            send: (id, text, mode = "send", clientMessageId, options = {}) => {
                 const c = deps.live.findBySessionId(id);
                 if (!c) {
                     return false;
                 }
-                c.sendText(text, mode);
+                c.client.sendMessage(
+                    {
+                        text,
+                        clientMessageId,
+                        attachments: options.attachments ?? [],
+                        model: options.model,
+                        reasoning: options.reasoning,
+                        permission: options.permission,
+                        autonomy: options.autonomy,
+                        execDisplay: options.execDisplay,
+                        intentId: options.intentId,
+                        retryOf: options.retryOf,
+                        interruptedBy: options.interruptedBy,
+                        speech: options.speech,
+                    },
+                    mode,
+                );
                 return true;
             },
             interrupt: (id) => {
@@ -241,9 +276,23 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
                 if (!c) {
                     return false;
                 }
-                c.interrupt();
+                c.client.interrupt();
                 return true;
             },
+            continue: (id) => {
+                const c = deps.live.findBySessionId(id);
+                if (!c) return false;
+                return c.client.continueTurn();
+            },
+            dispose: (id) => deps.live.disposeBySessionId(id),
+            removeQueued: (id, queuedId) =>
+                deps.live.findBySessionId(id)?.client.removeQueued(queuedId) ?? false,
+            promoteQueued: (id, queuedId) =>
+                deps.live.findBySessionId(id)?.client.promoteQueued(queuedId) ?? false,
+            reorderQueued: (id, order) =>
+                deps.live.findBySessionId(id)?.client.reorderQueued(order) ?? false,
+            resolveApproval: (id, toolId, approved) =>
+                deps.live.findBySessionId(id)?.client.resolveApproval(toolId, approved) ?? false,
             follow: (id, observer) => {
                 const c = deps.live.findBySessionId(id);
                 return c ? c.subscribe(observer) : undefined;

@@ -3,11 +3,9 @@ import {
     AgentSession,
     SessionInfo,
     SessionStartOptions,
-    TodoItem,
     type SessionTerminalStatus,
 } from "../adapters/types";
 import { todosSummary } from "../adapters/todos";
-import { type TrackingMode } from "./outboundPrompt";
 import { probeRtk } from "../adapters/rtk";
 import { HubClient } from "../sync/hubClient";
 import { WebviewToHost } from "../protocol/chat";
@@ -33,19 +31,17 @@ import {
     seedRenderLog as seedRenderLogFn,
 } from "./controllerPersist";
 import { OutboundPromptState } from "./outboundPrompt";
-import { ControllerEventHandler } from "./controllerEventHandler";
 import { loadControllerHistory } from "./controllerHistory";
 import { stableSessionKey } from "./sessionIdentity";
 import type { ApplicationPorts } from "./ports";
 import { routeControllerSend } from "./controllerSendRouter";
 import { dispatchControllerMessage } from "./controllerDispatch";
+import { ControllerLiveState } from "./controllerLiveState";
+import { ControllerClientActions } from "./controllerClientActions";
 
 export class ChatController {
+    private runtimeKey: string | undefined;
     private session: AgentSession | undefined;
-    private busy = false;
-    // Fatal turns do not auto-drain queued work; the user chooses how to recover.
-    public attentionStatus: SessionTerminalStatus | undefined;
-    private firstTitle = "";
     // One-shot outbound-prompt injection flags.
     private readonly promptState: OutboundPromptState = {
         policyInjected: false,
@@ -58,9 +54,6 @@ export class ChatController {
         checkpointInjected: false,
         trackingInjected: false,
     };
-    // Latest native/fence TodoWrite state, used when Hub tasks are unavailable.
-    private lastTodos: TodoItem[] = [];
-    private trackingMode: TrackingMode | undefined;
     private readonly hub = new HubClient();
     // Checkpoint already injected as resume context.
     private injectedCheckpointId: string | undefined;
@@ -82,13 +75,7 @@ export class ChatController {
     };
     /** Prevents processing an accepted clientMessageId twice. */
     private readonly dedup = new MessageDedup();
-    /** Stable logical turn reused by Retry. */
-    private lastLogicalTurnId: string | undefined;
-    private readonly eventHandler = new ControllerEventHandler({
-        isBusy: () => this.busy,
-        setBusy: (busy) => {
-            this.busy = busy;
-        },
+    private readonly live = new ControllerLiveState({
         armWatchdog: () => this.armWatchdog(),
         clearWatchdog: () => this.clearWatchdog(),
         emit: (message) => this.emit(message),
@@ -97,25 +84,26 @@ export class ChatController {
             this.changed.record(file, added, removed);
             this.emitChanged();
         },
-        setTodos: (todos) => {
-            this.lastTodos = todos;
-        },
-        trackingMode: () => this.trackingMode,
-        markTurnFailed: () => {
-            this.attentionStatus = "error";
-        },
-        markTurnWarning: () => {
-            this.attentionStatus = "warning";
-        },
-        turnFailed: () => this.attentionStatus === "error",
-        setLogicalTurnId: (id) => {
-            this.lastLogicalTurnId = id;
-        },
         takeQueued: () => this.queue.shift(),
         emitQueue: () => this.emitQueue(),
         dispatch: (message) => {
             void this.dispatch(message);
         },
+    });
+    readonly client = new ControllerClientActions({
+        queue: this.queue,
+        getSession: () => this.session,
+        isBusy: () => this.live.busy,
+        setBusy: (busy) => {
+            this.live.busy = busy;
+        },
+        clearAttention: () => {
+            this.live.attentionStatus = undefined;
+        },
+        statusChanged: () => this.onStatusChange?.(),
+        onSend: (message, mode) => this.onSend(message, mode),
+        emitQueue: () => this.emitQueue(),
+        dispatch: (message) => void this.dispatch(message),
     });
 
     constructor(
@@ -132,15 +120,31 @@ export class ChatController {
     }
 
     get sessionKey(): string | undefined {
-        return stableSessionKey(this.options.resumeSessionId, this.session?.sessionId);
+        return stableSessionKey(
+            this.options.resumeSessionId,
+            this.session?.sessionId,
+            this.runtimeKey,
+        );
+    }
+
+    setRuntimeKey(key: string): void {
+        this.runtimeKey = key;
     }
 
     get isBusy(): boolean {
-        return this.busy;
+        return this.live.busy;
+    }
+
+    get attentionStatus(): SessionTerminalStatus | undefined {
+        return this.live.attentionStatus;
+    }
+
+    set attentionStatus(value: SessionTerminalStatus | undefined) {
+        this.live.attentionStatus = value;
     }
 
     get lastTurnId(): string | undefined {
-        return this.lastLogicalTurnId;
+        return this.live.lastLogicalTurnId;
     }
 
     private armWatchdog(): void {
@@ -153,9 +157,9 @@ export class ChatController {
 
     private watchdogContext(): WatchdogContext {
         return {
-            busy: () => this.busy,
+            busy: () => this.live.busy,
             setBusy: (v) => {
-                this.busy = v;
+                this.live.busy = v;
             },
             markTurnFailed: () => {
                 this.attentionStatus = "error";
@@ -185,7 +189,7 @@ export class ChatController {
         return this.options.lineageId;
     }
     get title(): string {
-        return this.firstTitle || "New session";
+        return this.live.firstTitle || "New session";
     }
 
     setModel(model: string): void {
@@ -222,7 +226,7 @@ export class ChatController {
     /** Binds this controller to one webview sink and replays its render log. */
     attach(sink: (message: unknown) => void): () => void {
         // A reattached busy controller may need its watchdog rearmed.
-        if (this.busy && !this.watchdogState.timer) {
+        if (this.live.busy && !this.watchdogState.timer) {
             this.armWatchdog();
         }
         const detach = this.stream.bindSink(sink);
@@ -234,24 +238,11 @@ export class ChatController {
     subscribe(observer: (message: unknown) => void): () => void {
         return this.stream.addObserver(observer);
     }
+    subscribeLive(observer: (message: unknown) => void): () => void {
+        return this.stream.addLiveObserver(observer);
+    }
     private emit(message: unknown): void {
         this.stream.emit(message);
-    }
-
-    sendText(text: string, mode: SendMode = "send"): void {
-        this.onSend({ text, attachments: [] }, mode);
-    }
-
-    interrupt(): void {
-        this.session?.cancel();
-    }
-    continueTurn(): void {
-        const session = this.session;
-        if (this.busy || !session?.continueTurn) return;
-        this.busy = true;
-        this.attentionStatus = undefined;
-        this.onStatusChange?.();
-        session.continueTurn();
     }
 
     aiToolsInfo(): { available: string[]; enabled: string[] } | undefined {
@@ -285,9 +276,9 @@ export class ChatController {
         return handleControllerMessage(
             message,
             {
-                busy: () => this.busy,
+                busy: () => this.live.busy,
                 cancel: () => this.session?.cancel(),
-                continueTurn: () => this.continueTurn(),
+                continueTurn: () => void this.client.continueTurn(),
                 queue: this.queue,
                 stream: this.stream,
                 emitQueue: () => this.emitQueue(),
@@ -306,7 +297,7 @@ export class ChatController {
         routeControllerSend(msg, mode, {
             queue: this.queue,
             dedup: this.dedup,
-            busy: () => this.busy,
+            busy: () => this.live.busy,
             cancel: () => this.session?.cancel(),
             dispatch: (message) => void this.dispatch(message),
             emitQueue: () => this.emitQueue(),
@@ -327,7 +318,7 @@ export class ChatController {
 
     /** Prefers Hub task reminders, then falls back to native/fence todos. */
     private pendingTasksSummary(): string | undefined {
-        return hubPendingTasksSummary(this.hubContext()) ?? todosSummary(this.lastTodos);
+        return hubPendingTasksSummary(this.hubContext()) ?? todosSummary(this.live.todos);
     }
 
     private dispatch(message: PendingMessage): Promise<void> {
@@ -344,7 +335,7 @@ export class ChatController {
             setSession: (session) => {
                 this.session = session;
             },
-            onSessionEvent: this.eventHandler.handle,
+            onSessionEvent: this.live.eventHandler.handle,
             reloadGuardrails: () => this.reloadGuardrails(),
             reloadTasks: () => this.reloadTasks(),
             checkpointId: () => this.injectedCheckpointId,
@@ -354,16 +345,16 @@ export class ChatController {
             aiToolsInfo: () => this.aiToolsInfo(),
             pendingTasksSummary: () => this.pendingTasksSummary(),
             setTrackingMode: (mode) => {
-                this.trackingMode = mode;
+                this.live.trackingMode = mode;
             },
-            hasFirstTitle: () => !!this.firstTitle,
+            hasFirstTitle: () => !!this.live.firstTitle,
             setFirstTitle: (title) => {
-                this.firstTitle = title;
+                this.live.firstTitle = title;
             },
             armWatchdog: () => this.armWatchdog(),
             clearWatchdog: () => this.clearWatchdog(),
             setBusy: (busy) => {
-                this.busy = busy;
+                this.live.busy = busy;
             },
             setAttentionError: () => {
                 this.attentionStatus = "error";
