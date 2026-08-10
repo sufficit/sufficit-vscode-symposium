@@ -220,6 +220,11 @@ export class ChatController {
         const detach = this.stream.bindSink(sink);
         // Edited-file approval state is separate from the replay log.
         this.emitChanged();
+        // The replayed log's queue rows are a historical record; the live queue
+        // is the truth. A panel bound after the last emitQueue — session switch,
+        // window reload, reattach to a running controller — would otherwise keep
+        // showing rows that are no longer pending until the queue next changed.
+        this.stream.toSink(this.queueSnapshot());
         return detach;
     }
 
@@ -328,13 +333,17 @@ export class ChatController {
         });
     }
 
-    private emitQueue(): void {
-        this.emit({
+    private queueSnapshot(): unknown {
+        return {
             type: "queue",
             items: this.queue.items(),
             held: this.queue.isHeld,
             busy: this.live.busy,
-        });
+        };
+    }
+
+    private emitQueue(): void {
+        this.emit(this.queueSnapshot());
     }
 
     async reloadGuardrails(): Promise<void> {

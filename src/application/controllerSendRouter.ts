@@ -81,6 +81,12 @@ export function routeControllerSend(
         }
         return;
     }
+    // Emit even though nothing changed: this is the only send path that never
+    // touches the queue, so it was also the only one that could never correct a
+    // client showing a stale Queued row. A message dispatched straight through
+    // then appeared in the transcript AND in the panel at the same time, with
+    // nothing to clear it until the queue happened to change again.
+    context.emitQueue();
     context.log?.(`[send] "${preview}" — idle, queue empty: dispatching directly`);
     context.dispatch(message);
 }

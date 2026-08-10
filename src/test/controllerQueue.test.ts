@@ -154,6 +154,27 @@ test("queue mode goes to the tail, behind everything already pending", () => {
     );
 });
 
+// Every send path must broadcast a queue snapshot, including the one that never
+// touches the queue: it is the client's only chance to drop a stale Queued row,
+// which otherwise sits next to the same message in the transcript.
+test("an idle send broadcasts an (empty) queue snapshot even though it dispatches", () => {
+    const queue = new ChatQueue();
+    const dispatched: string[] = [];
+    const snapshots: number[] = [];
+
+    routeControllerSend({ text: "go", attachments: [], clientMessageId: "go" }, "queue", {
+        queue,
+        dedup: new MessageDedup(),
+        busy: () => false,
+        cancel: () => assert.fail("an idle send must not cancel"),
+        dispatch: (message) => dispatched.push(message.text),
+        emitQueue: () => snapshots.push(queue.length),
+    });
+
+    assert.deepEqual(dispatched, ["go"]);
+    assert.deepEqual(snapshots, [0], "one snapshot, emitted before the dispatch");
+});
+
 test("a busy controller always queues a normal send instead of dispatching it", () => {
     const queue = new ChatQueue();
     const dispatched: string[] = [];
