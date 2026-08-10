@@ -32,26 +32,18 @@ export function routeControllerSend(
         return;
     }
     if (mode === "steer" && context.busy()) {
-        context.queue.clear();
-        context.queue.push(message);
-        context.cancel();
-        // Must emit: a steer whose cancel() doesn't free the turn promptly
-        // (or at all) otherwise leaves this message as a permanent ghost —
-        // sitting in the live queue, invisible to persistence (nothing ever
-        // wrote it to disk), surviving any reload that reattaches to the same
-        // live session instead of rebuilding fresh. Confirmed in production:
-        // a stuck steer message silently swallowed every later "idle" send
-        // (the FIFO-head drain in the block below kept dispatching the ghost
-        // instead of what the user just typed). The webview skips the
-        // withdraw-on-queue reconciliation for steer-mode items specifically
-        // (see dispatch.ts) so this doesn't yank back the confident "sent"
-        // bubble composer.ts already showed — it only matters if the steer
-        // actually got stuck, which is exactly the case this exists to fix.
+        // Steer does NOT interrupt: the running turn finishes normally and this
+        // goes out at that boundary. It only jumps the line — head of the queue,
+        // ahead of anything already waiting.
+        context.queue.unshift(message);
         context.emitQueue();
-        context.log?.(`[send] "${preview}" — steer while busy: cancelling turn`);
+        context.log?.(
+            `[send] "${preview}" — steer while busy: queued at head (${context.queue.length} pending)`,
+        );
         return;
     }
     if (context.busy()) {
+        // Plain "queue": back of the line, after everything already pending.
         context.queue.enqueue(message);
         context.emitQueue();
         context.log?.(`[send] "${preview}" — busy: queued (${context.queue.length} pending)`);

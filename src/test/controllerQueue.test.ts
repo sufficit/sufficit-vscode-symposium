@@ -85,9 +85,9 @@ test("MessageDedup treats an empty-string clientMessageId as no id", () => {
     assert.equal(dedup.accept(""), true);
 });
 
-// --- Regressão 1D: redirect preserva a queue (diferente do steer que limpa) ---
-// O redirect faz queue.unshift (front-insert) SEM clear, ao contrario do steer
-// que faz queue.clear() + push. A queue existente deve sobreviver ao redirect.
+// --- Regressão 1D: redirect preserva a queue ---
+// O redirect faz queue.unshift (front-insert) SEM clear. A queue existente deve
+// sobreviver ao redirect.
 
 test("redirect uses unshift (front-insert) without clearing the queue", () => {
     const queue = new ChatQueue();
@@ -104,18 +104,52 @@ test("redirect uses unshift (front-insert) without clearing the queue", () => {
     assert.equal(items[2].text, "queued-2");
 });
 
-test("steer would clear the queue, but redirect does not", () => {
-    // Contrast: steer clears first, so the queue is lost. Redirect keeps it.
-    const steerQueue = new ChatQueue();
-    steerQueue.enqueue({ text: "queued", attachments: [] });
-    steerQueue.clear();
-    steerQueue.push({ text: "steer-msg", attachments: [] });
-    assert.equal(steerQueue.items().length, 1); // original queue gone
+// The three busy modes differ only in WHERE the message lands and whether the
+// running turn is cancelled: redirect cancels + goes first, steer goes first
+// without cancelling, queue goes last. None of them discards existing work.
+test("steer goes to the head of the queue without cancelling the turn", () => {
+    const queue = new ChatQueue();
+    queue.enqueue({ text: "queued-1", attachments: [] });
+    let cancelled = false;
+    const dispatched: string[] = [];
 
-    const redirectQueue = new ChatQueue();
-    redirectQueue.enqueue({ text: "queued", attachments: [] });
-    redirectQueue.unshift({ text: "redirect-msg", attachments: [] }); // no clear
-    assert.equal(redirectQueue.items().length, 2); // original queue kept
+    routeControllerSend({ text: "steer-msg", attachments: [], clientMessageId: "steer" }, "steer", {
+        queue,
+        dedup: new MessageDedup(),
+        busy: () => true,
+        cancel: () => {
+            cancelled = true;
+        },
+        dispatch: (m) => dispatched.push(m.text),
+        emitQueue: () => {},
+    });
+
+    assert.equal(cancelled, false);
+    assert.deepEqual(dispatched, []);
+    const items = queue.items();
+    assert.deepEqual(
+        items.map((i) => i.text),
+        ["steer-msg", "queued-1"],
+    );
+});
+
+test("queue mode goes to the tail, behind everything already pending", () => {
+    const queue = new ChatQueue();
+    queue.enqueue({ text: "queued-1", attachments: [] });
+
+    routeControllerSend({ text: "later", attachments: [], clientMessageId: "later" }, "queue", {
+        queue,
+        dedup: new MessageDedup(),
+        busy: () => true,
+        cancel: () => assert.fail("queue mode must not cancel"),
+        dispatch: () => assert.fail("queue mode must not dispatch while busy"),
+        emitQueue: () => {},
+    });
+
+    assert.deepEqual(
+        queue.items().map((i) => i.text),
+        ["queued-1", "later"],
+    );
 });
 
 test("a busy controller always queues a normal send instead of dispatching it", () => {

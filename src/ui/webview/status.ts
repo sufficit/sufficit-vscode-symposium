@@ -60,7 +60,7 @@ export const MODE_ICONS: Record<string, string> = {
     send: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 2.8 3 8 1.2 13.2a.5.5 0 0 0 .7.6l13-5.5a.5.5 0 0 0 0-.9l-13-5.5a.5.5 0 0 0-.7.6Z"/></svg>',
     // clock (wait, then send)
     queue: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 12.5A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 0 11Z"/><path d="M7.25 4h1.5v4.1l2.9 1.7-.75 1.3-3.65-2.15V4Z"/></svg>',
-    // lightning bolt (interrupt and send now)
+    // lightning bolt (jump the queue: next turn, ahead of the rest)
     steer: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M9.4 1 3 9h3.6l-1.3 6 7.7-9.2H9.2L10.5 1H9.4Z"/></svg>',
     // curved arrow (redirect: cancel current, correct next)
     redirect:
@@ -68,8 +68,8 @@ export const MODE_ICONS: Record<string, string> = {
 };
 export const MODE_DESC: Record<string, string> = {
     send: "Send now; queued while a turn runs",
-    queue: "Always wait for the current turn (FIFO)",
-    steer: "Interrupt the running turn, CLEAR the queue, and send immediately",
+    queue: "Wait behind everything already queued (FIFO)",
+    steer: "Wait for the running turn, then go first — ahead of the queue",
     redirect: "Cancel the running turn and send the correction next (keeps the queue)",
 };
 export const STOP_ICON =
@@ -143,10 +143,10 @@ export function updateSendTitle() {
         (sendBtn as HTMLButtonElement).disabled = !canSend;
         (sendBtn as HTMLButtonElement).title = canSend
             ? mode === "steer"
-                ? "Steer: interrupt the running turn, clear the queue, and send now (Ctrl/Cmd+Enter) · Esc to stop"
+                ? "Steer: let the running turn finish, then send this next — ahead of anything already queued (Ctrl/Cmd+Enter) · Esc to stop"
                 : mode === "redirect"
                   ? "Redirect: cancel the running turn and send the correction next · Esc to stop"
-                  : "Queue: send after the current turn finishes (Alt+Enter) · Esc to stop"
+                  : "Queue: send after everything already queued (Alt+Enter) · Esc to stop"
             : "Type a message to send · Esc to stop";
         sendCaret.style.display = "";
         stopBtn.style.display = "";
