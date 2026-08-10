@@ -108,6 +108,7 @@ export interface QueueItem {
     clientMessageId?: string;
     text: string;
     attachments?: string[];
+    mode?: string;
 }
 
 export interface TaskItem {

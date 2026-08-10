@@ -242,6 +242,11 @@ export function handleHostMessage(payload: unknown): void {
             // both as "sent" AND in the Queued panel below.
             const items = (data.items || []) as unknown as QueueItem[];
             for (const it of items) {
+                // Steer's bubble is meant to stay confidently "sent" (see
+                // composer.ts) — only withdraw it if the steer never actually
+                // got picked up (still sitting here on a LATER queue update
+                // reconciliation), not on the queue event steer itself emits.
+                if (it.mode === "steer") continue;
                 withdrawOptimisticMessage(it.clientMessageId);
             }
             renderQueued(items, !!data.held);
