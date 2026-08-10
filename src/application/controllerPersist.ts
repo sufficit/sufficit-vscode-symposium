@@ -67,6 +67,13 @@ export function seedRenderLog(
     const pending = recoverPersistedQueue(persisted);
     // A final canonical snapshot overwrites stale queue cards during replay.
     // It is intentionally not appended to disk; it is re-derived on each seed.
-    ctx.state.count = ctx.stream.seed([...persisted, { type: "queue", items: pending }]);
+    // Whether it was "waiting for a turn" or "held after a failure" isn't
+    // durably recorded — a non-empty queue surviving a full restart is always
+    // some kind of interrupted state, so it replays as held (see
+    // ChatController.seedRenderLog, which sets the live hold flag to match).
+    ctx.state.count = ctx.stream.seed([
+        ...persisted,
+        { type: "queue", items: pending, held: pending.length > 0, busy: false },
+    ]);
     return { seeded: true, pending };
 }

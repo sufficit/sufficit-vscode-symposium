@@ -280,56 +280,61 @@ function toolDetail(name: string, args: string | undefined): string {
 }
 
 export function transcriptHistory(file: string): HistoryMessage[] {
-    const out: HistoryMessage[] = [];
     try {
-        for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-            if (!line.trim()) {
-                continue;
-            }
-            let ev: { timestamp?: string; type: string; data?: { content?: string } };
-            try {
-                ev = JSON.parse(line);
-            } catch {
-                continue;
-            }
-            const ts = parseTimestamp(ev.timestamp);
-            if (ev.type === "user.message") {
-                const content = ev.data?.content;
-                if (typeof content === "string" && content.trim()) {
-                    out.push({ role: "user", text: content, ts });
-                }
-                continue;
-            }
-            if (ev.type === "assistant.message") {
-                const data =
-                    typeof ev.data === "object" && ev.data !== null
-                        ? (ev.data as Record<string, unknown>)
-                        : {};
-                const content = data.content;
-                if (typeof content === "string" && content.trim()) {
-                    out.push({ role: "assistant", text: content, ts });
-                }
-                const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
-                for (const t of toolRequests) {
-                    if (typeof t === "object" && t !== null) {
-                        const tObj = t as Record<string, unknown>;
-                        const name = String(tObj.name ?? "tool");
-                        const input = parseToolArgs(tObj.arguments);
-                        out.push({
-                            role: "tool",
-                            text: name,
-                            toolName: name,
-                            detail: toolDetail(name, input),
-                            input,
-                            ts,
-                        });
-                    }
-                }
-                continue;
-            }
-        }
+        return transcriptHistoryFromText(fs.readFileSync(file, "utf8"));
     } catch {
-        /* ignore */
+        return [];
+    }
+}
+
+/** Parses Copilot transcript JSONL text into renderable HistoryMessages. */
+export function transcriptHistoryFromText(content: string): HistoryMessage[] {
+    const out: HistoryMessage[] = [];
+    for (const line of content.split(/\r?\n/)) {
+        if (!line.trim()) {
+            continue;
+        }
+        let ev: { timestamp?: string; type: string; data?: { content?: string } };
+        try {
+            ev = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        const ts = parseTimestamp(ev.timestamp);
+        if (ev.type === "user.message") {
+            const content = ev.data?.content;
+            if (typeof content === "string" && content.trim()) {
+                out.push({ role: "user", text: content, ts });
+            }
+            continue;
+        }
+        if (ev.type === "assistant.message") {
+            const data =
+                typeof ev.data === "object" && ev.data !== null
+                    ? (ev.data as Record<string, unknown>)
+                    : {};
+            const content = data.content;
+            if (typeof content === "string" && content.trim()) {
+                out.push({ role: "assistant", text: content, ts });
+            }
+            const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
+            for (const t of toolRequests) {
+                if (typeof t === "object" && t !== null) {
+                    const tObj = t as Record<string, unknown>;
+                    const name = String(tObj.name ?? "tool");
+                    const input = parseToolArgs(tObj.arguments);
+                    out.push({
+                        role: "tool",
+                        text: name,
+                        toolName: name,
+                        detail: toolDetail(name, input),
+                        input,
+                        ts,
+                    });
+                }
+            }
+            continue;
+        }
     }
     return out;
 }

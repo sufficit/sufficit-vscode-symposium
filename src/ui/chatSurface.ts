@@ -156,7 +156,12 @@ export class ChatSurface {
             ahp: this.ahpPort,
         });
         webview.options = { enableScripts: true };
-        webview.html = renderHtml();
+        const version = (
+            vscode.extensions.getExtension("sufficit.sufficit-vscode-symposium")?.packageJSON as
+                | { version?: string }
+                | undefined
+        )?.version;
+        webview.html = renderHtml(version);
         webview.onDidReceiveMessage((message) => void this.onMessage(message));
         registerChatSurfaceListeners({
             deps: this.deps,

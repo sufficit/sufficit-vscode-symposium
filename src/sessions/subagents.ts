@@ -237,8 +237,17 @@ export class SubagentManager implements SubagentHost {
         if (!rec || rec.status === "gone") {
             return false;
         }
+        // A blank/whitespace-only text would still reach sendText() (unlike
+        // the composer, which refuses to submit an empty message) and turn
+        // into a genuinely empty dispatched turn — a phantom "(no text)"
+        // bubble with nothing behind it. Reject it the same way the composer
+        // does instead of forwarding it.
+        const trimmed = String(text ?? "").trim();
+        if (!trimmed) {
+            return false;
+        }
         rec.status = "working";
-        rec.controller.client.sendText(String(text ?? ""));
+        rec.controller.client.sendText(trimmed);
         return true;
     }
 

@@ -5,18 +5,19 @@
  * "working" forever (it survives reloads since the controller outlives them).
  * Reset by every event, so long but active tools/streams are unaffected.
  *
- * Extracted from ChatController as free functions over a context bag. The
- * stalled-turn recovery touches several controller fields (busy flag, session
- * cancel, status change), so they're exposed on the bag.
+ * Extracted from ChatController as free functions over a context bag.
+ * `forceEndStalledTurn` routes through `completeTurn` (controllerTurnCompletion.ts)
+ * like every other turn-termination path — it used to emit straight to the
+ * render stream and bypass the queue-hold policy entirely, so a stalled turn
+ * with messages queued behind it left them neither held nor drained nor
+ * announced.
  */
+import type { Turn, TurnOutcome, TurnTracker } from "./turn";
+
 export interface WatchdogContext {
-    busy(): boolean;
-    setBusy(value: boolean): void;
-    /** Records the forced stop as a failed turn so a late backend turn-end
-     *  cannot drain a queued user message as though the turn succeeded. */
-    markTurnFailed(): void;
+    turns: TurnTracker;
+    completeTurn(turn: Turn, outcome: TurnOutcome): void;
     cancel(): void;
-    onStatusChange?(): void;
     emit(message: unknown): void;
     /** Minutes of silence before a stalled turn is force-ended (symposium.turnSilenceMinutes);
      *  read fresh on every arm so a live settings change applies to the next turn. <= 0 disables it. */
@@ -32,7 +33,7 @@ export function armWatchdog(
         clearTimeout(state.timer);
         state.timer = undefined;
     }
-    if (!ctx.busy()) {
+    if (!ctx.turns.isBusy) {
         return;
     }
     const minutes = ctx.silenceMinutes();
@@ -49,23 +50,22 @@ export function clearWatchdog(state: { timer: ReturnType<typeof setTimeout> | un
     }
 }
 
-/** Recovers a turn that produced no events for `minutes` minutes. Leaves any
- *  queued message alone — a forced stall is a failure, not a normal
- *  continuation point, so the user chooses Retry or explicitly promotes/steers
+/** Recovers a turn that produced no events for `minutes` minutes. Marks it
+ *  failed (not just cancelled) so `completeTurn` holds any queued message
+ *  instead of draining it — a forced stall is a failure, not a normal
+ *  continuation point; the user chooses Retry or explicitly promotes/steers
  *  the queue instead of it silently auto-firing next. */
 export function forceEndStalledTurn(
     ctx: WatchdogContext,
     state: { timer: ReturnType<typeof setTimeout> | undefined },
     minutes: number,
 ): void {
-    if (!ctx.busy()) {
+    const turn = ctx.turns.current;
+    if (!turn) {
         return;
     }
-    ctx.setBusy(false);
-    ctx.markTurnFailed();
     clearWatchdog(state);
     ctx.cancel();
-    ctx.onStatusChange?.();
     ctx.emit({
         type: "event",
         event: {
@@ -74,5 +74,5 @@ export function forceEndStalledTurn(
             retryable: true,
         },
     });
-    ctx.emit({ type: "event", event: { kind: "turn-end" } });
+    ctx.completeTurn(turn, "failed");
 }

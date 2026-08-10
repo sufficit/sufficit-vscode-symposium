@@ -3,6 +3,7 @@ import { ChatController } from "../application/chatController";
 import type { SessionStatus, SessionTerminalStatus } from "../adapters/sessionInfo";
 import { FollowStatusRegistry, liveSessionStatus } from "./status";
 import type { ApplicationPorts } from "../application/ports";
+import { symposiumLog } from "../extension/log";
 
 /**
  * Registry of live ChatControllers, owned at the extension level so an agent
@@ -135,8 +136,12 @@ export class LiveSessions {
         adapter: AgentAdapter,
         options: SessionStartOptions,
     ): { key: string; controller: ChatController } {
-        const controller = new ChatController(adapter, options, this.ports, () =>
-            this.onChange?.(),
+        const controller = new ChatController(
+            adapter,
+            options,
+            this.ports,
+            () => this.onChange?.(),
+            symposiumLog,
         );
         const key = options.resumeSessionId ?? `new-${++this.seq}`;
         controller.setRuntimeKey(key);

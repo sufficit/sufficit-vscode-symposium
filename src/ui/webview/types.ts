@@ -105,6 +105,7 @@ export interface GuardrailItem {
 
 export interface QueueItem {
     id: number;
+    clientMessageId?: string;
     text: string;
     attachments?: string[];
 }

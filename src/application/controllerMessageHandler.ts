@@ -51,6 +51,12 @@ export async function handleControllerMessage(
                 ctx.emitQueue();
             }
             return true;
+        case "queue-clear":
+            if (!ctx.queue.isEmpty) {
+                ctx.queue.clear();
+                ctx.emitQueue();
+            }
+            return true;
         case "queue-edit": {
             const queued = ctx.queue.take(Number(message.id));
             if (queued) {

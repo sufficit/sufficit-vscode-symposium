@@ -225,9 +225,50 @@ export function ahpActionToLegacy(
                       },
                   ]
                 : [];
+        case "chat/turnsLoaded": {
+            // Paginated history prepend. The reducer has already prepended the
+            // turns to ChatState.turns; emit them as legacy messages WITHOUT a
+            // clear so they render above the existing transcript. The webview
+            // dispatchCatalog inserts these at the top of the log.
+            const turns = asArraySafe(action.turns) as ChatState["turns"];
+            return turns.flatMap((turn) => turnMessages(turn));
+        }
         default:
             return [];
     }
+}
+
+/** Renders a single completed turn as legacy host messages (no clear). */
+function turnMessages(turn: ChatState["turns"][number]): HostToWebview[] {
+    const output: HostToWebview[] = [
+        {
+            type: "user",
+            text: turn.message.text,
+            attachments: turn.message.attachments?.flatMap((item) =>
+                "value" in item && typeof item.value === "string" ? [item.value] : [],
+            ),
+        },
+        { type: "event", event: { kind: "turn-start", logicalTurnId: turn.id } },
+    ];
+    for (const part of turn.responseParts) output.push(...partMessages(part));
+    if ("error" in turn && turn.error) {
+        output.push({
+            type: "event",
+            event: { kind: "error", message: turn.error.message ?? "Agent error" },
+        });
+    }
+    output.push({
+        type: "event",
+        event: {
+            kind: "turn-end",
+            durationMs: "duration" in turn ? turn.duration : undefined,
+        },
+    });
+    return output;
+}
+
+function asArraySafe(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
 }
 
 function partMessages(part: ChatState["turns"][number]["responseParts"][number]): HostToWebview[] {

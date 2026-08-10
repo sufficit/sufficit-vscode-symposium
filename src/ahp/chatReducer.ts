@@ -97,12 +97,20 @@ export function chatReducer(state: ChatState, raw: StateAction): ChatState {
             } as ChatState;
         case "chat/truncated":
             return truncate(state, optionalString(action.turnId));
-        case "chat/turnsLoaded":
+        case "chat/turnsLoaded": {
+            // Prepend newly loaded (older) turns, skipping any whose id already
+            // exists in state.turns. This prevents duplication when a session is
+            // reopened and its history is reloaded while the AHP snapshot still
+            // carries the previously loaded turns.
+            const incoming = asArray<Turn>(action.turns);
+            const existingIds = new Set(state.turns.map((turn) => turn.id));
+            const deduped = incoming.filter((turn) => !existingIds.has(turn.id));
             return {
                 ...state,
-                turns: [...asArray<Turn>(action.turns), ...state.turns],
+                turns: [...deduped, ...state.turns],
                 turnsNextCursor: optionalString(action.turnsNextCursor),
             };
+        }
         default:
             return state;
     }
@@ -222,6 +230,14 @@ function setPending(state: ChatState, action: ActionRecord): ChatState {
     const pending = { id: String(action.id ?? ""), message: action.message as Message };
     if (!pending.id) return state;
     if (action.kind === "steering") return { ...state, steeringMessage: pending };
+    // "send"/"redirect" are dispatched immediately to the backend; they are not
+    // queue items and must not be rendered as such. If the backend actually
+    // enqueues them (host busy), projectQueue re-projects them as kind:"queued".
+    // Treating them as queued here caused the first message to appear both sent
+    // and stuck in the queue, because the queue entry was only removed when the
+    // subsequent turn-start carried a matching queuedMessageId — a race that
+    // fails for the first message of a freshly-attached session.
+    if (action.kind === "send" || action.kind === "redirect") return state;
     const queue = (state.queuedMessages ?? []).filter((item) => item.id !== pending.id);
     queue.push(pending);
     return { ...state, queuedMessages: queue };

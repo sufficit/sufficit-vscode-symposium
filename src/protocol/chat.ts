@@ -97,6 +97,7 @@ export type WebviewToHost =
     | { type: "install-agent"; backend: string }
     | { type: "restart-from-message"; index: number }
     | { type: "retry-last-message"; index: number; errorMessage?: string }
+    | { type: "load-more-history" }
     | { type: "open-settings" }
     | { type: "inspect"; target: "context" | "request" }
     | { type: "open-file"; path: string }
@@ -142,6 +143,9 @@ export type WebviewToHost =
     | { type: "queue-remove"; id: number | string }
     | { type: "queue-edit"; id: number | string }
     | { type: "queue-promote"; id: number | string }
+    /** Discards every held/queued message at once (the held-queue banner's
+     *  "Discard all" action after a turn failure). */
+    | { type: "queue-clear" }
     | { type: "pick-attachments" }
     /** Reply to an inline "approval-request" event (admin/manager/user modes). */
     | { type: "approval-response"; toolId: string; approved: boolean };
@@ -154,6 +158,7 @@ export type ControllerMessageType =
     | "queue-remove"
     | "queue-edit"
     | "queue-promote"
+    | "queue-clear"
     | "pick-attachments"
     | "approval-response";
 
@@ -179,6 +184,7 @@ export const HOST_MESSAGE_TYPES = [
     "ahp-frame",
     "history",
     "history-end",
+    "history-prepend",
     "history-start",
     "load-input",
     "markdown-image",

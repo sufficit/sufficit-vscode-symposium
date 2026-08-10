@@ -155,6 +155,7 @@
         50% { box-shadow: 0 0 28px rgba(124, 58, 237, 0.65), 0 0 50px rgba(37, 99, 235, 0.25); }
     }
     #bootState .bootTitle { font-size: 1.1em; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(90deg, #7C3AED, #2563EB); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    #bootState .bootVersion { font-size: 0.72em; opacity: 0.45; margin-top: -8px; }
     #bootSteps { display: flex; flex-direction: column; gap: 6px; min-width: 220px; max-width: 80%; font-size: 0.85em; }
     .bootStep { display: flex; align-items: center; gap: 8px; opacity: 0.85; }
     .bootStep .bsIcon { width: 14px; height: 14px; flex: 0 0 14px; display: inline-flex; align-items: center; justify-content: center; }
@@ -717,6 +718,9 @@
     .ubody.user-expandable {
         position: relative; cursor: pointer; transition: max-height 160ms ease;
     }
+    .ubody.ubodyEmpty {
+        font-style: italic; opacity: 0.6;
+    }
     .ubody.user-expandable.collapsed {
         max-height: calc(3.2em + 20px); overflow: hidden; padding-right: 42px;
     }
@@ -1011,6 +1015,25 @@
     }
     .qitem .qbtn svg { width: 13px; height: 13px; }
     .qitem .qbtn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
+    /* Held queue: the turn ahead of it failed, so it will NOT auto-send —
+       distinct from an ordinary "waiting for the current turn" queue. */
+    .qheldBanner {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        margin-bottom: 6px; padding: 6px 9px; border-radius: 8px; font-size: 0.85em;
+        background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 14%, transparent);
+        border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 35%, transparent);
+        color: var(--vscode-foreground);
+    }
+    .qheldDiscard {
+        flex-shrink: 0; background: none; cursor: pointer; padding: 3px 8px; border-radius: 5px;
+        font-size: 0.92em; color: var(--vscode-foreground);
+        border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 45%, transparent);
+    }
+    .qheldDiscard:hover { background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 20%, transparent); }
+    #queued.qheld .qitem {
+        border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 40%, transparent);
+        background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 8%, transparent);
+    }
     /* plan / todo — rounded card pinned above the textarea, matching the
        Copilot Chat todo-list widget (bordered, inset, collapsible). */
     /* Tasks panel: a local mirror of the Sufficit-memory task list (task-anchor

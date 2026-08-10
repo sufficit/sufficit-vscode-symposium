@@ -5,6 +5,7 @@ import {
     AgentAdapter,
     AgentSession,
     HistoryMessage,
+    HistoryPage,
     SessionInfo,
     SessionStartOptions,
     SlashCommand,
@@ -115,16 +116,16 @@ export class OpenAIAdapter implements AgentAdapter {
         return Promise.resolve(out);
     }
 
-    history(info: SessionInfo): Promise<HistoryMessage[]> {
+    history(info: SessionInfo, _cursor?: string): Promise<HistoryPage> {
         // Compacted sessions: the store holds only the summarized model context.
         // The lossless human transcript lives in the ledger — show that so the
         // chat still mirrors the full conversation (the model sees the summary).
         if (ledger.hasLedger(info.sessionId) && ledgerWasCompacted(info.sessionId)) {
-            return Promise.resolve(historyFromLedger(info.sessionId));
+            return Promise.resolve({ messages: historyFromLedger(info.sessionId) });
         }
         const s = readStored(this.backend, info.sessionId);
         if (!s) {
-            return Promise.resolve([]);
+            return Promise.resolve({ messages: [] });
         }
         const labels = getDiscoveredLabels(this.getConfig().baseUrl) ?? {};
         // Pair each tool result back to the call that produced it.
@@ -182,7 +183,7 @@ export class OpenAIAdapter implements AgentAdapter {
                 }
             }
         }
-        return Promise.resolve(out);
+        return Promise.resolve({ messages: out });
     }
 
     deleteSession(info: SessionInfo): Promise<void> {

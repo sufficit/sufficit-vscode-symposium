@@ -49,6 +49,52 @@ test("browser AHP mirror applies chat actions once across duplicate delivery", (
     assert.equal(first.chats.get(CHAT)?.queuedMessages?.length, 1);
 });
 
+test("chat pendingMessageSet with kind send/redirect does not pollute the queue", () => {
+    // A send or redirect is dispatched to the backend immediately; it must not
+    // appear in queuedMessages. Otherwise the first message of a session shows
+    // up both as a sent turn and as a stuck queue entry, because the queue
+    // removal depends on a turn-start queuedMessageId that races the shadow
+    // runtime's first attachment. Only kind:"queued" (and "steering" via the
+    // dedicated field) belong in the queue projection.
+    const state = new SymposiumAhpState();
+    state.applySnapshot(chatSnapshot());
+    for (const kind of ["send", "redirect"] as const) {
+        state.apply({
+            channel: CHAT,
+            serverSeq: 100,
+            origin: undefined,
+            action: {
+                type: "chat/pendingMessageSet",
+                kind,
+                id: `client-${kind}`,
+                message: { text: kind, origin: { kind: "user" } },
+            },
+        } as unknown as ActionEnvelope);
+    }
+    const chat = state.chats.get(CHAT);
+    assert.equal(chat?.queuedMessages?.length ?? 0, 0);
+    assert.equal(chat?.steeringMessage, undefined);
+});
+
+test("chat turnsLoaded deduplicates turns by id on repeated loads", () => {
+    // Reopening a session reloads its history; the reducer must not prepend
+    // turns that are already present, otherwise messages double on each open.
+    const state = new SymposiumAhpState();
+    state.applySnapshot(chatSnapshot());
+    const turns = [{ id: "history-1" }, { id: "history-2" }];
+    const makeEnvelope = (serverSeq: number) =>
+        ({
+            channel: CHAT,
+            serverSeq,
+            origin: undefined,
+            action: { type: "chat/turnsLoaded", turns } as unknown,
+        }) as unknown as ActionEnvelope;
+    state.apply(makeEnvelope(100));
+    state.apply(makeEnvelope(101)); // same turns, must not duplicate
+    const chat = state.chats.get(CHAT);
+    assert.equal(chat?.turns?.length, 2);
+});
+
 test("AHP legacy selector reconstructs transcript and incremental queue state", () => {
     const state = new SymposiumAhpState();
     state.applySnapshot(chatSnapshot());

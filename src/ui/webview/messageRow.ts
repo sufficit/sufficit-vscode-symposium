@@ -21,7 +21,7 @@ let lastMsgBackend = "",
     lastMsgModel = "";
 export function message(
     role: string,
-    text: string,
+    text: string | null,
     ts?: string | number,
     model?: string,
 ): MessageElement {
@@ -88,16 +88,25 @@ export function message(
         label.appendChild(t);
     }
     wrap.appendChild(label);
+    const displayText = text ?? "";
     const body = document.createElement("div");
     if (role === "assistant") {
         body.className = "md";
-        renderMarkdown(body, text);
+        renderMarkdown(body, displayText);
     } else {
         body.className = "ubody";
-        body.textContent = text;
+        if (displayText) {
+            body.textContent = displayText;
+        } else {
+            // No text part survived parsing (e.g. an image/attachment-only turn,
+            // or an unconfirmed optimistic bubble) — show a placeholder instead
+            // of a blank pill that looks broken.
+            body.classList.add("ubodyEmpty");
+            body.textContent = "(no text)";
+        }
         // For long user messages, add expandable behavior (max 2 lines, click to expand)
-        const lines = text.split("\n").length;
-        const isLong = lines > 2 || text.length > 300;
+        const lines = displayText.split("\n").length;
+        const isLong = lines > 2 || displayText.length > 300;
         if (isLong) {
             body.classList.add("user-expandable");
             body.classList.add("collapsed");
@@ -129,7 +138,7 @@ export function message(
         edit.addEventListener("click", () => {
             const idx = Number(wrap.dataset.msgIndex || "-1");
             if (idx >= 0) {
-                beginComposerEdit(idx, wrap._raw != null ? wrap._raw : text);
+                beginComposerEdit(idx, wrap._raw != null ? wrap._raw : displayText);
             }
         });
         tools.appendChild(edit);
@@ -140,7 +149,7 @@ export function message(
         cp.title = "Copy this reply";
         cp.appendChild(svgIcon("copy"));
         cp.addEventListener("click", () => {
-            copyText(wrap._raw != null ? wrap._raw : text, () => {
+            copyText(wrap._raw != null ? wrap._raw : displayText, () => {
                 cp.classList.add("done");
                 setTimeout(() => cp.classList.remove("done"), 1000);
             });
@@ -148,7 +157,7 @@ export function message(
         tools.appendChild(cp);
     }
     wrap.appendChild(tools);
-    wrap._raw = text;
+    wrap._raw = displayText;
     log.appendChild(wrap);
     refreshEmpty();
     autoScroll(stick);

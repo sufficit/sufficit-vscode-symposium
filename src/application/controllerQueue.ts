@@ -2,6 +2,16 @@ import type { BusySendMode } from "../protocol/sendMode";
 
 export type SendMode = "send" | BusySendMode;
 
+export type QueueHoldReason = "turn-failed" | "restored";
+
+export interface QueueHold {
+    reason: QueueHoldReason;
+    /** The turn (backend id if bound, else the controller-local turn id)
+     *  whose failure caused the hold, when known. */
+    turnId?: string;
+    at: number;
+}
+
 export interface PendingMessage {
     id?: number;
     clientMessageId?: string;
@@ -45,9 +55,42 @@ export interface PendingMessage {
 export class ChatQueue {
     private seq = 0;
     private readonly messages: PendingMessage[] = [];
+    /**
+     * Set when the turn ahead of this queue failed: the queued messages are
+     * NOT auto-dispatched (a failure is not a normal continuation point), but
+     * they are NOT silently dropped either — the user-authored text stays put
+     * until an explicit release (promote / retry / a fresh manual send).
+     * Without this flag the hold was invisible: `attentionStatus` (the signal
+     * that caused the hold) clears on the NEXT dispatch, so a later, unrelated
+     * message would silently drain the stale queue out of order once it
+     * finished — the queued text fires with no user intent behind it anymore.
+     */
+    private held: QueueHold | undefined;
 
     get isEmpty(): boolean {
         return this.messages.length === 0;
+    }
+
+    get length(): number {
+        return this.messages.length;
+    }
+
+    get isHeld(): boolean {
+        return this.held !== undefined;
+    }
+
+    get holdInfo(): QueueHold | undefined {
+        return this.held;
+    }
+
+    /** Marks the queue held after a turn failure — see `held` above. */
+    hold(hold: QueueHold = { reason: "turn-failed", at: Date.now() }): void {
+        this.held = hold;
+    }
+
+    /** Releases a hold (promote / retry / explicit user action). */
+    release(): void {
+        this.held = undefined;
     }
 
     enqueue(message: PendingMessage): void {
@@ -114,6 +157,7 @@ export class ChatQueue {
 
     clear(): void {
         this.messages.length = 0;
+        this.held = undefined;
     }
 
     /** Rehydrates a persisted queue and advances the id sequence past it. */

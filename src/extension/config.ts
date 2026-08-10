@@ -62,6 +62,7 @@ export function codexConfig(): CodexAdapterConfig {
             "mcpServers",
             {},
         ),
+        log: symposiumLog,
     };
 }
 

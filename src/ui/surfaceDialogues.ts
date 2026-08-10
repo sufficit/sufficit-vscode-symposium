@@ -173,7 +173,7 @@ export class SurfaceDialogues {
         if (adapter.history) {
             let messages: HistoryMessage[] | undefined;
             try {
-                messages = await adapter.history(info);
+                messages = (await adapter.history(info)).messages;
             } catch {
                 // ignore; live tail still attaches below
             }
@@ -370,7 +370,19 @@ export class SurfaceDialogues {
                 controller.attach((message) => handleControllerEvent(this.d, backend, message)),
             );
         }
-        if (!existing && info && !seededVisual) {
+        if (!existing && info && (!seededVisual || ahpDetach)) {
+            // In AHP mode the webview renders ChatState.turns, which are only
+            // populated by the {type:"history"} envelope that loadHistory emits
+            // (shadowRuntime.onMessage → chat/turnsLoaded). The seededVisual
+            // render-log replay feeds the legacy non-AHP sink but does NOT
+            // produce a history envelope for the shadow runtime, so AHP sessions
+            // opened with a persisted render log would otherwise show no turns.
+            //
+            // Re-sync the shadow runtime so the just-created controller appears
+            // in source.list() and gets an AHP record before the history
+            // envelope is emitted — otherwise the shadow has no observer and the
+            // turns are silently dropped.
+            this.d.deps.ahp?.sync();
             void controller.loadHistory(info).finally(() => {
                 if (generation === this.generation) {
                     this.d.post({ type: "history-end" });

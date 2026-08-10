@@ -1,4 +1,5 @@
 import { ChatMessage } from "./types";
+import { isTransientErrorMessage } from "../transientError";
 import { filterTools } from "../aiTools/defs";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
@@ -53,7 +54,11 @@ export class TurnRunner {
         const turnStartedAt = Date.now();
         this.d.emit({ kind: "turn-start", logicalTurnId, ...(intentId ? { intentId } : {}) });
         const emitTurnEnd = () =>
-            this.d.emit({ kind: "turn-end", durationMs: Date.now() - turnStartedAt });
+            this.d.emit({
+                kind: "turn-end",
+                durationMs: Date.now() - turnStartedAt,
+                logicalTurnId,
+            });
         const responses = this.d.cfg.api === "responses";
         const base = this.d.cfg.baseUrl.replace(/\/+$/, "");
         const url = base + (responses ? "/responses" : "/chat/completions");
@@ -370,14 +375,7 @@ export class TurnRunner {
             }
             if ((error as { name?: string })?.name !== "AbortError") {
                 const msg = error instanceof Error ? error.message : String(error);
-                // Network/transport failures (DNS, connection reset, timeout,
-                // "fetch failed", "terminated") are transient and safe to retry
-                // with the exact same request — unlike a 4xx or a logic error.
-                const retryable =
-                    /fetch failed|network error|network request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ECONNABORTED|EPROTO|EPIPE|socket hang up|terminated|aborted|timeout|request timed out|connection refused|connection reset|getaddrinfo/i.test(
-                        msg,
-                    );
-                this.d.emit({ kind: "error", message: msg, retryable });
+                this.d.emit({ kind: "error", message: msg, retryable: isTransientErrorMessage(msg) });
             }
         }
         if (!isCurrentRun()) {

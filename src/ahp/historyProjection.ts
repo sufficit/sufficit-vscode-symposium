@@ -37,7 +37,7 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
     for (const [index, message] of messages.entries()) {
         if (message.role === "user") {
             flush();
-            current = historyTurn(index, message.text, message.ts);
+            current = historyTurn(index, message.text ?? "", message.ts);
             continue;
         }
         const turn = (current ??= historyTurn(index, "", message.ts));
@@ -45,13 +45,13 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             turn.responseParts.push({
                 kind: PART_MARKDOWN,
                 id: `history-${index + 1}-text`,
-                content: message.text,
+                content: message.text ?? "",
             });
         } else if (message.role === "thinking") {
             turn.responseParts.push({
                 kind: PART_REASONING,
                 id: `history-${index + 1}-reasoning`,
-                content: message.text,
+                content: message.text ?? "",
             });
         } else if (message.role === "tool") {
             turn.responseParts.push({
@@ -73,7 +73,7 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             });
         } else if (message.role === "error") {
             turn.state = TURN_ERROR;
-            turn.error = { errorType: "agent", message: message.text };
+            turn.error = { errorType: "agent", message: message.text ?? "" };
         }
     }
     flush();

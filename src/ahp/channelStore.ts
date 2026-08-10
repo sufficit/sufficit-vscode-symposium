@@ -128,6 +128,27 @@ export class AhpStateStore {
         return [...this.replayBuffer];
     }
 
+    /**
+     * Drops the oldest retained envelopes below {@link keepServerSeq}, keeping
+     * the most recent history for reconnect replay.
+     *
+     * Reconnect for clients whose `lastSeenServerSeq` predates the new oldest
+     * retained envelope already falls back to a full snapshot in
+     * {@link reconnect}, so trimming the buffer never breaks the reconnect
+     * contract — it only trades replay bandwidth for snapshot bandwidth there.
+     */
+    trimRetainedBelow(keepServerSeq: number): number {
+        if (!Number.isSafeInteger(keepServerSeq) || keepServerSeq < 0) {
+            throw new RangeError("keepServerSeq must be a non-negative safe integer");
+        }
+        let removed = 0;
+        while (this.replayBuffer.length > 0 && this.replayBuffer[0].serverSeq < keepServerSeq) {
+            this.replayBuffer.shift();
+            removed++;
+        }
+        return removed;
+    }
+
     /** Restores sequence/replay metadata after callers have registered snapshots. */
     restoreClock(serverSeq: number, retained: readonly ActionEnvelope[] = []): void {
         if (!Number.isSafeInteger(serverSeq) || serverSeq < this.sequence) {

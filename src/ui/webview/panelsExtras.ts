@@ -74,7 +74,7 @@ export function renderGuardrails(items: GuardrailItem[]): void {
 }
 
 // ---- queued messages (editable until dispatched) ----
-export function renderQueued(items: QueueItem[]): void {
+export function renderQueued(items: QueueItem[], held = false): void {
     setQueued(items.length); // keep status text in sync
     queuedEl.textContent = "";
     if (!items.length) {
@@ -83,10 +83,28 @@ export function renderQueued(items: QueueItem[]): void {
         return;
     }
     queuedEl.classList.add("has");
+    queuedEl.classList.toggle("qheld", held);
     const head = document.createElement("div");
     head.className = "qhead";
     head.textContent = "Queued";
     queuedEl.appendChild(head);
+    if (held) {
+        const banner = document.createElement("div");
+        banner.className = "qheldBanner";
+        const text = document.createElement("span");
+        text.textContent =
+            items.length === 1
+                ? "Held — the turn before it failed. It will not send on its own."
+                : "Held — the turn before them failed. They will not send on their own.";
+        banner.appendChild(text);
+        const discard = document.createElement("button");
+        discard.className = "qheldDiscard";
+        discard.textContent = "Discard all";
+        discard.title = "Remove every held message from the queue";
+        discard.addEventListener("click", () => postMessage({ type: "queue-clear" }));
+        banner.appendChild(discard);
+        queuedEl.appendChild(banner);
+    }
     for (const it of items) {
         const row = document.createElement("div");
         row.className = "qitem";

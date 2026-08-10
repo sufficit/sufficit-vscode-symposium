@@ -15,6 +15,9 @@ export function copyText(text: string, done?: () => void): void {
             ta.style.pointerEvents = "none";
             document.body.appendChild(ta);
             ta.select();
+            // Deprecated, but still the only fallback when navigator.clipboard is
+            // unavailable (older webviews / restricted contexts).
+            // eslint-disable-next-line @typescript-eslint/no-deprecated
             document.execCommand("copy");
             document.body.removeChild(ta);
         } catch (_) {

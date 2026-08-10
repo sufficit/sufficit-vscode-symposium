@@ -196,6 +196,9 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                 this.emit("event", {
                     kind: "error",
                     message: `claude spawn failed (${executable}): ${error.message}`,
+                    // The executable/config is broken (e.g. ENOENT) — retrying
+                    // the same request without fixing that won't help.
+                    retryable: false,
                 });
             }
             // A failed spawn (notably ENOENT) does not reliably emit `exit`.
@@ -224,6 +227,10 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                 this.emit("event", {
                     kind: "error",
                     message: `claude exited with code ${code}: ${detail}`,
+                    // The process died mid-turn without the user asking it to —
+                    // the same class of failure as a dropped network connection.
+                    // Retrying the identical request is the expected recovery.
+                    retryable: true,
                 });
             }
             this.cancelledChildren.delete(child);

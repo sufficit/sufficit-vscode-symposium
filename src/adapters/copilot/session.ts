@@ -6,6 +6,7 @@ import * as os from "os";
 import * as path from "path";
 import { resolveExecutable } from "../exec";
 import { AgentSession, SessionStartOptions } from "../types";
+import { isTransientErrorMessage } from "../transientError";
 
 export interface CopilotAdapterConfig {
     executable: string;
@@ -117,6 +118,7 @@ export class CopilotSession extends EventEmitter implements AgentSession {
             this.emit("event", {
                 kind: "error",
                 message: `copilot spawn failed: ${error.message}`,
+                retryable: false,
             });
             this.emit("event", { kind: "turn-end" });
         });
@@ -133,6 +135,7 @@ export class CopilotSession extends EventEmitter implements AgentSession {
                 this.emit("event", {
                     kind: "error",
                     message: `copilot exited with code ${code}: ${detail}`,
+                    retryable: true,
                 });
             }
             this.emit("event", { kind: "turn-end" });
@@ -209,12 +212,14 @@ export class CopilotSession extends EventEmitter implements AgentSession {
                     typeof event.data === "object" && event.data !== null
                         ? (event.data as Record<string, unknown>)
                         : {};
+                const errorMessage =
+                    "message" in data && typeof data.message === "string"
+                        ? data.message
+                        : "unknown copilot error";
                 this.emit("event", {
                     kind: "error",
-                    message:
-                        "message" in data && typeof data.message === "string"
-                            ? data.message
-                            : "unknown copilot error",
+                    message: errorMessage,
+                    retryable: isTransientErrorMessage(errorMessage),
                 });
                 break;
             }

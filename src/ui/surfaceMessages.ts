@@ -179,6 +179,14 @@ export class SurfaceMessages {
                     }
                     return;
                 }
+                case "load-more-history": {
+                    // Scroll-up pagination: load the next older history page from
+                    // the backend transcript. The controller stores the cursor
+                    // returned by the previous page; loadMoreHistory is a no-op
+                    // when no cursor remains (transcript fully loaded).
+                    await this.d.getController()?.loadMoreHistory();
+                    return;
+                }
                 case "open-settings": {
                     await vscode.commands.executeCommand("symposium.openSettings");
                     return;

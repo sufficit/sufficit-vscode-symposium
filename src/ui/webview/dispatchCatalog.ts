@@ -25,9 +25,9 @@ import {
     setModelValue,
     setPinnedModels,
 } from "./models";
-import { scrollToBottom } from "./scroll";
+import { scrollToBottom, preserveScrollOnPrepend, setHasMoreHistory } from "./scroll";
 import { svgIcon } from "./icons";
-import { switchAgentBtn, input, ctxMenu, modelPicker } from "./dom";
+import { switchAgentBtn, input, ctxMenu, modelPicker, log } from "./dom";
 import {
     setCommands,
     setPendingSessionSwitch,
@@ -48,7 +48,7 @@ interface BackendChoice {
 type HistoryToolOptions = NonNullable<Parameters<typeof renderTool>[2]>;
 type HistoryMessage = HistoryToolOptions & {
     role: string;
-    text: string;
+    text: string | null;
     ts?: string | number;
     model?: string;
     clientMessageId?: string;
@@ -59,6 +59,7 @@ type HistoryPayload = {
     carried?: boolean;
     branchLabel?: { title: string; detail: string };
     messages: HistoryMessage[];
+    nextCursor?: string;
 };
 
 export function handleCatalogMessage(data: HostToWebview): boolean {
@@ -167,9 +168,9 @@ export function handleCatalogMessage(data: HostToWebview): boolean {
                         message("user", m.text, m.ts);
                     }
                 } else if (m.role === "thinking" && String(m.text || "").trim())
-                    renderThinkBlock(m.text);
+                    renderThinkBlock(m.text ?? "");
                 else if (m.role === "tool")
-                    renderTool(m.toolName || m.text, m.detail || "", {
+                    renderTool(m.toolName || m.text || "", m.detail || "", {
                         input: m.input,
                         result: m.result,
                         added: m.added,
@@ -189,7 +190,34 @@ export function handleCatalogMessage(data: HostToWebview): boolean {
                     history.messages.length ? "— end of stored transcript —" : "(empty transcript)",
                 );
             }
+            // Signal scroll-up pagination availability for lazy-loaded backends.
+            setHasMoreHistory(!!history.nextCursor);
             scrollToBottom();
+            break;
+        }
+        case "history-prepend": {
+            // Scroll-up pagination: older turns arrived. Render the legacy
+            // messages normally (each appends to the log), then move the newly
+            // added block to the top while preserving the user's scroll position.
+            const payload = data as typeof data & { messages?: HostToWebview[] };
+            const prependMessages = Array.isArray(payload.messages) ? payload.messages : [];
+            if (prependMessages.length === 0) break;
+            const beforeCount = log.childElementCount;
+            for (const m of prependMessages) {
+                handleCatalogMessage(m);
+            }
+            const afterCount = log.childElementCount;
+            const addedCount = afterCount - beforeCount;
+            if (addedCount <= 0) break;
+            preserveScrollOnPrepend(() => {
+                // Move the last `addedCount` children to the top of the log.
+                const children = Array.from(log.children);
+                const added = children.slice(children.length - addedCount);
+                const fragment = document.createDocumentFragment();
+                for (const el of added) fragment.appendChild(el);
+                log.insertBefore(fragment, log.firstChild);
+            });
+            setHasMoreHistory(true);
             break;
         }
         case "backends": {

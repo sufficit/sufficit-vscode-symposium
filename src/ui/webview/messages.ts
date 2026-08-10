@@ -153,6 +153,25 @@ export function optimisticUserMessage(clientMessageId: string, text: string): Me
     return el;
 }
 
+/**
+ * A send raced the host's busy state: the composer showed an optimistic
+ * bubble as if dispatched immediately, but the host actually queued it
+ * (still busy). Drop the premature bubble — the Queued panel is now the
+ * only place it should appear — instead of showing both at once.
+ */
+export function withdrawOptimisticMessage(clientMessageId?: string): void {
+    if (!clientMessageId) {
+        return;
+    }
+    const el = log.querySelector(
+        `[data-client-message-id="${CSS.escape(clientMessageId)}"]`,
+    ) as HTMLElement | null;
+    if (el && el.classList.contains("pendingConfirm")) {
+        el.remove();
+        refreshEmpty();
+    }
+}
+
 export function confirmOptimisticMessage(clientMessageId?: string): HTMLElement | null {
     if (!clientMessageId) {
         return null;

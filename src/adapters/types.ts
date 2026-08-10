@@ -68,7 +68,12 @@ export type AgentEvent =
      *  logicalTurnId (survives retries/reopen) and the controller-assigned
      *  intentId so downstream render/retry logic can associate deltas correctly. */
     | { kind: "turn-start"; logicalTurnId: string; intentId?: string }
-    | { kind: "turn-end"; costUsd?: number; durationMs?: number }
+    /** logicalTurnId ties this end back to its turn-start so a stray/duplicate
+     *  end (watchdog racing the adapter's own, a late straggler after a new
+     *  turn already started) can be told apart from the turn actually
+     *  finishing. Optional for emitters that can't easily thread it through —
+     *  those are treated as ending whatever turn is currently live. */
+    | { kind: "turn-end"; costUsd?: number; durationMs?: number; logicalTurnId?: string }
     | ({ kind: "quota" } & AdapterQuotaSnapshot)
     | {
           kind: "usage";
@@ -134,7 +139,13 @@ export type AgentEvent =
 /** One past message reconstructed from a stored transcript. */
 export interface HistoryMessage {
     role: "user" | "assistant" | "tool" | "error" | "thinking";
-    text: string;
+    /**
+     * Null means the adapter found a turn but produced no text for it (e.g. an
+     * image/attachment-only user message with no caption). Each adapter decides
+     * whether to emit null here or fill in its own placeholder text; the render
+     * layer shows a generic "no text" placeholder for null either way.
+     */
+    text: string | null;
     /** Model id and friendly label that produced this assistant message
      *  (preserved across backend/model handoff so each bubble keeps its origin). */
     model?: string;
@@ -153,6 +164,18 @@ export interface HistoryMessage {
     diff?: { old: string; new: string }[];
     /** Original transcript time (ms) for hover timestamps. */
     ts?: number;
+}
+
+/**
+ * One page of session history. Adapters that can paginate return an opaque
+ * {@link nextCursor} the host passes back to load the next older page; absence
+ * means the transcript is fully loaded. Adapters without pagination return all
+ * messages at once and omit the cursor.
+ */
+export interface HistoryPage {
+    messages: HistoryMessage[];
+    /** Opaque cursor to pass back to {@link AgentAdapter.history} for older turns. */
+    nextCursor?: string;
 }
 
 /** Stops a live transcript follow. */
@@ -340,8 +363,14 @@ export interface AgentAdapter {
      * API backends return true; CLIs omit it (instructions are prepended).
      */
     roleAware?(): boolean;
-    /** Reconstruct past messages of a stored session, newest last. */
-    history?(info: SessionInfo): Promise<HistoryMessage[]>;
+    /**
+     * Reconstruct past messages of a stored session, newest last. When
+     * {@link cursor} is omitted, loads the most recent page; when present (a
+     * value previously returned as {@link HistoryPage.nextCursor}), loads the
+     * next older page. Adapters that don't paginate ignore the cursor and
+     * return everything at once.
+     */
+    history?(info: SessionInfo, cursor?: string): Promise<HistoryPage>;
     /**
      * Watch a stored transcript and stream messages appended after the
      * point `history()` already returned (read-only live mirror of a

@@ -2,6 +2,7 @@ import type { HostToWebview } from "../../protocol/chat";
 import type { AhpMessagePortEnvelope } from "../../ahp/messagePortProtocol";
 import { SymposiumAhpState } from "../../ahp/client/state";
 import { ahpActionToLegacy, ahpChatToLegacy } from "../../ahp/client/legacyView";
+import { setHasMoreHistory } from "./scroll";
 
 let generation = 0;
 let state = new SymposiumAhpState();
@@ -18,6 +19,7 @@ export function applyLocalAhpFrame(message: unknown): HostToWebview[] | undefine
     if (frame.kind === "reset") {
         generation = frame.generation;
         state = new SymposiumAhpState();
+        setHasMoreHistory(false);
         return [];
     }
     if (frame.generation !== generation) return [];
@@ -28,12 +30,33 @@ export function applyLocalAhpFrame(message: unknown): HostToWebview[] | undefine
     if (frame.kind === "snapshot") {
         state.applySnapshot(frame.snapshot);
         if (!frame.snapshot.resource.startsWith("ahp-chat:")) return [];
-        return ahpChatToLegacy(state.chats.get(frame.snapshot.resource)!).filter(
-            (item) => item.type !== "clear",
+        const chatState = state.chats.get(frame.snapshot.resource);
+        // Propagate the pagination cursor so the webview knows older history
+        // is available for scroll-up lazy loading.
+        setHasMoreHistory(
+            !!(chatState as { turnsNextCursor?: string } | undefined)?.turnsNextCursor,
         );
+        return ahpChatToLegacy(chatState!).filter((item) => item.type !== "clear");
     }
     if (!state.apply(frame.envelope)) return [];
-    return ahpActionToLegacy(frame.envelope, state.chats.get(frame.envelope.channel));
+    const action = frame.envelope.action as unknown as Record<string, unknown>;
+    const legacy = ahpActionToLegacy(frame.envelope, state.chats.get(frame.envelope.channel));
+    // chat/turnsLoaded is the scroll-up pagination path: the reducer prepended
+    // older turns to ChatState.turns, and ahpActionToLegacy rendered them as
+    // individual user/event messages. Wrap them in a history-prepend envelope so
+    // the dispatcher inserts them at the TOP of the log (preserving scroll)
+    // instead of appending below the current transcript.
+    if (action.type === "chat/turnsLoaded") {
+        const chatState = state.chats.get(frame.envelope.channel);
+        setHasMoreHistory(
+            !!(chatState as { turnsNextCursor?: string } | undefined)?.turnsNextCursor,
+        );
+        if (legacy.length > 0) {
+            return [{ type: "history-prepend", messages: legacy } as HostToWebview];
+        }
+        return [];
+    }
+    return legacy;
 }
 
 function updateConnectionStatus(status: string, detail?: string): void {

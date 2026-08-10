@@ -37,6 +37,9 @@ import {
 import { modelLabel, reasoningList } from "./models";
 import { normalizeBusySendMode } from "../../protocol/sendMode";
 
+// navigator.userAgentData isn't available in the Electron/webview runtime
+// VS Code ships, so this deprecated API is still the only reliable read here.
+// eslint-disable-next-line @typescript-eslint/no-deprecated
 export const isMac = navigator.platform.indexOf("Mac") === 0;
 export const MOD = isMac ? "⌘" : "Ctrl";
 export const ALT = isMac ? "⌥" : "Alt";

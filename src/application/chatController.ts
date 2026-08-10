@@ -38,6 +38,16 @@ import { routeControllerSend } from "./controllerSendRouter";
 import { dispatchControllerMessage } from "./controllerDispatch";
 import { ControllerLiveState } from "./controllerLiveState";
 import { ControllerClientActions } from "./controllerClientActions";
+import { completeTurn, TurnCompletionContext } from "./controllerTurnCompletion";
+import type { TurnOrigin } from "./turn";
+
+/** id is assigned only by ChatQueue.enqueue — its presence means this
+ *  message spent time in the queue before reaching dispatch(). */
+function turnOriginOf(message: PendingMessage): TurnOrigin {
+    if (message.retryOf) return "retry";
+    if (message.id != null) return "queue";
+    return "user";
+}
 
 export class ChatController {
     private runtimeKey: string | undefined;
@@ -84,22 +94,19 @@ export class ChatController {
             this.changed.record(file, added, removed);
             this.emitChanged();
         },
-        takeQueued: () => this.queue.shift(),
+        takeQueued: () => (this.queue.isHeld ? undefined : this.queue.shift()),
         emitQueue: () => this.emitQueue(),
         dispatch: (message) => {
             void this.dispatch(message);
         },
+        holdQueue: (hold) => this.queue.hold(hold),
+        queuedCount: () => this.queue.length,
+        log: (message) => this.onLog?.(message),
     });
     readonly client = new ControllerClientActions({
         queue: this.queue,
         getSession: () => this.session,
-        isBusy: () => this.live.busy,
-        setBusy: (busy) => {
-            this.live.busy = busy;
-        },
-        clearAttention: () => {
-            this.live.attentionStatus = undefined;
-        },
+        turns: this.live.turns,
         statusChanged: () => this.onStatusChange?.(),
         onSend: (message, mode) => this.onSend(message, mode),
         emitQueue: () => this.emitQueue(),
@@ -111,6 +118,7 @@ export class ChatController {
         private readonly options: SessionStartOptions,
         private readonly ports: ApplicationPorts,
         private readonly onStatusChange?: () => void,
+        private readonly onLog?: (message: string) => void,
     ) {
         void probeRtk(options.cwd);
     }
@@ -139,10 +147,6 @@ export class ChatController {
         return this.live.attentionStatus;
     }
 
-    set attentionStatus(value: SessionTerminalStatus | undefined) {
-        this.live.attentionStatus = value;
-    }
-
     get lastTurnId(): string | undefined {
         return this.live.lastLogicalTurnId;
     }
@@ -157,18 +161,30 @@ export class ChatController {
 
     private watchdogContext(): WatchdogContext {
         return {
-            busy: () => this.live.busy,
-            setBusy: (v) => {
-                this.live.busy = v;
-            },
-            markTurnFailed: () => {
-                this.attentionStatus = "error";
-            },
+            turns: this.live.turns,
+            completeTurn: (turn, outcome) =>
+                completeTurn(turn, this.turnCompletionContext(), { outcome, emitTurnEnd: true }),
             cancel: () => this.session?.cancel(),
-            onStatusChange: () => this.onStatusChange?.(),
             emit: (m) => this.emit(m),
             silenceMinutes: () =>
                 this.ports.configuration.get("symposium", "turnSilenceMinutes", 5),
+        };
+    }
+
+    /** Shared by the watchdog and dispatch's catch path — every way a turn
+     *  can end outside the adapter-event reducer routes through here. */
+    private turnCompletionContext(): TurnCompletionContext {
+        return {
+            turns: this.live.turns,
+            clearWatchdog: () => this.clearWatchdog(),
+            statusChanged: () => this.onStatusChange?.(),
+            emit: (m) => this.emit(m),
+            takeQueued: () => (this.queue.isHeld ? undefined : this.queue.shift()),
+            emitQueue: () => this.emitQueue(),
+            dispatch: (message) => void this.dispatch(message),
+            holdQueue: (hold) => this.queue.hold(hold),
+            queuedCount: () => this.queue.length,
+            log: (message) => this.onLog?.(message),
         };
     }
 
@@ -265,11 +281,42 @@ export class ChatController {
             this.options.resumeSessionId,
         );
         this.queue.restore(restored.pending);
+        // Whether a restored queue was "waiting for a turn" or "held after a
+        // failure" isn't durably recorded (the flag is in-memory only). A
+        // non-empty queue surviving a full reload/restart is always some kind
+        // of interrupted state, so treat it as held rather than assume it's
+        // safe to silently auto-fire — the next explicit send/promote/retry
+        // releases it either way.
+        if (restored.pending.length > 0) {
+            this.queue.hold();
+        }
         return restored.seeded;
     }
 
+    private historyInfo?: SessionInfo;
+    private historyCursor?: string;
+
     async loadHistory(info: SessionInfo): Promise<void> {
-        await loadControllerHistory(this.adapter, info, (message) => this.emit(message));
+        this.historyInfo = info;
+        this.historyCursor = undefined;
+        this.historyCursor = await loadControllerHistory(this.adapter, info, (message) =>
+            this.emit(message),
+        );
+    }
+
+    /**
+     * Loads the next older page of history (scroll-up pagination). No-op when
+     * there is no cursor (transcript fully loaded or no history loaded yet).
+     */
+    async loadMoreHistory(): Promise<void> {
+        if (!this.historyInfo || !this.historyCursor) return;
+        const cursor = this.historyCursor;
+        this.historyCursor = await loadControllerHistory(
+            this.adapter,
+            this.historyInfo,
+            (message) => this.emit(message),
+            cursor,
+        );
     }
 
     async handleMessage(message: WebviewToHost): Promise<boolean> {
@@ -301,11 +348,17 @@ export class ChatController {
             cancel: () => this.session?.cancel(),
             dispatch: (message) => void this.dispatch(message),
             emitQueue: () => this.emitQueue(),
+            log: (message) => this.onLog?.(message),
         });
     }
 
     private emitQueue(): void {
-        this.emit({ type: "queue", items: this.queue.items() });
+        this.emit({
+            type: "queue",
+            items: this.queue.items(),
+            held: this.queue.isHeld,
+            busy: this.live.busy,
+        });
     }
 
     async reloadGuardrails(): Promise<void> {
@@ -322,7 +375,14 @@ export class ChatController {
     }
 
     private dispatch(message: PendingMessage): Promise<void> {
-        this.attentionStatus = undefined;
+        // Any dispatch (a normal send, a promoted queue item, a retry) is an
+        // explicit user action — release a prior turn-failure hold so the
+        // queue resumes normal FIFO draining from here.
+        this.queue.release();
+        const turn = this.live.turns.begin(turnOriginOf(message), {
+            intentId: message.intentId,
+            expectedBackendId: message.retryOf,
+        });
         return dispatchControllerMessage(message, {
             adapter: this.adapter,
             options: this.options,
@@ -352,15 +412,10 @@ export class ChatController {
                 this.live.firstTitle = title;
             },
             armWatchdog: () => this.armWatchdog(),
-            clearWatchdog: () => this.clearWatchdog(),
-            setBusy: (busy) => {
-                this.live.busy = busy;
-            },
-            setAttentionError: () => {
-                this.attentionStatus = "error";
-            },
             statusChanged: () => this.onStatusChange?.(),
             emit: (outbound) => this.emit(outbound),
+            turn,
+            completion: this.turnCompletionContext(),
         });
     }
 

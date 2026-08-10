@@ -76,7 +76,8 @@ export class AhpShadowRuntime {
 
     sync(): void {
         const current = new Set<string>();
-        for (const info of this.source.list()) {
+        const listed = this.source.list();
+        for (const info of listed) {
             const key = sessionKey(info.backend, info.sessionId);
             current.add(key);
             if (!this.records.has(key)) this.attach(key, info);
@@ -90,15 +91,46 @@ export class AhpShadowRuntime {
         this.options.persistence?.maybeSave(this.runtime);
     }
 
-    /** Reprojects one controller after its persisted render log was seeded. */
+    /**
+     * Re-attaches the shadow observer for a controller whose persisted render
+     * log was seeded. Preserves any turns already loaded into the AHP runtime
+     * (e.g. from a prior lazy-loading pass) so reopening a session does not
+     * discard the scroll-up history the user already waited for.
+     */
     rebuild(provider: string, nativeSessionId: string): void {
         const key = sessionKey(provider, nativeSessionId);
         const current = this.records.get(key);
         if (current) {
+            // Keep the AHP channel and its loaded turns; only re-subscribe the
+            // live observer so new events flow into the existing projection.
             current.unsubscribe();
-            this.runtime.disposeSession(current.handle.sessionResource);
-            this.records.delete(key);
+            const info = this.source
+                .list()
+                .find((item) => item.backend === provider && item.sessionId === nativeSessionId);
+            if (info) {
+                const record: ShadowRecord = {
+                    ...current,
+                    unsubscribe: () => undefined,
+                    projection: createProjectionState(),
+                    queue: createQueueProjectionState(),
+                    expectedTurns: [],
+                    queueLength: 0,
+                    approvals: new Set(),
+                };
+                this.records.set(key, record);
+                const unsubscribe = this.source.follow(info.sessionId, (message) =>
+                    this.onMessage(key, record, message),
+                );
+                if (!unsubscribe) {
+                    this.records.delete(key);
+                    return;
+                }
+                record.unsubscribe = unsubscribe;
+            }
+            this.options.persistence?.maybeSave(this.runtime);
+            return;
         }
+        // No existing record — attach from scratch as before.
         const info = this.source
             .list()
             .find((item) => item.backend === provider && item.sessionId === nativeSessionId);
@@ -120,7 +152,11 @@ export class AhpShadowRuntime {
     dispose(): void {
         for (const record of this.records.values()) record.unsubscribe();
         this.records.clear();
-        this.options.persistence?.save(this.runtime);
+        const persistence = this.options.persistence;
+        if (persistence) {
+            persistence.saveSync(this.runtime);
+            persistence.flushSync();
+        }
     }
 
     private attach(key: string, info: AhpShadowSessionInfo): void {
@@ -179,6 +215,9 @@ export class AhpShadowRuntime {
                 this.runtime.dispatch(record.handle.chatResource, {
                     type: "chat/turnsLoaded",
                     turns,
+                    ...(typeof message.nextCursor === "string"
+                        ? { turnsNextCursor: message.nextCursor }
+                        : {}),
                 });
                 record.expectedTurns.push(...turns.map(turnText));
                 this.apply(record, []);
@@ -201,7 +240,20 @@ export class AhpShadowRuntime {
                 error instanceof Error ? error.message : String(error),
             );
         }
-        this.options.persistence?.maybeSave(this.runtime);
+        // Persistence must never break the live subscription: a single save()
+        // failure (e.g. a session that exceeds the byte cap even after
+        // compaction) would otherwise kill the observer and silently drop all
+        // subsequent messages for this session — including history envelopes
+        // for other sessions routed through the same projection path.
+        try {
+            this.options.persistence?.maybeSave(this.runtime);
+        } catch (error) {
+            this.mismatch(
+                "projection",
+                key,
+                `persistence: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
     }
 
     private apply(record: ShadowRecord, actions: AhpProjectionAction[]): void {

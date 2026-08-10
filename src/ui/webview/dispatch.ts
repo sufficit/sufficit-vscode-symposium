@@ -5,7 +5,13 @@ import { clearComposer, renderChips, saveCurrentComposerDraft, setBrowserOpen } 
 import { resizeInput } from "./inputSizing";
 import { applyMeta } from "./meta";
 import { applyEvent } from "./events";
-import { confirmOptimisticMessage, endStream, message, renderThinkBlock } from "./messages";
+import {
+    confirmOptimisticMessage,
+    endStream,
+    message,
+    renderThinkBlock,
+    withdrawOptimisticMessage,
+} from "./messages";
 import { renderTool, resetToolRows } from "./tools";
 import {
     renderChangedFiles,
@@ -50,7 +56,7 @@ import { handleCatalogMessage } from "./dispatchCatalog";
 import { applyLocalAhpFrame } from "./localAhp";
 import type { AgentEvent, HistoryMessage } from "../../adapters/types";
 import type { HostToWebview } from "../../protocol/chat";
-import type { MetaMessageData, WebviewAttachment } from "./types";
+import type { MetaMessageData, QueueItem, WebviewAttachment } from "./types";
 
 let historyCycle = 0;
 
@@ -74,6 +80,8 @@ type DispatchMessage = HostToWebview &
         preview: boolean;
         sessionsOnly: boolean;
         items?: never[];
+        held?: boolean;
+        busy?: boolean;
         attachments?: string[];
         message: HistoryMessage;
         clientMessageId?: string;
@@ -228,7 +236,22 @@ export function handleHostMessage(payload: unknown): void {
             break;
         }
         case "queue": {
-            renderQueued(data.items || []);
+            // A send can race the host's busy state: the composer shows an
+            // optimistic bubble as if dispatched, but the host actually
+            // queued it. Withdraw that premature bubble so it doesn't show
+            // both as "sent" AND in the Queued panel below.
+            const items = (data.items || []) as unknown as QueueItem[];
+            for (const it of items) {
+                withdrawOptimisticMessage(it.clientMessageId);
+            }
+            renderQueued(items, !!data.held);
+            // The host is authoritative on busy; this "queue" message always
+            // carries its current value, so a client-local desync (e.g. the
+            // optimistic-bubble path above never resetting busy after a
+            // withdraw) gets corrected here every time the queue changes.
+            if (typeof data.busy === "boolean") {
+                setBusy(data.busy);
+            }
             break;
         }
         case "load-input": {
@@ -249,9 +272,10 @@ export function handleHostMessage(payload: unknown): void {
         case "append": {
             const m = data.message;
             if (m.role === "user") message("user", m.text, m.ts);
-            else if (m.role === "thinking" && String(m.text || "").trim()) renderThinkBlock(m.text);
+            else if (m.role === "thinking" && String(m.text || "").trim())
+                renderThinkBlock(m.text ?? "");
             else if (m.role === "tool")
-                renderTool(m.toolName || m.text, m.detail || "", {
+                renderTool(m.toolName || m.text || "", m.detail || "", {
                     input: m.input,
                     result: m.result,
                     added: m.added,

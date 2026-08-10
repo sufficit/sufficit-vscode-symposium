@@ -6,6 +6,7 @@ import { contextWindowFor, parseCodexUsage } from "../parse";
 import { parseAdapterQuota } from "../quota";
 import { parseNativeTodos } from "../todos";
 import { AgentSession, SessionStartOptions } from "../types";
+import { isTransientErrorMessage } from "../transientError";
 import {
     CodexAdapterConfig,
     codexWorkspaceArgs,
@@ -41,6 +42,17 @@ export class CodexSession extends EventEmitter implements AgentSession {
     private reportedError = false;
     private warnedUnenforcedMode = false; // emitted the manager/user "not yet enforced" notice once
     private turnSequence = 0;
+    /** Guards against a duplicate turn-end for the current turn — `codex exec
+     *  --json` has been observed emitting more than one completion-shaped
+     *  line (protocol `turn.completed` plus a process-exit path) for a single
+     *  logical turn. A double turn-end used to re-run the controller's
+     *  queue-drain logic a second time, which could dispatch the next queued
+     *  message outside of any real busy turn. Reset once per spawnTurn(). */
+    private turnEndEmitted = false;
+    /** This turn's id, threaded onto both turn-start and turn-end so the
+     *  controller's TurnTracker can correlate them (and reject a stale
+     *  straggler from a superseded turn by id, not just by busy-state). */
+    private currentTurnId: string | undefined;
     private effectiveModel: string;
     private lastContextWindow: number | undefined;
     private vscodeMcpServers: Record<string, { command: string; args: string[] }>;
@@ -66,6 +78,18 @@ export class CodexSession extends EventEmitter implements AgentSession {
         return this.effectiveModel || this.options.model || this.config.model;
     }
 
+    /** Emits turn-end at most once per turn — see `turnEndEmitted`. */
+    private emitTurnEnd(): void {
+        if (this.turnEndEmitted) {
+            this.config.log?.(
+                "[codex] duplicate turn-end suppressed (already emitted for this turn)",
+            );
+            return;
+        }
+        this.turnEndEmitted = true;
+        this.emit("event", { kind: "turn-end", logicalTurnId: this.currentTurnId });
+    }
+
     send(text: string): void {
         // A mid-turn send must not leave two `codex exec` processes writing
         // the same rollout. Cancel the in-flight child before starting another.
@@ -77,11 +101,13 @@ export class CodexSession extends EventEmitter implements AgentSession {
         const sequence = ++this.turnSequence;
         void this.spawnTurn(text, sequence).catch((error) => {
             if (!this.disposed && sequence === this.turnSequence) {
+                const message = `Codex turn failed: ${error instanceof Error ? error.message : String(error)}`;
                 this.emit("event", {
                     kind: "error",
-                    message: `Codex turn failed: ${error instanceof Error ? error.message : String(error)}`,
+                    message,
+                    retryable: isTransientErrorMessage(message),
                 });
-                this.emit("event", { kind: "turn-end" });
+                this.emitTurnEnd();
             }
         });
     }
@@ -159,6 +185,9 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.current = child;
         this.cancelled = false;
         this.reportedError = false;
+        this.turnEndEmitted = false;
+        this.currentTurnId = `${this.sessionId ?? "codex"}/turn-${sequence}`;
+        this.emit("event", { kind: "turn-start", logicalTurnId: this.currentTurnId });
 
         const rl = readline.createInterface({ input: child.stdout! });
         rl.on("line", (line) => {
@@ -180,10 +209,11 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 this.emit("event", {
                     kind: "error",
                     message: `codex spawn failed: ${error.message}`,
+                    retryable: false,
                 });
             }
             this.cancelled = false;
-            this.emit("event", { kind: "turn-end" });
+            this.emitTurnEnd();
         });
         child.on("exit", (code) => {
             if (this.current !== child) {
@@ -198,10 +228,11 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 this.emit("event", {
                     kind: "error",
                     message: `codex exited with code ${code}: ${detail}`,
+                    retryable: true,
                 });
             }
             this.cancelled = false;
-            this.emit("event", { kind: "turn-end" });
+            this.emitTurnEnd();
         });
     }
 
@@ -320,7 +351,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 // turn.completed may carry { usage: {...} }. Emit usage (if any)
                 // BEFORE turn-end so the meter reflects the final totals.
                 this.emitUsage(event);
-                this.emit("event", { kind: "turn-end" });
+                this.emitTurnEnd();
                 break;
             case "turn.failed": {
                 if (this.cancelled) {
@@ -331,14 +362,16 @@ export class CodexSession extends EventEmitter implements AgentSession {
                     typeof event.error === "object" && event.error !== null
                         ? (event.error as Record<string, unknown>)
                         : {};
+                const failMessage =
+                    "message" in error && typeof error.message === "string"
+                        ? error.message
+                        : "codex turn failed";
                 this.emit("event", {
                     kind: "error",
-                    message:
-                        "message" in error && typeof error.message === "string"
-                            ? error.message
-                            : "codex turn failed",
+                    message: failMessage,
+                    retryable: isTransientErrorMessage(failMessage),
                 });
-                this.emit("event", { kind: "turn-end" });
+                this.emitTurnEnd();
                 break;
             }
             case "error": {
@@ -352,7 +385,11 @@ export class CodexSession extends EventEmitter implements AgentSession {
                     break;
                 }
                 this.reportedError = true;
-                this.emit("event", { kind: "error", message });
+                this.emit("event", {
+                    kind: "error",
+                    message,
+                    retryable: isTransientErrorMessage(message),
+                });
                 break;
             }
         }

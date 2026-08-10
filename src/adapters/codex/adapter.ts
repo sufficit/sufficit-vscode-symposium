@@ -12,11 +12,17 @@ import {
     AgentAdapter,
     AgentSession,
     HistoryMessage,
+    HistoryPage,
     SessionInfo,
     SessionStartOptions,
     SlashCommand,
 } from "../types";
-import { readJsonlTail } from "../jsonlPrefix";
+import {
+    decodeHistoryCursor,
+    encodeHistoryCursor,
+    readJsonlRange,
+    readJsonlTail,
+} from "../jsonlPrefix";
 import { getCached, setCached, ModelCacheEntry } from "../modelCache";
 import { CodexSession } from "./session";
 import { CodexAdapterConfig } from "./codexMcpConfig";
@@ -85,63 +91,36 @@ export class CodexAdapter implements AgentAdapter {
         return listCodexSessions(cached);
     }
 
-    async history(info: SessionInfo): Promise<HistoryMessage[]> {
+    async history(info: SessionInfo, cursor?: string): Promise<HistoryPage> {
         const file = info.transcriptPath;
         if (!file) {
-            return [];
+            return { messages: [] };
         }
-        const content = await readJsonlTail(file, 4 * 1024 * 1024);
-        const messages: HistoryMessage[] = [];
-        let activeModel = info.model;
-        for (const line of content.split("\n")) {
-            if (!line.trim()) {
-                continue;
-            }
-            interface CodexEntry {
-                type: string;
-                payload?: {
-                    type: string;
-                    role?: string;
-                    model?: string;
-                    content?: Array<{ type: string; text?: string }>;
-                };
-            }
-            let entry: CodexEntry;
+        const endByte = decodeHistoryCursor(cursor);
+        // First page (no cursor): read the tail. Subsequent pages: read a window
+        // ending at the cursor's byte offset, paging backwards towards the start.
+        const PAGE_BYTES = 1024 * 1024;
+        let content: string;
+        let nextEndByte: number | undefined;
+        if (endByte === undefined) {
+            content = await readJsonlTail(file, 4 * 1024 * 1024);
+            // The tail reaches EOF; the next older page ends at the byte offset
+            // where the tail window began.
             try {
-                entry = JSON.parse(line);
+                const stat = await fs.promises.stat(file);
+                nextEndByte = Math.max(0, stat.size - 4 * 1024 * 1024);
+                if (nextEndByte === 0) nextEndByte = undefined;
             } catch {
-                continue;
+                nextEndByte = undefined;
             }
-            if (entry.type === "turn_context" && typeof entry.payload?.model === "string") {
-                activeModel = entry.payload.model;
-                continue;
-            }
-            if (entry.type !== "response_item" || entry.payload?.type !== "message") {
-                continue;
-            }
-            const role = entry.payload.role;
-            if (role !== "user" && role !== "assistant") {
-                continue;
-            }
-            const text = (entry.payload.content ?? [])
-                .filter(
-                    (content) =>
-                        content.type === "input_text" ||
-                        content.type === "output_text" ||
-                        content.type === "text",
-                )
-                .map((content) => content.text)
-                .join("")
-                .trim();
-            if (text && !looksInjected(text)) {
-                messages.push({
-                    role,
-                    text,
-                    model: role === "assistant" ? activeModel : undefined,
-                });
-            }
+        } else {
+            const range = await readJsonlRange(file, endByte, PAGE_BYTES);
+            content = range.content;
+            nextEndByte = range.nextEndByte;
         }
-        return messages;
+        const messages = parseCodexHistory(content, info.model);
+        const nextCursor = nextEndByte !== undefined ? encodeHistoryCursor(nextEndByte) : undefined;
+        return { messages, nextCursor };
     }
 
     start(options: SessionStartOptions): AgentSession {
@@ -277,4 +256,63 @@ export class CodexAdapter implements AgentAdapter {
         }
         return residual;
     }
+}
+
+/** Parses Codex rollout JSONL text into renderable HistoryMessages. */
+function parseCodexHistory(content: string, defaultModel: string | undefined): HistoryMessage[] {
+    const messages: HistoryMessage[] = [];
+    let activeModel = defaultModel;
+    for (const line of content.split("\n")) {
+        if (!line.trim()) {
+            continue;
+        }
+        interface CodexEntry {
+            type: string;
+            payload?: {
+                type: string;
+                role?: string;
+                model?: string;
+                content?: Array<{ type: string; text?: string }>;
+            };
+        }
+        const TEXT_CONTENT_TYPES = new Set(["input_text", "output_text", "text"]);
+        let entry: CodexEntry;
+        try {
+            entry = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        if (entry.type === "turn_context" && typeof entry.payload?.model === "string") {
+            activeModel = entry.payload.model;
+            continue;
+        }
+        if (entry.type !== "response_item" || entry.payload?.type !== "message") {
+            continue;
+        }
+        const role = entry.payload.role;
+        if (role !== "user" && role !== "assistant") {
+            continue;
+        }
+        const content = entry.payload.content ?? [];
+        const text = content
+            .filter((item) => TEXT_CONTENT_TYPES.has(item.type))
+            .map((item) => item.text)
+            .join("")
+            .trim();
+        // An image/attachment-only turn (no text part) has nothing for
+        // looksInjected to judge — dispatch it with text: null instead of
+        // silently dropping it, so it doesn't look like a lost message. The
+        // render layer fills in a generic placeholder for null text.
+        const hasNonTextContent = content.some((item) => !TEXT_CONTENT_TYPES.has(item.type));
+        if (text && !looksInjected(text)) {
+            messages.push({
+                role,
+                text,
+                model: role === "assistant" ? activeModel : undefined,
+            });
+        } else if (!text && hasNonTextContent && role === "user") {
+            messages.push({ role, text: null });
+        }
+    }
+    return messages;
 }

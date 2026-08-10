@@ -153,7 +153,7 @@ export class TerminalSession {
             title: "",
         };
         try {
-            return await this.adapter.history(info);
+            return (await this.adapter.history(info)).messages;
         } catch {
             return [];
         }
@@ -212,9 +212,9 @@ export class TerminalSession {
         if (this.adapter.history) {
             void this.adapter
                 .history(info)
-                .then((messages: HistoryMessage[]) => {
+                .then((page) => {
                     if (!this.disposed) {
-                        this.post({ type: "history", messages });
+                        this.post({ type: "history", messages: page.messages });
                     }
                 })
                 .catch(() => {

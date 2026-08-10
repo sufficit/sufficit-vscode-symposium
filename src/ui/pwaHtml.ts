@@ -27,7 +27,7 @@ ${chatStyles}
 </style>
 </head>
 <body>
-${chatBodyMarkup}
+${chatBodyMarkup()}
 <script>window.__SYMPOSIUM__ = { base: "", sessionId: "", transport: ${JSON.stringify(transport)} };</script>
 <script src="app.js"></script>
 <script>

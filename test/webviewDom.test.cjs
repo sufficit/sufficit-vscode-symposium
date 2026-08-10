@@ -6,11 +6,15 @@ const { JSDOM, VirtualConsole } = require("jsdom");
 
 const bundle = readFileSync(resolve(__dirname, "../out/ui/webview.bundle.js"), "utf8");
 const chatHtmlSource = readFileSync(resolve(__dirname, "../src/ui/chatHtml.ts"), "utf8");
-const markupMatch = chatHtmlSource.match(/export const chatBodyMarkup = \/\* html \*\/ `([\s\S]*?)`;\n/);
+const markupMatch = chatHtmlSource.match(
+    /export function chatBodyMarkup\(version\?: string\): string \{\s*return \/\* html \*\/ `([\s\S]*?)`;\n\}/,
+);
 if (!markupMatch) {
     throw new Error("chatBodyMarkup fixture could not be loaded");
 }
-const chatBodyMarkup = markupMatch[1];
+// Strip the `${version ? ... : ""}` boot-version interpolation — this fixture
+// renders raw source text, not evaluated JS, so it can't resolve it anyway.
+const chatBodyMarkup = markupMatch[1].replace(/\$\{version[^}]*\}/, "");
 
 function createHarness(initialState = {}) {
     const sent = [];

@@ -34,6 +34,15 @@ export function registerExtensionAhpRuntime(
         }
         if (!shadow) {
             const persistence = new AhpPersistence(context.globalStorageUri.fsPath, {
+                maxBytes: config.get<number>("maxBytes", 33_554_432),
+                maxSessionBytes: config.get<number>("maxSessionBytes", 8_388_608),
+                compactEveryActions: config.get<number>("compactEveryActions", 250),
+                autoCompact: config.get<boolean>("autoCompact", true),
+                snapshotResources: (resources) => {
+                    const runtime = shadow?.runtime;
+                    if (!runtime) return [];
+                    return runtime.snapshots(resources).snapshots;
+                },
                 onDiagnostic: (message) => log(`[ahp] ${message}`),
             });
             shadow = new AhpShadowRuntime(
