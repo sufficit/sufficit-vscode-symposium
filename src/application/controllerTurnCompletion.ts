@@ -63,7 +63,6 @@ export function completeTurn(
                 turnId: turn.backendId ?? turn.id,
                 at: Date.now(),
             });
-            ctx.emitQueue();
             ctx.emit({
                 type: "event",
                 event: {
@@ -77,6 +76,12 @@ export function completeTurn(
                 },
             });
         }
+        // Reconcile the client's queue display with server truth every time,
+        // not just when there's something to hold — otherwise a client whose
+        // display went stale for any other reason (a reload racing a seed,
+        // a missed broadcast) never gets corrected, because nothing else
+        // tells it "the queue is actually empty" on a heldCount === 0 turn.
+        ctx.emitQueue();
         return;
     }
     const next = ctx.takeQueued();
@@ -84,9 +89,13 @@ export function completeTurn(
         ctx.log?.(
             `[turn] ${turn.describe()} — draining queue, dispatching next (${ctx.queuedCount()} left after)`,
         );
-        ctx.emitQueue();
-        ctx.dispatch(next);
     } else {
         ctx.log?.(`[turn] ${turn.describe()} — complete, queue empty`);
+    }
+    // Same reconciliation as above: always broadcast current queue state,
+    // even when there's nothing to drain.
+    ctx.emitQueue();
+    if (next) {
+        ctx.dispatch(next);
     }
 }
