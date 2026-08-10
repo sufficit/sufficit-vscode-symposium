@@ -107,6 +107,8 @@ test("redirect uses unshift (front-insert) without clearing the queue", () => {
 // The three busy modes differ only in WHERE the message lands and whether the
 // running turn is cancelled: redirect cancels + goes first, steer goes first
 // without cancelling, queue goes last. None of them discards existing work.
+// The steer test below passes no session, i.e. the CLI-backend shape with no
+// injectUserMessage — mid-turn injection is covered in steerInjection.test.ts.
 test("steer goes to the head of the queue without cancelling the turn", () => {
     const queue = new ChatQueue();
     queue.enqueue({ text: "queued-1", attachments: [] });

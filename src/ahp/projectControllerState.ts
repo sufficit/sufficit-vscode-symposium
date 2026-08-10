@@ -4,11 +4,13 @@ import { sessionMeta } from "./channelModels";
 import type { AhpProjectionAction } from "./projectAgentEvent";
 
 export interface QueueProjectionState {
-    ids: Set<string>;
+    // Kind per id, not just the id: the reducer clears steeringMessage only for
+    // kind "steering", so a removal must repeat the kind it was added with.
+    ids: Map<string, "steering" | "queued">;
 }
 
 export function createQueueProjectionState(): QueueProjectionState {
-    return { ids: new Set() };
+    return { ids: new Map() };
 }
 
 export function projectQueue(
@@ -16,15 +18,16 @@ export function projectQueue(
     items: readonly PendingMessage[],
 ): AhpProjectionAction[] {
     const actions: AhpProjectionAction[] = [];
-    const current = new Set<string>();
+    const current = new Map<string, "steering" | "queued">();
     for (const [index, item] of items.entries()) {
         const id = queueId(item, index);
-        current.add(id);
+        const kind = item.mode === "steer" ? "steering" : "queued";
+        current.set(id, kind);
         actions.push({
             channel: "chat",
             action: {
                 type: "chat/pendingMessageSet",
-                kind: item.mode === "steer" ? "steering" : "queued",
+                kind,
                 id,
                 message: {
                     text: item.text,
@@ -40,11 +43,11 @@ export function projectQueue(
             },
         });
     }
-    for (const id of state.ids) {
+    for (const [id, kind] of state.ids) {
         if (!current.has(id)) {
             actions.push({
                 channel: "chat",
-                action: { type: "chat/pendingMessageRemoved", kind: "queued", id },
+                action: { type: "chat/pendingMessageRemoved", kind, id },
             });
         }
     }

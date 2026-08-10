@@ -321,6 +321,10 @@ export class ChatController {
             dispatch: (message) => void this.runner.dispatch(message),
             emitQueue: () => this.emitQueue(),
             log: (message) => this.onLog?.(message),
+            getSession: () => this.session,
+            turns: this.live.turns,
+            createIntentId: () => this.ports.ids.create(),
+            emit: (message) => this.emit(message),
         });
     }
 

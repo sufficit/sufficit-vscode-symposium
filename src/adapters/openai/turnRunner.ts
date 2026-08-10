@@ -4,13 +4,9 @@ import { filterTools } from "../aiTools/defs";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
 import { consumeStream } from "./streamConsume";
-import {
-    assessContextWindow,
-    windowMessages,
-    isWindowTruncated,
-    estimateRequest,
-    requestEstimateDiagnostic,
-} from "./requestWindow";
+import { windowMessages, isWindowTruncated } from "./requestWindow";
+import { httpFailureEvent, preflightRequest } from "./turnPreflight";
+import { applyInjectedMessages } from "./turnInjection";
 import { stripSourcePrefix } from "./toolMerge";
 import { findToolHistoryIssues, materializeToolSafeHistory } from "./toolHistory";
 import { makeAttemptId } from "./turnId";
@@ -51,6 +47,19 @@ export class TurnRunner {
     }
 
     async run(): Promise<void> {
+        // Every exit path must release an injection that never got spliced, so
+        // it falls back to the queue instead of vanishing. close() is
+        // generation-guarded: a superseded run must not steal the window from
+        // the run that replaced it.
+        const close = this.d.injections?.open();
+        try {
+            await this.runTurn();
+        } finally {
+            close?.(this.cancelled ? "cancelled" : "turn-ended");
+        }
+    }
+
+    private async runTurn(): Promise<void> {
         const isCurrentRun = this.runSequence.start();
         this.cancelled = false;
         const messages = this.d.getMessages();
@@ -98,6 +107,7 @@ export class TurnRunner {
                     hitCap = false;
                     break;
                 }
+                applyInjectedMessages(this.d, messages, logicalTurnId);
                 this.abort = new AbortController();
                 const currentMessages = requestMessages();
                 const windowed = windowMessages(
@@ -146,35 +156,21 @@ export class TurnRunner {
                         body.reasoning_effort = effort;
                     }
                 }
-                const bodyJson = JSON.stringify(body);
-                const estimate = estimateRequest(bodyJson, outMessages.length, toolList.length);
-                this.d.emitRequestEstimate(estimate);
-                const contextAssessment = assessContextWindow(
-                    estimate.inputTokens,
-                    this.d.contextWindow(),
-                    this.d.cfg.autoCompactAt,
+                const pre = await preflightRequest(
+                    this.d,
+                    body,
+                    outMessages.length,
+                    toolList.length,
                 );
-                if (
-                    contextAssessment.shouldCompact &&
-                    (await this.d.maybeAutoCompact(estimate.inputTokens))
-                ) {
+                if (pre.kind === "retry-hop") {
                     hop--;
                     continue;
                 }
-                if (contextAssessment.exceedsWindow) {
-                    const diagnostic = requestEstimateDiagnostic(estimate, this.d.contextWindow());
-                    const autoState =
-                        (this.d.cfg.autoCompactAt ?? 0) > 0
-                            ? "Automatic compaction could not reduce it enough."
-                            : "Automatic compaction is disabled.";
-                    this.d.emit({
-                        kind: "error",
-                        message: `Request not sent: the local input estimate reaches or exceeds this model's context window. ${autoState} Reduce the current message or attachments, lower symposium.openai.maxHistoryMessages, choose a compression preset, or select a model with a larger context window.\n${diagnostic}`,
-                        retryable: false,
-                    });
+                if (pre.kind === "stop") {
                     hitCap = false;
                     break;
                 }
+                const { bodyJson, estimate } = pre;
                 this.d.cfg.log?.(
                     `[${this.d.backend}] POST ${url} api=${this.d.cfg.api} model=${this.d.model()} tools=${toolList.length} hop=${hop}`,
                 );
@@ -208,19 +204,7 @@ export class TurnRunner {
                 }
                 const responseStartedAt = Date.now();
                 if (!res.ok || !res.body) {
-                    const detail = await res.text().catch(() => "");
-                    const requiredDirective = res.headers.get("x-sufficit-required-directive");
-                    const permissionDetail = requiredDirective
-                        ? `\nX-Sufficit-Required-Directive: ${requiredDirective}`
-                        : "";
-                    const diagnostic = requestEstimateDiagnostic(estimate, this.d.contextWindow());
-                    const retryable = res.status >= 500 || res.status === 429 || res.status === 408;
-                    this.d.emit({
-                        kind: "error",
-                        message:
-                            `HTTP ${res.status} ${res.statusText} ${detail}${permissionDetail}\n${diagnostic}`.trim(),
-                        retryable,
-                    });
+                    this.d.emit(await httpFailureEvent(this.d, res, estimate));
                     hitCap = false;
                     break;
                 }

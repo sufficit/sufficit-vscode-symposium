@@ -103,6 +103,11 @@ export class ChatQueue {
     }
 
     unshift(message: PendingMessage): void {
+        // Without an id the Queued panel's edit/promote/remove actions silently
+        // no-op on this row: they look it up by Number(id) → NaN.
+        if (message.id == null) {
+            message.id = ++this.seq;
+        }
         this.messages.unshift(message);
     }
 

@@ -54,6 +54,24 @@ export interface HistoryPage {
     nextCursor?: string;
 }
 
+/** Why a mid-turn injection will never reach the model. */
+export type InjectionDropReason = "turn-ended" | "cancelled" | "superseded" | "disposed";
+
+/** One user message offered for splicing into a RUNNING turn ("steer"). */
+export interface InjectedUserMessage {
+    text: string;
+    /** Image paths inlined as vision parts (same semantics as send's `images`). */
+    images?: string[];
+    /** Controller-assigned intent id; the adapter carries it into ledger rows. */
+    intentId?: string;
+    /** Fired exactly once, the instant the message is spliced into the model
+     *  request. The caller renders and persists the user row from here. */
+    onCommitted?(logicalTurnId: string): void;
+    /** Fired exactly once when the message will never be spliced. Mutually
+     *  exclusive with onCommitted; the caller re-routes to the queue here. */
+    onDropped?(reason: InjectionDropReason): void;
+}
+
 /** Stops a live transcript follow. */
 export interface FollowHandle {
     dispose(): void;
@@ -215,6 +233,15 @@ export interface AgentSession extends EventEmitter {
      * in-process (currently openai); a no-op elsewhere.
      */
     resolveApproval?(toolId: string, approved: boolean): void;
+    /**
+     * Splices a user message into the RUNNING turn without cancelling it, so the
+     * agent adapts on its next model request instead of at the turn boundary.
+     * True means the adapter took ownership — the caller must NOT queue it, and
+     * exactly one of onCommitted/onDropped will fire. False means the backend
+     * cannot take it right now and the caller falls back to head-of-queue. Only
+     * implemented by adapters that own their tool loop in-process (openai).
+     */
+    injectUserMessage?(message: InjectedUserMessage): boolean;
 }
 
 /** Factory + discovery surface for one backend CLI. */

@@ -1,4 +1,7 @@
+import type { AgentSession } from "../adapters/types";
 import type { ChatQueue, MessageDedup, PendingMessage, SendMode } from "./controllerQueue";
+import { tryInjectSteer } from "./controllerSteerInjection";
+import type { TurnTracker } from "./turn";
 
 interface SendRouterContext {
     queue: ChatQueue;
@@ -8,6 +11,11 @@ interface SendRouterContext {
     dispatch: (message: PendingMessage) => void;
     emitQueue: () => void;
     log?: (message: string) => void;
+    /** Mid-turn steer injection; absent in tests and on backends without it. */
+    getSession?: () => AgentSession | undefined;
+    turns?: TurnTracker;
+    createIntentId?: () => string;
+    emit?: (message: unknown) => void;
 }
 
 export function routeControllerSend(
@@ -32,9 +40,15 @@ export function routeControllerSend(
         return;
     }
     if (mode === "steer" && context.busy()) {
-        // Steer does NOT interrupt: the running turn finishes normally and this
-        // goes out at that boundary. It only jumps the line — head of the queue,
-        // ahead of anything already waiting.
+        // Steer never interrupts. Backends that own their tool loop in-process
+        // can splice it into the RUNNING turn at the next tool-safe boundary, so
+        // the agent adapts immediately; it is then not a pending item at all.
+        // Everything else — and a turn with no hop left — falls through to the
+        // head of the queue and goes out at the turn boundary instead.
+        if (tryInjectSteer(message, context)) {
+            context.log?.(`[send] "${preview}" — steer while busy: injected into the running turn`);
+            return;
+        }
         context.queue.unshift(message);
         context.emitQueue();
         context.log?.(

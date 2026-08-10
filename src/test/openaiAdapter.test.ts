@@ -221,13 +221,19 @@ test("request preflight compacts before an estimated context overflow", () => {
     assert.equal(disabled.exceedsWindow, true);
 
     const source = readFileSync(
+        resolve(__dirname, "../../src/adapters/openai/turnPreflight.ts"),
+        "utf8",
+    );
+    const runner = readFileSync(
         resolve(__dirname, "../../src/adapters/openai/turnRunner.ts"),
         "utf8",
     );
     const compactAt = source.indexOf("maybeAutoCompact(estimate.inputTokens)");
-    const dispatchAt = source.indexOf("let res = await post(loginToken)");
+    const preflightAt = runner.indexOf("await preflightRequest(");
+    const dispatchAt = runner.indexOf("let res = await post(loginToken)");
     assert.ok(compactAt >= 0, "preflight estimate must feed the compactor");
-    assert.ok(dispatchAt > compactAt, "compaction guard must run before the HTTP request");
+    assert.ok(preflightAt >= 0, "the turn loop must run the preflight");
+    assert.ok(dispatchAt > preflightAt, "compaction guard must run before the HTTP request");
     assert.match(source, /Request not sent: the local input estimate reaches or exceeds/);
 });
 

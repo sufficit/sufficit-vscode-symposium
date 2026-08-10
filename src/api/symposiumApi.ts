@@ -80,7 +80,7 @@ export interface SymposiumApi {
                 permission?: string;
             },
         ): Promise<string | undefined>;
-        /** Sends a message to a session. `steer` interrupts the running turn. */
+        /** Sends a message to a session. `steer` goes first without cancelling the turn. */
         send(
             id: string,
             text: string,

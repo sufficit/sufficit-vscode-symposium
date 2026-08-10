@@ -135,8 +135,8 @@ export class Turn {
      *  omitted it is derived: error → "failed", else cancelRequested →
      *  "cancelled", else "completed". Order matters: a cancel that produced a
      *  real error still holds the queue (matches historical behaviour), while
-     *  a clean steer/cancel drains it (steer relies on the cancelled turn's
-     *  end draining the steered message). */
+     *  a clean cancel drains it (redirect relies on the cancelled turn's end
+     *  dispatching the correction it put at the queue head). */
     end(outcome?: TurnOutcome, at: number = Date.now()): boolean {
         if (this._phase === "ended") {
             return false;
