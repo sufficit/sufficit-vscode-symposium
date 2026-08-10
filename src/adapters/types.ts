@@ -6,10 +6,15 @@ import type { AdapterUsageProvider } from "./quotaTypes";
 export type { AgentBackend, SessionInfo, SessionTerminalStatus } from "./sessionInfo";
 export type { AdapterQuotaSnapshot, AdapterUsageProvider, UsageQuotaWindow } from "./quotaTypes";
 export type { AgentEvent, SystemNoticeSeverity, TodoItem } from "./events";
+import type { SystemNoticeSeverity } from "./events";
 
 /** One past message reconstructed from a stored transcript. */
 export interface HistoryMessage {
-    role: "user" | "assistant" | "tool" | "error" | "thinking";
+    role: "user" | "assistant" | "tool" | "error" | "thinking" | "status-notice";
+    /** Only meaningful for role "status-notice" — mirrors the live event's
+     *  severity so a replayed warning/error notice renders with the same
+     *  visual weight it had live. */
+    severity?: SystemNoticeSeverity;
     /**
      * Null means the adapter found a turn but produced no text for it (e.g. an
      * image/attachment-only user message with no caption). Each adapter decides

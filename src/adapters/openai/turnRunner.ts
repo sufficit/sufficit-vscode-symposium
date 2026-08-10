@@ -37,17 +37,22 @@ export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
 export class TurnRunner {
     private abort: AbortController | undefined;
+    // Aborting only kills the in-flight request; each hop allocates a fresh
+    // controller, so without this latch the tool loop just runs on.
+    private cancelled = false;
     private pendingTasksCompact = false;
     private readonly runSequence = new RunSequence();
 
     constructor(private readonly d: TurnRunnerDeps) {}
 
     cancel(): void {
+        this.cancelled = true;
         this.abort?.abort();
     }
 
     async run(): Promise<void> {
         const isCurrentRun = this.runSequence.start();
+        this.cancelled = false;
         const messages = this.d.getMessages();
         const progress = this.d.getProgress();
         this.abort = new AbortController();
@@ -89,6 +94,10 @@ export class TurnRunner {
         let noTextHops = 0;
         try {
             for (let hop = 0; hop < maxHops; hop++) {
+                if (this.cancelled || !isCurrentRun()) {
+                    hitCap = false;
+                    break;
+                }
                 this.abort = new AbortController();
                 const currentMessages = requestMessages();
                 const windowed = windowMessages(

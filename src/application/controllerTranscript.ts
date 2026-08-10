@@ -96,6 +96,100 @@ export function transcriptMessagesUpTo(log: unknown[], index: number): Transcrip
     return transcriptMessages(log).slice(0, index + 1);
 }
 
+export type ReplayRow =
+    | TranscriptRow
+    | { role: "status-notice"; text: string; severity?: "info" | "warning" | "error" };
+
+/**
+ * Same walk as transcriptMessages, but also keeps terminal status-notices
+ * (warnings/errors that paused or ended a turn) as their own rows, in their
+ * original position relative to the surrounding conversation. transcriptMessages
+ * deliberately drops these (it feeds retry/handoff seed text, where they'd be
+ * noise) — this is for full visual redisplay on reopen, where dropping a
+ * warning that a turn ended on is a real loss: the session badge still shows
+ * "stopped with a warning" (derived from live in-memory turn state, unaffected
+ * by this) but the reopened transcript never explains why.
+ */
+export function replayRows(log: unknown[]): ReplayRow[] {
+    const rows: ReplayRow[] = [];
+    let assistantBuf = "";
+    let thinkingBuf = "";
+    const flushAssistant = () => {
+        const text = assistantBuf.trim();
+        const thinking = thinkingBuf.trim();
+        if (text) {
+            rows.push({ role: "assistant", text, thinking: thinking || undefined });
+        }
+        assistantBuf = "";
+        thinkingBuf = "";
+    };
+    for (const message of log as Array<{
+        type?: string;
+        messages?: unknown[];
+        text?: unknown;
+        event?: {
+            kind?: string;
+            text?: string;
+            terminal?: boolean;
+            severity?: "info" | "warning" | "error";
+        };
+    }>) {
+        if (message?.type === "history" && Array.isArray(message.messages)) {
+            flushAssistant();
+            for (const h of message.messages as Array<{
+                role?: string;
+                text?: unknown;
+                thinking?: unknown;
+            }>) {
+                const text = typeof h?.text === "string" ? h.text : "";
+                const thinking = typeof h?.thinking === "string" ? h.thinking : undefined;
+                if (h?.role === "user" && typeof h.text === "string") {
+                    rows.push({ role: "user", text: h.text });
+                } else if (h?.role === "assistant") {
+                    if (text) {
+                        rows.push({ role: "assistant", text, thinking });
+                    }
+                }
+            }
+        } else if (message?.type === "user") {
+            flushAssistant();
+            if (typeof message.text === "string") {
+                rows.push({ role: "user", text: message.text });
+            }
+        } else if (message?.type === "event" && message.event?.kind === "text") {
+            if (legacyGuardrailStopNotice(message.event.text || "")) {
+                flushAssistant();
+            } else {
+                assistantBuf += message.event.text || "";
+            }
+        } else if (message?.type === "event" && message.event?.kind === "thinking") {
+            thinkingBuf += message.event.text || "";
+        } else if (message?.type === "event" && message.event?.kind === "turn-end") {
+            flushAssistant();
+        } else if (message?.type === "event" && message.event?.kind === "status-notice") {
+            flushAssistant();
+            if (message.event.terminal && message.event.text) {
+                rows.push({
+                    role: "status-notice",
+                    text: message.event.text,
+                    severity: message.event.severity,
+                });
+            }
+        } else if (
+            message?.type === "event" &&
+            (message.event?.kind === "tool-start" ||
+                message.event?.kind === "error" ||
+                message.event?.kind === "session")
+        ) {
+            flushAssistant();
+        } else if (message?.type === "event" && message.event?.kind === "turn-start") {
+            // No-op: just a delimiter, handled by flush on turn-end.
+        }
+    }
+    flushAssistant();
+    return rows;
+}
+
 /** Plain text representation (user/assistant only, no thinking). */
 export function transcriptText(log: unknown[]): string {
     const rows = transcriptMessages(log);

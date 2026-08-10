@@ -1,7 +1,7 @@
 /** Session-history loading independent of a concrete view. */
 import type { AgentAdapter, HistoryMessage, SessionInfo } from "../adapters/types";
 import * as renderLog from "../renderLog";
-import { transcriptMessages } from "./controllerTranscript";
+import { replayRows } from "./controllerTranscript";
 
 /**
  * Loads a backend transcript page and normalizes failures into render events.
@@ -61,13 +61,15 @@ export async function loadControllerHistory(
 function historyFromRenderLog(sessionId: string): HistoryMessage[] {
     try {
         const log = renderLog.readRender(sessionId);
-        const rows = transcriptMessages(log);
+        const rows = replayRows(log);
         const messages: HistoryMessage[] = [];
         for (const row of rows) {
             if (row.role === "user") {
                 messages.push({ role: "user", text: row.text });
             } else if (row.role === "assistant") {
                 messages.push({ role: "assistant", text: row.text });
+            } else if (row.role === "status-notice") {
+                messages.push({ role: "status-notice", text: row.text, severity: row.severity });
             }
         }
         return messages;

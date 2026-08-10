@@ -204,8 +204,10 @@ export function send(modeOverride = "") {
     // bubble now would splice it into the middle of the still-streaming turn;
     // the Queued panel already reflects it. The real "user" event (fired at
     // actual dispatch time) creates the bubble then, in the right order.
-    // Steer interrupts immediately, so it stays optimistic.
-    if (clientMessageId && (!busy || effectiveMode === "steer")) {
+    // Steer is no exception: it cancels the turn but can only take over once
+    // the running tool batch unwinds, so an optimistic bubble would sit next
+    // to the same text in the Queued panel for as long as that takes.
+    if (clientMessageId && !busy) {
         addOptimisticUserMessage(clientMessageId, text);
     }
     if (editAnchor != null) {

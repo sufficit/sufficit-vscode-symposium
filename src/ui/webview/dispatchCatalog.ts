@@ -7,6 +7,7 @@ import {
     branchBanner,
     confirmOptimisticMessage,
     message,
+    renderStatusNotice,
     renderThinkBlock,
     resetLastMsg,
 } from "./messages";
@@ -54,6 +55,7 @@ type HistoryMessage = HistoryToolOptions & {
     clientMessageId?: string;
     toolName?: string;
     detail?: string;
+    severity?: "info" | "warning" | "error";
 };
 type HistoryPayload = {
     carried?: boolean;
@@ -180,6 +182,11 @@ export function handleCatalogMessage(data: HostToWebview): boolean {
                         diff: m.diff,
                     });
                 else if (m.role === "error") append("error", "✖ " + m.text);
+                else if (m.role === "status-notice" && m.text)
+                    // No action passed: the live "Continue" affordance a
+                    // paused tool loop had would be stale by replay time —
+                    // this is just the historical record that it happened.
+                    renderStatusNotice(m.text, undefined, m.severity);
                 else message("assistant", m.text, m.ts, m.model);
             }
             // carried history is a handoff replay shown inline as a
