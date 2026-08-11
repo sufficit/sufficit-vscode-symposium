@@ -232,6 +232,15 @@ export const configViews =
             '</div><div class="ctl">' + ctl + "</div></div>";
         const section = (title, body) =>
             '<section class="section"><div class="section-title">' + esc(title) + "</div>" + body + "</section>";
+        // Session metadata for a few dozen sessions is tens of KB, so a fixed
+        // MB unit rendered every real value as "0.0 MB" — the number was right,
+        // the unit was three orders of magnitude too big.
+        const formatBytes = (bytes) =>
+            bytes >= 1024 * 1024
+                ? (bytes / 1024 / 1024).toFixed(1) + " MB"
+                : bytes >= 1024
+                  ? (bytes / 1024).toFixed(1) + " KB"
+                  : bytes + " B";
 
         return (
             section(t("config.prefs.section.appearance"),
@@ -286,8 +295,8 @@ export const configViews =
                     sel("symposium.chat.sessionCache", p.sessionCache ? "true" : "false",
                         [{ v: "true", l: "On" }, { v: "false", l: "Off" }])) +
                 item('Cache Memory', (p.sessionCacheRam && p.sessionCacheRam > 0)
-                    ? (p.sessionCacheRam / 1024 / 1024).toFixed(1) + ' MB (' + (p.sessionCacheCount || 0) + ' sessions cached)'
-                    : 'Cache disabled or empty (0 MB)',
+                    ? formatBytes(p.sessionCacheRam) + ' (' + (p.sessionCacheCount || 0) + ' sessions cached)'
+                    : 'Cache disabled or empty (0 B)',
                     '<span style="color:var(--sym-warn,#fbbf24)">read-only</span>')
             )
         );
