@@ -27,6 +27,7 @@ import {
     activeFilePinned,
     activeFilePreview,
     busy,
+    canSteerInline,
     queued,
     activeModel,
     loading,
@@ -69,7 +70,11 @@ export const MODE_ICONS: Record<string, string> = {
 export const MODE_DESC: Record<string, string> = {
     send: "Send now; queued while a turn runs",
     queue: "Wait behind everything already queued (FIFO)",
-    steer: "Reach the agent mid-turn without stopping it (else: next, ahead of the queue)",
+    get steer() {
+        return canSteerInline
+            ? "Reach the agent mid-turn without stopping it"
+            : "Sent next, ahead of the queue — this backend cannot interrupt a running turn";
+    },
     redirect: "Cancel the running turn and send the correction next (keeps the queue)",
 };
 export const STOP_ICON =
@@ -143,7 +148,9 @@ export function updateSendTitle() {
         (sendBtn as HTMLButtonElement).disabled = !canSend;
         (sendBtn as HTMLButtonElement).title = canSend
             ? mode === "steer"
-                ? "Steer: reach the agent during the running turn without stopping it — otherwise sent next, ahead of the queue (Ctrl/Cmd+Enter) · Esc to stop"
+                ? canSteerInline
+                    ? "Steer: reach the agent during the running turn without stopping it (Ctrl/Cmd+Enter) · Esc to stop"
+                    : "Steer: sent next, ahead of the queue — this backend cannot take a message mid-turn (Ctrl/Cmd+Enter) · Esc to stop"
                 : mode === "redirect"
                   ? "Redirect: cancel the running turn and send the correction next · Esc to stop"
                   : "Queue: send after everything already queued (Alt+Enter) · Esc to stop"

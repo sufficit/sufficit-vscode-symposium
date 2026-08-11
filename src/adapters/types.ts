@@ -319,6 +319,13 @@ export interface AgentAdapter {
     /** True if the backend accepts images inlined in the message (vision). */
     supportsImages?(): boolean;
     /**
+     * True when a steer can be spliced into the RUNNING turn (see
+     * AgentSession.injectUserMessage). CLI backends spawn one process per turn
+     * with no channel for extra user input, so their steer can only go to the
+     * head of the queue — the composer says so instead of implying otherwise.
+     */
+    supportsInlineSteer?(): boolean;
+    /**
      * Permanently scrubs a session's stored data from disk (transcript plus
      * any shared history/index files). Returns the names of stores that may
      * still hold residual data and could not be surgically cleaned, if any.

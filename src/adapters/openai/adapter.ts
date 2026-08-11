@@ -267,6 +267,11 @@ export class OpenAIAdapter implements AgentAdapter {
         return true;
     }
 
+    /** The turn loop runs in-process, so a steer can be spliced between hops. */
+    supportsInlineSteer(): boolean {
+        return true;
+    }
+
     /** Friendly id→name labels for the model picker (from discovery). */
     modelLabels(): Record<string, string> {
         return getDiscoveredLabels(this.getConfig().baseUrl) ?? {};

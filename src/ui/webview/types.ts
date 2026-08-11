@@ -71,6 +71,8 @@ export interface MetaMessageData {
     devMode?: boolean;
     openIn?: string;
     whenBusy?: string;
+    /** Backend can splice a steer into the running turn (openai only today). */
+    canSteerInline?: boolean;
     busy?: boolean;
     chatOnly?: boolean;
     agentLabels?: AgentLabels;

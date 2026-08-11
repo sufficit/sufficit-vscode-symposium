@@ -58,6 +58,7 @@ import {
     setPermissionDefault,
     setPermissionModes,
     setPermissionValue,
+    setCanSteerInline,
     setSideMode,
 } from "./state";
 import { preserveSelectedModel } from "./modelCatalog";
@@ -73,6 +74,7 @@ export function applyMeta(data: MetaMessageData): void {
         setOpenInPref(data.openIn);
     }
     // Seed the default send mode once (don't override a saved choice).
+    setCanSteerInline(data.canSteerInline === true);
     if (data.whenBusy && !(saved && saved.sendMode)) {
         sendMode.value = data.whenBusy;
     }
