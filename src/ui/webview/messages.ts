@@ -172,28 +172,6 @@ export function withdrawOptimisticMessage(clientMessageId?: string): void {
     }
 }
 
-// Ids the host has told us it actually dispatched (a "user" render row). A
-// dispatched message is by definition no longer pending, so the Queued panel
-// must not show it — the last line of defence against the recurring "same
-// message in the transcript AND in the queue" ghost, whichever of the several
-// producer paths created the pending row.
-const dispatchedIds = new Set<string>();
-
-export function markMessageDispatched(clientMessageId?: string): void {
-    if (clientMessageId) {
-        dispatchedIds.add(clientMessageId);
-    }
-}
-
-export function wasMessageDispatched(clientMessageId?: string): boolean {
-    return !!clientMessageId && dispatchedIds.has(clientMessageId);
-}
-
-/** Session switch / transcript reset: the ids belong to the previous dialogue. */
-export function resetDispatchedMessages(): void {
-    dispatchedIds.clear();
-}
-
 export function confirmOptimisticMessage(clientMessageId?: string): HTMLElement | null {
     if (!clientMessageId) {
         return null;
