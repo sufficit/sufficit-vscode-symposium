@@ -60,9 +60,9 @@ export interface SymposiumRemoteUrlResult {
 
 export interface RelayRegisterResult {
     ok: boolean;
-    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium/relay). */
+    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium?ws=relay). */
     relayWsUrl?: string;
-    /** Public URL prefix for this machine (e.g. https://ai.sufficit.com.br/symposium/<machineId>). */
+    /** Public URL prefix containing the gateway's owner-scoped relay machine ID. */
     publicUrlPrefix?: string;
 }
 

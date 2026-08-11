@@ -151,6 +151,7 @@ export class RemoteBridge {
             relayUrl: registration.relayWsUrl,
             bridgePort: port,
             getToken: () => getHubLoginToken(),
+            authorize: async () => (await hub.registerRelay(machineId))?.ok === true,
             onPublicUrl: (url) => this.onRelayUrlChange?.(url),
             log: (message) => this.log(message),
         });

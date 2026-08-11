@@ -5,7 +5,7 @@
  * tunneling app.
  *
  * Architecture:
- *   Browser/Phone ──HTTPS──► ai.sufficit.com.br/symposium/<machineId>
+ *   Browser/Phone ──HTTPS/WSS──► ai.sufficit.com.br/symposium?machineId=<relayId>
  *                                    │ (reverse proxy)
  *                                    ▼ (WebSocket, established by this client)
  *                              This extension ──► 127.0.0.1:47600 (bridge)
@@ -14,7 +14,7 @@
  * port needs to be opened on the host machine. The gateway authenticates the
  * WS connection with the Sufficit JWT (same OAuth identity the user already
  * logged in with). HTTP requests arriving via the relay are proxied to the
- * local bridge via fetch; SSE streams are relayed chunk-by-chunk.
+ * local bridge via fetch; browser WebSockets are multiplexed to local `/ahp`.
  *
  * Protocol (JSON over WebSocket text frames):
  *   ext → gw:  { "type": "register", "machineId": "<uuid>" }
@@ -22,6 +22,9 @@
  *   gw → ext:  { "type": "request", "id": "<uuid>", "method", "path", "headers", "body" }
  *   ext → gw:  { "type": "response", "id", "status", "headers", "body" }
  *   ext → gw:  { "type": "response-chunk", "id", "chunk", "done" }  (SSE streaming)
+ *   gw → ext:  { "type": "socket-open", "id", "path", "protocols" }
+ *   ext/gw:    { "type": "socket-frame", "id", "data", "binary" }
+ *   ext/gw:    { "type": "socket-close", "id", "code", "reason" }
  *   ext/gw:    { "type": "heartbeat" }  (keepalive every 25s)
  */
 
@@ -29,18 +32,29 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import { WebSocket } from "ws";
+import { RelaySocketTunnel } from "./relaySocketTunnel";
 
 export interface RelayClientOptions {
-    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium/relay). */
+    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium?ws=relay). */
     relayUrl: string;
     /** Local bridge port to proxy requests to (e.g. 47600). */
     bridgePort: number;
     /** Returns the Sufficit JWT to authenticate the outbound connection. */
     getToken: () => Promise<string | null>;
+    /** Re-authorizes this machine before each connection/reconnection. */
+    authorize?: () => Promise<boolean>;
     /** Called when the public URL is assigned (registered) or lost (disconnect). */
     onPublicUrl?: (url: string | undefined) => void;
     /** Optional logger. */
     log?: (msg: string) => void;
+}
+
+let knownRelayPublicUrl: string | undefined;
+
+/** Last public relay URL confirmed by the gateway in this extension process. */
+export function getKnownRelayPublicUrl(): string | undefined {
+    return knownRelayPublicUrl;
 }
 
 /**
@@ -106,9 +120,15 @@ export class RelayClient {
     private running = false;
     private publicUrl: string | undefined;
     private readonly machineId: string;
+    private readonly socketTunnel: RelaySocketTunnel;
 
     constructor(private readonly opts: RelayClientOptions) {
         this.machineId = getMachineId();
+        this.socketTunnel = new RelaySocketTunnel({
+            bridgePort: opts.bridgePort,
+            send: (message) => this.send(message),
+            log: (message) => this.log(message),
+        });
     }
 
     /** The public URL the gateway assigned, or undefined until registered. */
@@ -145,7 +165,9 @@ export class RelayClient {
             }
             this.ws = undefined;
         }
+        this.socketTunnel.closeAll();
         this.publicUrl = undefined;
+        knownRelayPublicUrl = undefined;
     }
 
     private log(msg: string): void {
@@ -156,12 +178,34 @@ export class RelayClient {
         if (!this.running) {
             return;
         }
-        const token = await this.opts.getToken();
+        let token: string | null;
+        try {
+            token = await this.opts.getToken();
+        } catch (error) {
+            this.log(`token lookup failed: ${error}`);
+            this.scheduleReconnect();
+            return;
+        }
+        if (!this.running) return;
         if (!token) {
             this.log("no Sufficit token — not logged in; will retry");
             this.scheduleReconnect();
             return;
         }
+        if (this.opts.authorize) {
+            try {
+                if (!(await this.opts.authorize())) {
+                    this.log("machine authorization failed; will retry");
+                    this.scheduleReconnect();
+                    return;
+                }
+            } catch (error) {
+                this.log(`machine authorization failed: ${error}`);
+                this.scheduleReconnect();
+                return;
+            }
+        }
+        if (!this.running) return;
         const url = `${this.opts.relayUrl}&machineId=${encodeURIComponent(this.machineId)}&token=${encodeURIComponent(token)}`;
         this.log(`connecting to ${this.opts.relayUrl} (machineId=${this.machineId.slice(0, 8)}…)`);
         let ws: WebSocket;
@@ -173,28 +217,30 @@ export class RelayClient {
             return;
         }
         this.ws = ws;
-        ws.addEventListener("open", () => {
+        ws.on("open", () => {
             this.log("connected, registering");
             this.backoff = 1000; // reset on successful connect
             ws.send(buildRegisterMessage(this.machineId));
             this.startHeartbeat();
         });
-        ws.addEventListener("message", (ev: MessageEvent) => {
-            const raw = typeof ev.data === "string" ? ev.data : "";
+        ws.on("message", (data, binary) => {
+            const raw = binary ? "" : data.toString();
             const msg = parseRelayMessage(raw);
             if (!msg) {
                 return;
             }
             this.handleMessage(msg);
         });
-        ws.addEventListener("close", () => {
+        ws.on("close", () => {
             this.log("connection closed");
             this.stopHeartbeat();
             this.publicUrl = undefined;
+            knownRelayPublicUrl = undefined;
+            this.socketTunnel.closeAll();
             this.opts.onPublicUrl?.(undefined);
             this.scheduleReconnect();
         });
-        ws.addEventListener("error", () => {
+        ws.on("error", () => {
             this.log("connection error");
             // close handler will schedule reconnect
         });
@@ -238,9 +284,11 @@ export class RelayClient {
     }
 
     private handleMessage(msg: Record<string, unknown>): void {
+        if (this.socketTunnel.handleMessage(msg)) return;
         const type = msg.type as string;
         if (type === "registered") {
             this.publicUrl = msg.publicUrl as string | undefined;
+            knownRelayPublicUrl = this.publicUrl;
             this.log(`registered — public URL ${this.publicUrl ?? "(none)"}`);
             this.opts.onPublicUrl?.(this.publicUrl);
         } else if (type === "request") {

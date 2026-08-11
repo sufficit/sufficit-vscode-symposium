@@ -58,6 +58,26 @@ Gere um token forte:
 node -e "console.log(require('crypto').randomUUID())"
 ```
 
+## Relay público Sufficit (sem Tailscale)
+
+Com `symposium.bridge.relay` em `"auto"` (padrão) e o usuário autenticado na
+Sufficit, a extensão registra a máquina e abre uma conexão WebSocket de saída
+para o gateway. O painel **Remote Access** passa a mostrar **Sufficit Relay** e
+gera o QR público quando a conexão estiver pronta. Não é necessário publicar
+porta nem instalar Tailscale no cliente.
+
+O relay transporta tanto os arquivos HTTP da PWA quanto o WebSocket `/ahp`.
+Cada WebSocket do navegador vira um canal multiplexado dentro da conexão de
+controle, preservando os subprotocolos de versão e autenticação do AHP. A queda
+do relay fecha os canais filhos e a extensão registra novamente a máquina antes
+de reconectar.
+
+Para produção, publique em conjunto uma versão da extensão e uma versão do
+gateway `sufficit-ai` que implementem `socket-open`, `socket-opened`,
+`socket-frame` e `socket-close`. Um gateway antigo ainda pode entregar os
+arquivos da PWA, mas o chat não conecta porque não transporta `/ahp`. Consulte
+[RELAY-PROTOCOL.md](RELAY-PROTOCOL.md) para o contrato e os limites.
+
 ## Fase 0 — provar que o celular alcança (sem escrever cliente)
 
 1. **Ligar o bridge.** Aplique o `settings.json` acima; a Bridge reinicia

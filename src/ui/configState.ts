@@ -8,7 +8,7 @@ import type { ConfigPanelDeps } from "./configTypes";
 async function networkState(deps: ConfigPanelDeps) {
     const bridge = vscode.workspace.getConfiguration("symposium.bridge");
     const { getJoinedHostname, checkTailscaleStatus } = await import("../net/tailnet");
-    const { getMachineId } = await import("../net/relayClient");
+    const { getKnownRelayPublicUrl, getMachineId } = await import("../net/relayClient");
     let vpnHostname = getJoinedHostname();
     if (!vpnHostname) {
         const status = await checkTailscaleStatus();
@@ -26,9 +26,7 @@ async function networkState(deps: ConfigPanelDeps) {
         bridgePort: bridge.get<number>("port", 47600),
         relayMode: bridge.get<string>("relay", "auto"),
         relayMachineId: machineId,
-        relayPublicUrl: bridgeEnabled
-            ? `https://ai.sufficit.com.br/symposium?machineId=${machineId}`
-            : undefined,
+        relayPublicUrl: bridgeEnabled ? getKnownRelayPublicUrl() : undefined,
         vpnConnected: !!vpnHostname,
         vpnHostname: vpnHostname ?? undefined,
     };

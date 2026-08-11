@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as http from "node:http";
+import { WebSocketServer, type WebSocket } from "ws";
 import {
     parseRelayMessage,
     buildRegisterMessage,
@@ -10,6 +12,7 @@ import {
     getMachineId,
     RelayClient,
 } from "../net/relayClient";
+import { localAhpUrl, relayProtocols, RelaySocketTunnel } from "../net/relaySocketTunnel";
 
 // --- Relay Sufficit: protocolo e cliente WS outbound ---
 // O relay publica o bridge local numa URL pública via WS outbound para o gateway
@@ -99,3 +102,80 @@ test("RelayClient.stop is idempotent (no throw on double stop)", () => {
     client.stop();
     client.stop(); // must not throw
 });
+
+test("relay socket tunnel negotiates AHP and forwards messages in both directions", async () => {
+    const server = http.createServer();
+    const webSockets = new WebSocketServer({
+        server,
+        path: "/ahp",
+        handleProtocols: (protocols) => (protocols.has("ahp.v0.6") ? "ahp.v0.6" : false),
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const connected = new Promise<WebSocket>((resolve) => webSockets.once("connection", resolve));
+    const sent: Record<string, unknown>[] = [];
+    const tunnel = new RelaySocketTunnel({
+        bridgePort: address.port,
+        send: (message) => sent.push(message),
+    });
+
+    try {
+        assert.equal(
+            tunnel.handleMessage({
+                type: "socket-open",
+                id: "socket-1",
+                path: "/ahp",
+                protocols: ["ahp.v0.6", "symposium-token.dGVzdA"],
+            }),
+            true,
+        );
+        const local = await connected;
+        const opened = await waitForMessage(sent, "socket-opened");
+        assert.equal(opened.id, "socket-1");
+        assert.equal(opened.protocol, "ahp.v0.6");
+
+        const received = new Promise<string>((resolve) =>
+            local.once("message", (data) => resolve(data.toString())),
+        );
+        tunnel.handleMessage({
+            type: "socket-frame",
+            id: "socket-1",
+            data: Buffer.from("browser-to-host").toString("base64"),
+            binary: false,
+        });
+        assert.equal(await received, "browser-to-host");
+
+        local.send("host-to-browser");
+        const response = await waitForMessage(sent, "socket-frame");
+        assert.equal(Buffer.from(String(response.data), "base64").toString(), "host-to-browser");
+        assert.equal(response.binary, false);
+
+        tunnel.handleMessage({ type: "socket-close", id: "socket-1", code: 1000, reason: "done" });
+        await new Promise<void>((resolve) => local.once("close", () => resolve()));
+    } finally {
+        tunnel.closeAll();
+        await new Promise<void>((resolve) => webSockets.close(() => resolve()));
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+});
+
+test("relay socket tunnel only targets local AHP and filters invalid protocols", () => {
+    assert.equal(localAhpUrl("/ahp", 47600), "ws://127.0.0.1:47600/ahp");
+    assert.equal(localAhpUrl("/sessions", 47600), undefined);
+    assert.equal(localAhpUrl("//attacker.example/ahp", 47600), undefined);
+    assert.deepEqual(relayProtocols(["ahp.v0.6", "bad protocol", "x\r\nheader"]), ["ahp.v0.6"]);
+});
+
+async function waitForMessage(
+    messages: Record<string, unknown>[],
+    type: string,
+): Promise<Record<string, unknown>> {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+        const found = messages.find((message) => message.type === type);
+        if (found) return found;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error(`timed out waiting for ${type}`);
+}
