@@ -344,3 +344,39 @@ test("legacyView queue rebuild puts steeringMessage first with mode steer", () =
     assert.equal(fullQueue?.items[0]?.id, "client-steer");
     assert.equal(fullQueue?.items[1]?.id, "client-queued");
 });
+
+// After a failed turn the host holds the queue — pending messages do NOT
+// auto-send. Without the flag the panel just sits there full and unexplained,
+// which is what a capacity error leaves behind.
+test("legacyView marks the queue held after a failed turn", () => {
+    const failed = {
+        resource: CHAT,
+        title: "Held",
+        status: 33,
+        modifiedAt: "2026-08-11T00:00:00.000Z",
+        turns: [{ id: "t1", state: "error", message: { text: "teste" }, responseParts: [] }],
+        queuedMessages: [{ id: "q1", message: { text: "teste", origin: { kind: "user" } } }],
+    } as unknown as Parameters<typeof ahpChatToLegacy>[0];
+
+    const queue = ahpChatToLegacy(failed).find((m) => m.type === "queue") as
+        | { held?: boolean }
+        | undefined;
+    assert.equal(queue?.held, true);
+});
+
+test("a queue behind a healthy turn is not held", () => {
+    const running = {
+        resource: CHAT,
+        title: "Running",
+        status: 33,
+        modifiedAt: "2026-08-11T00:00:00.000Z",
+        turns: [{ id: "t1", state: "complete", message: { text: "a" }, responseParts: [] }],
+        activeTurn: { id: "t2", startedAt: "x", message: { text: "b" }, responseParts: [] },
+        queuedMessages: [{ id: "q1", message: { text: "later", origin: { kind: "user" } } }],
+    } as unknown as Parameters<typeof ahpChatToLegacy>[0];
+
+    const queue = ahpChatToLegacy(running).find((m) => m.type === "queue") as
+        | { held?: boolean }
+        | undefined;
+    assert.equal(queue?.held, false);
+});

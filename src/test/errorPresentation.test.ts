@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { presentTurnError } from "../ui/errorPresentation";
+import { isTransientErrorMessage } from "../adapters/transientError";
 
 test("all-backends-exhausted 503 has a concise actionable system summary", () => {
     const raw =
@@ -46,4 +47,31 @@ test("unknown terminal errors preserve their technical detail", () => {
 
     assert.match(out.summary, /ended before the agent could reply/i);
     assert.equal(out.detail, "socket closed unexpectedly");
+});
+
+// A provider that is out of capacity is the clearest case for Retry: the same
+// request may succeed moments later. It arrives mid-stream, after the gateway
+// already sent 200 + SSE headers, so the HTTP status can no longer say 429/503
+// and the wording is the only signal. It used to render "Retry is unavailable".
+test("capacity and throttling failures are retryable", () => {
+    for (const message of [
+        "Selected model is at capacity. Please try a different model.",
+        "The upstream provider is overloaded, try again later",
+        "rate limit exceeded",
+        "429 Too Many Requests",
+        "Service Unavailable",
+    ]) {
+        assert.equal(isTransientErrorMessage(message), true, message);
+    }
+});
+
+test("a genuine request problem is still not retryable", () => {
+    for (const message of [
+        "invalid api key",
+        "model not found",
+        "context length exceeded",
+        "permission denied for this tool",
+    ]) {
+        assert.equal(isTransientErrorMessage(message), false, message);
+    }
 });

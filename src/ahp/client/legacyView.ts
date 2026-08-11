@@ -6,6 +6,8 @@ import type {
 } from "@microsoft/agent-host-protocol";
 import type { HostToWebview } from "../../protocol/chat";
 import { nativeSessionId } from "./state";
+import { attachmentValues, queueHeld, queueItems } from "./legacyQueueView";
+export { queueItems } from "./legacyQueueView";
 
 export function ahpSessionsToLegacy(items: SessionSummary[]): Record<string, unknown>[] {
     return items.map((item) => {
@@ -91,36 +93,18 @@ export function ahpChatToLegacy(chat: ChatState): HostToWebview[] {
         }
     }
     if (chat.queuedMessages || chat.steeringMessage) {
-        // `held` (the "turn before it failed" banner) isn't modeled in AHP's
-        // ChatState yet — TODO: thread it through once the host projects it.
-        output.push({ type: "queue", items: queueItems(chat), busy: !!chat.activeTurn });
+        output.push({
+            type: "queue",
+            items: queueItems(chat),
+            busy: !!chat.activeTurn,
+            held: queueHeld(chat),
+        });
     }
     return output;
 }
 
 /** Queue rebuild for the legacy webview: the steering row (if any) always
  *  leads, since the host queue holds it at the head. */
-export function queueItems(chat: ChatState): Record<string, unknown>[] {
-    const steering = chat.steeringMessage;
-    const head = steering
-        ? [
-              {
-                  id: steering.id,
-                  clientMessageId: steering.id,
-                  text: steering.message.text,
-                  attachments: attachmentValues(steering.message.attachments),
-                  mode: "steer",
-              },
-          ]
-        : [];
-    const rest = (chat.queuedMessages ?? []).map((item) => ({
-        id: item.id,
-        clientMessageId: item.id,
-        text: item.message.text,
-        attachments: attachmentValues(item.message.attachments),
-    }));
-    return [...head, ...rest];
-}
 
 export function ahpActionToLegacy(
     envelope: ActionEnvelope,
@@ -234,9 +218,15 @@ export function ahpActionToLegacy(
         case "chat/pendingMessageSet":
         case "chat/pendingMessageRemoved":
         case "chat/queuedMessagesReordered":
-            // `held` isn't modeled in AHP's ChatState yet — see the TODO above.
             return chat
-                ? [{ type: "queue", items: queueItems(chat), busy: !!chat.activeTurn }]
+                ? [
+                      {
+                          type: "queue",
+                          items: queueItems(chat),
+                          busy: !!chat.activeTurn,
+                          held: queueHeld(chat),
+                      },
+                  ]
                 : [];
         case "chat/turnsLoaded": {
             // Paginated history prepend. The reducer has already prepended the
@@ -348,14 +338,6 @@ function contentText(value: unknown): string {
     return Array.isArray(value)
         ? value.map((item) => String((item as { text?: unknown }).text ?? "")).join("")
         : "";
-}
-
-function attachmentValues(value: unknown): string[] {
-    if (!Array.isArray(value)) return [];
-    return value.flatMap((item) => {
-        const record = item as { value?: unknown };
-        return typeof record.value === "string" ? [record.value] : [];
-    });
 }
 
 /**
