@@ -8,8 +8,11 @@ import { applyEvent } from "./events";
 import {
     confirmOptimisticMessage,
     endStream,
+    markMessageDispatched,
     message,
     renderThinkBlock,
+    resetDispatchedMessages,
+    wasMessageDispatched,
     withdrawOptimisticMessage,
 } from "./messages";
 import { renderTool, resetToolRows } from "./tools";
@@ -193,6 +196,7 @@ export function handleHostMessage(payload: unknown): void {
             saveCurrentComposerDraft();
             clearComposer();
             setConversationRows([]);
+            resetDispatchedMessages();
             log.textContent = "";
             copySessionBtn.style.display = "none";
             agentBadge.style.display = "none";
@@ -252,7 +256,14 @@ export function handleHostMessage(payload: unknown): void {
             for (const id of data.stale ?? []) {
                 withdrawOptimisticMessage(id);
             }
-            renderQueued(items, !!data.held);
+            // Anything the host already told us it dispatched is not pending,
+            // whatever the payload claims. Several producers can create a
+            // pending row (the AHP transport's optimistic action, the host
+            // queue projection, a restored ChatState) and only some of them
+            // have a reliable cleanup path — this makes the contradiction
+            // unrenderable instead of relying on each of them being correct.
+            const pending = items.filter((it) => !wasMessageDispatched(it.clientMessageId));
+            renderQueued(pending, !!data.held);
             // The host is authoritative on busy; this "queue" message always
             // carries its current value, so a client-local desync (e.g. the
             // optimistic-bubble path above never resetting busy after a
@@ -297,6 +308,7 @@ export function handleHostMessage(payload: unknown): void {
         }
         case "user": {
             endStream();
+            markMessageDispatched(data.clientMessageId);
             const el =
                 confirmOptimisticMessage(data.clientMessageId) ||
                 message("user", data.text, Date.now());
