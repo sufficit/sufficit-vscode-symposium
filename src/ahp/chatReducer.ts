@@ -149,6 +149,9 @@ function startTurn(state: ChatState, action: ActionRecord): ChatState {
             message,
             responseParts: [],
             usage: undefined,
+            // Remembered so a late optimistic pendingMessageSet for the same
+            // message can be recognised and refused (see setPending).
+            ...(queuedId ? { _meta: { queuedMessageId: queuedId } } : {}),
         },
         draft: undefined,
         queuedMessages: queuedMessages?.length ? queuedMessages : undefined,
@@ -291,6 +294,13 @@ function pruneGhosts(state: ChatState, finalizedText: string): ChatState {
 function setPending(state: ChatState, action: ActionRecord): ChatState {
     const pending = { id: String(action.id ?? ""), message: action.message as Message };
     if (!pending.id) return state;
+    // The transport dispatches this optimistically, AFTER routing the send.
+    // A direct dispatch (the first send after an idle period) runs the whole
+    // host path synchronously inside that call, so this row can arrive after
+    // its own turn already started — and then nothing removes it, because the
+    // turn-start that would have is already in the past. That is the ghost
+    // row; see ahpUiContradiction.test.ts, which reproduces every ordering.
+    if (alreadyStarted(state, pending.id)) return state;
     if (action.kind === "steering") return { ...state, steeringMessage: pending };
     // "send"/"redirect" are dispatched immediately to the backend; they are not
     // queue items and must not be rendered as such. If the backend actually
@@ -303,6 +313,16 @@ function setPending(state: ChatState, action: ActionRecord): ChatState {
     const queue = (state.queuedMessages ?? []).filter((item) => item.id !== pending.id);
     queue.push(pending);
     return { ...state, queuedMessages: queue };
+}
+
+/** True when a turn has already started for this pending id. Matched by id
+ *  only — text would suppress a genuine duplicate the user queued on purpose. */
+function alreadyStarted(state: ChatState, id: string): boolean {
+    const consumed = (turn: unknown): boolean =>
+        (turn as { _meta?: { queuedMessageId?: unknown } } | undefined)?._meta?.queuedMessageId ===
+        id;
+    if (consumed(state.activeTurn)) return true;
+    return state.turns.slice(-8).some(consumed);
 }
 
 function removePending(state: ChatState, action: ActionRecord): ChatState {
