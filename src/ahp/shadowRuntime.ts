@@ -5,6 +5,15 @@ import { AhpHostRuntime, type AhpRuntimeExport, type AhpSessionHandle } from "./
 import { historyTurns, turnText } from "./historyProjection";
 import { AhpPersistence } from "./persistence";
 import {
+    asRecord,
+    isAgentEvent,
+    optionalString,
+    positive,
+    redact,
+    sessionKey,
+    stringArray,
+} from "./shadowRuntimeUtils";
+import {
     createProjectionState,
     projectAgentEvent,
     projectInjectedUser,
@@ -224,6 +233,17 @@ export class AhpShadowRuntime {
             if (message.type === "queue" && Array.isArray(message.items)) {
                 const items = message.items as PendingMessage[];
                 record.queueLength = items.length;
+                // Re-seed from the live chat state first. The transport
+                // dispatches its own optimistic pendingMessageSet straight into
+                // the runtime, so projectQueue never issued those ids and its
+                // diff would not remove them — a message the host dispatched
+                // without ever queuing left a row nothing could reconcile away.
+                // Seeding here makes the host queue authoritative over every
+                // pending row the client shows, whoever created it.
+                seedQueueProjection(
+                    record.queue,
+                    this.runtime.snapshot(record.handle.chatResource).state as ChatState,
+                );
                 this.apply(record, projectQueue(record.queue, items));
                 this.compare(key, record);
                 return;
@@ -358,43 +378,4 @@ export class AhpShadowRuntime {
         });
         if (this.recent.length > this.maximumDiagnostics) this.recent.shift();
     }
-}
-
-function isAgentEvent(value: unknown): value is AgentEvent {
-    return (
-        !!value &&
-        typeof value === "object" &&
-        typeof (value as { kind?: unknown }).kind === "string"
-    );
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function optionalString(value: unknown): string | undefined {
-    return typeof value === "string" ? value : undefined;
-}
-
-function stringArray(value: unknown): string[] {
-    return Array.isArray(value)
-        ? value.filter((item): item is string => typeof item === "string")
-        : [];
-}
-
-function sessionKey(provider: string, sessionId: string): string {
-    return `${provider}:${sessionId}`;
-}
-
-function positive(value: number | undefined, fallback: number): number {
-    return Number.isSafeInteger(value) && (value ?? 0) > 0 ? (value as number) : fallback;
-}
-
-function redact(value: string): string {
-    return value
-        .replace(
-            /(authorization|cookie|secret|token|credential)\s*[:=]\s*[^;,}\s]+/gi,
-            "$1=[redacted]",
-        )
-        .slice(0, 1_000);
 }

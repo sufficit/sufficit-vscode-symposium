@@ -84,3 +84,48 @@ test("a restored ghost queue row is removed once the host queue snapshot arrives
 
     assert.equal(next.queuedMessages, undefined, "the ghost row is gone once host truth arrives");
 });
+
+/**
+ * The transport dispatches its OWN optimistic chat/pendingMessageSet straight
+ * into the runtime, so projectQueue never issued that id and its diff cannot
+ * remove it. A message the host dispatched directly (never queued) therefore
+ * left a row nothing could reconcile away — the ghost that survived v25-v31.
+ * The shadow now re-seeds from live chat state before every diff, which is
+ * what this asserts: host queue authoritative over rows it never created.
+ */
+test("an optimistic row the projection never issued is still removed by host truth", () => {
+    const optimistic: ChatState = {
+        resource: "ahp-chat:/66666666-6666-6666-8666-666666666666",
+        title: "Optimistic",
+        status: 33,
+        modifiedAt: "2026-08-10T00:00:00.000Z",
+        turns: [],
+        queuedMessages: [
+            {
+                id: "local-abc-1",
+                message: { text: "agora vamos corrigir", origin: { kind: "user" } },
+            },
+        ],
+    } as unknown as ChatState;
+
+    // A projection that has NEVER seen this id — exactly the shadow's state
+    // when the transport, not projectQueue, created the row.
+    const projection = createQueueProjectionState();
+    assert.equal(projection.ids.size, 0);
+    assert.deepEqual(
+        projectQueue(projection, []).filter((item) => item.channel === "chat"),
+        [],
+        "without seeding, the diff emits no removal — the row is invisible to it",
+    );
+
+    seedQueueProjection(projection, optimistic);
+    const actions = projectQueue(projection, []);
+    let next = optimistic;
+    for (const item of actions) {
+        if (item.channel === "chat") {
+            next = chatReducer(next, item.action as never);
+        }
+    }
+
+    assert.equal(next.queuedMessages, undefined);
+});
