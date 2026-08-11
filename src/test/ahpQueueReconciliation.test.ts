@@ -86,12 +86,11 @@ test("a restored ghost queue row is removed once the host queue snapshot arrives
 });
 
 /**
- * The transport dispatches its OWN optimistic chat/pendingMessageSet straight
- * into the runtime, so projectQueue never issued that id and its diff cannot
- * remove it. A message the host dispatched directly (never queued) therefore
- * left a row nothing could reconcile away — the ghost that survived v25-v31.
- * The shadow now re-seeds from live chat state before every diff, which is
- * what this asserts: host queue authoritative over rows it never created.
+ * A historical/reconnecting client can dispatch its OWN optimistic
+ * chat/pendingMessageSet straight into the runtime, so projectQueue never
+ * issued that id and its diff cannot remove it. The shadow re-seeds from live
+ * chat state before every diff: host queue authority also covers rows it never
+ * created.
  */
 test("an optimistic row the projection never issued is still removed by host truth", () => {
     const optimistic: ChatState = {

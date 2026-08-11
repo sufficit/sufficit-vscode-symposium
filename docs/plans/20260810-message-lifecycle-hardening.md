@@ -129,3 +129,17 @@ Implementation: Sonnet agents (user directive). Review: this doc + Opus audit
 appendix. Release via the standing process (verify → bump → package →
 check-vsix → commit develop → tag → CI green → install local + development +
 container 1021).
+
+## Producer-side resolution — 2026-08-11
+
+The defensive cleanup above was necessary for restored and older client state,
+but it left the producer of the false row intact: the composer preference
+`queue` was serialized as `kind: "queued"` even while the host was idle. The
+preference only describes what to do *if busy*; it is not evidence that the
+message entered `ChatQueue`.
+
+Current AHP clients therefore submit normal/queue-preferred messages as
+`kind: "send"`. The host routes them exactly once and only `projectQueue`
+creates a visible queued row after `ChatQueue` actually accepts one. The PWA
+also preserves the composer's `clientMessageId` and metadata, and routes its
+queue edit/promote/remove/clear controls to host-authoritative actions.

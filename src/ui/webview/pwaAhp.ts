@@ -8,6 +8,7 @@ import {
 } from "../../ahp/client/legacyView";
 import { nativeSessionId } from "../../ahp/client/state";
 import type { HostToWebview, WebviewToHost } from "../../protocol/chat";
+import { routeAhpQueueAction } from "../../protocol/ahpQueueActions";
 import { authHeaders, token } from "./pwaLogin";
 import type { PwaConfig } from "./pwaTypes";
 
@@ -63,14 +64,35 @@ export async function refreshPwaAhpSessions(): Promise<void> {
 
 export function routePwaAhp(message: WebviewToHost): boolean {
     if (!client || !options) return message.type === "ready";
+    if (routeAhpQueueAction(client, chatResource, message, options.deliver)) return true;
     switch (message.type) {
         case "send":
-            if (chatResource)
+            if (chatResource) {
                 client.send(
                     chatResource,
                     message.text,
-                    message.mode === "steer" ? "steering" : "queue",
+                    message.mode === "steer"
+                        ? "steering"
+                        : message.mode === "redirect"
+                          ? "redirect"
+                          : message.mode === "send"
+                            ? "send"
+                            : "queue",
+                    {
+                        clientMessageId: message.clientMessageId,
+                        attachments: message.attachments,
+                        model: message.model,
+                        reasoning: message.reasoning,
+                        permission: message.permission,
+                        autonomy: message.autonomy,
+                        execDisplay: message.execDisplay,
+                        intentId: message.intentId,
+                        retryOf: message.retryOf,
+                        interruptedBy: message.interruptedBy,
+                        speech: message.speech,
+                    },
                 );
+            }
             return true;
         case "cancel":
             if (chatResource) client.cancel(chatResource);

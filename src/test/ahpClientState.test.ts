@@ -7,7 +7,7 @@ import type {
     Snapshot,
 } from "@microsoft/agent-host-protocol";
 import { SymposiumAhpState } from "../ahp/client/state";
-import { ahpActionToLegacy, ahpChatToLegacy } from "../ahp/client/legacyView";
+import { ahpActionToLegacy, ahpChatToLegacy, queueItems } from "../ahp/client/legacyView";
 
 const CHAT = "ahp-chat:/22222222-2222-4222-8222-222222222222";
 
@@ -126,6 +126,38 @@ test("AHP legacy selector reconstructs transcript and incremental queue state", 
         ahpChatToLegacy(state.chats.get(CHAT) as ChatState).map((message) => message.type),
         ["clear", "user", "event"],
     );
+});
+
+test("AHP queue rows preserve attachments for edit recovery", () => {
+    const items = queueItems({
+        ...(chatSnapshot().state as ChatState),
+        queuedMessages: [
+            {
+                id: "queued-with-file",
+                message: {
+                    text: "inspect this",
+                    origin: { kind: "user" },
+                    attachments: [
+                        {
+                            kind: "simple",
+                            id: "attachment-1",
+                            representation: "path",
+                            value: "/workspace/issue.md",
+                        },
+                    ],
+                },
+            },
+        ],
+    } as unknown as ChatState);
+
+    assert.deepEqual(items, [
+        {
+            id: "queued-with-file",
+            clientMessageId: "queued-with-file",
+            text: "inspect this",
+            attachments: ["/workspace/issue.md"],
+        },
+    ]);
 });
 
 test("AHP client mirror replaces stale state on snapshot fallback", () => {

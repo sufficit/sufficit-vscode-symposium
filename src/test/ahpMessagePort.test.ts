@@ -85,6 +85,36 @@ test("message-port routes full send metadata once through host authority", () =>
     assert.deepEqual((sends[0][4] as { attachments: string[] }).attachments, ["/workspace/a.txt"]);
 });
 
+test("queue preference does not invent a pending row before the host queues it", () => {
+    const { runtime, handle, api, sends } = fixture();
+    const port = new AhpMessagePortTransport({
+        clientId: "surface-queue",
+        api,
+        runtime: () => runtime,
+        syncRuntime: () => undefined,
+        post: () => undefined,
+    });
+    port.bind("claude", "native-1");
+
+    assert.equal(
+        port.handleMessage({
+            type: "send",
+            text: "first idle message",
+            attachments: [],
+            clientMessageId: "first-idle-1",
+            mode: "queue",
+        }),
+        true,
+    );
+
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0][2], "send", "the host decides whether an accepted send must wait");
+    const chat = runtime.snapshot(handle.chatResource).state as {
+        queuedMessages?: unknown[];
+    };
+    assert.equal(chat.queuedMessages, undefined, "only a host queue projection may add the row");
+});
+
 test("rebinding drops actions from the stale local surface generation", () => {
     const { runtime, handle, api } = fixture();
     const messages: any[] = [];

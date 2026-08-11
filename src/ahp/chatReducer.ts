@@ -308,12 +308,10 @@ function dropFirstByText(
 function setPending(state: ChatState, action: ActionRecord): ChatState {
     const pending = { id: String(action.id ?? ""), message: action.message as Message };
     if (!pending.id) return state;
-    // The transport dispatches this optimistically, AFTER routing the send.
-    // A direct dispatch (the first send after an idle period) runs the whole
-    // host path synchronously inside that call, so this row can arrive after
-    // its own turn already started — and then nothing removes it, because the
-    // turn-start that would have is already in the past. That is the ghost
-    // row; see ahpUiContradiction.test.ts, which reproduces every ordering.
+    // A queued action from an older/reconnecting client can arrive AFTER the
+    // host already routed its send. A direct dispatch may therefore have
+    // started the turn before this row lands. Refuse that late row; current
+    // clients submit kind:"send" and wait for host queue truth instead.
     if (alreadyStarted(state, pending.id)) return state;
     if (action.kind === "steering") return { ...state, steeringMessage: pending };
     // "send"/"redirect" are dispatched immediately to the backend; they are not

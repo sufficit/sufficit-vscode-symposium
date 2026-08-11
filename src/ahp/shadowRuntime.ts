@@ -235,13 +235,11 @@ export class AhpShadowRuntime {
             if (message.type === "queue" && Array.isArray(message.items)) {
                 const items = message.items as PendingMessage[];
                 record.queueLength = items.length;
-                // Re-seed from the live chat state first. The transport
-                // dispatches its own optimistic pendingMessageSet straight into
-                // the runtime, so projectQueue never issued those ids and its
-                // diff would not remove them — a message the host dispatched
-                // without ever queuing left a row nothing could reconcile away.
-                // Seeding here makes the host queue authoritative over every
-                // pending row the client shows, whoever created it.
+                // Re-seed from the live chat state first. Restored state and
+                // older/reconnecting clients may carry pending ids that
+                // projectQueue never issued, so its diff would not otherwise
+                // remove them. The host queue stays authoritative over every
+                // pending row, whoever created it.
                 seedQueueProjection(
                     record.queue,
                     this.runtime.snapshot(record.handle.chatResource).state as ChatState,

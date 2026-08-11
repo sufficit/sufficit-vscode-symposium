@@ -175,14 +175,14 @@ test("an idle send broadcasts an (empty) queue snapshot even though it dispatche
     assert.deepEqual(snapshots, [0], "one snapshot, emitted before the dispatch");
 });
 
-test("a busy controller always queues a normal send instead of dispatching it", () => {
+test("a busy controller queues an AHP send until the running turn completes", () => {
     const queue = new ChatQueue();
     const dispatched: string[] = [];
     let emitted = 0;
 
     routeControllerSend(
         { text: "second turn", attachments: [], clientMessageId: "second" },
-        "queue",
+        "send",
         {
             queue,
             dedup: new MessageDedup(),

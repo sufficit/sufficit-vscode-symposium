@@ -14,14 +14,10 @@ import type { HostToWebview } from "../protocol/chat";
  * always the FIRST send after an idle period (a direct dispatch); while a turn
  * is already running the queue behaves.
  *
- * The pending row is created by the AHP transport the instant the composer
- * sends (an optimistic chat/pendingMessageSet dispatched straight into the
- * runtime), while the host emits its render messages independently. Their
- * interleaving is not fixed — dispatch() routes the side effect before
- * dispatching the optimistic action, the controller's user row may be emitted
- * synchronously or after an await, and each adapter emits turn-start on its own
- * schedule. So the invariant is asserted under EVERY ordering, not the one that
- * happened to be observed.
+ * This suite keeps the historical optimistic queued row as an adversarial
+ * input for older/reconnecting clients. Current clients submit kind:"send"
+ * and only the host projection creates queued rows, but every interleaving
+ * below must remain safe during rollout and persisted-state recovery.
  */
 
 const TEXT = "o symposium possui api";
@@ -35,8 +31,7 @@ const INFO: AhpShadowSessionInfo = {
     cwd: "/tmp",
 };
 
-/** The optimistic row AhpMessagePortTransport dispatches on send (mode "queue"
- *  is the composer default, so kind is "queued"). */
+/** Historical optimistic row from clients predating host-only queue truth. */
 function optimisticRow(): Record<string, unknown> {
     return {
         type: "chat/pendingMessageSet",

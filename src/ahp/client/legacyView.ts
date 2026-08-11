@@ -108,7 +108,7 @@ export function queueItems(chat: ChatState): Record<string, unknown>[] {
                   id: steering.id,
                   clientMessageId: steering.id,
                   text: steering.message.text,
-                  attachments: [],
+                  attachments: attachmentValues(steering.message.attachments),
                   mode: "steer",
               },
           ]
@@ -117,7 +117,7 @@ export function queueItems(chat: ChatState): Record<string, unknown>[] {
         id: item.id,
         clientMessageId: item.id,
         text: item.message.text,
-        attachments: [],
+        attachments: attachmentValues(item.message.attachments),
     }));
     return [...head, ...rest];
 }

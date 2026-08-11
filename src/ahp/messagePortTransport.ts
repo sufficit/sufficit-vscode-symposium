@@ -1,6 +1,7 @@
 import type { ActionEnvelope, ChatState, URI } from "@microsoft/agent-host-protocol";
 import type { SymposiumApi } from "../api/symposiumApi";
 import type { WebviewToHost } from "../protocol/chat";
+import { ahpSubmissionKind } from "../protocol/sendMode";
 import { routeAhpClientAction } from "./clientActionRouter";
 import type { AhpHostRuntime, AhpSessionHandle } from "./hostRuntime";
 import type { AhpMessagePortEnvelope, AhpMessagePortFrame } from "./messagePortProtocol";
@@ -186,14 +187,7 @@ export class AhpMessagePortTransport {
 function pendingAction(message: Extract<WebviewToHost, { type: "send" }>): Record<string, unknown> {
     const id =
         message.clientMessageId || `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const kind =
-        message.mode === "steer"
-            ? "steering"
-            : message.mode === "redirect"
-              ? "redirect"
-              : message.mode === "send"
-                ? "send"
-                : "queued";
+    const kind = ahpSubmissionKind(message.mode);
     return {
         type: "chat/pendingMessageSet",
         id,

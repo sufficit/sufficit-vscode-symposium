@@ -11,6 +11,7 @@ import {
     type Subscription,
 } from "@microsoft/agent-host-protocol/client";
 import { WebSocketTransport } from "@microsoft/agent-host-protocol/ws";
+import { ahpSubmissionKind } from "../../protocol/sendMode";
 import { SymposiumAhpState } from "./state";
 
 export type AhpConnectionStatus = "connecting" | "reconnecting" | "caught-up" | "failed";
@@ -22,6 +23,25 @@ export interface BrowserAhpClientOptions {
     onState: () => void;
     onAction?: (envelope: ActionEnvelope) => void;
     onStatus: (status: AhpConnectionStatus, detail?: string) => void;
+}
+
+export interface BrowserSendOptions {
+    clientMessageId?: string;
+    attachments?: string[];
+    model?: string;
+    reasoning?: string;
+    permission?: string;
+    autonomy?: string;
+    execDisplay?: string;
+    intentId?: string;
+    retryOf?: string;
+    interruptedBy?: string;
+    speech?: boolean;
+}
+
+export interface BrowserPendingMessage {
+    text: string;
+    attachments: string[];
 }
 
 export class BrowserAhpClient {
@@ -61,14 +81,41 @@ export class BrowserAhpClient {
         await this.subscribe(session.defaultChat);
     }
 
-    send(chat: URI, text: string, mode: "queue" | "steering" = "queue"): string {
-        const id = crypto.randomUUID();
+    send(
+        chat: URI,
+        text: string,
+        mode: "queue" | "steering" | "redirect" | "send" = "queue",
+        options: BrowserSendOptions = {},
+    ): string {
+        const id = options.clientMessageId || crypto.randomUUID();
+        // Queue is a busy-state preference, not proof that this message is
+        // pending. Submit it as an immediate send and let the host's queue
+        // projection create a queued row only when it really enqueues it.
+        const kind = ahpSubmissionKind(mode);
         this.requireClient().dispatch(chat, {
             type: "chat/pendingMessageSet",
-            kind: mode,
+            kind,
             id,
-            message: { text, origin: { kind: "user" } },
-        } as StateAction);
+            message: {
+                text,
+                origin: { kind: "user" },
+                attachments: (options.attachments ?? []).map((value, index) => ({
+                    kind: "simple",
+                    id: `${id}:attachment:${index + 1}`,
+                    representation: "path",
+                    value,
+                })),
+                model: options.model ? { id: options.model } : undefined,
+                reasoning: options.reasoning,
+                permission: options.permission,
+                autonomy: options.autonomy,
+                execDisplay: options.execDisplay,
+                intentId: options.intentId,
+                retryOf: options.retryOf,
+                interruptedBy: options.interruptedBy,
+                speech: options.speech,
+            },
+        } as unknown as StateAction);
         return id;
     }
 
@@ -83,11 +130,43 @@ export class BrowserAhpClient {
     }
 
     removeQueued(chat: URI, id: string): void {
+        const kind = this.pendingKind(chat, id);
         this.requireClient().dispatch(chat, {
             type: "chat/pendingMessageRemoved",
-            kind: "queued",
+            kind,
             id,
         } as StateAction);
+    }
+
+    promoteQueued(chat: URI, id: string): void {
+        this.requireClient().dispatch(chat, {
+            type: "chat/pendingMessagePromoted",
+            id,
+        } as unknown as StateAction);
+    }
+
+    clearQueued(chat: URI): void {
+        const state = this.state.chats.get(chat);
+        const ids = [
+            ...(state?.steeringMessage?.id ? [state.steeringMessage.id] : []),
+            ...(state?.queuedMessages ?? []).map((item) => item.id),
+        ];
+        for (const id of ids) this.removeQueued(chat, id);
+    }
+
+    pendingMessage(chat: URI, id: string): BrowserPendingMessage | undefined {
+        const state = this.state.chats.get(chat);
+        const pending =
+            state?.steeringMessage?.id === id
+                ? state.steeringMessage
+                : state?.queuedMessages?.find((item) => item.id === id);
+        if (!pending) return undefined;
+        return {
+            text: pending.message.text,
+            attachments: (pending.message.attachments ?? []).flatMap((item) =>
+                "value" in item && typeof item.value === "string" ? [item.value] : [],
+            ),
+        };
     }
 
     approve(chat: URI, turnId: string, toolCallId: string, approved: boolean): void {
@@ -223,6 +302,10 @@ export class BrowserAhpClient {
     private requireClient(): AhpClient {
         if (!this.client) throw new Error("AHP client is not connected");
         return this.client;
+    }
+
+    private pendingKind(chat: URI, id: string): "queued" | "steering" {
+        return this.state.chats.get(chat)?.steeringMessage?.id === id ? "steering" : "queued";
     }
 }
 
