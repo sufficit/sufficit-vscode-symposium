@@ -9,7 +9,7 @@ import type { AhpMessagePortEnvelope, AhpMessagePortFrame } from "./messagePortP
 export interface AhpMessagePortTransportOptions {
     clientId: string;
     api: SymposiumApi;
-    runtime: () => AhpHostRuntime | undefined;
+    runtime: () => AhpHostRuntime;
     syncRuntime: () => void;
     post: (message: AhpMessagePortEnvelope | Record<string, unknown>) => void;
     onNativeSessionId?: (provider: string, sessionId: string) => void;
@@ -33,8 +33,8 @@ export class AhpMessagePortTransport {
         this.emit({ kind: "status", generation, status: "connecting" });
         this.options.syncRuntime();
         const runtime = this.options.runtime();
-        const handle = runtime?.sessionByNative(provider, nativeSessionId);
-        if (!runtime || !handle) {
+        const handle = runtime.sessionByNative(provider, nativeSessionId);
+        if (!handle) {
             this.emit({
                 kind: "status",
                 generation,
@@ -77,7 +77,7 @@ export class AhpMessagePortTransport {
     handleMessage(message: WebviewToHost): boolean {
         const runtime = this.options.runtime();
         const handle = this.handle;
-        if (!runtime || !handle) return false;
+        if (!handle) return false;
         switch (message.type) {
             case "send":
                 return this.dispatch(
@@ -137,6 +137,23 @@ export class AhpMessagePortTransport {
                     kind: pendingRemovalKind(chat, id),
                     id,
                 });
+            }
+            case "queue-clear": {
+                const chat = runtime.snapshot(handle.chatResource).state as ChatState;
+                const pending = [
+                    ...(chat.steeringMessage
+                        ? [["steering", chat.steeringMessage.id] as const]
+                        : []),
+                    ...(chat.queuedMessages ?? []).map((item) => ["queued", item.id] as const),
+                ];
+                for (const [kind, id] of pending) {
+                    this.dispatch(runtime, handle.chatResource, {
+                        type: "chat/pendingMessageRemoved",
+                        kind,
+                        id,
+                    });
+                }
+                return true;
             }
             case "queue-edit": {
                 const chat = runtime.snapshot(handle.chatResource).state as ChatState;

@@ -1,6 +1,6 @@
 /* Symposium PWA service worker — caches the app shell only.
- * NEVER intercepts the API or the SSE /follow stream: those must hit the network
- * with the Bearer header and stay live. */
+ * NEVER intercepts data connections: authenticated AHP traffic must hit the
+ * network and stay live. */
 const SHELL = "sym-pwa-v1";
 const SHELL_ASSETS = ["/pwa/", "/pwa/app.js", "/pwa/webview.css", "/pwa/manifest.webmanifest"];
 
@@ -31,4 +31,3 @@ self.addEventListener("fetch", (e) => {
             .catch(() => caches.match(e.request).then((m) => m || caches.match("/pwa/"))),
     );
 });
-

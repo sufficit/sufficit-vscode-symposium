@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ActionEnvelope, ChatState } from "@microsoft/agent-host-protocol";
-import type { HostToWebview } from "../protocol/chat";
 import type { PendingMessage as HostQueueItem } from "../application/controllerQueue";
 import { chatReducer } from "../ahp/chatReducer";
-import { ahpActionToLegacy, ahpChatToLegacy } from "../ahp/client/legacyView";
+import { selectPendingMessages } from "../ahp/client/chatSelectors";
 import {
     createProjectionState,
     createQueueProjectionState,
@@ -18,7 +17,7 @@ import {
  * Invariant suite for docs/plans/20260810-message-lifecycle-hardening.md.
  *
  * Composes the real pipeline pieces (projectAgentEvent / projectQueue →
- * chatReducer → ahpActionToLegacy/ahpChatToLegacy) end-to-end without DOM, to
+ * chatReducer → direct ChatState selectors) end-to-end without DOM, to
  * catch the "message appears in transcript AND stays as a ghost queue row"
  * bug class. No production file is touched here — a failing assertion is a
  * finding, not something this suite patches over.
@@ -57,12 +56,9 @@ function queueItem(id: string, text: string, mode: "queue" | "steer"): HostQueue
 }
 
 /** Holds one client ChatState and replays AHP actions through chatReducer,
- *  each wrapped in an envelope the way ahpClientState.test.ts's helper does
- *  (and the way SymposiumAhpState.apply does it for real), collecting the
- *  legacy messages ahpActionToLegacy derives per action along the way. */
+ *  each wrapped in an envelope the way SymposiumAhpState.apply does it. */
 class Harness {
     chat: ChatState;
-    legacy: HostToWebview[] = [];
     private seq = 0;
 
     constructor(chat: ChatState = initialChat()) {
@@ -78,7 +74,6 @@ class Harness {
             action,
         } as unknown as ActionEnvelope;
         this.chat = chatReducer(this.chat, envelope.action as never);
-        this.legacy.push(...ahpActionToLegacy(envelope, this.chat));
         return envelope;
     }
 
@@ -90,14 +85,10 @@ class Harness {
             if (item.channel === "chat") this.dispatch(item.action);
         }
     }
-
-    rebuild(): HostToWebview[] {
-        return ahpChatToLegacy(this.chat);
-    }
 }
 
 /** Runs one AgentEvent "turn-start" through a fresh projection, as the
- *  shadow runtime does after rememberProjectedUser. `queuedMessageId`
+ *  projection runtime does after rememberProjectedUser. `queuedMessageId`
  *  undefined models an id lost in transit. */
 function dispatchTurnStart(
     harness: Harness,
@@ -166,12 +157,15 @@ test("CONSERVATION — optimistic pending clears exactly once across host paths"
             id,
             `${label}: steeringMessage must not retain ${id}`,
         );
-        const userRows = harness.legacy.filter(
-            (message) =>
-                message.type === "user" &&
-                (message as { clientMessageId?: unknown }).clientMessageId === id,
+        const turns = [
+            ...harness.chat.turns,
+            ...(harness.chat.activeTurn ? [harness.chat.activeTurn] : []),
+        ];
+        assert.equal(
+            turns.filter((turn) => turn.message.text === `text ${index + 1}`).length,
+            1,
+            `${label}: exactly one authoritative turn for ${id}`,
         );
-        assert.equal(userRows.length, 1, `${label}: exactly one transcript row for ${id}`);
     });
 });
 
@@ -196,8 +190,11 @@ test("NO-DROP / SUPERSEDE — a stuck activeTurn never swallows the next turnSta
         false,
         "msg-2's pending row is cleaned up despite the stuck turn",
     );
-    const userRows = harness.rebuild().filter((message) => message.type === "user");
-    assert.equal(userRows.length, 2, "both messages render in the transcript — no drop");
+    assert.equal(
+        chat.turns.length + (chat.activeTurn ? 1 : 0),
+        2,
+        "both messages remain in authoritative state — no drop",
+    );
 });
 
 test("NO-DROP / SUPERSEDE — a stuck activeTurn never swallows the next turnStarted (steering)", () => {
@@ -218,35 +215,24 @@ test("NO-DROP / SUPERSEDE — a stuck activeTurn never swallows the next turnSta
         undefined,
         "steeringMessage is cleared despite the stuck turn",
     );
-    const userRows = harness.rebuild().filter((message) => message.type === "user");
-    assert.equal(userRows.length, 2);
+    assert.equal(chat.turns.length + (chat.activeTurn ? 1 : 0), 2);
 });
 
 test("STEER-VISIBILITY — steering row leads the queue rebuild until its turn starts", () => {
     const harness = new Harness();
     harness.dispatch(optimisticPending("queued", "q-1", "queued item"));
-    const steerEnvelope = harness.dispatch(optimisticPending("steering", "steer-1", "steer item"));
+    harness.dispatch(optimisticPending("steering", "steer-1", "steer item"));
 
-    const perAction = ahpActionToLegacy(steerEnvelope, harness.chat).find(
-        (message) => message.type === "queue",
-    ) as { items: { id: string; mode?: string }[] } | undefined;
-    assert.equal(perAction?.items[0]?.id, "steer-1");
-    assert.equal(perAction?.items[0]?.mode, "steer");
-
-    const fullRebuild = harness.rebuild().find((message) => message.type === "queue") as
-        | { items: { id: string; mode?: string }[] }
-        | undefined;
-    assert.equal(fullRebuild?.items[0]?.id, "steer-1");
-    assert.equal(fullRebuild?.items[0]?.mode, "steer");
+    const pending = selectPendingMessages(harness.chat);
+    assert.equal(pending[0]?.id, "steer-1");
+    assert.equal(pending[0]?.mode, "steer");
 
     dispatchTurnStart(harness, "turn-1", "steer item", "steer-1");
 
-    const afterTurnStart = harness.rebuild().find((message) => message.type === "queue") as
-        | { items: { id: string; mode?: string }[] }
-        | undefined;
     assert.equal(
-        afterTurnStart?.items.some((item) => item.mode === "steer" || item.id === "steer-1") ??
-            false,
+        selectPendingMessages(harness.chat).some(
+            (item) => item.mode === "steer" || item.id === "steer-1",
+        ),
         false,
         "the steering row is gone once its turn has started",
     );
@@ -275,8 +261,8 @@ test("GHOST-SWEEP — a pending row whose id was lost is pruned by the turn it b
 
     assert.equal(harness.chat.queuedMessages, undefined, "and stays gone through turn end");
     assert.equal(
-        harness.rebuild().some((message) => message.type === "queue"),
-        false,
+        selectPendingMessages(harness.chat).length,
+        0,
         "no ghost queue row survives into a full rebuild",
     );
 });
@@ -309,8 +295,5 @@ test("HOST-QUEUE ROUND TRIP — projectQueue add then remove converges to no pen
 
     assert.equal(harness.chat.steeringMessage, undefined);
     assert.equal(harness.chat.queuedMessages, undefined);
-    assert.equal(
-        harness.rebuild().some((message) => message.type === "queue"),
-        false,
-    );
+    assert.equal(selectPendingMessages(harness.chat).length, 0);
 });

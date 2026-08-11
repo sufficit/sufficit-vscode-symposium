@@ -1,45 +1,19 @@
 // Inbound message dispatch from the extension host. Registers the listener on import.
-import { postMessage } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
 import { clearComposer, renderChips, saveCurrentComposerDraft, setBrowserOpen } from "./composer";
 import { resizeInput } from "./inputSizing";
 import { applyMeta } from "./meta";
 import { applyEvent } from "./events";
-import {
-    confirmOptimisticMessage,
-    endStream,
-    message,
-    renderThinkBlock,
-    withdrawOptimisticMessage,
-} from "./messages";
-import {
-    markMessageDispatched,
-    resetDispatchedMessages,
-    wasMessageDispatched,
-} from "./dispatchedMessages";
-import { renderTool, resetToolRows } from "./tools";
-import {
-    renderChangedFiles,
-    renderGuardrails,
-    renderQueued,
-    renderTasks,
-    resetWorkingState,
-    setChangedItems,
-} from "./panels";
-import { setLang, t } from "./i18n";
+import { message, renderThinkBlock } from "./messages";
+import { renderTool } from "./tools";
+import { renderChangedFiles, renderGuardrails, renderTasks, setChangedItems } from "./panels";
+import { setLang } from "./i18n";
 import { applyStaticI18n } from "./staticI18n";
-import {
-    renderStatusbar,
-    setLastUsage,
-    setLastTurn,
-    setQuotaLoading,
-    setSessionCostUsd,
-} from "./statusbar";
-import { setComposerBlocked, setLoading, setStatus } from "./status";
-import { armStickyUserMessage, layout, refreshEmpty, settleAtBottom } from "./scroll";
-import { svgIcon } from "./icons";
+import { renderStatusbar, setQuotaLoading } from "./statusbar";
+import { setLoading, setStatus } from "./status";
+import { layout, settleAtBottom } from "./scroll";
 import { renderAgentPicker, refreshAgentPicker, hideAgentPicker } from "./agentPicker";
-import { root, log, copySessionBtn, sendBtn, input, agentBadge, chatTitle } from "./dom";
+import { root, copySessionBtn, input, agentBadge, chatTitle } from "./dom";
 import {
     attachments,
     activeFile,
@@ -50,8 +24,6 @@ import {
     setActiveFileRange,
     setActiveModel,
     setBusy,
-    setConversationRows,
-    setQueued,
     setSideMode,
     setOpenInPref,
 } from "./state";
@@ -62,6 +34,7 @@ import { applyLocalAhpFrame } from "./localAhp";
 import type { AgentEvent, HistoryMessage } from "../../adapters/types";
 import type { HostToWebview } from "../../protocol/chat";
 import type { MetaMessageData, QueueItem, WebviewAttachment } from "./types";
+import { renderQueueView, renderUserTurn, resetConversationView } from "./conversationView";
 
 let historyCycle = 0;
 
@@ -98,11 +71,7 @@ type DispatchMessage = HostToWebview &
     };
 
 export function handleHostMessage(payload: unknown): void {
-    const translated = applyLocalAhpFrame(payload);
-    if (translated) {
-        for (const message of translated) handleHostMessage(message);
-        return;
-    }
+    if (applyLocalAhpFrame(payload)) return;
     const data = payload as DispatchMessage;
     if (handleCatalogMessage(data)) return;
     switch (data.type) {
@@ -197,30 +166,10 @@ export function handleHostMessage(payload: unknown): void {
             hideAgentPicker(); // a session/dialogue is taking over the surface
             saveCurrentComposerDraft();
             clearComposer();
-            setConversationRows([]);
-            resetDispatchedMessages();
-            log.textContent = "";
             copySessionBtn.style.display = "none";
             agentBadge.style.display = "none";
             setActiveModel("");
-            setBusy(false);
-            setQueued(0);
-            // A new/switched dialogue has no usage yet — without this, the
-            // context meter/popover keeps showing the PREVIOUS session's last
-            // usage snapshot and accumulated cost until this session's own
-            // first "usage" event arrives (looks like a fresh session already
-            // has a full context window).
-            setLastUsage(null);
-            setLastTurn({});
-            setSessionCostUsd(0);
-            resetWorkingState();
-            resetToolRows();
-            refreshEmpty();
-            setComposerBlocked("", t("chat.composer.placeholder"), t("chat.composer.placeholder"));
-            sendBtn.disabled = false;
-            const composer = document.getElementById("composer");
-            if (composer) composer.style.display = "flex";
-            setStatus();
+            resetConversationView();
             break;
         }
         case "history-start": {
@@ -243,36 +192,12 @@ export function handleHostMessage(payload: unknown): void {
             break;
         }
         case "queue": {
-            // A send can race the host's busy state: the composer shows an
-            // optimistic bubble as if dispatched, but the host actually
-            // queued it. Withdraw that premature bubble so it doesn't show
-            // both as "sent" AND in the Queued panel below.
-            const items = (data.items || []) as unknown as QueueItem[];
-            for (const it of items) {
-                withdrawOptimisticMessage(it.clientMessageId);
-            }
-            // A rejected send never entered the real queue, so its id is
-            // never among `items` above — the rejection fallback (see
-            // legacyView.rejectedEnvelopeFallback) lists it here explicitly
-            // so its ghost optimistic bubble still gets cleared.
-            for (const id of data.stale ?? []) {
-                withdrawOptimisticMessage(id);
-            }
-            // Anything the host already told us it dispatched is not pending,
-            // whatever the payload claims. Several producers can create a
-            // pending row (the AHP transport's optimistic action, the host
-            // queue projection, a restored ChatState) and only some of them
-            // have a reliable cleanup path — this makes the contradiction
-            // unrenderable instead of relying on each of them being correct.
-            const pending = items.filter((it) => !wasMessageDispatched(it.clientMessageId));
-            renderQueued(pending, !!data.held);
-            // The host is authoritative on busy; this "queue" message always
-            // carries its current value, so a client-local desync (e.g. the
-            // optimistic-bubble path above never resetting busy after a
-            // withdraw) gets corrected here every time the queue changes.
-            if (typeof data.busy === "boolean") {
-                setBusy(data.busy);
-            }
+            renderQueueView(
+                (data.items || []) as unknown as QueueItem[],
+                !!data.held,
+                data.busy,
+                data.stale,
+            );
             break;
         }
         case "load-input": {
@@ -309,39 +234,7 @@ export function handleHostMessage(payload: unknown): void {
             break;
         }
         case "user": {
-            endStream();
-            markMessageDispatched(data.clientMessageId);
-            const el =
-                confirmOptimisticMessage(data.clientMessageId) ||
-                message("user", data.text, Date.now());
-            armStickyUserMessage(el);
-            if (data.attachments?.length) {
-                const list = document.createElement("div");
-                list.className = "msgAtts";
-                for (const p of data.attachments) {
-                    const a = document.createElement("span");
-                    a.className = "msgAtt";
-                    a.title = "Abrir " + p;
-                    const ic = svgIcon("file");
-                    ic.classList.add("chipIcon");
-                    a.appendChild(ic);
-                    // strip any " (selected lines …)" suffix for the path to open
-                    // NOTE: use [(] instead of \( — this string is emitted inside a
-                    // template literal, where \( collapses to ( and breaks the regex.
-                    const cleanPath = String(p).replace(/ [(]selected lines.*$/, "");
-                    const lbl = document.createElement("span");
-                    lbl.textContent = String(p).split("/").pop() ?? "";
-                    a.appendChild(lbl);
-                    a.addEventListener("click", () =>
-                        postMessage({ type: "open-file", path: cleanPath }),
-                    );
-                    list.appendChild(a);
-                }
-                el.appendChild(list);
-            }
-            setBusy(true);
-            setStatus(); // a turn just started (covers queued flush)
-            resizeInput();
+            renderUserTurn(data.text, data.attachments, data.clientMessageId);
             break;
         }
         case "attachments-picked": {

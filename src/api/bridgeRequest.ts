@@ -1,13 +1,12 @@
 import * as http from "http";
 import * as vscode from "vscode";
 import { lmToolInvocationOptions } from "../adapters/lmToolInvocation";
-import type { SendMode, SymposiumApi } from "./symposiumApi";
+import type { SymposiumApi } from "./symposiumApi";
 import { configuredBridgePolicy, isConfiguredBridgeAuthorized } from "./bridgeConfiguration";
-import { isCwdAllowed, isHostAllowed, isLmToolAllowed } from "./bridgePolicy";
+import { isHostAllowed, isLmToolAllowed } from "./bridgePolicy";
 import {
     ALLOWED_BRIDGE_COMMANDS,
     type BridgeRoute,
-    decodeBridgePathSegment,
     isBridgeRecord,
     readBridgeBody,
     writeBridgeJson,
@@ -28,7 +27,6 @@ export interface BridgeRequestDeps {
     listening?: { host: string; port: number };
     lastRejection?: Rejection;
     setLastRejection: (rejection: Rejection) => void;
-    follow: (id: string, response: http.ServerResponse) => void;
 }
 
 type Policy = ReturnType<typeof configuredBridgePolicy>;
@@ -60,7 +58,6 @@ export async function handleBridgeRequest(
     try {
         if (handleInfoRoutes(response, route, policy, deps)) return;
         if (await handleVscodeRoutes(request, response, route, policy)) return;
-        if (await handleSessionRoutes(request, response, route, policy, deps)) return;
         if (await handleBridgeResourceRoutes(request, response, route, deps.api)) return;
         if (await handleBackendRoutes(request, response, route, policy, deps.api)) return;
         if (await handleSyncVaultRoutes(response, route, policy, deps.api)) return;
@@ -200,96 +197,6 @@ async function invokeLmTool(
     } finally {
         cts.dispose();
     }
-}
-
-async function handleSessionRoutes(
-    request: http.IncomingMessage,
-    response: http.ServerResponse,
-    route: Route,
-    policy: Policy,
-    deps: BridgeRequestDeps,
-): Promise<boolean> {
-    const [first, idPart, action] = route.parts;
-    if (first !== "sessions") return false;
-    if (route.method === "GET" && route.parts.length === 1) {
-        writeBridgeJson(response, 200, deps.api.sessions.list());
-        return true;
-    }
-    if (route.method === "POST" && route.parts.length === 1) {
-        await createSession(request, response, policy, deps.api);
-        return true;
-    }
-    if (route.parts.length !== 3) return false;
-    const id = decodeBridgePathSegment(idPart);
-    if (!id) {
-        writeBridgeJson(response, 400, { error: "invalid session id" });
-        return true;
-    }
-    if (route.method === "POST" && action === "send") {
-        await sendSession(request, response, id, deps.api);
-        return true;
-    }
-    if (route.method === "POST" && action === "interrupt") {
-        const ok = deps.api.sessions.interrupt(id);
-        writeBridgeJson(response, ok ? 200 : 404, { ok });
-        return true;
-    }
-    if (route.method === "GET" && action === "follow") {
-        deps.follow(id, response);
-        return true;
-    }
-    return false;
-}
-
-async function createSession(
-    request: http.IncomingMessage,
-    response: http.ServerResponse,
-    policy: Policy,
-    api: SymposiumApi,
-): Promise<void> {
-    const body = await readBridgeBody(request);
-    if (typeof body.backend !== "string" || typeof body.cwd !== "string") {
-        return writeBridgeJson(response, 400, { error: "backend and cwd are required strings" });
-    }
-    if (!isCwdAllowed(body.cwd, policy.allowedRoots)) {
-        return writeBridgeJson(response, 403, { error: "cwd not allowed" });
-    }
-    const id = await api.sessions.create(body.backend, {
-        cwd: body.cwd,
-        model: typeof body.model === "string" ? body.model : undefined,
-        tools: Array.isArray(body.tools) ? body.tools : undefined,
-        agent: typeof body.agent === "string" ? body.agent : undefined,
-        permission: policy.sessionPermission,
-    });
-    writeBridgeJson(response, id ? 200 : 400, id ? { id } : { error: "unknown backend" });
-}
-
-async function sendSession(
-    request: http.IncomingMessage,
-    response: http.ServerResponse,
-    id: string,
-    api: SymposiumApi,
-): Promise<void> {
-    const body = await readBridgeBody(request);
-    if (typeof body.text !== "string") {
-        return writeBridgeJson(response, 400, { error: "text must be a string" });
-    }
-    const mode = body.mode == null ? "send" : body.mode;
-    if (mode !== "send" && mode !== "queue" && mode !== "steer") {
-        return writeBridgeJson(response, 400, { error: "mode must be send, queue, or steer" });
-    }
-    const ok = api.sessions.send(id, body.text, mode as SendMode);
-    writeBridgeJson(
-        response,
-        ok ? 200 : 404,
-        ok
-            ? { ok: true }
-            : {
-                  ok: false,
-                  error: "session is not live",
-                  message: "Refresh GET /sessions and use a sessionId returned by the Bridge.",
-              },
-    );
 }
 
 async function handleBackendRoutes(

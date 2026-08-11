@@ -7,7 +7,7 @@ import type { WebviewToHost } from "../protocol/chat";
  * Each starts a fresh session on the same backend, seeded with the visible
  * conversation up to (but excluding) the chosen message, then re-delivers the
  * message text. Extracted from SurfaceDialogues as free functions following the
- * collaborator + deps-bag pattern (see controllerMessageHandler.ts); the surface
+ * collaborator + deps-bag pattern; the surface
  * stays the owner of session state and is reached here via the deps bag plus an
  * openDialogue callback.
  */
@@ -118,7 +118,7 @@ export function retryLastMessage(
     // new logical turn with a duplicate user message. Falls back to a fresh turn
     // when the id is unknown (e.g. after a reload).
     const retryOf = from.lastTurnId;
-    void from.handleMessage({
+    dispatchAhp(d, {
         type: "send",
         text: original.text,
         mode: "send",
@@ -185,7 +185,7 @@ export function restartFromMessage(
         });
     }
     // Resend the user message to start the agent
-    void d.getController()?.handleMessage({
+    dispatchAhp(d, {
         type: "send",
         text: lastUserMsg.text,
         mode: "send",
@@ -206,7 +206,7 @@ export function editResend(
     const from = d.getController();
     if (!from || !Number.isInteger(anchorIndex) || anchorIndex < 0) {
         // Nothing to rewind to — treat as a normal send.
-        void d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
+        dispatchAhp(d, { ...sendMsg, editFrom: undefined } as WebviewToHost);
         return;
     }
     // Same conversation-row index space as restartFromMessage. anchorIndex 0
@@ -216,7 +216,7 @@ export function editResend(
     const adjustedIndex = Math.min(anchorIndex, transcriptMessages.length - 1);
     if (adjustedIndex < 0) {
         // No valid index, treat as normal send.
-        void d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
+        dispatchAhp(d, { ...sendMsg, editFrom: undefined } as WebviewToHost);
         return;
     }
     if (!("text" in sendMsg) || typeof sendMsg.text !== "string") {
@@ -224,7 +224,7 @@ export function editResend(
     }
     const original = transcriptMessages[adjustedIndex];
     if (original?.role === "user" && sameTextRetry(from.backend, original.text, sendMsg.text)) {
-        void from.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
+        dispatchAhp(d, { ...sendMsg, editFrom: undefined } as WebviewToHost);
         return;
     }
     const keepTo = adjustedIndex - 1; // exclude the message being edited
@@ -236,7 +236,7 @@ export function editResend(
     if (messages.length) {
         d.post({ type: "history", messages, carried: true });
     }
-    void d.getController()?.handleMessage({
+    dispatchAhp(d, {
         type: "send",
         text: sendMsg.text,
         attachments:
@@ -258,4 +258,10 @@ export function editResend(
                 : undefined,
         mode: "send",
     });
+}
+
+function dispatchAhp(d: SurfaceDialoguesDeps, message: WebviewToHost): void {
+    if (!d.dispatchAhp(message)) {
+        throw new Error("AHP session is unavailable");
+    }
 }

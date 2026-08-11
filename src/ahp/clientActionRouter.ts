@@ -15,9 +15,6 @@ const CLIENT_ACTIONS = new Set([
     "chat/continuationRequested",
     "chat/toolCallConfirmed",
     AHP_MESSAGE_SUBMITTED,
-    // Compatibility during the AHP client rollout. New clients submit with
-    // symposium/messageSubmitted; pendingMessageSet is state projection only.
-    "chat/pendingMessageSet",
     "chat/pendingMessageRemoved",
     "chat/pendingMessagePromoted",
     "chat/queuedMessagesReordered",
@@ -97,17 +94,9 @@ export function routeAhpClientAction(
 }
 
 function submissionMode(action: Record<string, unknown>): AhpSubmissionMode | undefined {
-    if (isAhpMessageSubmittedAction(action)) {
-        return isAhpSubmissionMode(action.mode) ? action.mode : undefined;
-    }
-    const kind = action.kind;
-    return kind === "steering"
-        ? "steer"
-        : kind === "redirect"
-          ? "redirect"
-          : kind === "send"
-            ? "send"
-            : "queue";
+    return isAhpMessageSubmittedAction(action) && isAhpSubmissionMode(action.mode)
+        ? action.mode
+        : undefined;
 }
 
 function attachmentPaths(value: unknown): string[] {

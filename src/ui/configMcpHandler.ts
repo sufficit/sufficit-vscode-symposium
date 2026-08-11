@@ -14,7 +14,7 @@ import type { ConfigHandlerCtx, ConfigMessage, McpFormPayload } from "./configTy
 
 /**
  * Handles MCP (Model Context Protocol) server webview messages for a live
- * ConfigPanel. Mirrors the controllerMessageHandler precedent. Returns true
+ * ConfigPanel. Follows the free-function handler pattern. Returns true
  * when handled, false otherwise.
  *
  * Case bodies (and the saveMcpServer/parsePairs helpers) are moved verbatim

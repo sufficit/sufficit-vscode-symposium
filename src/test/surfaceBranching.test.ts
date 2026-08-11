@@ -4,10 +4,14 @@ import { editResend, retryLastMessage } from "../ui/surfaceBranching";
 import type { SurfaceDialoguesDeps } from "../ui/surfaceDialogues";
 import type { WebviewToHost } from "../protocol/chat";
 
-function depsFor(controller: () => Record<string, unknown>): SurfaceDialoguesDeps {
+function depsFor(
+    controller: () => Record<string, unknown>,
+    dispatchAhp: (message: WebviewToHost) => boolean = () => true,
+): SurfaceDialoguesDeps {
     return {
         getController: () => controller(),
         post: () => undefined,
+        dispatchAhp,
     } as unknown as SurfaceDialoguesDeps;
 }
 
@@ -16,14 +20,15 @@ test("plain retry resends the interrupted message with its timeout reason", () =
     const posted: unknown[] = [];
     const controller = {
         transcriptMessages: () => [{ role: "user", text: "run the complete build" }],
-        handleMessage: (message: WebviewToHost) => {
-            handled = message;
-        },
     };
     const deps = {
         getController: () => controller,
         post: (message: unknown) => {
             posted.push(message);
+        },
+        dispatchAhp: (message: WebviewToHost) => {
+            handled = message;
+            return true;
         },
     } as unknown as SurfaceDialoguesDeps;
     const reason = "Turn ended automatically: no activity from the agent for 5 minutes.";
@@ -53,13 +58,16 @@ test("editResend retries unchanged Claude text in the same session", () => {
         cwd: "/repo",
         title: "Deploy",
         transcriptMessages: () => [{ role: "user", text: "deploy now" }],
-        handleMessage: (message: WebviewToHost) => {
-            handled = message;
-        },
     };
 
     editResend(
-        depsFor(() => controller),
+        depsFor(
+            () => controller,
+            (message) => {
+                handled = message;
+                return true;
+            },
+        ),
         () => {
             opened++;
         },
@@ -88,19 +96,19 @@ test("editResend branches Claude when edited text changed", () => {
         transcriptMessages: () => [{ role: "user", text: "deploy now" }],
         transcriptMessagesUpTo: () => [],
         transcriptUpTo: () => undefined,
-        handleMessage: () => {
-            oldHandled++;
-        },
     };
-    const newController = {
-        handleMessage: () => {
-            newHandled++;
-        },
-    };
+    const newController = {};
     let current = oldController;
 
     editResend(
-        depsFor(() => current),
+        depsFor(
+            () => current,
+            () => {
+                if (current === oldController) oldHandled++;
+                else newHandled++;
+                return true;
+            },
+        ),
         () => {
             opened++;
             current = newController as typeof oldController;
@@ -137,9 +145,8 @@ test("editResend keeps a Codex branch in its parent conversation lineage", () =>
             { role: "assistant", text: "first answer" },
         ],
         transcriptUpTo: () => "user: first question\n\nassistant: first answer",
-        handleMessage: () => undefined,
     };
-    const newController = { handleMessage: () => undefined };
+    const newController = {};
     let current: Record<string, unknown> = oldController;
 
     editResend(
@@ -170,7 +177,6 @@ test("editResend preserves the root lineage when branching an existing branch", 
         transcriptMessages: () => [{ role: "user", text: "old" }],
         transcriptMessagesUpTo: () => [],
         transcriptUpTo: () => undefined,
-        handleMessage: () => undefined,
     };
 
     editResend(

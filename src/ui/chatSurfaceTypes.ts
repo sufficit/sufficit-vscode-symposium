@@ -9,9 +9,9 @@ export interface ChatSurfaceDeps {
     listSessions(): Promise<SessionInfo[]>;
     cwdFor(info: SessionInfo): string;
     runtime: LiveSessions;
-    ahp?: {
+    ahp: {
         api: SymposiumApi;
-        runtime(): AhpHostRuntime | undefined;
+        runtime(): AhpHostRuntime;
         sync(): void;
         rebuild(provider: string, sessionId: string): void;
     };

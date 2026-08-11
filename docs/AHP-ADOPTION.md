@@ -1,6 +1,6 @@
 # Agent Host Protocol adoption
 
-Status: incremental adoption approved; only the Phase 0 foundation is implemented.
+Status: production migration and legacy transport retirement completed on 2026-08-11.
 
 Target protocol: AHP `0.6.0`, pinned through
 `@microsoft/agent-host-protocol@0.6.0`.
@@ -42,33 +42,23 @@ This layering follows AHP's scope: AHP coordinates multiple clients over shared
 sessions; it does not replace the point-to-point protocol used between a host
 and an agent.
 
-## Why it improves Symposium
+## Shipped architecture
 
-The current architecture already has a host-like runtime, but synchronization
-is expressed as Symposium-specific render messages:
+Symposium now exposes one AHP contract above every adapter:
 
-- `ChatController` is authoritative for a live session.
-- `RenderStream` replays at most 5,000 UI messages to attached observers.
-- the webview protocol and the HTTP+SSE Bridge are separate client contracts;
-- reconnect means replaying a render log, with no global ordering across
-  sessions;
-- queue, approval, terminal and changed-file state use different ad-hoc shapes.
-
-AHP gives those concepts one contract:
-
-| Symposium today | AHP target |
+| Symposium producer | Authoritative AHP representation |
 |---|---|
 | adapters list and model pickers | `ahp-root://` agents |
 | `LiveSessions` entry | `ahp-session:/<uuid>` |
 | one `ChatController` conversation | default `ahp-chat:/<uuid>` |
-| render history/live events | chat snapshot + ordered actions |
+| controller history/live events | chat snapshot + globally ordered actions |
 | `busy`, errors and notices | session/chat status and activity |
 | `ChatQueue` | `chat/pendingMessage*` |
 | approval request/response | tool-call ready/confirmed lifecycle |
 | changed files and approve/reject | changeset channel and operations |
 | terminal-backed sessions | terminal channels |
 | local resources and attachments | `resource*` commands and content refs |
-| Bridge bearer token | transport auth |
+| Bridge token | WebSocket transport auth |
 | Sufficit/provider credentials | AHP protected resources/authenticate |
 
 The result is one live session that can be opened in the sidebar, an editor,
@@ -95,7 +85,7 @@ An AHP upgrade requires:
 5. validating against an independent client such as AHPX;
 6. only then advertising the new protocol version.
 
-## Incremental delivery
+## Delivery phases (completed)
 
 ### Phase 0 — authoritative channel core (implemented)
 
@@ -110,13 +100,12 @@ An AHP upgrade requires:
 - per-channel subscription fan-out;
 - reporting of missing/disposed channels.
 
-It is deliberately not wired to the UI yet. That keeps the existing product
-stable while the event projection is tested in shadow mode.
+It supplies the state primitive used by every production chat client.
 
 ### Phase 1 — Symposium-to-AHP projection
 
-Add an `AhpHostRuntime` beside `LiveSessions` and project existing normalized
-events into official state/actions:
+`AhpProjectionRuntime` follows `LiveSessions` and projects normalized events
+into official state/actions:
 
 - create root, session and default-chat states when a controller is registered;
 - dispatch `chat/turnStarted` before calling `AgentSession.send`;
@@ -125,14 +114,15 @@ events into official state/actions:
 - mirror title, status, queue and archive changes into session/chat state;
 - persist periodic channel snapshots plus the action tail under
   `~/.symposium/ahp/`;
-- compare the projected transcript with `RenderStream` in tests and diagnostics.
+- retain bounded, redacted projection diagnostics as opt-in observability.
 
-`RenderStream` stays the UI path during this phase. Any projection mismatch is
-observable without breaking a conversation.
+The runtime is always enabled. `RenderStream` remains only as an internal
+persisted transcript/event source; it has no webview sinks and performs no UI
+reconstruction.
 
 ### Phase 2 — AHP WebSocket endpoint
 
-Extend the opt-in Bridge with `/ahp` while retaining the existing REST+SSE API:
+The opt-in Bridge exposes `/ahp` as its only remote chat state/action transport:
 
 - authenticate during the WebSocket upgrade with the existing Bridge token;
 - implement `initialize`, `ping`, `reconnect`, `subscribe`, `unsubscribe`,
@@ -145,28 +135,25 @@ Extend the opt-in Bridge with `/ahp` while retaining the existing REST+SSE API:
 - never place access tokens, tool secrets or raw environment values in shared
   state, replay logs or telemetry.
 
-The HTTP Bridge remains a compatibility facade over the same host runtime,
-instead of owning a second state model.
+Supporting HTTP routes (`/health`, resources, backends and diagnostics) remain;
+the former `/sessions`, `/send`, `/interrupt` and `/follow` chat facade was
+removed after the compatibility window.
 
 ### Phase 3 — PWA as the first AHP client
 
 The PWA is the safest first consumer because it already uses the remote Bridge:
 
 - bundle the official TypeScript client and WebSocket transport;
-- render from `AhpStateMirror`;
+- mirror AHP state and render `ChatState` directly;
 - use root/session/chat subscriptions and write-ahead actions;
-- keep the current REST+SSE adapter as a temporary fallback;
 - test disconnect/reconnect, concurrent viewers and first-writer-wins approval.
 
 ### Phase 4 — editor and sidebar clients
 
-Move the webview to an in-process AHP transport (for example `MessagePort`) and
-share the official reducer/state mirror with the PWA. The editor and sidebar
-then become ordinary clients of the same state rather than special sinks bound
-directly to `ChatController`.
-
-This phase is also the right boundary for retiring most of the permissive
-`HostToWebview` message bag and the replay-specific parts of `RenderStream`.
+The webview uses an in-process MessagePort-style AHP transport and the same
+reducers as the PWA. Editor and sidebar are ordinary state clients, not sinks
+bound to `ChatController`. Non-chat surface commands still use the closed
+`HostToWebview`/`WebviewToHost` protocol.
 
 ### Phase 5 — advanced channels
 
@@ -179,7 +166,7 @@ Adopt optional surfaces only after the core is interoperable:
 - client-provided tools/active clients;
 - OTLP telemetry channels.
 
-## Delivery record and remaining gate
+## Delivery record
 
 The 2026-08-09 implementation completed the host, projections, persistence,
 authenticated transports and all three clients:
@@ -202,11 +189,9 @@ enablement and advertised capability gates:
 - [Client-provided tools](activities/20260809210805-ahp-client-tools.md)
 - [Telemetry measurements](activities/20260809210806-ahp-telemetry.md)
 
-The only open delivery boundary is [legacy transport
-retirement](plans/PLAN-AHP-legacy-transport-retirement.md). Its own safety gate
-requires the PWA, editor and sidebar AHP clients to remain stable for at least
-one released version before compatibility paths and rollback switches are
-removed.
+Legacy transport retirement completed after the editor/sidebar and PWA clients
+remained released across the required compatibility window. See the completed
+[retirement plan](plans/PLAN-AHP-legacy-transport-retirement.md).
 
 ### State-authority hardening — 2026-08-11
 
@@ -215,7 +200,8 @@ an optimistic `chat/pendingMessageSet` mutation. MessagePort and WebSocket/PWA
 clients share one command builder, the echoed envelope provides the correlation
 tuple `(id, mode, origin.clientId, origin.clientSeq, serverSeq)`, and only the
 host's `ChatQueue` projection may emit pending-message state actions. The old
-client spelling remains accepted temporarily but is no longer produced.
+client spelling is no longer accepted; `chat/pendingMessageSet` is strictly a
+host projection action.
 
 Restart restoration also distinguishes durable from process-local state:
 
@@ -225,11 +211,9 @@ Restart restoration also distinguishes durable from process-local state:
 | session metadata and archive/read flags | busy/input-needed status |
 | model/message metadata | stale active clients and approval requests |
 
-The remaining compatibility boundary is presentation: the webview still uses
-the AHP-to-legacy view adapter while its components are moved to consume
-`ChatState` directly. `shadowRuntime` remains necessary until controllers emit
-AHP actions as their primary state path. Removing either component before that
-cutover would create a second source of truth again.
+Presentation now consumes `ChatState` and accepted action envelopes directly.
+The AHP-to-legacy view adapter and the optional shadow runtime were removed;
+projection is the mandatory producer boundary above existing controllers.
 
 ## Required invariants
 
@@ -245,7 +229,7 @@ cutover would create a second source of truth again.
 - Features are gated by advertised capabilities, not provider-name checks.
 - Existing Bridge security policy remains the minimum policy for remote AHP.
 
-## Phase 1 completion criteria
+## Operational validation
 
 - Root, session and chat reducers cover text, tools, approval, cancellation,
   queue and error flows for all built-in adapters.
@@ -253,5 +237,5 @@ cutover would create a second source of truth again.
   Copilot and OpenAI fixture events.
 - A 10,000-action stress test preserves ordering and bounded memory.
 - Restart restores snapshots and replays the retained tail.
-- Shadow-mode diagnostics show no transcript/status divergence during manual
+- Projection diagnostics show no transcript/status divergence during manual
   Extension Host validation.

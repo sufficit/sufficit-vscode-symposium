@@ -9,7 +9,7 @@ import { chatReducer } from "../ahp/chatReducer";
 
 /**
  * Regression suite for FIX A (docs/plans/20260810-message-lifecycle-hardening.md):
- * the AHP shadow attaches via subscribeLive and may be restoring a ChatState
+ * the AHP projection attaches via subscribeLive and may be restoring a ChatState
  * persisted across a restart whose queuedMessages/steeringMessage rows the
  * host queue no longer has. Live observers previously got no replay, so
  * nothing ever contradicted those rows and they stayed in the Queued panel
@@ -38,14 +38,16 @@ function stubPorts(): ApplicationPorts {
     return {} as unknown as ApplicationPorts;
 }
 
-test("subscribeLive immediately delivers a queue snapshot", () => {
+test("subscribeLive immediately delivers queue and transient file state", () => {
     const options: SessionStartOptions = { cwd: process.cwd() };
     const controller = new ChatController(stubAdapter(), options, stubPorts());
     const received: unknown[] = [];
     const detach = controller.subscribeLive((message) => received.push(message));
 
-    assert.equal(received.length, 1, "the live observer gets exactly one immediate message");
-    assert.deepEqual(received[0], { type: "queue", items: [], held: false, busy: false });
+    assert.deepEqual(received, [
+        { type: "queue", items: [], held: false, busy: false },
+        { type: "changed-files", items: [] },
+    ]);
 
     detach();
 });
@@ -86,11 +88,10 @@ test("a restored ghost queue row is removed once the host queue snapshot arrives
 });
 
 /**
- * A historical/reconnecting client can dispatch its OWN optimistic
- * chat/pendingMessageSet straight into the runtime, so projectQueue never
- * issued that id and its diff cannot remove it. The shadow re-seeds from live
- * chat state before every diff: host queue authority also covers rows it never
- * created.
+ * A persisted state from the compatibility window can still contain an
+ * optimistic chat/pendingMessageSet row the projection never issued. The
+ * projection re-seeds from live chat state before every diff, so host queue
+ * authority also removes historical rows it never created.
  */
 test("an optimistic row the projection never issued is still removed by host truth", () => {
     const optimistic: ChatState = {
@@ -107,7 +108,7 @@ test("an optimistic row the projection never issued is still removed by host tru
         ],
     } as unknown as ChatState;
 
-    // A projection that has NEVER seen this id — exactly the shadow's state
+    // A projection that has NEVER seen this id — exactly the runtime's state
     // when the transport, not projectQueue, created the row.
     const projection = createQueueProjectionState();
     assert.equal(projection.ids.size, 0);

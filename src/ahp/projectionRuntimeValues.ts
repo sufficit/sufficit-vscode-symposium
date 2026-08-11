@@ -1,4 +1,4 @@
-/** Value coercion and diagnostic helpers for the AHP shadow runtime. */
+/** Value coercion and diagnostic helpers for the AHP projection runtime. */
 import type { AgentEvent } from "../adapters/types";
 
 export function isAgentEvent(value: unknown): value is AgentEvent {

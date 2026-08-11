@@ -44,7 +44,7 @@ export interface ConfigMessage {
 
 /**
  * Context surface handed to the extracted config*Handler modules. Each handler
- * is a free function over this interface (mirroring controllerMessageHandler),
+ * is a free function over this interface,
  * so the case bodies move verbatim with only `this.X` → `ctx.X` rewrites.
  */
 export interface ConfigHandlerCtx {

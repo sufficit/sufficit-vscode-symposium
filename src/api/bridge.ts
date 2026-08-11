@@ -19,7 +19,7 @@ type HostRejection = {
     allowedHosts: string[];
 };
 
-/** Opt-in authenticated HTTP/SSE bridge for remote Symposium control. */
+/** Opt-in authenticated HTTP/AHP bridge for remote Symposium control. */
 export class RemoteBridge {
     private server: http.Server | https.Server | undefined;
     private listening: { host: string; port: number } | undefined;
@@ -64,10 +64,7 @@ export class RemoteBridge {
         const handler = (request: http.IncomingMessage, response: http.ServerResponse) =>
             void this.handle(request, response, token);
         this.server = tls ? https.createServer(tls, handler) : http.createServer(handler);
-        const pwaUsesAhp =
-            config.get<boolean>("pwa", false) &&
-            config.get<string>("pwaTransport", "ahp") === "ahp";
-        if (config.get<boolean>("ahp", false) || pwaUsesAhp) {
+        if (config.get<boolean>("ahp", false) || config.get<boolean>("pwa", false)) {
             const runtime = this.getAhpRuntime?.();
             if (runtime) {
                 this.ahp = new AhpWebSocketServer({
@@ -173,31 +170,6 @@ export class RemoteBridge {
             setLastRejection: (rejection) => {
                 this.lastRejection = rejection;
             },
-            follow: (id, target) => this.follow(id, target),
-        });
-    }
-
-    private follow(id: string, response: http.ServerResponse): void {
-        response.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-        });
-        response.write(`event: open\ndata: ${JSON.stringify({ id })}\n\n`);
-        const unsubscribe = this.api.sessions.follow(id, (message) => {
-            response.write(`data: ${JSON.stringify(message)}\n\n`);
-        });
-        if (!unsubscribe) {
-            response.write(
-                `event: error\ndata: ${JSON.stringify({ error: "unknown session" })}\n\n`,
-            );
-            response.end();
-            return;
-        }
-        const keepAlive = setInterval(() => response.write(": ping\n\n"), 15000);
-        response.on("close", () => {
-            clearInterval(keepAlive);
-            unsubscribe();
         });
     }
 }

@@ -13,7 +13,7 @@ import { chatBodyMarkup } from "./chatHtml";
  * the user in the browser and lives only in that browser's localStorage — it is
  * never embedded here. Every data endpoint stays Bearer-gated.
  */
-export function renderPwaHtml(transport: "ahp" | "rest-sse" = "ahp"): string {
+export function renderPwaHtml(): string {
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -28,7 +28,7 @@ ${chatStyles}
 </head>
 <body>
 ${chatBodyMarkup()}
-<script>window.__SYMPOSIUM__ = { base: "", sessionId: "", transport: ${JSON.stringify(transport)} };</script>
+<script>window.__SYMPOSIUM__ = { base: "", sessionId: "" };</script>
 <script src="app.js"></script>
 <script>
 if ("serviceWorker" in navigator) {

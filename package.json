@@ -2,7 +2,7 @@
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
     "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.811.6",
+    "version": "2026.811.7",
     "publisher": "sufficit",
     "license": "MIT",
     "icon": "media/symposium-icon.png",
@@ -384,15 +384,6 @@
                     "default": "editor",
                     "description": "Where sessions open: as a full editor panel (default, like the built-in chat sessions viewer) or in the Symposium sidebar Chat view."
                 },
-                "symposium.chat.transport": {
-                    "type": "string",
-                    "enum": [
-                        "ahp",
-                        "legacy"
-                    ],
-                    "default": "ahp",
-                    "description": "Local editor/sidebar state transport. AHP is authoritative; legacy is a release-scoped rollback path. Reload active chat surfaces after changing it."
-                },
                 "symposium.lmTools": {
                     "type": "string",
                     "enum": [
@@ -563,45 +554,40 @@
                 "symposium.bridge.enabled": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Enable the remote control bridge (HTTP + SSE) that re-publishes the Symposium public API for remote commands and chat following. Off by default."
+                    "description": "Enable the authenticated remote control bridge. Chat state and commands use the AHP WebSocket; supporting HTTP endpoints remain token-gated. Off by default."
                 },
                 "symposium.bridge.ahp": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Expose the authenticated Agent Host Protocol WebSocket endpoint at /ahp. The Bridge must also be enabled."
+                    "description": "Expose the authenticated Agent Host Protocol WebSocket endpoint at /ahp. The Bridge must also be enabled; enabling the AHP-only PWA exposes this endpoint automatically."
                 },
-                "symposium.ahp.shadow.enabled": {
+                "symposium.ahp.diagnostics": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Project live sessions into the experimental Agent Host Protocol runtime without changing the current UI transport."
+                    "description": "Write bounded, redacted AHP projection diagnostics to the Symposium output channel."
                 },
-                "symposium.ahp.shadow.diagnostics": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Write bounded, redacted AHP parity diagnostics to the Symposium output channel while shadow projection is enabled."
-                },
-                "symposium.ahp.shadow.maxBytes": {
+                "symposium.ahp.maxBytes": {
                     "type": "number",
                     "default": 33554432,
                     "minimum": 1,
-                    "markdownDescription": "Hard ceiling, in bytes, for the persisted AHP `state.json` snapshot. Sessions whose total persisted size exceeds this are auto-compacted (oldest retained actions trimmed) before saving; a payload that still exceeds it after compaction throws. Default `33554432` (32 MiB). Lower it on constrained hosts, raise it for very long-running sessions. Changes require a window reload to re-create the shadow runtime."
+                    "markdownDescription": "Hard ceiling, in bytes, for the persisted AHP `state.json` snapshot. Sessions whose total persisted size exceeds this are auto-compacted (oldest retained actions trimmed) before saving; a payload that still exceeds it after compaction throws. Default `33554432` (32 MiB). Lower it on constrained hosts, raise it for very long-running sessions. Changes require a window reload to re-create the projection runtime."
                 },
-                "symposium.ahp.shadow.maxSessionBytes": {
+                "symposium.ahp.maxSessionBytes": {
                     "type": "number",
                     "default": 8388608,
                     "minimum": 1,
-                    "markdownDescription": "Per-session byte cap measured over the snapshots a session owns (session + chat + child channels). Auto-compaction re-snapshots an oversized session before saving; if a single fresh snapshot still exceeds this cap the session throws `AHP session <id> exceeds byte limit` as a hard ceiling. Default `8388608` (8 MiB — up from the previous 4 MiB implicit default, which silently broke large chats). Changes require a window reload to re-create the shadow runtime."
+                    "markdownDescription": "Per-session byte cap measured over the snapshots a session owns (session + chat + child channels). Auto-compaction re-snapshots an oversized session before saving; if a single fresh snapshot still exceeds this cap the session throws `AHP session <id> exceeds byte limit` as a hard ceiling. Default `8388608` (8 MiB — up from the previous 4 MiB implicit default, which silently broke large chats). Changes require a window reload to re-create the projection runtime."
                 },
-                "symposium.ahp.shadow.compactEveryActions": {
+                "symposium.ahp.compactEveryActions": {
                     "type": "number",
                     "default": 250,
                     "minimum": 1,
-                    "markdownDescription": "How many accepted AHP actions must accumulate between persistence writes. Lower values save more often (safer crash recovery, more disk I/O); higher values defer the write. Does not control auto-compaction; see `symposium.ahp.shadow.autoCompact`."
+                    "markdownDescription": "How many accepted AHP actions must accumulate between persistence writes. Lower values save more often (safer crash recovery, more disk I/O); higher values defer the write. Does not control auto-compaction; see `symposium.ahp.autoCompact`."
                 },
-                "symposium.ahp.shadow.autoCompact": {
+                "symposium.ahp.autoCompact": {
                     "type": "boolean",
                     "default": true,
-                    "markdownDescription": "When enabled (default), the shadow runtime re-snapshots oversized sessions and trims the oldest retained actions before enforcing the byte caps, so a long-running session keeps persisting instead of throwing. Disable only for debugging — sessions will then hit the hard byte ceiling and fail to save. Changes require a window reload."
+                    "markdownDescription": "When enabled (default), the projection runtime re-snapshots oversized sessions and trims the oldest retained actions before enforcing the byte caps, so a long-running session keeps persisting instead of throwing. Disable only for debugging — sessions will then hit the hard byte ceiling and fail to save. Changes require a window reload."
                 },
                 "symposium.bridge.host": {
                     "type": "string",
@@ -630,16 +616,7 @@
                 "symposium.bridge.pwa": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Serve the installable remote PWA at /pwa. Every data endpoint remains token-gated."
-                },
-                "symposium.bridge.pwaTransport": {
-                    "type": "string",
-                    "enum": [
-                        "ahp",
-                        "rest-sse"
-                    ],
-                    "default": "ahp",
-                    "description": "PWA state transport. AHP is authoritative; rest-sse is a temporary rollback path."
+                    "description": "Serve the installable AHP remote PWA at /pwa and expose its authenticated /ahp WebSocket. Supporting HTTP endpoints remain token-gated."
                 },
                 "symposium.bridge.allowedRoots": {
                     "type": "array",

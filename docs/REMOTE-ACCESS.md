@@ -4,8 +4,9 @@ Dirigir uma sessão de agente do celular, sem abrir porta no notebook. O
 transporte é o **Tailscale** (WireGuard, direto, TLS no notebook); o bridge da
 extensão continua em `127.0.0.1`.
 
-> ⚠ **O bridge é execução remota de código.** `POST /sessions` sobe um CLI de
-> agente. Só exponha atrás de um tailnet privado (ou de um túnel autenticado) e
+> ⚠ **O bridge permite execução remota de agentes.** O comando AHP
+> `createSession` pode subir um CLI. Só exponha atrás de um tailnet privado (ou
+> de um túnel autenticado) e
 > **com os limites de política abaixo configurados**. Um token vazado = shell na
 > máquina.
 
@@ -31,6 +32,8 @@ Exemplo mínimo seguro (troque os placeholders):
 ```jsonc
 {
   "symposium.bridge.enabled": true,
+  "symposium.bridge.pwa": true,
+  "symposium.bridge.ahp": true,
   "symposium.bridge.token": "<TOKEN-FORTE-ALEATORIO>",
   "symposium.bridge.allowedRoots": ["<CAMINHO-ABSOLUTO-DO-PROJETO>"],
   "symposium.bridge.sessionPermission": "acceptEdits",
@@ -82,17 +85,14 @@ node -e "console.log(require('crypto').randomUUID())"
    → { "ok": true, "version": "..." }
    ```
 
-   Seguir o stream de uma sessão viva (SSE):
+4. **Abrir a PWA AHP.** Acesse
+   `https://<SEU-NODE>.<TAILNET>.ts.net/pwa/`, informe o token no login e
+   confirme no canal de saída a conexão ao WebSocket `/ahp`.
 
-   ```
-   GET https://<SEU-NODE>.<TAILNET>.ts.net/sessions/<id>/follow?token=<TOKEN>
-   ```
-
-   Listar sessões: `GET /sessions` (com header `Authorization: Bearer`).
-
-Na Fase 0 use só leitura (`/health`, `/sessions`, `/follow`). Criar sessão
-(`POST /sessions`) já respeita `allowedRoots` + `sessionPermission`, mas deixe pra
-validar junto com o cliente na Fase 1.
+O Bridge não expõe mais `GET/POST /sessions`, `/send`, `/interrupt` ou
+`/follow`. Listagem, criação, envio, cancelamento e reconexão usam AHP. Tokens
+em query string também são recusados; chamadas HTTP auxiliares usam
+`Authorization: Bearer` ou `X-Symposium-Token`.
 
 ## Túnel SSH reverso
 
@@ -113,7 +113,7 @@ Se o agente chamar `http://<IP-INTERNO-DO-HOST-SSH>:47600`, configure:
 ```
 
 Valide primeiro `GET /health` e depois uma rota autenticada como
-`GET /sessions`. Um `403` com a mensagem `Host is not in
+`GET /backends`. Um `403` com a mensagem `Host is not in
 symposium.bridge.allowedHosts` significa que a requisição chegou à Bridge, mas
 o `Host` recebido não está permitido; não indica token inválido. Consulte o
 canal de saída **Symposium**, que registra o host recebido e a allowlist sem
@@ -133,17 +133,18 @@ Com o bridge ligado, estas chamadas autenticadas devem ser **recusadas** pela
 política padrão:
 
 ```
-POST /sessions            {cwd: "/etc"}          → 403 cwd not allowed
 POST /vscode/lmtool       {name: "runInTerminal"}→ 403 lm tool not allowed
 POST /backends/x/executable                       → 403 executable override disabled
 GET  /vault/resolve?reference=...                 → 403 vault resolve disabled
 ```
 
+Teste também pelo cliente AHP que `createSession` com `cwd: "/etc"` é
+recusado quando `/etc` não pertence a `allowedRoots`.
+
 ## Próximas fases
 
-- **Fase 1** — PWA (o chat de fora). Precisa de um shim de transporte que
-  traduz as mensagens `WebviewToHost` do cliente em chamadas REST do bridge, e o
-  bridge servindo os estáticos same-origin. Verificação exige Extension Host (F5).
+- **PWA AHP** — implementada: o browser usa o cliente AHP, snapshots e ações
+  ordenadas; não existe shim REST de chat.
 - **Fase 2** — login Sufficit (client PKCE novo + validação de JWT no bridge),
   registro de máquinas no hub, Web Push no `turn-end`.
 

@@ -92,11 +92,13 @@ test("legacy tool-hop pause is restored as an actionable system notice", () => {
 
 test("continuation stays a local controller command", () => {
     const protocol = readFileSync("src/protocol/chat.ts", "utf8");
-    const handler = readFileSync("src/application/controllerMessageHandler.ts", "utf8");
+    const transport = readFileSync("src/ahp/messagePortTransport.ts", "utf8");
+    const router = readFileSync("src/ahp/clientActionRouter.ts", "utf8");
     const session = readFileSync("src/adapters/openai/session.ts", "utf8");
 
     assert.match(protocol, /type:\s*["']continue["']/);
-    assert.match(handler, /case\s*["']continue["'][\s\S]*?ctx\.continueTurn\(\)/);
+    assert.match(transport, /case\s*["']continue["'][\s\S]*?chat\/continuationRequested/);
+    assert.match(router, /chat\/continuationRequested[\s\S]*?api\.sessions\.continue/);
     assert.match(session, /continueTurn\(\):\s*void\s*\{[\s\S]*?void this\.runner\.run\(\)/);
     assert.match(session, /pendingResumeTurnId\s*=\s*this\.currentLogicalTurnId/);
     assert.doesNotMatch(session, /continueTurn\(\):[\s\S]*?this\.messages\.push/);

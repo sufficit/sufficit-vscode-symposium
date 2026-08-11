@@ -11,7 +11,6 @@ import {
     stableAhpUuid,
     type AhpProjectionAction,
 } from "../ahp";
-import { ahpChatToLegacy } from "../ahp/client/legacyView";
 
 const STREAM: AgentEvent[] = [
     { kind: "turn-start", logicalTurnId: "turn-1" },
@@ -112,22 +111,10 @@ test("a terminal status notice survives as a transcript part, not just activity"
     assert.equal(notice.content, "Stopped because the model repeated the same tool call.");
     assert.deepEqual(notice._meta, { severity: "warning" });
 
-    assert.deepEqual(
-        ahpChatToLegacy(state).filter(
-            (m) => (m as { event?: { kind?: string } }).event?.kind === "status-notice",
-        ),
-        [
-            {
-                type: "event",
-                event: {
-                    kind: "status-notice",
-                    text: "Stopped because the model repeated the same tool call.",
-                    severity: "warning",
-                    terminal: true,
-                },
-            },
-        ],
-        "and replays to the webview as the notice event it started as",
+    assert.equal(
+        parts.filter((part) => part.kind === "notice").length,
+        1,
+        "direct AHP clients receive one durable notice part",
     );
 });
 
@@ -206,29 +193,15 @@ test("reasoning parts also stay separate across a tool boundary", () => {
     );
 });
 
-test("legacy round trip interleaves text and tools instead of grouping tools at the end", () => {
+test("authoritative response parts retain tool ids and chronological order", () => {
     const state = runStream("openai", INTERLEAVED_STREAM);
-    const legacy = ahpChatToLegacy(state) as { type: string; event?: { kind?: string } }[];
-    const eventKinds = legacy
-        .filter((message) => message.type === "event")
-        .map((message) => message.event?.kind);
-    assert.deepEqual(eventKinds, [
-        "turn-start",
-        "text",
-        "tool-start",
-        "tool-end",
-        "text",
-        "tool-start",
-        "tool-end",
-        "text",
-        "turn-end",
-    ]);
-    const toolIds = legacy.flatMap((message) => {
-        const record = message as { type: string; event?: { kind?: string; toolId?: unknown } };
-        return record.type === "event" && record.event?.kind === "tool-start"
-            ? [record.event.toolId]
-            : [];
-    });
+    const parts = state.turns[0].responseParts as unknown as Array<{
+        kind: string;
+        toolCall?: { toolCallId?: string };
+    }>;
+    const toolIds = parts.flatMap((part) =>
+        part.kind === "toolCall" && part.toolCall?.toolCallId ? [part.toolCall.toolCallId] : [],
+    );
     assert.deepEqual(toolIds, ["t1", "t2"], "tool order is preserved, not collapsed together");
 });
 

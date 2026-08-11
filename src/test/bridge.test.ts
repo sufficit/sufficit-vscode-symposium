@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { isBridgeAuthorized } from "../api/bridgeAuth";
 import { decodeBridgePathSegment } from "../api/bridgeRoutes";
 
-test("bridge query token is accepted only for session follow SSE", () => {
+test("bridge rejects query-string credentials", () => {
     const token = "secret-token";
 
     assert.equal(
@@ -12,7 +12,7 @@ test("bridge query token is accepted only for session follow SSE", () => {
             new URL(`http://localhost/sessions/abc/follow?token=${token}`),
             token,
         ),
-        true,
+        false,
     );
     assert.equal(
         isBridgeAuthorized(
@@ -20,7 +20,7 @@ test("bridge query token is accepted only for session follow SSE", () => {
             new URL(`http://localhost/sessions/abc/follow/?token=${token}`),
             token,
         ),
-        true,
+        false,
     );
     assert.equal(
         isBridgeAuthorized(

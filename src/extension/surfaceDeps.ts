@@ -20,7 +20,7 @@ export interface SurfaceDepsArgs {
     /** All persisted sessions across adapters, newest first. */
     rawSessions: () => Promise<SessionInfo[]>;
     api: SymposiumApi;
-    ahpRuntime: () => AhpHostRuntime | undefined;
+    ahpRuntime: () => AhpHostRuntime;
     syncAhp: () => void;
     rebuildAhp: (provider: string, sessionId: string) => void;
 }

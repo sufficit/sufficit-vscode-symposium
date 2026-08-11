@@ -7,16 +7,16 @@ QUEUED panel at the same time. The queue row is client-only ("fila falsa"): the
 host queue is empty, clicking the row does nothing, and it survives until the
 reducer state happens to be rebuilt from a snapshot.
 
-## Architecture (as shipped today)
+## Architecture at the time of the defect
 
-The sidebar webview runs on the AHP transport by default
-(`symposium.chat.transport` = "ahp"). The pipeline per message:
+The original pipeline still translated AHP state back into legacy render
+messages:
 
 ```
 composer.ts ──send──▶ AhpMessagePortTransport
                         ├─ optimistic chat/pendingMessageSet (id = clientMessageId)
                         └─ routeAhpClientAction ─▶ api.sessions.send ─▶ ChatController
-ChatController ─render events─▶ shadowRuntime ─projectAgentEvent─▶ AHP actions
+ChatController ─render events─▶ projection runtime ─projectAgentEvent─▶ AHP actions
 AHP actions ─frames─▶ webview localAhp ─chatReducer─▶ ChatState
 ChatState/action ─ahpActionToLegacy─▶ legacy messages ─▶ dispatch.ts ─▶ DOM
 ```
@@ -71,13 +71,13 @@ on turn boundaries only.
 ## Invariant tests (new suite)
 
 `src/test/ahpMessageLifecycle.test.ts` — full pipeline simulation
-(projectAgentEvent + chatReducer + ahpActionToLegacy round trip, no DOM):
+(projectAgentEvent + chatReducer + direct ChatState selectors, no DOM):
 
 For each (mode ∈ send/queue/steer/redirect) × (host busy/idle) ×
 (activeTurn fresh/stuck):
 
 - CONSERVATION: after the turn for a clientMessageId starts, that id appears
-  exactly once as a user row in the legacy stream and zero times in
+  exactly once as a turn and zero times in
   `queuedMessages`/`steeringMessage`.
 - NO-DROP: a turnStarted is never silently ignored — either it starts a turn
   or it supersedes one, and its cleanup side effects always apply.
@@ -101,7 +101,7 @@ Shipped in this delivery (batch 2):
   no `busy` field; the authoritative-busy branch in dispatch.ts never fired).
 - D6 Transport `pendingMessageRemoved` always sent kind "queued", so a steering
   row could never be cleared by the reducer.
-- E1 Mid-turn injected steer never reached the AHP client (shadowRuntime
+- E1 Mid-turn injected steer never reached the AHP client (projection runtime
   stashed the user row and dispatched nothing; message absent from ChatState).
 - E2 `pendingUser` one-slot cache never cleared at turn end → blank/stale user
   bubbles on retry-with-interruptedBy and continue-after-tool-cap.
@@ -118,7 +118,7 @@ Deferred (documented, not yet implemented):
 - #12 Several render messages bypass AHP entirely (retry notice, fatal send
   error, quota, write-roots) — DOM-only, lost on rebind; fatal send error
   leaves busy stuck.
-- Suspected: approval turnId fallback `?? ""` leaves tool rows
+- Suspected at the time: approval turnId fallback `?? ""` leaves tool rows
   pending-confirmation; ordering hazard if routeAhpClientAction ever emits
   synchronously before the optimistic dispatch; `emitChanged()` uses toSink so
   Changed Files gets no live updates in AHP mode.
@@ -145,7 +145,14 @@ send the command `symposium/messageSubmitted { id, mode, message }`.
 
 That command is intentionally a no-op in `chatReducer`. The host routes it
 exactly once using its explicit `mode`, and only `projectQueue` emits
-`chat/pendingMessageSet` after `ChatQueue` actually accepts the message. Old
-clients using `chat/pendingMessageSet` remain accepted for one compatibility
-window. MessagePort and WebSocket/PWA build the command with the same shared
-function, including `clientMessageId`, attachments and dispatch metadata.
+`chat/pendingMessageSet` after `ChatQueue` actually accepts the message.
+MessagePort and WebSocket/PWA build the command with the same shared function,
+including `clientMessageId`, attachments and dispatch metadata.
+
+## Retirement completion — 2026-08-11
+
+After the compatibility window, editor/sidebar and PWA clients began rendering
+`ChatState` directly. `legacyView`, UI sinks/replay in `RenderStream`, the
+`symposium.chat.transport` and `symposium.bridge.pwaTransport` switches, and
+the REST+SSE chat facade were removed. `chat/pendingMessageSet` is no longer a
+client-dispatchable action.

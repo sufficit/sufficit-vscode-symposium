@@ -9,6 +9,11 @@ import { symposiumLog } from "./log";
 const RENAMES = [
     ["voice.stt.engine", "voice.engine"],
     ["voice.whisper.language", "voice.language"],
+    ["ahp.shadow.diagnostics", "ahp.diagnostics"],
+    ["ahp.shadow.maxBytes", "ahp.maxBytes"],
+    ["ahp.shadow.maxSessionBytes", "ahp.maxSessionBytes"],
+    ["ahp.shadow.compactEveryActions", "ahp.compactEveryActions"],
+    ["ahp.shadow.autoCompact", "ahp.autoCompact"],
 ] as const;
 
 function configuredValue(section: string, key: string): unknown {

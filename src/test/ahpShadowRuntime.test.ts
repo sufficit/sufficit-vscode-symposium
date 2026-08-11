@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatState, SessionState } from "@microsoft/agent-host-protocol";
-import { AhpShadowRuntime, type AhpShadowSessionInfo, type AhpShadowSource } from "../ahp";
+import {
+    AhpProjectionRuntime,
+    type AhpProjectionSessionInfo,
+    type AhpProjectionSource,
+} from "../ahp";
 
-class FakeSource implements AhpShadowSource {
-    sessions: AhpShadowSessionInfo[] = [
+class FakeSource implements AhpProjectionSource {
+    sessions: AhpProjectionSessionInfo[] = [
         {
             backend: "claude",
             sessionId: "native-1",
@@ -14,7 +18,7 @@ class FakeSource implements AhpShadowSource {
     ];
     private readonly observers = new Map<string, Set<(message: unknown) => void>>();
 
-    list(): AhpShadowSessionInfo[] {
+    list(): AhpProjectionSessionInfo[] {
         return [...this.sessions];
     }
 
@@ -31,9 +35,9 @@ class FakeSource implements AhpShadowSource {
     }
 }
 
-test("AHP shadow projects transcript, queue and lifecycle without divergence", () => {
+test("AHP runtime projects transcript, queue and lifecycle without divergence", () => {
     const source = new FakeSource();
-    const shadow = new AhpShadowRuntime(source);
+    const shadow = new AhpProjectionRuntime(source);
     shadow.sync();
     source.emit("native-1", { type: "user", text: "hello", attachments: [] });
     source.emit("native-1", {
@@ -55,9 +59,9 @@ test("AHP shadow projects transcript, queue and lifecycle without divergence", (
     shadow.dispose();
 });
 
-test("AHP shadow disposes channels when a live controller disappears", () => {
+test("AHP runtime disposes channels when a live controller disappears", () => {
     const source = new FakeSource();
-    const shadow = new AhpShadowRuntime(source);
+    const shadow = new AhpProjectionRuntime(source);
     shadow.sync();
     const resource = shadow.runtime.handles()[0].sessionResource;
     source.sessions = [];
@@ -68,9 +72,9 @@ test("AHP shadow disposes channels when a live controller disappears", () => {
     shadow.dispose();
 });
 
-test("AHP shadow preserves global ordering with a bounded 10,000-action replay", () => {
+test("AHP runtime preserves global ordering with a bounded 10,000-action replay", () => {
     const source = new FakeSource();
-    const shadow = new AhpShadowRuntime(source, { replayCapacity: 64 });
+    const shadow = new AhpProjectionRuntime(source, { replayCapacity: 64 });
     shadow.sync();
     for (let index = 0; index < 10_000; index++) {
         source.emit("native-1", {
@@ -88,9 +92,9 @@ test("AHP shadow preserves global ordering with a bounded 10,000-action replay",
     shadow.dispose();
 });
 
-test("AHP shadow projects adapter history when no persisted render log exists", () => {
+test("AHP runtime projects adapter history when no persisted render log exists", () => {
     const source = new FakeSource();
-    const shadow = new AhpShadowRuntime(source);
+    const shadow = new AhpProjectionRuntime(source);
     shadow.sync();
     source.emit("native-1", {
         type: "history",
@@ -109,10 +113,10 @@ test("AHP shadow projects adapter history when no persisted render log exists", 
     shadow.dispose();
 });
 
-test("AHP shadow keeps the stable channel when a new controller receives its native id", () => {
+test("AHP runtime keeps the stable channel when a new controller receives its native id", () => {
     const source = new FakeSource();
     source.sessions[0].sessionId = "new-1";
-    const shadow = new AhpShadowRuntime(source);
+    const shadow = new AhpProjectionRuntime(source);
     shadow.sync();
     const before = shadow.runtime.handles()[0];
 

@@ -12,7 +12,7 @@ import {
     redact,
     sessionKey,
     stringArray,
-} from "./shadowRuntimeUtils";
+} from "./projectionRuntimeValues";
 import {
     createProjectionState,
     projectAgentEvent,
@@ -30,26 +30,26 @@ import {
     type QueueProjectionState,
 } from "./projectControllerState";
 
-export interface AhpShadowSessionInfo {
+export interface AhpProjectionSessionInfo {
     backend: string;
     sessionId: string;
     title: string;
     cwd: string;
 }
 
-export interface AhpShadowSource {
-    list(): AhpShadowSessionInfo[];
+export interface AhpProjectionSource {
+    list(): AhpProjectionSessionInfo[];
     follow(id: string, observer: (message: unknown) => void): (() => void) | undefined;
 }
 
-export interface AhpShadowDiagnostic {
+export interface AhpProjectionDiagnostic {
     category: "transcript" | "status" | "queue" | "approval" | "projection";
     session: string;
     sequence: number;
     detail: string;
 }
 
-export interface AhpShadowOptions {
+export interface AhpProjectionOptions {
     restored?: AhpRuntimeExport;
     persistence?: AhpPersistence;
     replayCapacity?: number;
@@ -58,7 +58,7 @@ export interface AhpShadowOptions {
     onDiagnostic?: (message: string) => void;
 }
 
-interface ShadowRecord {
+interface ProjectionRecord {
     handle: AhpSessionHandle;
     unsubscribe: () => void;
     projection: AhpProjectionState;
@@ -69,16 +69,16 @@ interface ShadowRecord {
     approvals: Set<string>;
 }
 
-export class AhpShadowRuntime {
+export class AhpProjectionRuntime {
     readonly runtime: AhpHostRuntime;
-    private readonly records = new Map<string, ShadowRecord>();
-    private readonly recent: AhpShadowDiagnostic[] = [];
-    private readonly counts = new Map<AhpShadowDiagnostic["category"], number>();
+    private readonly records = new Map<string, ProjectionRecord>();
+    private readonly recent: AhpProjectionDiagnostic[] = [];
+    private readonly counts = new Map<AhpProjectionDiagnostic["category"], number>();
     private readonly maximumDiagnostics: number;
 
     constructor(
-        private readonly source: AhpShadowSource,
-        private readonly options: AhpShadowOptions = {},
+        private readonly source: AhpProjectionSource,
+        private readonly options: AhpProjectionOptions = {},
     ) {
         this.runtime = new AhpHostRuntime({
             restored: options.restored,
@@ -105,7 +105,7 @@ export class AhpShadowRuntime {
     }
 
     /**
-     * Re-attaches the shadow observer for a controller whose persisted render
+     * Re-attaches the projection observer for a controller whose persisted render
      * log was seeded. Preserves any turns already loaded into the AHP runtime
      * (e.g. from a prior lazy-loading pass) so reopening a session does not
      * discard the scroll-up history the user already waited for.
@@ -128,7 +128,7 @@ export class AhpShadowRuntime {
                     queue,
                     this.runtime.snapshot(current.handle.chatResource).state as ChatState,
                 );
-                const record: ShadowRecord = {
+                const record: ProjectionRecord = {
                     ...current,
                     unsubscribe: () => undefined,
                     projection: createProjectionState(),
@@ -158,7 +158,7 @@ export class AhpShadowRuntime {
         this.options.persistence?.maybeSave(this.runtime);
     }
 
-    diagnostics(): { counts: Record<string, number>; recent: AhpShadowDiagnostic[] } {
+    diagnostics(): { counts: Record<string, number>; recent: AhpProjectionDiagnostic[] } {
         return {
             counts: Object.fromEntries(this.counts),
             recent: this.recent.map((item) => ({ ...item })),
@@ -179,7 +179,7 @@ export class AhpShadowRuntime {
         }
     }
 
-    private attach(key: string, info: AhpShadowSessionInfo): void {
+    private attach(key: string, info: AhpProjectionSessionInfo): void {
         let handle = this.runtime.sessionByNative(info.backend, info.sessionId);
         if (!handle) {
             handle = this.runtime.registerSession({
@@ -193,7 +193,7 @@ export class AhpShadowRuntime {
         // rows already in ChatState are tracked, not stranded (E3).
         const queue = createQueueProjectionState();
         seedQueueProjection(queue, this.runtime.snapshot(handle.chatResource).state as ChatState);
-        const record: ShadowRecord = {
+        const record: ProjectionRecord = {
             handle,
             unsubscribe: () => undefined,
             projection: createProjectionState(),
@@ -214,7 +214,7 @@ export class AhpShadowRuntime {
         record.unsubscribe = unsubscribe;
     }
 
-    private onMessage(key: string, record: ShadowRecord, raw: unknown): void {
+    private onMessage(key: string, record: ProjectionRecord, raw: unknown): void {
         try {
             const message = asRecord(raw);
             if (message.type === "user" && typeof message.text === "string") {
@@ -279,11 +279,8 @@ export class AhpShadowRuntime {
                 error instanceof Error ? error.message : String(error),
             );
         }
-        // Persistence must never break the live subscription: a single save()
-        // failure (e.g. a session that exceeds the byte cap even after
-        // compaction) would otherwise kill the observer and silently drop all
-        // subsequent messages for this session — including history envelopes
-        // for other sessions routed through the same projection path.
+        // Persistence must never break the live subscription: a failed save
+        // would otherwise kill the observer and silently drop later messages.
         try {
             this.options.persistence?.maybeSave(this.runtime);
         } catch (error) {
@@ -295,7 +292,7 @@ export class AhpShadowRuntime {
         }
     }
 
-    private apply(record: ShadowRecord, actions: AhpProjectionAction[]): void {
+    private apply(record: ProjectionRecord, actions: AhpProjectionAction[]): void {
         for (const projected of actions) {
             const resource =
                 projected.channel === "chat"
@@ -315,7 +312,7 @@ export class AhpShadowRuntime {
 
     /** Host queue empty but rows still listed — the ghost row's exact shape.
      *  Names the ids so the producer is identified rather than guessed at. */
-    private reportStrandedPending(key: string, record: ShadowRecord, hostQueued: number): void {
+    private reportStrandedPending(key: string, record: ProjectionRecord, hostQueued: number): void {
         if (hostQueued > 0) return;
         const chat = this.runtime.snapshot(record.handle.chatResource).state as ChatState;
         const stranded = [
@@ -326,7 +323,11 @@ export class AhpShadowRuntime {
         this.mismatch("queue", key, `host queue empty, still pending: ${stranded.join(", ")}`);
     }
 
-    private replaceNativeSession(key: string, record: ShadowRecord, nativeSessionId: string): void {
+    private replaceNativeSession(
+        key: string,
+        record: ProjectionRecord,
+        nativeSessionId: string,
+    ): void {
         if (record.handle.nativeSessionId === nativeSessionId) return;
         this.runtime.replaceNativeId(record.handle.sessionResource, nativeSessionId);
         this.runtime.dispatch(record.handle.sessionResource, {
@@ -341,7 +342,7 @@ export class AhpShadowRuntime {
         this.records.set(sessionKey(record.handle.provider, nativeSessionId), record);
     }
 
-    private observeExpected(record: ShadowRecord, event: AgentEvent): void {
+    private observeExpected(record: ProjectionRecord, event: AgentEvent): void {
         if (event.kind === "turn-start") record.currentText = "";
         if (event.kind === "text" && record.currentText !== undefined) {
             record.currentText += event.text;
@@ -357,7 +358,7 @@ export class AhpShadowRuntime {
         }
     }
 
-    private compare(key: string, record: ShadowRecord): void {
+    private compare(key: string, record: ProjectionRecord): void {
         const chat = this.runtime.snapshot(record.handle.chatResource).state as ChatState;
         const session = this.runtime.snapshot(record.handle.sessionResource).state as SessionState;
         const actual = chat.turns.map(turnText);
@@ -379,7 +380,7 @@ export class AhpShadowRuntime {
     }
 
     private mismatch(
-        category: AhpShadowDiagnostic["category"],
+        category: AhpProjectionDiagnostic["category"],
         session: string,
         detail: string,
     ): void {

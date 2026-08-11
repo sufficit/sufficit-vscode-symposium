@@ -98,27 +98,21 @@ host-authoritative view of a live session.
              AgentAdapter implementations
 ```
 
-Phase 0 is implemented: the repository contains a transport-independent AHP
-channel store with global action sequencing, snapshots, bounded reconnect
-replay, rejected-action reconciliation and subscriber isolation. This
-foundation does **not** yet expose a public AHP WebSocket endpoint; the current
-webview and remote HTTP+SSE Bridge continue to operate unchanged.
+The migration is complete. A single production AHP runtime owns root, session
+and chat state; editor/sidebar clients use the in-process MessagePort transport,
+and the PWA uses the authenticated `/ahp` WebSocket. Both render `ChatState`
+directly, reconnect from snapshots plus ordered actions, and submit messages
+through `symposium/messageSubmitted`. The former webview replay, REST+SSE chat
+routes and transport rollback switches have been retired.
 
-The incremental roadmap is:
-
-1. Project normalized `AgentEvent` values into root, session and chat channels
-   in shadow mode.
-2. Add an authenticated `/ahp` WebSocket endpoint while retaining REST+SSE
-   compatibility.
-3. Migrate the PWA to the official AHP TypeScript client and state mirror.
-4. Move the editor/sidebar webview to an in-process AHP transport.
-5. Add optional changeset, terminal, resource, customization/MCP and telemetry
-   channels.
+Optional changeset, terminal, resource, customization/MCP, client-tool and
+telemetry channels remain capability-gated. The public in-process API is still
+available to other VS Code extensions, while remote chat clients use AHP.
 
 The protocol is still a draft, so the official TypeScript contract is
 exact-pinned to `@microsoft/agent-host-protocol@0.6.0`. See
 [docs/AHP-ADOPTION.md](docs/AHP-ADOPTION.md) for the complete architecture,
-security requirements, version policy and phase acceptance criteria.
+security requirements, version policy and shipped architecture.
 
 ## Installation
 

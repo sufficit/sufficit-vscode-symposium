@@ -1,17 +1,12 @@
 import type { ActionEnvelope, SessionSummary, URI } from "@microsoft/agent-host-protocol";
 import { BrowserAhpClient, type AhpConnectionStatus } from "../../ahp/client/browserClient";
-import {
-    ahpActionToLegacy,
-    ahpChatToLegacy,
-    ahpMetaToLegacy,
-    ahpSessionsToLegacy,
-    rejectedEnvelopeFallback,
-} from "../../ahp/client/legacyView";
 import { nativeSessionId } from "../../ahp/client/state";
 import type { HostToWebview, WebviewToHost } from "../../protocol/chat";
-import { routeAhpQueueAction } from "../../protocol/ahpQueueActions";
 import { authHeaders, token } from "./pwaLogin";
 import type { PwaConfig } from "./pwaTypes";
+import { renderAhpChatAction, renderAhpChatSnapshot } from "./ahpChatView";
+import { renderAhpSession, renderAhpSessions } from "./ahpSessionView";
+import { loadPendingInput } from "./conversationView";
 
 interface PwaAhpOptions {
     base: string;
@@ -60,12 +55,11 @@ export async function openPwaAhpSession(nativeId: string): Promise<void> {
 export async function refreshPwaAhpSessions(): Promise<void> {
     if (!client || !options) return;
     sessions = await client.sessions();
-    options.deliver({ type: "sessions", items: ahpSessionsToLegacy(sessions) });
+    renderAhpSessions(sessions);
 }
 
 export function routePwaAhp(message: WebviewToHost): boolean {
     if (!client || !options) return message.type === "ready";
-    if (routeAhpQueueAction(client, chatResource, message, options.deliver)) return true;
     switch (message.type) {
         case "send":
             if (chatResource) {
@@ -105,6 +99,24 @@ export function routePwaAhp(message: WebviewToHost): boolean {
             }
             return true;
         }
+        case "queue-remove":
+            if (chatResource) client.removeQueued(chatResource, String(message.id));
+            return true;
+        case "queue-edit": {
+            if (chatResource) {
+                const id = String(message.id);
+                const pending = client.pendingMessage(chatResource, id);
+                if (pending) loadPendingInput(pending.text, pending.attachments);
+                client.removeQueued(chatResource, id);
+            }
+            return true;
+        }
+        case "queue-promote":
+            if (chatResource) client.promoteQueued(chatResource, String(message.id));
+            return true;
+        case "queue-clear":
+            if (chatResource) client.clearQueued(chatResource);
+            return true;
         case "open-session":
             void openPwaAhpSession(message.sessionId);
             return true;
@@ -127,28 +139,26 @@ function renderSnapshot(): void {
     if (!client || !options || !sessionResource) return;
     const session = client.state.sessions.get(sessionResource);
     if (!session) return;
-    options.deliver(ahpMetaToLegacy(session));
+    renderAhpSession(session);
     const chat = chatResource ? client.state.chats.get(chatResource) : undefined;
-    if (chat) for (const message of ahpChatToLegacy(chat)) options.deliver(message);
+    if (chat) renderAhpChatSnapshot(chat);
 }
 
 function renderAction(envelope: ActionEnvelope): void {
     if (!client || !options) return;
     if (envelope.channel === chatResource) {
         const chat = client.state.chats.get(envelope.channel);
-        const messages = envelope.rejectionReason
-            ? rejectedEnvelopeFallback(envelope, chat)
-            : ahpActionToLegacy(envelope, chat);
-        for (const message of messages) options.deliver(message);
+        renderAhpChatAction(envelope, chat);
     } else if (envelope.channel === sessionResource) {
         const session = client.state.sessions.get(envelope.channel);
-        if (session) options.deliver(ahpMetaToLegacy(session));
+        if (session) renderAhpSession(session);
     }
 }
 
 async function openSummary(summary: SessionSummary): Promise<void> {
     if (!client || !options) return;
     sessionResource = summary.resource;
+    chatResource = undefined;
     await client.openSession(summary.resource);
     const session = client.state.sessions.get(summary.resource);
     if (!session) return;

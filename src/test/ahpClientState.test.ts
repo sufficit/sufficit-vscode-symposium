@@ -7,7 +7,7 @@ import type {
     Snapshot,
 } from "@microsoft/agent-host-protocol";
 import { SymposiumAhpState } from "../ahp/client/state";
-import { ahpActionToLegacy, ahpChatToLegacy, queueItems } from "../ahp/client/legacyView";
+import { isPendingQueueHeld, selectPendingMessages } from "../ahp/client/chatSelectors";
 
 const CHAT = "ahp-chat:/22222222-2222-4222-8222-222222222222";
 
@@ -102,7 +102,7 @@ test("chat turnsLoaded deduplicates turns by id on repeated loads", () => {
     assert.equal(chat?.turns?.length, 2);
 });
 
-test("AHP legacy selector reconstructs transcript and incremental queue state", () => {
+test("AHP state reconstructs transcript and active lifecycle", () => {
     const state = new SymposiumAhpState();
     state.applySnapshot(chatSnapshot());
     const started = {
@@ -117,19 +117,14 @@ test("AHP legacy selector reconstructs transcript and incremental queue state", 
         },
     } as unknown as ActionEnvelope;
     state.apply(started);
-    const messages = ahpActionToLegacy(started, state.chats.get(CHAT));
-    assert.deepEqual(
-        messages.map((message) => message.type),
-        ["user", "event"],
-    );
-    assert.deepEqual(
-        ahpChatToLegacy(state.chats.get(CHAT) as ChatState).map((message) => message.type),
-        ["clear", "user", "event"],
-    );
+    const chat = state.chats.get(CHAT);
+    assert.equal(chat?.activeTurn?.id, "turn-1");
+    assert.equal(chat?.activeTurn?.message.text, "hello");
+    assert.equal(chat?.turns.length, 0);
 });
 
 test("AHP queue rows preserve attachments for edit recovery", () => {
-    const items = queueItems({
+    const items = selectPendingMessages({
         ...(chatSnapshot().state as ChatState),
         queuedMessages: [
             {
@@ -308,7 +303,7 @@ test("chatReducer turnComplete prunes a ghost queuedMessages row with equal text
     assert.equal(state.chats.get(CHAT)?.queuedMessages, undefined);
 });
 
-test("legacyView queue rebuild puts steeringMessage first with mode steer", () => {
+test("pending selector puts steeringMessage first with mode steer", () => {
     const state = new SymposiumAhpState();
     state.applySnapshot(chatSnapshot());
     state.apply(
@@ -328,27 +323,16 @@ test("legacyView queue rebuild puts steeringMessage first with mode steer", () =
     state.apply(steerAction);
     const chat = state.chats.get(CHAT) as ChatState;
 
-    const actionMessages = ahpActionToLegacy(steerAction, chat);
-    const actionQueue = actionMessages.find((message) => message.type === "queue") as
-        | { items: { id: string; mode?: string }[] }
-        | undefined;
-    assert.equal(actionQueue?.items[0]?.mode, "steer");
-    assert.equal(actionQueue?.items[0]?.id, "client-steer");
-    assert.equal(actionQueue?.items[1]?.id, "client-queued");
-
-    const fullMessages = ahpChatToLegacy(chat);
-    const fullQueue = fullMessages.find((message) => message.type === "queue") as
-        | { items: { id: string; mode?: string }[] }
-        | undefined;
-    assert.equal(fullQueue?.items[0]?.mode, "steer");
-    assert.equal(fullQueue?.items[0]?.id, "client-steer");
-    assert.equal(fullQueue?.items[1]?.id, "client-queued");
+    const items = selectPendingMessages(chat);
+    assert.equal(items[0]?.mode, "steer");
+    assert.equal(items[0]?.id, "client-steer");
+    assert.equal(items[1]?.id, "client-queued");
 });
 
 // After a failed turn the host holds the queue — pending messages do NOT
 // auto-send. Without the flag the panel just sits there full and unexplained,
 // which is what a capacity error leaves behind.
-test("legacyView marks the queue held after a failed turn", () => {
+test("pending selector marks the queue held after a failed turn", () => {
     const failed = {
         resource: CHAT,
         title: "Held",
@@ -356,12 +340,9 @@ test("legacyView marks the queue held after a failed turn", () => {
         modifiedAt: "2026-08-11T00:00:00.000Z",
         turns: [{ id: "t1", state: "error", message: { text: "teste" }, responseParts: [] }],
         queuedMessages: [{ id: "q1", message: { text: "teste", origin: { kind: "user" } } }],
-    } as unknown as Parameters<typeof ahpChatToLegacy>[0];
+    } as unknown as ChatState;
 
-    const queue = ahpChatToLegacy(failed).find((m) => m.type === "queue") as
-        | { held?: boolean }
-        | undefined;
-    assert.equal(queue?.held, true);
+    assert.equal(isPendingQueueHeld(failed), true);
 });
 
 test("a queue behind a healthy turn is not held", () => {
@@ -373,10 +354,7 @@ test("a queue behind a healthy turn is not held", () => {
         turns: [{ id: "t1", state: "complete", message: { text: "a" }, responseParts: [] }],
         activeTurn: { id: "t2", startedAt: "x", message: { text: "b" }, responseParts: [] },
         queuedMessages: [{ id: "q1", message: { text: "later", origin: { kind: "user" } } }],
-    } as unknown as Parameters<typeof ahpChatToLegacy>[0];
+    } as unknown as ChatState;
 
-    const queue = ahpChatToLegacy(running).find((m) => m.type === "queue") as
-        | { held?: boolean }
-        | undefined;
-    assert.equal(queue?.held, false);
+    assert.equal(isPendingQueueHeld(running), false);
 });

@@ -289,7 +289,7 @@ export const configViews =
                     sel("symposium.chat.devMode", p.devMode ? "true" : "false",
                         [{ v: "true", l: t("config.prefs.devMode.on") }, { v: "false", l: t("config.prefs.devMode.off") }])) +
                 item(t("config.prefs.ahpDiagnostics.name"), t("config.prefs.ahpDiagnostics.desc"),
-                    sel("symposium.ahp.shadow.diagnostics", p.ahpDiagnostics ? "true" : "false",
+                    sel("symposium.ahp.diagnostics", p.ahpDiagnostics ? "true" : "false",
                         [{ v: "true", l: t("config.prefs.ahpDiagnostics.on") }, { v: "false", l: t("config.prefs.ahpDiagnostics.off") }])) +
                 item('Session Cache', 'Caches session metadata in memory for instant startup. Disable to free RAM.',
                     sel("symposium.chat.sessionCache", p.sessionCache ? "true" : "false",

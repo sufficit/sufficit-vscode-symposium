@@ -150,18 +150,6 @@ export type WebviewToHost =
     /** Reply to an inline "approval-request" event (admin/manager/user modes). */
     | { type: "approval-response"; toolId: string; approved: boolean };
 
-/** `type` discriminants the ChatController consumes (the rest belong to the surface). */
-export type ControllerMessageType =
-    | "send"
-    | "cancel"
-    | "continue"
-    | "queue-remove"
-    | "queue-edit"
-    | "queue-promote"
-    | "queue-clear"
-    | "pick-attachments"
-    | "approval-response";
-
 /** Closed set of messages the extension host may send to the chat webview. */
 export const HOST_MESSAGE_TYPES = [
     "account",

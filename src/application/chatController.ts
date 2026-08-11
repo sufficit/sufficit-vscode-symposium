@@ -8,12 +8,10 @@ import {
 import { todosSummary } from "../adapters/todos";
 import { probeRtk } from "../adapters/rtk";
 import { HubClient } from "../sync/hubClient";
-import { WebviewToHost } from "../protocol/chat";
 import { RenderStream } from "./renderStream";
 import { transcriptText, transcriptMessages, transcriptMessagesUpTo } from "./controllerTranscript";
 import { ChatQueue, MessageDedup, PendingMessage, SendMode } from "./controllerQueue";
 import { ChangedFilesState } from "./changedFilesState";
-import { handleControllerMessage } from "./controllerMessageHandler";
 import {
     HubState,
     HubStateContext,
@@ -55,7 +53,7 @@ export class ChatController {
 
     private readonly changed = new ChangedFilesState();
     private readonly queue = new ChatQueue();
-    // Replayable and persisted render stream.
+    // Persisted internal event stream; AHP owns client reconstruction.
     private readonly stream = new RenderStream((m) => this.persistEmit(m));
 
     private readonly persistState = { count: 0 };
@@ -204,28 +202,8 @@ export class ChatController {
             .join("\n\n");
     }
 
-    get attached(): boolean {
-        return this.stream.hasSink;
-    }
     getSession(): AgentSession | undefined {
         return this.session;
-    }
-
-    /** Binds this controller to one webview sink and replays its render log. */
-    attach(sink: (message: unknown) => void): () => void {
-        // A reattached busy controller may need its watchdog rearmed.
-        if (this.live.busy && !this.runner.watching) {
-            this.runner.armWatchdog();
-        }
-        const detach = this.stream.bindSink(sink);
-        // Edited-file approval state is separate from the replay log.
-        this.emitChanged();
-        // The replayed log's queue rows are a historical record; the live queue
-        // is the truth. A panel bound after the last emitQueue — session switch,
-        // window reload, reattach to a running controller — would otherwise keep
-        // showing rows that are no longer pending until the queue next changed.
-        this.stream.toSink(this.queueSnapshot());
-        return detach;
     }
 
     subscribe(observer: (message: unknown) => void): () => void {
@@ -233,13 +211,13 @@ export class ChatController {
     }
     subscribeLive(observer: (message: unknown) => void): () => void {
         const detach = this.stream.addLiveObserver(observer);
-        // The AHP shadow attaches here, and it may be restoring a ChatState
+        // The AHP projection attaches here, and it may be restoring a ChatState
         // persisted across a restart whose queue rows this controller has no
         // idea about. Live observers get no replay, so without an immediate
         // snapshot nothing ever contradicts those rows and they stay in the
-        // Queued panel forever. Same authority as attach()'s toSink push,
-        // which only reaches webview sinks (unused on the AHP transport).
+        // Queued panel forever.
         observer(this.queueSnapshot());
+        observer({ type: "changed-files", items: this.changedItemsRaw() });
         return detach;
     }
     private emit(message: unknown): void {
@@ -304,25 +282,12 @@ export class ChatController {
         );
     }
 
-    async handleMessage(message: WebviewToHost): Promise<boolean> {
-        return handleControllerMessage(
-            message,
-            {
-                busy: () => this.live.busy,
-                cancel: () => this.session?.cancel(),
-                continueTurn: () => void this.client.continueTurn(),
-                queue: this.queue,
-                stream: this.stream,
-                emitQueue: () => this.emitQueue(),
-                dispatch: (queued) => {
-                    void this.runner.dispatch(queued);
-                },
-                onSend: (pending, mode) => this.onSend(pending, mode),
-                resolveApproval: (toolId, approved) =>
-                    this.session?.resolveApproval?.(toolId, approved),
-            },
-            this.ports.files,
-        );
+    async pickAttachments(): Promise<Array<{ path: string; name: string }>> {
+        return this.ports.files.pickFiles({
+            many: true,
+            label: "Attach",
+            title: "Attach files to the message",
+        });
     }
 
     private onSend(msg: PendingMessage, mode: SendMode): void {
@@ -368,7 +333,7 @@ export class ChatController {
     }
 
     private emitChanged(): void {
-        this.stream.toSink({ type: "changed-files", items: this.changedItemsRaw() });
+        this.stream.notify({ type: "changed-files", items: this.changedItemsRaw() });
     }
 
     changedPaths(): string[] {

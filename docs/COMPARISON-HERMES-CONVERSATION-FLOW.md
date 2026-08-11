@@ -2,6 +2,10 @@
 
 Status: análise e plano; nenhuma mudança funcional foi implementada por este documento.
 
+> Nota de 2026-08-11: esta é uma fotografia histórica. A migração AHP posterior
+> removeu o handler direto da UI e tornou `symposium/messageSubmitted` o único
+> comando de submissão; veja [Agent Host Protocol adoption](AHP-ADOPTION.md).
+
 Data da análise: 2026-07-27.
 
 ## Escopo e versões analisadas
@@ -163,7 +167,10 @@ Depois, o summary sintético usa `developer` quando suportado. A primeira compac
 - o mesmo texto entra novamente como `user`;
 - `runner.run()` inicia outro `turnNo`.
 
-O `clientMessageId` de [`src/ui/webview/composer.ts`](../src/ui/webview/composer.ts) serve para reconciliar a mensagem otimista na UI. [`src/ui/controllerMessageHandler.ts`](../src/ui/controllerMessageHandler.ts) não mantém um índice de IDs aceitos e não rejeita duplicatas.
+À época, o `clientMessageId` de
+[`src/ui/webview/composer.ts`](../src/ui/webview/composer.ts) servia somente para
+reconciliar a mensagem otimista, enquanto o handler direto não mantinha um
+índice de IDs aceitos. Esse caminho foi removido pela migração AHP.
 
 Logo, não existe a semântica:
 
@@ -799,4 +806,3 @@ authorized writes = [...]
 ```
 
 Não se deve pedir ao modelo que descubra, entre múltiplas mensagens `developer` contraditórias, qual intenção o produto realmente queria executar.
-

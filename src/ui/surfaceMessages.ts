@@ -66,6 +66,13 @@ export class SurfaceMessages {
                     }
                     return;
                 }
+                case "pick-attachments": {
+                    const picked = await this.d.getController()?.pickAttachments();
+                    if (picked?.length) {
+                        this.d.post({ type: "attachments-picked", files: picked });
+                    }
+                    return;
+                }
                 case "attach-browser-page": {
                     await this.d.sync.attachBrowserPage();
                     return;
@@ -313,10 +320,13 @@ export class SurfaceMessages {
                         // then deliver this message to it.
                         this.d.dialogues.startDefaultDialogue();
                     }
-                    if (this.d.ahp?.handleMessage(message)) {
+                    if (this.d.ahp.handleMessage(message)) {
                         return;
                     }
-                    await this.d.getController()?.handleMessage(message);
+                    if (isAhpControllerMessage(message)) {
+                        throw new Error("AHP session is unavailable");
+                    }
+                    return;
                 }
             }
         } catch (error) {
@@ -338,4 +348,17 @@ export class SurfaceMessages {
             });
         }
     }
+}
+
+function isAhpControllerMessage(message: WebviewToHost): boolean {
+    return (
+        message.type === "send" ||
+        message.type === "cancel" ||
+        message.type === "continue" ||
+        message.type === "queue-remove" ||
+        message.type === "queue-edit" ||
+        message.type === "queue-promote" ||
+        message.type === "queue-clear" ||
+        message.type === "approval-response"
+    );
 }

@@ -9,7 +9,7 @@ export * from "./persistence";
 export * from "./projectAgentEvent";
 export * from "./projectControllerState";
 export * from "./restoredState";
-export * from "./shadowRuntime";
+export * from "./projectionRuntime";
 export * from "./status";
 export * from "./wireProtocol";
 export * from "./webSocketServer";

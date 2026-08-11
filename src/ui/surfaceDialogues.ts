@@ -4,7 +4,7 @@ import { readWorkspaceBootstrap } from "../config/root";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
 import type { WebviewToHost } from "../protocol/chat";
 import { restartFromMessage, retryLastMessage, editResend } from "./surfaceBranching";
-import { handleControllerEvent, handleControllerSideEffect } from "./surfaceDialoguesAttach";
+import { handleControllerSideEffect } from "./surfaceDialoguesAttach";
 import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import { DEFAULT_BUSY_SEND_MODE } from "../protocol/sendMode";
 import { canonicalReasoning } from "../adapters/reasoning";
@@ -256,12 +256,11 @@ export class SurfaceDialogues {
         // A persisted terminal outcome belongs to the previous interaction.
         // Opening/resuming the session acknowledges it; only a failure from the
         // current controller should produce the live red status indicator.
-        // Restore the exact visual for a reopened session: seed the render log
-        // (replayed when the sink binds below) so tool rows, diffs, status notices
-        // and panels reappear — not just text. Skips lossy history reconstruction.
+        // Restore persisted internal events before rebuilding the authoritative
+        // AHP projection for a reopened session.
         const seededVisual = !existing && !!options.resumeSessionId && controller.seedRenderLog();
         if (seededVisual && controller.sessionKey) {
-            this.d.deps.ahp?.rebuild(backend, controller.sessionKey);
+            this.d.deps.ahp.rebuild(backend, controller.sessionKey);
         }
         this.d.setController(controller);
         void this.d.sync.refreshTasks(); // load this session's tasks into the panel
@@ -338,41 +337,33 @@ export class SurfaceDialogues {
                 .get<string>("shellExecution", "silent"),
         });
         this.d.activateUsage(adapter);
-        const ahpDetach = this.d.bindAhp?.(backend, controller);
-        if (ahpDetach) {
-            const sideEffectDetach = controller.subscribeLive((message) =>
-                handleControllerSideEffect(this.d, backend, message),
-            );
-            this.d.setControllerDetach(() => {
-                sideEffectDetach();
-                ahpDetach();
-            });
-        } else {
-            this.d.setControllerDetach(
-                controller.attach((message) => handleControllerEvent(this.d, backend, message)),
-            );
-        }
+        const ahpDetach = this.d.bindAhp(backend, controller);
+        const sideEffectDetach = controller.subscribeLive((message) =>
+            handleControllerSideEffect(this.d, backend, message),
+        );
+        this.d.setControllerDetach(() => {
+            sideEffectDetach();
+            ahpDetach?.();
+        });
         if (!existing && info && (!seededVisual || ahpDetach)) {
             // In AHP mode the webview renders ChatState.turns, which are only
             // populated by the {type:"history"} envelope that loadHistory emits
-            // (shadowRuntime.onMessage → chat/turnsLoaded). The seededVisual
-            // render-log replay feeds the legacy non-AHP sink but does NOT
-            // produce a history envelope for the shadow runtime, so AHP sessions
+            // (projectionRuntime.onMessage → chat/turnsLoaded). The seeded visual
+            // log does not produce a history envelope for the AHP runtime, so sessions
             // opened with a persisted render log would otherwise show no turns.
             //
-            // Re-sync the shadow runtime so the just-created controller appears
+            // Re-sync the projection runtime so the just-created controller appears
             // in source.list() and gets an AHP record before the history
-            // envelope is emitted — otherwise the shadow has no observer and the
+            // envelope is emitted — otherwise the projection has no observer and the
             // turns are silently dropped.
-            this.d.deps.ahp?.sync();
+            this.d.deps.ahp.sync();
             void controller.loadHistory(info).finally(() => {
                 if (generation === this.generation) {
                     this.d.post({ type: "history-end" });
                 }
             });
         } else if (historyPending) {
-            // Existing controllers and persisted visual logs replay
-            // synchronously during attach(), so their tail is ready now.
+            // Existing controllers already have an AHP snapshot, so their tail is ready now.
             this.d.post({ type: "history-end" });
         }
         if (options.resumeSessionId) {

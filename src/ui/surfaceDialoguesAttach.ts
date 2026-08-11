@@ -2,23 +2,14 @@ import { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import { completedTaskIds } from "../sync/taskUi";
 
 /**
- * The controller-attach callback for a live dialogue: filters the raw
+ * The controller observer callback for a live dialogue: filters the raw
  * edited-files set against git status, captures a freshly-assigned session id
  * as "last active", repaints guardrails/tasks the moment a session-mutating
  * tool finishes, and re-mirrors the working tree at turn-end. Extracted out of
  * `SurfaceDialogues.openDialogue` (check:size) — same closure semantics via an
  * explicit `d`/`backend` pair instead of captured `this`.
  */
-export function handleControllerEvent(
-    d: SurfaceDialoguesDeps,
-    backend: string,
-    message: unknown,
-): void {
-    if (handleControllerSideEffect(d, backend, message)) return;
-    d.post(message);
-}
-
-/** Applies local-only side effects without forwarding legacy render output. */
+/** Applies surface-only effects without forwarding chat render output. */
 export function handleControllerSideEffect(
     d: SurfaceDialoguesDeps,
     backend: string,

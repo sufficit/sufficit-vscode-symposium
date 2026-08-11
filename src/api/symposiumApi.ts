@@ -51,7 +51,7 @@ export type ApiSendOptions = Omit<PendingMessage, "text" | "clientMessageId" | "
  * Stable, transport-agnostic facade over Symposium's session control, chat
  * stream and local agent knowledge. Exposed in two ways:
  *   - in-process: returned from activate() as the extension's `exports`;
- *   - remotely:   re-published 1:1 by the opt-in HTTP+SSE bridge.
+ *   - remotely:   projected through the opt-in AHP bridge.
  *
  * It deliberately knows nothing about webviews or HTTP — both transports call
  * the same methods, so remote control and local UI stay in lock-step.
@@ -66,7 +66,7 @@ export interface SymposiumApi {
         status(id: string): SessionStatus | undefined;
         /**
          * Starts a new headless session on a backend. Returns an address (the
-         * registry key) usable with send/follow/interrupt immediately, before
+         * registry key) usable by in-process control and AHP projection immediately, before
          * the backend reports its own session id. When `tools` are given, their
          * vault secrets are resolved and injected into the process env at spawn.
          */
@@ -99,9 +99,10 @@ export interface SymposiumApi {
         reorderQueued(id: string, order: readonly string[]): boolean;
         resolveApproval(id: string, toolId: string, approved: boolean): boolean;
         /**
-         * Follows a session's render stream (history + live events). Replays the
-         * backlog to the observer, then streams new messages. Returns an
-         * unsubscribe function, or undefined if the session is unknown.
+         * Internal projection feed for one session (history + live events).
+         * Replays the backlog to the observer, then streams new messages. This
+         * is not exposed as a remote chat transport. Returns an unsubscribe
+         * function, or undefined if the session is unknown.
          */
         follow(id: string, observer: (message: unknown) => void): (() => void) | undefined;
     };

@@ -1,8 +1,8 @@
 # Sufficit Relay Protocol — Public access to Symposium without Tailscale
 
-Status: **specification** — the extension client (`src/net/relayClient.ts`) is
-implemented; the gateway server side (`ai.sufficit.com.br`) is the prerequisite
-described here.
+Status: **HTTP relay implemented; AHP WebSocket tunnelling pending**. The
+extension HTTP client (`src/net/relayClient.ts`) is implemented; the gateway
+server side and bidirectional WebSocket multiplexing are prerequisites.
 
 ## Goal
 
@@ -113,14 +113,14 @@ Sent immediately after the WS opens. The gateway responds with `registered`.
 }
 ```
 
-#### `response-chunk` (streaming HTTP response — SSE)
+#### `response-chunk` (streaming HTTP response)
 ```json
 { "type": "response-chunk", "id": "<request-uuid>", "chunk": "data: hello\n\n" }
 { "type": "response-chunk", "id": "<request-uuid>", "chunk": "", "done": true }
 ```
-For streaming responses (SSE `/sessions/:id/follow`), the extension sends an
-initial `response` with `"stream": true`, then a series of `response-chunk`
-messages, and a final `response-chunk` with `"done": true`.
+For a streaming HTTP response, the extension sends an initial `response` with
+`"stream": true`, then `response-chunk` messages and a final chunk with
+`"done": true`. Chat no longer uses this path.
 
 #### `heartbeat`
 ```json
@@ -151,7 +151,7 @@ extension uses this URL to build the QR code.
   "body": ""
 }
 ```
-The `path` is relative to the bridge root (e.g. `/pwa/`, `/sessions/:id/send`).
+The `path` is relative to the bridge root (e.g. `/pwa/`, `/backends`).
 The extension proxies this to `http://127.0.0.1:<bridgePort><path>` and sends
 back a `response` (or `response-chunk` stream).
 
@@ -182,7 +182,7 @@ back a `response` (or `response-chunk` stream).
 
 - **Client**: `src/net/relayClient.ts` — `RelayClient` class with reconnect
   (exponential backoff up to 60s), heartbeat (25s), and HTTP proxy via `fetch`
-  to the local bridge. SSE streams are relayed chunk-by-chunk.
+  to the local bridge.
 - **Registration**: `src/sync/hubClient.ts` — `registerRelay(machineId)` calls
   `POST /api/symposium/relay/register`.
 - **Integration**: `src/api/bridge.ts` — `startRelay()` called after the bridge
@@ -203,3 +203,6 @@ back a `response` (or `response-chunk` stream).
 - [ ] Heartbeat: treat any message as alive; close after 60s silence
 - [ ] `machineId` isolation: one WS connection per machineId; route by path prefix
 - [ ] 503 when no connection registered for the requested `machineId`
+- [ ] Multiplex browser WebSocket open/frame/close messages to local `/ahp`,
+      including `Sec-WebSocket-Protocol`; until this exists, the AHP PWA works
+      through direct/tailnet Bridge URLs but not through the public relay.

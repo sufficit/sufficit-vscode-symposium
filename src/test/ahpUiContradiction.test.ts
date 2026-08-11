@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatState } from "@microsoft/agent-host-protocol";
-import { AhpShadowRuntime, type AhpShadowSessionInfo } from "../ahp";
-import { ahpChatToLegacy } from "../ahp/client/legacyView";
-import type { HostToWebview } from "../protocol/chat";
+import { AhpProjectionRuntime, type AhpProjectionSessionInfo } from "../ahp";
+import { selectPendingMessages } from "../ahp/client/chatSelectors";
 
 /**
- * Reproduces what the user actually sees, using the REAL shadow runtime and
- * the real legacy translation — the layer every previous suite skipped.
+ * Reproduces the state the direct AHP presentation consumes, using the real
+ * projection runtime rather than a parallel render-message translation.
  *
  * The reported defect is a UI contradiction: one message rendered as a
  * transcript bubble AND listed in the Queued panel at the same time. It is
@@ -24,7 +23,7 @@ const TEXT = "o symposium possui api";
 const CLIENT_ID = "local-msnq-1";
 const TURN_ID = "codex-session/turn-1";
 
-const INFO: AhpShadowSessionInfo = {
+const INFO: AhpProjectionSessionInfo = {
     backend: "codex",
     sessionId: "codex-session",
     title: "Contradiction",
@@ -51,47 +50,42 @@ const HOST_MESSAGES: unknown[] = [
 ];
 
 interface Harness {
-    shadow: AhpShadowRuntime;
+    projection: AhpProjectionRuntime;
     chatResource: string;
     emit(message: unknown): void;
     dispatchOptimistic(): void;
-    legacy(): HostToWebview[];
+    state(): ChatState;
 }
 
 function harness(): Harness {
     let observer: ((message: unknown) => void) | undefined;
-    const shadow = new AhpShadowRuntime({
+    const projection = new AhpProjectionRuntime({
         list: () => [INFO],
         follow: (_id, next) => {
             observer = next;
             return () => undefined;
         },
     });
-    shadow.sync();
-    const handle = shadow.runtime.sessionByNative(INFO.backend, INFO.sessionId);
-    assert.ok(handle, "the shadow registered the session");
+    projection.sync();
+    const handle = projection.runtime.sessionByNative(INFO.backend, INFO.sessionId);
+    assert.ok(handle, "the projection registered the session");
     return {
-        shadow,
+        projection,
         chatResource: handle.chatResource,
         emit: (message) => observer?.(message),
-        dispatchOptimistic: () => shadow.runtime.dispatch(handle.chatResource, optimisticRow()),
-        legacy: () =>
-            ahpChatToLegacy(shadow.runtime.snapshot(handle.chatResource).state as ChatState),
+        dispatchOptimistic: () => projection.runtime.dispatch(handle.chatResource, optimisticRow()),
+        state: () => projection.runtime.snapshot(handle.chatResource).state as ChatState,
     };
 }
 
 /** What the panel and the transcript would show, straight off the rebuild the
  *  webview consumes. */
-function rendered(messages: HostToWebview[]): { bubbles: number; queued: string[] } {
-    const bubbles = messages.filter(
-        (message) => message.type === "user" && (message as { text?: string }).text === TEXT,
-    ).length;
-    const last = [...messages].reverse().find((message) => message.type === "queue") as
-        | { items?: { text?: string }[] }
-        | undefined;
+function rendered(chat: ChatState): { bubbles: number; queued: string[] } {
+    const turns = [...chat.turns, ...(chat.activeTurn ? [chat.activeTurn] : [])];
+    const bubbles = turns.filter((turn) => turn.message.text === TEXT).length;
     return {
         bubbles,
-        queued: (last?.items ?? []).map((item) => String(item.text)),
+        queued: selectPendingMessages(chat).map((item) => item.text),
     };
 }
 
@@ -109,7 +103,7 @@ for (const position of POSITIONS) {
             if (index < HOST_MESSAGES.length) h.emit(HOST_MESSAGES[index]);
         }
 
-        const view = rendered(h.legacy());
+        const view = rendered(h.state());
         assert.equal(view.bubbles, 1, "the message renders once in the transcript");
         assert.deepEqual(
             view.queued,
@@ -135,7 +129,7 @@ test("an idle host with an empty queue leaves no pending row behind", () => {
     h.emit({ type: "queue", items: [], held: false, busy: false });
 
     assert.deepEqual(
-        rendered(h.legacy()).queued,
+        rendered(h.state()).queued,
         [],
         "the host reported an empty queue while idle — nothing may still be listed",
     );
@@ -153,5 +147,5 @@ test("a message the host really queued stays in the panel", () => {
         busy: true,
     });
 
-    assert.deepEqual(rendered(h.legacy()).queued, [TEXT], "real pending work is still shown");
+    assert.deepEqual(rendered(h.state()).queued, [TEXT], "real pending work is still shown");
 });

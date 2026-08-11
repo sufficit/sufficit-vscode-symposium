@@ -4,8 +4,8 @@ import * as path from "path";
  * Server-side policy that gates the remote bridge's dangerous surface.
  *
  * The bearer token proves "a known client is calling", NOT "this call is safe":
- * `POST /sessions` spawns an agent CLI in an arbitrary cwd, `/vscode/lmtool`
- * can invoke terminal-capable tools, `/vault/resolve` returns secrets, and
+ * AHP can spawn an agent CLI in an arbitrary cwd, `/vscode/lmtool` can invoke
+ * terminal-capable tools, `/vault/resolve` returns secrets, and
  * `/backends/:b/executable` rewrites the spawn binary. Holding the token must
  * not equal remote code execution + full vault exfiltration, so every one of
  * those is additionally constrained here.

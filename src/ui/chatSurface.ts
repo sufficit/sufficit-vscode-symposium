@@ -39,7 +39,7 @@ export class ChatSurface {
     });
 
     private readonly disposables: vscode.Disposable[] = [];
-    private readonly ahpPort: AhpMessagePortTransport | undefined;
+    private readonly ahpPort: AhpMessagePortTransport;
     private readonly changedFiles = new ChangedFilesManager(
         {
             post: (m) => this.post(m),
@@ -105,12 +105,11 @@ export class ChatSurface {
             setControllerDetach: (detach) => {
                 this.controllerDetach = detach;
             },
-            bindAhp: this.ahpPort
-                ? (backend, controller) => {
-                      const sessionId = controller.sessionKey ?? controller.sessionId;
-                      return sessionId ? this.ahpPort?.bind(backend, sessionId) : undefined;
-                  }
-                : undefined,
+            bindAhp: (backend, controller) => {
+                const sessionId = controller.sessionKey ?? controller.sessionId;
+                return sessionId ? this.ahpPort.bind(backend, sessionId) : undefined;
+            },
+            dispatchAhp: (message) => this.ahpPort.handleMessage(message),
             onSessionCreated: (sessionId) => this.onSessionCreated?.(sessionId),
             setTerminalSession: (t) => {
                 this.terminalSession = t;
@@ -392,7 +391,7 @@ export class ChatSurface {
         // survive the view/panel being closed.
         this.detachActive();
         this.quota.dispose();
-        this.ahpPort?.dispose();
+        this.ahpPort.dispose();
         this.disposables.forEach((d) => d.dispose());
         this.disposables.length = 0;
     }

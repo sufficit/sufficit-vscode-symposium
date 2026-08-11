@@ -32,5 +32,5 @@ export interface SurfaceMessagesDeps {
     handoff: BackendHandoff;
     changedFiles: ChangedFilesManager;
     hub: HubClient;
-    ahp?: AhpMessagePortTransport;
+    ahp: AhpMessagePortTransport;
 }

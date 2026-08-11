@@ -11,7 +11,7 @@ export type { DiagnoseResult, DiagnoseStep } from "../voice/sttDiagnostic";
 
 /**
  * Handles the voice-setup diagnostic webview messages for a live ConfigPanel.
- * Mirrors the controllerMessageHandler precedent: returns true when handled.
+ * Follows the free-function handler pattern: returns true when handled.
  */
 export async function handleVoiceMessage(
     _message: ConfigMessage,
