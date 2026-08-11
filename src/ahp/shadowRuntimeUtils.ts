@@ -37,5 +37,5 @@ export function redact(value: string): string {
             /(authorization|cookie|secret|token|credential)\s*[:=]\s*[^;,}\s]+/gi,
             "$1=[redacted]",
         )
-        .slice(0, 1_000);
+        .slice(0, 8_000);
 }

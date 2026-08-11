@@ -47,7 +47,11 @@ export function registerExtensionAhpRuntime(
             });
             shadow = new AhpShadowRuntime(
                 { list: api.sessions.list, follow: api.sessions.follow },
-                { restored: persistence.load(), persistence },
+                {
+                    restored: persistence.load(),
+                    persistence,
+                    onDiagnostic: (message) => log(`[ahp] ${message}`),
+                },
             );
         }
         shadow.sync();

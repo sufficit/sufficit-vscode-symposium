@@ -54,6 +54,8 @@ export interface AhpShadowOptions {
     persistence?: AhpPersistence;
     replayCapacity?: number;
     maxDiagnostics?: number;
+    /** Reports a mismatch immediately; the periodic dump buries and truncates it. */
+    onDiagnostic?: (message: string) => void;
 }
 
 interface ShadowRecord {
@@ -313,11 +315,8 @@ export class AhpShadowRuntime {
         }
     }
 
-    /**
-     * The host reported an empty queue but rows are still listed: the exact
-     * shape of the ghost row (idle agent, message never sent, row stays). Names
-     * the ids so the producer can be identified instead of guessed at.
-     */
+    /** Host queue empty but rows still listed — the ghost row's exact shape.
+     *  Names the ids so the producer is identified rather than guessed at. */
     private reportStrandedPending(key: string, record: ShadowRecord, hostQueued: number): void {
         if (hostQueued > 0) return;
         const chat = this.runtime.snapshot(record.handle.chatResource).state as ChatState;
@@ -394,5 +393,8 @@ export class AhpShadowRuntime {
             detail: redact(detail),
         });
         if (this.recent.length > this.maximumDiagnostics) this.recent.shift();
+        if (category === "queue") {
+            this.options.onDiagnostic?.(`queue mismatch ${session}: ${detail}`);
+        }
     }
 }
