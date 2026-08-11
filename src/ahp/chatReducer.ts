@@ -118,25 +118,48 @@ export function chatReducer(state: ChatState, raw: StateAction): ChatState {
 
 function startTurn(state: ChatState, action: ActionRecord): ChatState {
     const turnId = String(action.turnId ?? "");
-    if (!turnId || state.activeTurn) return state;
+    if (!turnId) return state;
     const queuedId = optionalString(action.queuedMessageId);
     const queuedMessages = queuedId
         ? state.queuedMessages?.filter((item) => item.id !== queuedId)
         : state.queuedMessages;
+    const message = action.message as Message;
+    // A stuck activeTurn (missed turnComplete) must never cause this
+    // turnStarted to be dropped whole — that leaves an immortal fake queue
+    // row while the user bubble still renders. Supersede: finalize the stuck
+    // turn as cancelled (no duration, it never actually finished) and start
+    // the new one.
+    const turns = state.activeTurn
+        ? [...state.turns, finalizeTurn(state.activeTurn, "cancelled", undefined, undefined)]
+        : state.turns;
     return {
         ...state,
+        turns,
         activeTurn: {
             id: turnId,
             startedAt: String(action.startedAt ?? new Date().toISOString()),
-            message: action.message as Message,
+            message,
             responseParts: [],
             usage: undefined,
         },
         draft: undefined,
         queuedMessages: queuedMessages?.length ? queuedMessages : undefined,
+        steeringMessage: clearSteering(state.steeringMessage, queuedId, message),
         status: replaceActivityStatus(state.status, AHP_STATUS.inProgress),
         modifiedAt: new Date().toISOString(),
     };
+}
+
+/** Clears a steering pending row once its turn has started (by id, or by
+ *  text when the queuedMessageId was lost in transit). */
+function clearSteering(
+    steering: PendingMessage | undefined,
+    queuedId: string | undefined,
+    message: Message | undefined,
+): PendingMessage | undefined {
+    if (!steering) return undefined;
+    if (queuedId) return steering.id === queuedId ? undefined : steering;
+    return message?.text === steering.message?.text ? undefined : steering;
 }
 
 function appendPart(state: ChatState, action: ActionRecord): ChatState {
@@ -210,19 +233,48 @@ function endTurn(
 ): ChatState {
     const active = state.activeTurn;
     if (!active || active.id !== action.turnId) return state;
-    const turn = {
-        ...active,
-        duration: nonNegative(action.duration),
-        state: turnState,
-        error: turnState === "error" ? action.error : undefined,
-    } as Turn;
-    return {
+    const turn = finalizeTurn(active, turnState, nonNegative(action.duration), action.error);
+    const next: ChatState = {
         ...state,
         turns: [...state.turns, turn],
         activeTurn: undefined,
         activity: undefined,
         status: replaceActivityStatus(state.status, status),
         modifiedAt: new Date().toISOString(),
+    };
+    // Ghost sweep: turnComplete/turnCancelled prune any pending row left
+    // behind with the same text as the turn that just finished. chat/error
+    // is excluded — an errored turn's message may legitimately get re-queued.
+    return turnState === "error" ? next : pruneGhosts(next, active.message.text);
+}
+
+function finalizeTurn(
+    active: NonNullable<ChatState["activeTurn"]>,
+    turnState: "complete" | "cancelled" | "error",
+    duration: number | undefined,
+    error: unknown,
+): Turn {
+    return {
+        ...active,
+        duration,
+        state: turnState,
+        error: turnState === "error" ? error : undefined,
+    } as Turn;
+}
+
+/** Removes pending rows (queued or steering) whose text matches a turn that
+ *  already started/finished — an optimistic row that missed its normal
+ *  cleanup path. Conservative: exact text match only. */
+function pruneGhosts(state: ChatState, finalizedText: string): ChatState {
+    const queuedMessages = state.queuedMessages?.filter(
+        (item) => item.message.text !== finalizedText,
+    );
+    const steeringMessage =
+        state.steeringMessage?.message?.text === finalizedText ? undefined : state.steeringMessage;
+    return {
+        ...state,
+        queuedMessages: queuedMessages?.length ? queuedMessages : undefined,
+        steeringMessage,
     };
 }
 

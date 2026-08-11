@@ -84,30 +84,56 @@ function startTurn(state: AhpProjectionState, logicalTurnId: string): AhpProject
     state.reasoningPartId = undefined;
     state.failed = false;
     state.tools.clear();
-    const pending = state.pendingUser ?? { text: "" };
+    // No pendingUser: this turn-start had no preceding user emit (retry,
+    // continue-after-tool-cap) — synthesize an empty, marked message instead
+    // of replaying a stale slot from an earlier turn.
+    const pending = state.pendingUser;
     state.pendingUser = undefined;
+    const synthetic = !pending;
     actions.push({
         channel: "chat",
         action: {
             type: "chat/turnStarted",
             turnId: logicalTurnId,
-            queuedMessageId: pending.id,
+            queuedMessageId: pending?.id,
             startedAt: new Date(state.startedAt).toISOString(),
             message: {
-                text: pending.text,
+                text: pending?.text ?? "",
                 origin: { kind: "user" },
-                model: pending.model ? { id: pending.model } : undefined,
-                attachments: pending.attachments?.map((path, index) => ({
+                model: pending?.model ? { id: pending.model } : undefined,
+                attachments: pending?.attachments?.map((path, index) => ({
                     kind: "simple",
                     id: `${logicalTurnId}-attachment-${index + 1}`,
                     representation: "path",
                     value: path,
                 })),
+                ...(synthetic ? { _meta: { synthetic: true } } : {}),
             },
         },
     });
     actions.push(...activity("Thinking"));
     return actions;
+}
+
+// A mid-turn steer has no turn-start following it, so it lands in the
+// response stream directly instead of via startTurn. [] when no live turn —
+// the caller falls back to rememberProjectedUser for the next turn-start.
+export function projectInjectedUser(
+    state: AhpProjectionState,
+    text: string,
+    clientMessageId: string | undefined,
+): AhpProjectionAction[] {
+    if (!state.turnId) return [];
+    return [
+        chatAction("chat/responsePart", state.turnId, {
+            part: {
+                kind: "user-echo",
+                id: partId(state, "user-echo"),
+                content: text,
+                _meta: { clientMessageId },
+            },
+        }),
+    ];
 }
 
 function projectText(state: AhpProjectionState, text: string): AhpProjectionAction[] {
@@ -363,6 +389,9 @@ function resetTurn(state: AhpProjectionState): void {
     state.textPartId = undefined;
     state.reasoningPartId = undefined;
     state.tools.clear();
+    // A mid-turn steer is echoed live by projectInjectedUser; leaving it here
+    // would wrongly seed the *next* unrelated turn-start.
+    state.pendingUser = undefined;
 }
 
 function safeMeta(values: Record<string, unknown>): Record<string, unknown> | undefined {

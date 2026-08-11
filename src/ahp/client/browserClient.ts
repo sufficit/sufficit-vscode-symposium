@@ -171,7 +171,9 @@ export class BrowserAhpClient {
 
     private apply(envelope: ActionEnvelope): void {
         this.officialMirror.apply(envelope);
-        if (this.state.apply(envelope)) this.options.onAction?.(envelope);
+        // Only a reduced envelope actually changed local state — a rejected
+        // one must not trigger a re-render (see SymposiumAhpState.apply).
+        if (this.state.apply(envelope) === "reduced") this.options.onAction?.(envelope);
     }
 
     private applySnapshot(snapshot: Parameters<SymposiumAhpState["applySnapshot"]>[0]): void {

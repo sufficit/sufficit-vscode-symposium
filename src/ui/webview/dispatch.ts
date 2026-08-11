@@ -82,6 +82,7 @@ type DispatchMessage = HostToWebview &
         items?: never[];
         held?: boolean;
         busy?: boolean;
+        stale?: string[];
         attachments?: string[];
         message: HistoryMessage;
         clientMessageId?: string;
@@ -243,6 +244,13 @@ export function handleHostMessage(payload: unknown): void {
             const items = (data.items || []) as unknown as QueueItem[];
             for (const it of items) {
                 withdrawOptimisticMessage(it.clientMessageId);
+            }
+            // A rejected send never entered the real queue, so its id is
+            // never among `items` above — the rejection fallback (see
+            // legacyView.rejectedEnvelopeFallback) lists it here explicitly
+            // so its ghost optimistic bubble still gets cleared.
+            for (const id of data.stale ?? []) {
+                withdrawOptimisticMessage(id);
             }
             renderQueued(items, !!data.held);
             // The host is authoritative on busy; this "queue" message always

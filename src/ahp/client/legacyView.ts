@@ -90,18 +90,36 @@ export function ahpChatToLegacy(chat: ChatState): HostToWebview[] {
             });
         }
     }
-    if (chat.queuedMessages) {
-        output.push({
-            type: "queue",
-            items: chat.queuedMessages.map((item) => ({
-                id: item.id,
-                clientMessageId: item.id,
-                text: item.message.text,
-                attachments: [],
-            })),
-        });
+    if (chat.queuedMessages || chat.steeringMessage) {
+        // `held` (the "turn before it failed" banner) isn't modeled in AHP's
+        // ChatState yet — TODO: thread it through once the host projects it.
+        output.push({ type: "queue", items: queueItems(chat), busy: !!chat.activeTurn });
     }
     return output;
+}
+
+/** Queue rebuild for the legacy webview: the steering row (if any) always
+ *  leads, since the host queue holds it at the head. */
+export function queueItems(chat: ChatState): Record<string, unknown>[] {
+    const steering = chat.steeringMessage;
+    const head = steering
+        ? [
+              {
+                  id: steering.id,
+                  clientMessageId: steering.id,
+                  text: steering.message.text,
+                  attachments: [],
+                  mode: "steer",
+              },
+          ]
+        : [];
+    const rest = (chat.queuedMessages ?? []).map((item) => ({
+        id: item.id,
+        clientMessageId: item.id,
+        text: item.message.text,
+        attachments: [],
+    }));
+    return [...head, ...rest];
 }
 
 export function ahpActionToLegacy(
@@ -216,18 +234,9 @@ export function ahpActionToLegacy(
         case "chat/pendingMessageSet":
         case "chat/pendingMessageRemoved":
         case "chat/queuedMessagesReordered":
+            // `held` isn't modeled in AHP's ChatState yet — see the TODO above.
             return chat
-                ? [
-                      {
-                          type: "queue",
-                          items: (chat.queuedMessages ?? []).map((item) => ({
-                              id: item.id,
-                              clientMessageId: item.id,
-                              text: item.message.text,
-                              attachments: [],
-                          })),
-                      },
-                  ]
+                ? [{ type: "queue", items: queueItems(chat), busy: !!chat.activeTurn }]
                 : [];
         case "chat/turnsLoaded": {
             // Paginated history prepend. The reducer has already prepended the
@@ -347,4 +356,41 @@ function attachmentValues(value: unknown): string[] {
         const record = item as { value?: unknown };
         return typeof record.value === "string" ? [record.value] : [];
     });
+}
+
+/**
+ * Legacy fallback for a client action the host rejected. `chat` is still the
+ * PRE-rejection state (AhpStateStore.dispatch never mutates state for a
+ * rejection, and SymposiumAhpState.apply mirrors that), so it must not be
+ * fed through ahpActionToLegacy — that would render UI for a mutation that
+ * never happened (a fake turn-end, a dropped approval card, ...).
+ *
+ * Only chat/pendingMessageSet needs an explicit correction: the composer
+ * already rendered an optimistic bubble for it (src/ui/webview/composer.ts),
+ * and nothing else will ever withdraw it. Every other rejected action type
+ * has no client-side optimistic UI to undo, so the fallback is silence.
+ */
+export function rejectedEnvelopeFallback(
+    envelope: ActionEnvelope,
+    chat: ChatState | undefined,
+): HostToWebview[] {
+    const action = envelope.action as unknown as Record<string, unknown>;
+    if (action.type !== "chat/pendingMessageSet") return [];
+    const reason =
+        typeof envelope.rejectionReason === "string" ? envelope.rejectionReason : "unknown reason";
+    const toast: HostToWebview = { type: "toast", text: `Message rejected: ${reason}` };
+    if (!chat) return [toast];
+    const id = typeof action.id === "string" ? action.id : undefined;
+    // The rejected id never entered the real queue, so it won't be among
+    // `items` below — list it under `stale` so dispatch.ts's withdraw loop
+    // still clears the ghost optimistic bubble for it.
+    return [
+        {
+            type: "queue",
+            items: queueItems(chat),
+            busy: !!chat.activeTurn,
+            stale: id ? [id] : [],
+        },
+        toast,
+    ];
 }

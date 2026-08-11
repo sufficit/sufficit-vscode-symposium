@@ -13,6 +13,21 @@ export function createQueueProjectionState(): QueueProjectionState {
     return { ids: new Map() };
 }
 
+/**
+ * Fills a fresh QueueProjectionState from a chat snapshot that already
+ * carries queuedMessages/steeringMessage (persisted across a restart, or
+ * carried over from an existing record on re-attach). Without this, the
+ * projection's id map starts empty even though the reducer-side rows still
+ * exist, so a later empty host queue never emits pendingMessageRemoved for
+ * them and they strand permanently in ChatState.
+ */
+export function seedQueueProjection(state: QueueProjectionState, chat: ChatState): void {
+    if (chat.steeringMessage?.id) state.ids.set(chat.steeringMessage.id, "steering");
+    for (const item of chat.queuedMessages ?? []) {
+        if (item.id) state.ids.set(item.id, "queued");
+    }
+}
+
 export function projectQueue(
     state: QueueProjectionState,
     items: readonly PendingMessage[],

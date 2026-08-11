@@ -81,11 +81,16 @@ export class AhpMessagePortTransport {
             case "send":
                 return this.dispatch(runtime, handle.chatResource, pendingAction(message));
             case "cancel": {
+                // Always route to the host, even when this client's own
+                // snapshot shows no activeTurn — client/host can disagree
+                // (a race, a missed turnStarted) and swallowing the cancel
+                // here left no recovery. routeAhpClientAction's interrupt
+                // call answers "session is not live" harmlessly when there
+                // truly is nothing to cancel.
                 const chat = runtime.snapshot(handle.chatResource).state as ChatState;
-                if (!chat.activeTurn) return true;
                 return this.dispatch(runtime, handle.chatResource, {
                     type: "chat/turnCancelled",
-                    turnId: chat.activeTurn.id,
+                    turnId: chat.activeTurn?.id ?? "",
                     duration: 0,
                 });
             }
@@ -102,15 +107,23 @@ export class AhpMessagePortTransport {
                     approved: message.approved,
                 });
             }
-            case "queue-remove":
+            case "queue-remove": {
+                const chat = runtime.snapshot(handle.chatResource).state as ChatState;
+                const id = String(message.id);
                 return this.dispatch(runtime, handle.chatResource, {
                     type: "chat/pendingMessageRemoved",
-                    kind: "queued",
-                    id: String(message.id),
+                    kind: pendingRemovalKind(chat, id),
+                    id,
                 });
+            }
             case "queue-edit": {
                 const chat = runtime.snapshot(handle.chatResource).state as ChatState;
-                const pending = chat.queuedMessages?.find((item) => item.id === String(message.id));
+                const id = String(message.id);
+                const kind = pendingRemovalKind(chat, id);
+                const pending =
+                    kind === "steering"
+                        ? chat.steeringMessage
+                        : chat.queuedMessages?.find((item) => item.id === id);
                 if (pending) {
                     this.options.post({
                         type: "load-input",
@@ -120,8 +133,8 @@ export class AhpMessagePortTransport {
                 }
                 return this.dispatch(runtime, handle.chatResource, {
                     type: "chat/pendingMessageRemoved",
-                    kind: "queued",
-                    id: String(message.id),
+                    kind,
+                    id,
                 });
             }
             case "queue-promote":
@@ -205,6 +218,14 @@ function pendingAction(message: Extract<WebviewToHost, { type: "send" }>): Recor
             speech: message.speech,
         },
     };
+}
+
+/** Which pending-row kind a removal id belongs to. Steering is a single slot
+ *  separate from the FIFO queue, and chatReducer.removePending only clears
+ *  it when the removal carries kind "steering" — always sending "queued"
+ *  (the old bug) left a steering row that could never be cleared. */
+export function pendingRemovalKind(chat: ChatState, id: string): "queued" | "steering" {
+    return chat.steeringMessage?.id === id ? "steering" : "queued";
 }
 
 function attachmentPaths(value: unknown): string[] {

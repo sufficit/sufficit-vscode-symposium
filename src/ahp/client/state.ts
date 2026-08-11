@@ -9,6 +9,11 @@ import type {
 import { chatReducer } from "../chatReducer";
 import { rootReducer, sessionReducer } from "../stateReducers";
 
+/** Outcome of applying one server-delivered envelope to local mirror state.
+ *  "rejected" is distinct from "ignored": a rejected envelope still advances
+ *  lastServerSeq (it was seen, just not accepted), but the reducer never ran. */
+export type ApplyResult = "reduced" | "rejected" | "ignored";
+
 /** Browser-safe mirror including chats, which the upstream convenience mirror omits. */
 export class SymposiumAhpState {
     root: RootState | undefined;
@@ -27,25 +32,29 @@ export class SymposiumAhpState {
         }
     }
 
-    apply(envelope: ActionEnvelope): boolean {
-        if (envelope.serverSeq <= this.lastServerSeq) return false;
+    apply(envelope: ActionEnvelope): ApplyResult {
+        if (envelope.serverSeq <= this.lastServerSeq) return "ignored";
         this.lastServerSeq = envelope.serverSeq;
-        if (envelope.rejectionReason) return true;
+        // A rejected client action never touches state — this mirrors
+        // AhpStateStore.dispatch on the host, which also leaves channel.state
+        // untouched for rejections. The seq bump above still happened, so a
+        // later accepted envelope is never mistaken for a stale duplicate.
+        if (envelope.rejectionReason) return "rejected";
         if (envelope.channel === "ahp-root://" && this.root) {
             this.root = rootReducer(this.root, envelope.action as never);
-            return true;
+            return "reduced";
         }
         const session = this.sessions.get(envelope.channel);
         if (session) {
             this.sessions.set(envelope.channel, sessionReducer(session, envelope.action as never));
-            return true;
+            return "reduced";
         }
         const chat = this.chats.get(envelope.channel);
         if (chat) {
             this.chats.set(envelope.channel, chatReducer(chat, envelope.action as never));
-            return true;
+            return "reduced";
         }
-        return false;
+        return "ignored";
     }
 
     remove(resource: URI): void {

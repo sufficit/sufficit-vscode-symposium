@@ -25,6 +25,10 @@ function chatSnapshot(): Snapshot {
     } as Snapshot;
 }
 
+function envelope(serverSeq: number, action: unknown): ActionEnvelope {
+    return { channel: CHAT, serverSeq, origin: undefined, action } as unknown as ActionEnvelope;
+}
+
 test("browser AHP mirror applies chat actions once across duplicate delivery", () => {
     const first = new SymposiumAhpState();
     const second = new SymposiumAhpState();
@@ -42,9 +46,12 @@ test("browser AHP mirror applies chat actions once across duplicate delivery", (
         },
     } as unknown as ActionEnvelope;
 
-    assert.equal(first.apply(envelope), true);
-    assert.equal(first.apply(envelope), false);
-    assert.equal(second.apply(envelope), true);
+    // apply() now returns a tri-state ApplyResult ("reduced"/"rejected"/
+    // "ignored") instead of a boolean — see D1 in the message-lifecycle
+    // hardening plan. A duplicate delivery of the same envelope is "ignored".
+    assert.equal(first.apply(envelope), "reduced");
+    assert.equal(first.apply(envelope), "ignored");
+    assert.equal(second.apply(envelope), "reduced");
     assert.deepEqual(first.chats.get(CHAT), second.chats.get(CHAT));
     assert.equal(first.chats.get(CHAT)?.queuedMessages?.length, 1);
 });
@@ -152,4 +159,154 @@ test("session snapshots remain independent from chat snapshots", () => {
     state.applySnapshot(chatSnapshot());
     assert.equal(state.sessions.size, 1);
     assert.equal(state.chats.size, 1);
+});
+
+test("chatReducer supersedes a stuck activeTurn instead of dropping the next turnStarted", () => {
+    // Regression: a missed turnComplete used to make the reducer drop the
+    // whole next turnStarted, including its queuedMessageId cleanup, leaving
+    // an immortal fake queue row.
+    const state = new SymposiumAhpState();
+    state.applySnapshot(chatSnapshot());
+    state.apply(
+        envelope(101, {
+            type: "chat/turnStarted",
+            turnId: "turn-1",
+            startedAt: "2026-08-10T00:00:00.000Z",
+            message: { text: "first", origin: { kind: "user" } },
+        }),
+    );
+    state.apply(
+        envelope(102, {
+            type: "chat/pendingMessageSet",
+            kind: "queued",
+            id: "client-2",
+            message: { text: "second", origin: { kind: "user" } },
+        }),
+    );
+    // turn-1 never completes (stuck activeTurn) — turn-2 starts anyway.
+    state.apply(
+        envelope(103, {
+            type: "chat/turnStarted",
+            turnId: "turn-2",
+            queuedMessageId: "client-2",
+            startedAt: "2026-08-10T00:00:05.000Z",
+            message: { text: "second", origin: { kind: "user" } },
+        }),
+    );
+    const chat = state.chats.get(CHAT);
+    assert.equal(chat?.activeTurn?.id, "turn-2");
+    assert.equal(chat?.turns.length, 1);
+    assert.equal(chat?.turns[0]?.id, "turn-1");
+    assert.equal(chat?.turns[0]?.state, "cancelled");
+    assert.equal(chat?.queuedMessages, undefined);
+});
+
+test("chatReducer clears steeringMessage by id when turnStarted carries queuedMessageId", () => {
+    const state = new SymposiumAhpState();
+    state.applySnapshot(chatSnapshot());
+    state.apply(
+        envelope(101, {
+            type: "chat/pendingMessageSet",
+            kind: "steering",
+            id: "steer-1",
+            message: { text: "fix bug", origin: { kind: "user" } },
+        }),
+    );
+    state.apply(
+        envelope(102, {
+            type: "chat/turnStarted",
+            turnId: "turn-1",
+            queuedMessageId: "steer-1",
+            startedAt: "2026-08-10T00:00:00.000Z",
+            message: { text: "fix bug", origin: { kind: "user" } },
+        }),
+    );
+    assert.equal(state.chats.get(CHAT)?.steeringMessage, undefined);
+});
+
+test("chatReducer clears steeringMessage by text when turnStarted has no queuedMessageId", () => {
+    // The id-lost path: the transport dispatched the steering message
+    // directly and the turnStarted event carries no queuedMessageId.
+    const state = new SymposiumAhpState();
+    state.applySnapshot(chatSnapshot());
+    state.apply(
+        envelope(101, {
+            type: "chat/pendingMessageSet",
+            kind: "steering",
+            id: "steer-2",
+            message: { text: "another fix", origin: { kind: "user" } },
+        }),
+    );
+    state.apply(
+        envelope(102, {
+            type: "chat/turnStarted",
+            turnId: "turn-1",
+            startedAt: "2026-08-10T00:00:00.000Z",
+            message: { text: "another fix", origin: { kind: "user" } },
+        }),
+    );
+    assert.equal(state.chats.get(CHAT)?.steeringMessage, undefined);
+});
+
+test("chatReducer turnComplete prunes a ghost queuedMessages row with equal text", () => {
+    const state = new SymposiumAhpState();
+    state.applySnapshot(chatSnapshot());
+    state.apply(
+        envelope(101, {
+            type: "chat/pendingMessageSet",
+            kind: "queued",
+            id: "ghost-1",
+            message: { text: "ghost text", origin: { kind: "user" } },
+        }),
+    );
+    // Direct dispatch starts a turn with the same text but no queuedMessageId,
+    // so the queued row is not swept at turn start — it becomes a ghost.
+    state.apply(
+        envelope(102, {
+            type: "chat/turnStarted",
+            turnId: "turn-1",
+            startedAt: "2026-08-10T00:00:00.000Z",
+            message: { text: "ghost text", origin: { kind: "user" } },
+        }),
+    );
+    assert.equal(state.chats.get(CHAT)?.queuedMessages?.length, 1);
+    state.apply(envelope(103, { type: "chat/turnComplete", turnId: "turn-1", duration: 10 }));
+    assert.equal(state.chats.get(CHAT)?.queuedMessages, undefined);
+});
+
+test("legacyView queue rebuild puts steeringMessage first with mode steer", () => {
+    const state = new SymposiumAhpState();
+    state.applySnapshot(chatSnapshot());
+    state.apply(
+        envelope(101, {
+            type: "chat/pendingMessageSet",
+            kind: "queued",
+            id: "client-queued",
+            message: { text: "queued item", origin: { kind: "user" } },
+        }),
+    );
+    const steerAction = envelope(102, {
+        type: "chat/pendingMessageSet",
+        kind: "steering",
+        id: "client-steer",
+        message: { text: "steer item", origin: { kind: "user" } },
+    });
+    state.apply(steerAction);
+    const chat = state.chats.get(CHAT) as ChatState;
+
+    const actionMessages = ahpActionToLegacy(steerAction, chat);
+    const actionQueue = actionMessages.find((message) => message.type === "queue") as
+        | { items: { id: string; mode?: string }[] }
+        | undefined;
+    assert.equal(actionQueue?.items[0]?.mode, "steer");
+    assert.equal(actionQueue?.items[0]?.id, "client-steer");
+    assert.equal(actionQueue?.items[1]?.id, "client-queued");
+
+    const fullMessages = ahpChatToLegacy(chat);
+    const fullQueue = fullMessages.find((message) => message.type === "queue") as
+        | { items: { id: string; mode?: string }[] }
+        | undefined;
+    assert.equal(fullQueue?.items[0]?.mode, "steer");
+    assert.equal(fullQueue?.items[0]?.id, "client-steer");
+    assert.equal(fullQueue?.items[1]?.id, "client-queued");
 });

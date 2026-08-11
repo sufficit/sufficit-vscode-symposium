@@ -7,6 +7,7 @@ import { AhpPersistence } from "./persistence";
 import {
     createProjectionState,
     projectAgentEvent,
+    projectInjectedUser,
     rememberProjectedUser,
     type AhpProjectionAction,
     type AhpProjectionState,
@@ -15,6 +16,7 @@ import {
     createQueueProjectionState,
     projectQueue,
     projectionDiagnostics,
+    seedQueueProjection,
     sessionChatSummaryChanges,
     type QueueProjectionState,
 } from "./projectControllerState";
@@ -108,11 +110,18 @@ export class AhpShadowRuntime {
                 .list()
                 .find((item) => item.backend === provider && item.sessionId === nativeSessionId);
             if (info) {
+                // Preserve queuedMessages/steeringMessage in the id map so
+                // an empty host queue can still remove them later (E3).
+                const queue = createQueueProjectionState();
+                seedQueueProjection(
+                    queue,
+                    this.runtime.snapshot(current.handle.chatResource).state as ChatState,
+                );
                 const record: ShadowRecord = {
                     ...current,
                     unsubscribe: () => undefined,
                     projection: createProjectionState(),
-                    queue: createQueueProjectionState(),
+                    queue,
                     expectedTurns: [],
                     queueLength: 0,
                     approvals: new Set(),
@@ -169,11 +178,15 @@ export class AhpShadowRuntime {
                 cwd: info.cwd,
             });
         }
+        // Seed from any restored snapshot so queuedMessages/steeringMessage
+        // rows already in ChatState are tracked, not stranded (E3).
+        const queue = createQueueProjectionState();
+        seedQueueProjection(queue, this.runtime.snapshot(handle.chatResource).state as ChatState);
         const record: ShadowRecord = {
             handle,
             unsubscribe: () => undefined,
             projection: createProjectionState(),
-            queue: createQueueProjectionState(),
+            queue,
             expectedTurns: [],
             queueLength: 0,
             approvals: new Set(),
@@ -194,13 +207,18 @@ export class AhpShadowRuntime {
         try {
             const message = asRecord(raw);
             if (message.type === "user" && typeof message.text === "string") {
+                const clientMessageId = optionalString(message.clientMessageId);
                 rememberProjectedUser(
                     record.projection,
                     message.text,
                     optionalString(message.model),
                     stringArray(message.attachments),
-                    optionalString(message.clientMessageId),
+                    clientMessageId,
                 );
+                // A mid-turn steer has no turn-start to consume the slot
+                // above, so echo it into the running turn directly (E1).
+                const echo = projectInjectedUser(record.projection, message.text, clientMessageId);
+                this.apply(record, echo);
                 return;
             }
             if (message.type === "queue" && Array.isArray(message.items)) {

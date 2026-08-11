@@ -1,7 +1,11 @@
 import type { HostToWebview } from "../../protocol/chat";
 import type { AhpMessagePortEnvelope } from "../../ahp/messagePortProtocol";
 import { SymposiumAhpState } from "../../ahp/client/state";
-import { ahpActionToLegacy, ahpChatToLegacy } from "../../ahp/client/legacyView";
+import {
+    ahpActionToLegacy,
+    ahpChatToLegacy,
+    rejectedEnvelopeFallback,
+} from "../../ahp/client/legacyView";
 import { setHasMoreHistory } from "./scroll";
 
 let generation = 0;
@@ -38,7 +42,14 @@ export function applyLocalAhpFrame(message: unknown): HostToWebview[] | undefine
         );
         return ahpChatToLegacy(chatState!).filter((item) => item.type !== "clear");
     }
-    if (!state.apply(frame.envelope)) return [];
+    const result = state.apply(frame.envelope);
+    if (result === "ignored") return [];
+    if (result === "rejected") {
+        // The reducer never ran (see SymposiumAhpState.apply) — translating
+        // this envelope through ahpActionToLegacy would render UI for a
+        // mutation that never happened (D1/D2/D3 in the hardening plan).
+        return rejectedEnvelopeFallback(frame.envelope, state.chats.get(frame.envelope.channel));
+    }
     const action = frame.envelope.action as unknown as Record<string, unknown>;
     const legacy = ahpActionToLegacy(frame.envelope, state.chats.get(frame.envelope.channel));
     // chat/turnsLoaded is the scroll-up pagination path: the reducer prepended
