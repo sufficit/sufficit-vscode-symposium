@@ -252,27 +252,28 @@ test("STEER-VISIBILITY — steering row leads the queue rebuild until its turn s
     );
 });
 
-test("GHOST-SWEEP — a pending row whose id was lost is pruned when its turn completes", () => {
+test("GHOST-SWEEP — a pending row whose id was lost is pruned by the turn it belongs to", () => {
     const harness = new Harness();
     harness.dispatch(optimisticPending("queued", "ghost-1", "ghost text"));
 
     // The host's "user" event never carried clientMessageId (id lost in
-    // transit) — turnStarted has nothing to match, so the id-based cleanup
-    // path cannot fire. The row survives turn start as a ghost.
+    // transit — the shape of the first send after an idle period), so the
+    // id-based cleanup cannot fire. The turn's own text identifies the row,
+    // and startTurn drops it right there.
     const projection = createProjectionState();
     rememberProjectedUser(projection, "ghost text");
     harness.dispatchAll(
         projectAgentEvent(projection, { kind: "turn-start", logicalTurnId: "turn-1" }),
     );
-    assert.equal(harness.chat.queuedMessages?.length, 1, "the ghost row survives turn start");
-
-    harness.dispatchAll(projectAgentEvent(projection, { kind: "turn-end", durationMs: 5 }));
-
     assert.equal(
         harness.chat.queuedMessages,
         undefined,
-        "turnComplete's text sweep prunes the ghost",
+        "dropped at turn start, not left as a ghost",
     );
+
+    harness.dispatchAll(projectAgentEvent(projection, { kind: "turn-end", durationMs: 5 }));
+
+    assert.equal(harness.chat.queuedMessages, undefined, "and stays gone through turn end");
     assert.equal(
         harness.rebuild().some((message) => message.type === "queue"),
         false,

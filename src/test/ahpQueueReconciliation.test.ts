@@ -129,3 +129,59 @@ test("an optimistic row the projection never issued is still removed by host tru
 
     assert.equal(next.queuedMessages, undefined);
 });
+
+/**
+ * The first send after an idle period reaches turn-start with no
+ * queuedMessageId (the projection no longer holds the pendingUser slot), so
+ * every cleanup keyed on the id failed while the bubble still rendered from
+ * action.message. Reported repeatedly as "always the first message after
+ * inactivity"; while a turn is already running the id is present and the queue
+ * behaves. The turn's own text identifies the row.
+ */
+test("turnStarted without a queuedMessageId still drops the row it is starting on", () => {
+    const chat: ChatState = {
+        resource: "ahp-chat:/77777777-7777-7777-8777-777777777777",
+        title: "Idle first send",
+        status: 33,
+        modifiedAt: "2026-08-10T00:00:00.000Z",
+        turns: [],
+        queuedMessages: [
+            {
+                id: "local-xyz-1",
+                message: { text: "me refiro a essas seções rosas", origin: { kind: "user" } },
+            },
+        ],
+    } as unknown as ChatState;
+
+    const next = chatReducer(chat, {
+        type: "chat/turnStarted",
+        turnId: "session/turn-1",
+        // no queuedMessageId — the exact production shape
+        startedAt: "2026-08-10T00:00:01.000Z",
+        message: { text: "me refiro a essas seções rosas", origin: { kind: "user" } },
+    } as never);
+
+    assert.equal(next.queuedMessages, undefined, "the row the turn started on is not pending");
+    assert.equal(next.activeTurn?.id, "session/turn-1");
+});
+
+test("a queued row with different text survives a turn start", () => {
+    const chat: ChatState = {
+        resource: "ahp-chat:/88888888-8888-8888-8888-888888888888",
+        title: "Real queue",
+        status: 33,
+        modifiedAt: "2026-08-10T00:00:00.000Z",
+        turns: [],
+        queuedMessages: [
+            { id: "local-a-1", message: { text: "genuinely waiting", origin: { kind: "user" } } },
+        ],
+    } as unknown as ChatState;
+
+    const next = chatReducer(chat, {
+        type: "chat/turnStarted",
+        turnId: "session/turn-1",
+        message: { text: "something else entirely", origin: { kind: "user" } },
+    } as never);
+
+    assert.equal(next.queuedMessages?.length, 1, "real pending work is untouched");
+});

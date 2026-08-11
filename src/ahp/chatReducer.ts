@@ -120,10 +120,18 @@ function startTurn(state: ChatState, action: ActionRecord): ChatState {
     const turnId = String(action.turnId ?? "");
     if (!turnId) return state;
     const queuedId = optionalString(action.queuedMessageId);
-    const queuedMessages = queuedId
-        ? state.queuedMessages?.filter((item) => item.id !== queuedId)
-        : state.queuedMessages;
     const message = action.message as Message;
+    // Drop the pending row by id when we have one, and ALSO by exact text.
+    // queuedMessageId is only present when the projection still held the
+    // pendingUser slot for this turn; the first send after an idle period
+    // reaches turn-start without it, and every cleanup path keyed on the id
+    // then failed while the bubble rendered from action.message — the row
+    // that outlived v25-v33. The text match is what the turn is actually
+    // starting on, so a row carrying it is that same message by definition.
+    const startedText = message?.text;
+    const queuedMessages = state.queuedMessages?.filter(
+        (item) => item.id !== queuedId && !(!!startedText && item.message?.text === startedText),
+    );
     // A stuck activeTurn (missed turnComplete) must never cause this
     // turnStarted to be dropped whole — that leaves an immortal fake queue
     // row while the user bubble still renders. Supersede: finalize the stuck
@@ -158,7 +166,9 @@ function clearSteering(
     message: Message | undefined,
 ): PendingMessage | undefined {
     if (!steering) return undefined;
-    if (queuedId) return steering.id === queuedId ? undefined : steering;
+    // Same rule as the queued rows: by id when there is one, but always also
+    // by text — the id is absent on the first turn after an idle period.
+    if (steering.id === queuedId) return undefined;
     return message?.text === steering.message?.text ? undefined : steering;
 }
 

@@ -259,8 +259,9 @@ test("chatReducer turnComplete prunes a ghost queuedMessages row with equal text
             message: { text: "ghost text", origin: { kind: "user" } },
         }),
     );
-    // Direct dispatch starts a turn with the same text but no queuedMessageId,
-    // so the queued row is not swept at turn start — it becomes a ghost.
+    // Direct dispatch starts a turn with the same text but no queuedMessageId.
+    // The row is now dropped at turn START (v33.1) rather than surviving until
+    // the turn completes — the turn's own text identifies it.
     state.apply(
         envelope(102, {
             type: "chat/turnStarted",
@@ -269,7 +270,8 @@ test("chatReducer turnComplete prunes a ghost queuedMessages row with equal text
             message: { text: "ghost text", origin: { kind: "user" } },
         }),
     );
-    assert.equal(state.chats.get(CHAT)?.queuedMessages?.length, 1);
+    assert.equal(state.chats.get(CHAT)?.queuedMessages, undefined);
+    // The turnComplete sweep stays as a second net and must be a no-op here.
     state.apply(envelope(103, { type: "chat/turnComplete", turnId: "turn-1", duration: 10 }));
     assert.equal(state.chats.get(CHAT)?.queuedMessages, undefined);
 });
