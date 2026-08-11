@@ -21,6 +21,7 @@ import {
 } from "./channelModels";
 import { AHP_ROOT_URI, chatUri, parseAhpUri, sessionUri, stableAhpUuid } from "./channelUris";
 import { chatReducer } from "./chatReducer";
+import { sanitizeRestoredChatState, sanitizeRestoredSessionState } from "./restoredState";
 import { rootReducer, sessionReducer } from "./stateReducers";
 
 export interface AhpSessionHandle {
@@ -222,25 +223,16 @@ export class AhpHostRuntime {
             const session = snapshots.get(handle.sessionResource);
             const chat = snapshots.get(handle.chatResource);
             if (!session || !chat) throw new Error("Persisted AHP session is missing channels");
-            // Clear orphaned activeTurn and reset busy status on restore: a
-            // persisted activeTurn belongs to a process that no longer exists
-            // (the extension was restarted), so keeping it busy would force
-            // every new message into the queue instead of dispatching it.
-            const chatState = chat.state as ChatState;
-            // Clear orphaned activeTurn and reset busy status on restore: a
-            // persisted activeTurn belongs to a process that no longer exists
-            // (the extension was restarted), so keeping it busy would force
-            // every new message into the queue instead of dispatching it.
-            chatState.activeTurn = undefined;
-            if (typeof chatState.status === "number" && (chatState.status & 2) !== 0) {
-                chatState.status = chatState.status & ~2;
-            }
             this.store.register(
                 handle.sessionResource,
-                session.state as SessionState,
+                sanitizeRestoredSessionState(session.state as SessionState),
                 sessionReducer,
             );
-            this.store.register(handle.chatResource, chatState, chatReducer);
+            this.store.register(
+                handle.chatResource,
+                sanitizeRestoredChatState(chat.state as ChatState),
+                chatReducer,
+            );
             snapshots.delete(handle.sessionResource);
             snapshots.delete(handle.chatResource);
             this.addHandle({ ...handle });

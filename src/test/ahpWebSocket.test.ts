@@ -5,6 +5,7 @@ import { WebSocket } from "ws";
 import type { SymposiumApi } from "../api/symposiumApi";
 import type { BridgePolicy } from "../api/bridgePolicy";
 import { AHP_ROOT_URI, AhpHostRuntime, AhpWebSocketServer, ahpTokenProtocol } from "../ahp";
+import { createAhpMessageSubmittedAction } from "../protocol/ahpSubmission";
 
 const TOKEN = "test-token";
 const SESSION_ID = "11111111-1111-4111-8111-111111111111";
@@ -213,6 +214,77 @@ test("AHP subscribers observe identical globally ordered actions", async () => {
         assert.deepEqual(a.params, b.params);
         first.socket.close();
         second.socket.close();
+    } finally {
+        await current.close();
+    }
+});
+
+test("AHP WebSocket routes the same explicit submission command as MessagePort", async () => {
+    const current = await fixture();
+    try {
+        const sends: unknown[][] = [];
+        current.api.sessions.send = (...args) => {
+            sends.push(args);
+            return true;
+        };
+        const peer = await connect(current.url);
+        initialize(peer, 1);
+        await peer.next((value) => value.id === 1);
+        const chat = current.runtime.handles()[0].chatResource;
+        peer.send({
+            jsonrpc: "2.0",
+            id: 2,
+            method: "subscribe",
+            params: { channel: chat },
+        });
+        await peer.next((value) => value.id === 2);
+        peer.send({
+            jsonrpc: "2.0",
+            method: "dispatchAction",
+            params: {
+                channel: chat,
+                clientSeq: 7,
+                action: createAhpMessageSubmittedAction(
+                    {
+                        id: "ws-message-1",
+                        text: "from browser",
+                        mode: "queue",
+                        attachments: ["/workspace/a.txt"],
+                    },
+                    () => "unused",
+                ),
+            },
+        });
+
+        const notification = await peer.next((value) => value.method === "action");
+        const envelope = notification.params as {
+            action: { type: string; id: string; mode: string };
+            origin: { clientId: string; clientSeq: number };
+        };
+        assert.deepEqual(sends[0].slice(0, 4), [
+            "native-1",
+            "from browser",
+            "queue",
+            "ws-message-1",
+        ]);
+        assert.deepEqual(
+            envelope.action,
+            JSON.parse(
+                JSON.stringify(
+                    createAhpMessageSubmittedAction(
+                        {
+                            id: "ws-message-1",
+                            text: "from browser",
+                            mode: "queue",
+                            attachments: ["/workspace/a.txt"],
+                        },
+                        () => "unused",
+                    ),
+                ),
+            ),
+        );
+        assert.deepEqual(envelope.origin, { clientId: "client-1", clientSeq: 7 });
+        peer.socket.close();
     } finally {
         await current.close();
     }

@@ -138,8 +138,14 @@ but it left the producer of the false row intact: the composer preference
 preference only describes what to do *if busy*; it is not evidence that the
 message entered `ChatQueue`.
 
-Current AHP clients therefore submit normal/queue-preferred messages as
-`kind: "send"`. The host routes them exactly once and only `projectQueue`
-creates a visible queued row after `ChatQueue` actually accepts one. The PWA
-also preserves the composer's `clientMessageId` and metadata, and routes its
-queue edit/promote/remove/clear controls to host-authoritative actions.
+The first producer-side fix made normal/queue-preferred messages use
+`kind: "send"`, preventing the state reducer from inventing the row. The
+follow-up authority migration removes that overload entirely: current clients
+send the command `symposium/messageSubmitted { id, mode, message }`.
+
+That command is intentionally a no-op in `chatReducer`. The host routes it
+exactly once using its explicit `mode`, and only `projectQueue` emits
+`chat/pendingMessageSet` after `ChatQueue` actually accepts the message. Old
+clients using `chat/pendingMessageSet` remain accepted for one compatibility
+window. MessagePort and WebSocket/PWA build the command with the same shared
+function, including `clientMessageId`, attachments and dispatch metadata.

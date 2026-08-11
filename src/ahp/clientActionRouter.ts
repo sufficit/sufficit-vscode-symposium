@@ -1,5 +1,11 @@
 import type { URI } from "@microsoft/agent-host-protocol";
 import type { SymposiumApi } from "../api/symposiumApi";
+import {
+    AHP_MESSAGE_SUBMITTED,
+    isAhpMessageSubmittedAction,
+    isAhpSubmissionMode,
+    type AhpSubmissionMode,
+} from "../protocol/ahpSubmission";
 import type { AhpHostRuntime } from "./hostRuntime";
 import { asRecord, stringArray } from "./wireProtocol";
 
@@ -8,6 +14,9 @@ const CLIENT_ACTIONS = new Set([
     "chat/turnCancelled",
     "chat/continuationRequested",
     "chat/toolCallConfirmed",
+    AHP_MESSAGE_SUBMITTED,
+    // Compatibility during the AHP client rollout. New clients submit with
+    // symposium/messageSubmitted; pendingMessageSet is state projection only.
     "chat/pendingMessageSet",
     "chat/pendingMessageRemoved",
     "chat/pendingMessagePromoted",
@@ -66,17 +75,11 @@ export function routeAhpClientAction(
     const message = asRecord(action.message);
     const text = message.text;
     const id = action.id;
-    const kind = action.kind;
-    const mode =
-        kind === "steering"
-            ? "steer"
-            : kind === "redirect"
-              ? "redirect"
-              : kind === "send"
-                ? "send"
-                : "queue";
+    const mode = submissionMode(action);
+    if (!mode) return "invalid submission mode";
     return typeof text === "string" &&
         typeof id === "string" &&
+        id.length > 0 &&
         api.sessions.send(nativeId, text, mode, id, {
             attachments: attachmentPaths(message.attachments),
             model: nestedId(message.model),
@@ -91,6 +94,20 @@ export function routeAhpClientAction(
         })
         ? undefined
         : "message could not be sent";
+}
+
+function submissionMode(action: Record<string, unknown>): AhpSubmissionMode | undefined {
+    if (isAhpMessageSubmittedAction(action)) {
+        return isAhpSubmissionMode(action.mode) ? action.mode : undefined;
+    }
+    const kind = action.kind;
+    return kind === "steering"
+        ? "steer"
+        : kind === "redirect"
+          ? "redirect"
+          : kind === "send"
+            ? "send"
+            : "queue";
 }
 
 function attachmentPaths(value: unknown): string[] {

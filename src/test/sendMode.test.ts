@@ -2,11 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import {
-    DEFAULT_BUSY_SEND_MODE,
-    ahpSubmissionKind,
-    normalizeBusySendMode,
-} from "../protocol/sendMode";
+import { DEFAULT_BUSY_SEND_MODE, normalizeBusySendMode } from "../protocol/sendMode";
 
 const root = resolve(__dirname, "../..");
 
@@ -17,15 +13,6 @@ test("busy sends wait by default and interruption remains explicit", () => {
     assert.equal(normalizeBusySendMode("queue"), "queue");
     assert.equal(normalizeBusySendMode("redirect"), "redirect");
     assert.equal(normalizeBusySendMode("steer"), "steer");
-});
-
-test("AHP submits queue preference as send until the host really queues it", () => {
-    assert.equal(ahpSubmissionKind("queue"), "send");
-    assert.equal(ahpSubmissionKind(undefined), "send");
-    assert.equal(ahpSubmissionKind("send"), "send");
-    assert.equal(ahpSubmissionKind("steer"), "steering");
-    assert.equal(ahpSubmissionKind("steering"), "steering");
-    assert.equal(ahpSubmissionKind("redirect"), "redirect");
 });
 
 test("extension manifest and initial webview selection use the queue default", () => {

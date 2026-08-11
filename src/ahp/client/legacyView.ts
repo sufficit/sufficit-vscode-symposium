@@ -4,6 +4,7 @@ import type {
     SessionState,
     SessionSummary,
 } from "@microsoft/agent-host-protocol";
+import { AHP_MESSAGE_SUBMITTED } from "../../protocol/ahpSubmission";
 import type { HostToWebview } from "../../protocol/chat";
 import { nativeSessionId } from "./state";
 import { attachmentValues, queueHeld, queueItems } from "./legacyQueueView";
@@ -347,17 +348,19 @@ function contentText(value: unknown): string {
  * fed through ahpActionToLegacy — that would render UI for a mutation that
  * never happened (a fake turn-end, a dropped approval card, ...).
  *
- * Only chat/pendingMessageSet needs an explicit correction: the composer
- * already rendered an optimistic bubble for it (src/ui/webview/composer.ts),
- * and nothing else will ever withdraw it. Every other rejected action type
- * has no client-side optimistic UI to undo, so the fallback is silence.
+ * Message submission needs an explicit correction: the composer already
+ * rendered an optimistic bubble for it (src/ui/webview/composer.ts), and
+ * nothing else will ever withdraw it. The pendingMessageSet spelling remains
+ * for old clients during rollout. Every other rejected action type has no
+ * client-side optimistic UI to undo, so the fallback is silence.
  */
 export function rejectedEnvelopeFallback(
     envelope: ActionEnvelope,
     chat: ChatState | undefined,
 ): HostToWebview[] {
     const action = envelope.action as unknown as Record<string, unknown>;
-    if (action.type !== "chat/pendingMessageSet") return [];
+    if (action.type !== AHP_MESSAGE_SUBMITTED && action.type !== "chat/pendingMessageSet")
+        return [];
     const reason =
         typeof envelope.rejectionReason === "string" ? envelope.rejectionReason : "unknown reason";
     const toast: HostToWebview = { type: "toast", text: `Message rejected: ${reason}` };
@@ -371,6 +374,7 @@ export function rejectedEnvelopeFallback(
             type: "queue",
             items: queueItems(chat),
             busy: !!chat.activeTurn,
+            held: queueHeld(chat),
             stale: id ? [id] : [],
         },
         toast,

@@ -8,6 +8,7 @@ export * from "./messagePortTransport";
 export * from "./persistence";
 export * from "./projectAgentEvent";
 export * from "./projectControllerState";
+export * from "./restoredState";
 export * from "./shadowRuntime";
 export * from "./status";
 export * from "./wireProtocol";

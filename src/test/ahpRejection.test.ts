@@ -183,6 +183,31 @@ test("rejectedEnvelopeFallback rebuilds the queue and toasts for a rejected pend
     assert.match(toast!.text, /session is not live/);
 });
 
+test("rejected explicit submission withdraws its optimistic bubble without changing queue", () => {
+    const chat = chatWith({});
+    const rejected = envelope(
+        8,
+        {
+            type: "symposium/messageSubmitted",
+            id: "submission-1",
+            mode: "send",
+            message: { text: "ghost", origin: { kind: "user" } },
+        },
+        "message could not be sent",
+    );
+
+    assert.deepEqual(rejectedEnvelopeFallback(rejected, chat), [
+        {
+            type: "queue",
+            items: [],
+            busy: false,
+            held: false,
+            stale: ["submission-1"],
+        },
+        { type: "toast", text: "Message rejected: message could not be sent" },
+    ]);
+});
+
 test("rejectedEnvelopeFallback is silent for action types with no optimistic UI to undo", () => {
     const chat = chatWith({
         activeTurn: {

@@ -5,6 +5,7 @@ import {
     ahpChatToLegacy,
     ahpMetaToLegacy,
     ahpSessionsToLegacy,
+    rejectedEnvelopeFallback,
 } from "../../ahp/client/legacyView";
 import { nativeSessionId } from "../../ahp/client/state";
 import type { HostToWebview, WebviewToHost } from "../../protocol/chat";
@@ -135,7 +136,10 @@ function renderAction(envelope: ActionEnvelope): void {
     if (!client || !options) return;
     if (envelope.channel === chatResource) {
         const chat = client.state.chats.get(envelope.channel);
-        for (const message of ahpActionToLegacy(envelope, chat)) options.deliver(message);
+        const messages = envelope.rejectionReason
+            ? rejectedEnvelopeFallback(envelope, chat)
+            : ahpActionToLegacy(envelope, chat);
+        for (const message of messages) options.deliver(message);
     } else if (envelope.channel === sessionResource) {
         const session = client.state.sessions.get(envelope.channel);
         if (session) options.deliver(ahpMetaToLegacy(session));

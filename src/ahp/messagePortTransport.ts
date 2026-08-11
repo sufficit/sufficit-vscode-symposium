@@ -1,7 +1,7 @@
 import type { ActionEnvelope, ChatState, URI } from "@microsoft/agent-host-protocol";
 import type { SymposiumApi } from "../api/symposiumApi";
+import { createAhpMessageSubmittedAction } from "../protocol/ahpSubmission";
 import type { WebviewToHost } from "../protocol/chat";
-import { ahpSubmissionKind } from "../protocol/sendMode";
 import { routeAhpClientAction } from "./clientActionRouter";
 import type { AhpHostRuntime, AhpSessionHandle } from "./hostRuntime";
 import type { AhpMessagePortEnvelope, AhpMessagePortFrame } from "./messagePortProtocol";
@@ -80,7 +80,28 @@ export class AhpMessagePortTransport {
         if (!runtime || !handle) return false;
         switch (message.type) {
             case "send":
-                return this.dispatch(runtime, handle.chatResource, pendingAction(message));
+                return this.dispatch(
+                    runtime,
+                    handle.chatResource,
+                    createAhpMessageSubmittedAction(
+                        {
+                            id: message.clientMessageId,
+                            text: message.text,
+                            mode: message.mode,
+                            attachments: message.attachments,
+                            model: message.model,
+                            reasoning: message.reasoning,
+                            permission: message.permission,
+                            autonomy: message.autonomy,
+                            execDisplay: message.execDisplay,
+                            intentId: message.intentId,
+                            retryOf: message.retryOf,
+                            interruptedBy: message.interruptedBy,
+                            speech: message.speech,
+                        },
+                        localMessageId,
+                    ),
+                );
             case "cancel": {
                 // Always route to the host, even when this client's own
                 // snapshot shows no activeTurn — client/host can disagree
@@ -184,34 +205,8 @@ export class AhpMessagePortTransport {
     }
 }
 
-function pendingAction(message: Extract<WebviewToHost, { type: "send" }>): Record<string, unknown> {
-    const id =
-        message.clientMessageId || `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const kind = ahpSubmissionKind(message.mode);
-    return {
-        type: "chat/pendingMessageSet",
-        id,
-        kind,
-        message: {
-            text: message.text,
-            origin: { kind: "user" },
-            attachments: (message.attachments ?? []).map((value, index) => ({
-                kind: "simple",
-                id: `${id}:attachment:${index + 1}`,
-                representation: "path",
-                value,
-            })),
-            model: message.model ? { id: message.model } : undefined,
-            reasoning: message.reasoning,
-            permission: message.permission,
-            autonomy: message.autonomy,
-            execDisplay: message.execDisplay,
-            intentId: message.intentId,
-            retryOf: message.retryOf,
-            interruptedBy: message.interruptedBy,
-            speech: message.speech,
-        },
-    };
+function localMessageId(): string {
+    return `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 /** Which pending-row kind a removal id belongs to. Steering is a single slot

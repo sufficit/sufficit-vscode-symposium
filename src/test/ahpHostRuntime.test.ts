@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { RootState, SessionState } from "@microsoft/agent-host-protocol";
+import type { ChatState, RootState, SessionState } from "@microsoft/agent-host-protocol";
 import {
+    AHP_STATUS,
     AHP_ROOT_URI,
     AhpHostRuntime,
     chatUri,
@@ -85,6 +86,75 @@ test("AHP runtime export restores snapshots, handles and monotonic sequence", ()
         title: "Next",
     });
     assert.equal(next.serverSeq, exported.serverSeq + 1);
+});
+
+test("AHP restore clears dead process state but preserves durable queue and draft", () => {
+    const first = new AhpHostRuntime({ replayCapacity: 20 });
+    const handle = first.registerSession({
+        provider: "openai",
+        nativeSessionId: "native-transient",
+        title: "Transient restore",
+        stableId: SESSION_ID,
+        chatId: CHAT_ID,
+    });
+    const exported = first.exportState();
+    const sessionSnapshot = exported.snapshots.find(
+        (snapshot) => snapshot.resource === handle.sessionResource,
+    );
+    const chatSnapshot = exported.snapshots.find(
+        (snapshot) => snapshot.resource === handle.chatResource,
+    );
+    assert.ok(sessionSnapshot);
+    assert.ok(chatSnapshot);
+    const originalSession = sessionSnapshot.state as SessionState;
+    const originalChat = chatSnapshot.state as ChatState;
+    const persistedSession = {
+        ...originalSession,
+        status: AHP_STATUS.inputNeeded | AHP_STATUS.isRead,
+        activity: "Waiting for approval",
+        activeClients: [{ clientId: "dead-client" }],
+        inputNeeded: [{ id: "dead-approval" }],
+        chats: originalSession.chats.map((chat) => ({
+            ...chat,
+            status: AHP_STATUS.inProgress | AHP_STATUS.isRead,
+            activity: "Thinking",
+        })),
+    } as unknown as SessionState;
+    const persistedChat = {
+        ...originalChat,
+        status: AHP_STATUS.inProgress | AHP_STATUS.isRead,
+        activity: "Thinking",
+        activeTurn: {
+            id: "orphaned-turn",
+            startedAt: "2026-08-11T00:00:00.000Z",
+            message: { text: "started before restart", origin: { kind: "user" } },
+            responseParts: [],
+        },
+        queuedMessages: [
+            { id: "queued-1", message: { text: "keep me", origin: { kind: "user" } } },
+        ],
+        draft: { text: "unfinished draft", origin: { kind: "user" } },
+    } as unknown as ChatState;
+    sessionSnapshot.state = persistedSession;
+    chatSnapshot.state = persistedChat;
+
+    const restored = new AhpHostRuntime({ restored: exported, replayCapacity: 20 });
+    const session = restored.snapshot(handle.sessionResource).state as SessionState;
+    const chat = restored.snapshot(handle.chatResource).state as ChatState;
+
+    assert.equal(session.status, AHP_STATUS.idle | AHP_STATUS.isRead);
+    assert.equal(session.activity, undefined);
+    assert.deepEqual(session.activeClients, []);
+    assert.equal(session.inputNeeded, undefined);
+    assert.equal(session.chats[0].status, AHP_STATUS.idle | AHP_STATUS.isRead);
+    assert.equal(session.chats[0].activity, undefined);
+    assert.equal(chat.status, AHP_STATUS.idle | AHP_STATUS.isRead);
+    assert.equal(chat.activity, undefined);
+    assert.equal(chat.activeTurn, undefined);
+    assert.equal(chat.queuedMessages?.[0].id, "queued-1");
+    assert.equal(chat.draft?.text, "unfinished draft");
+    assert.equal(persistedChat.activeTurn?.id, "orphaned-turn", "restore must not mutate input");
+    assert.equal(persistedSession.activeClients[0]?.clientId, "dead-client");
 });
 
 test("AHP reconnect falls back to authoritative snapshots after retention rollover", () => {

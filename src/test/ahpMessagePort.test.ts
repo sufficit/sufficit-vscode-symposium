@@ -59,12 +59,13 @@ test("message-port bind sends coherent snapshots before live actions", () => {
 
 test("message-port routes full send metadata once through host authority", () => {
     const { runtime, api, sends } = fixture();
+    const messages: any[] = [];
     const port = new AhpMessagePortTransport({
         clientId: "surface-2",
         api,
         runtime: () => runtime,
         syncRuntime: () => undefined,
-        post: () => undefined,
+        post: (message) => messages.push(message),
     });
     port.bind("claude", "native-1");
     assert.equal(
@@ -83,6 +84,12 @@ test("message-port routes full send metadata once through host authority", () =>
     assert.equal(sends.length, 1);
     assert.deepEqual(sends[0].slice(0, 4), ["native-1", "hello", "steer", "client-message-1"]);
     assert.deepEqual((sends[0][4] as { attachments: string[] }).attachments, ["/workspace/a.txt"]);
+    const envelope = messages.filter((message) => message.frame?.kind === "action").at(-1)
+        .frame.envelope;
+    assert.equal(envelope.action.type, "symposium/messageSubmitted");
+    assert.equal(envelope.action.mode, "steer");
+    assert.equal(envelope.action.id, "client-message-1");
+    assert.deepEqual(envelope.origin, { clientId: "surface-2", clientSeq: 1 });
 });
 
 test("queue preference does not invent a pending row before the host queues it", () => {
@@ -108,7 +115,7 @@ test("queue preference does not invent a pending row before the host queues it",
     );
 
     assert.equal(sends.length, 1);
-    assert.equal(sends[0][2], "send", "the host decides whether an accepted send must wait");
+    assert.equal(sends[0][2], "queue", "queue remains intent, not an optimistic state mutation");
     const chat = runtime.snapshot(handle.chatResource).state as {
         queuedMessages?: unknown[];
     };

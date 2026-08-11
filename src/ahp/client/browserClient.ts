@@ -11,7 +11,7 @@ import {
     type Subscription,
 } from "@microsoft/agent-host-protocol/client";
 import { WebSocketTransport } from "@microsoft/agent-host-protocol/ws";
-import { ahpSubmissionKind } from "../../protocol/sendMode";
+import { createAhpMessageSubmittedAction } from "../../protocol/ahpSubmission";
 import { SymposiumAhpState } from "./state";
 
 export type AhpConnectionStatus = "connecting" | "reconnecting" | "caught-up" | "failed";
@@ -88,34 +88,27 @@ export class BrowserAhpClient {
         options: BrowserSendOptions = {},
     ): string {
         const id = options.clientMessageId || crypto.randomUUID();
-        // Queue is a busy-state preference, not proof that this message is
-        // pending. Submit it as an immediate send and let the host's queue
-        // projection create a queued row only when it really enqueues it.
-        const kind = ahpSubmissionKind(mode);
-        this.requireClient().dispatch(chat, {
-            type: "chat/pendingMessageSet",
-            kind,
-            id,
-            message: {
-                text,
-                origin: { kind: "user" },
-                attachments: (options.attachments ?? []).map((value, index) => ({
-                    kind: "simple",
-                    id: `${id}:attachment:${index + 1}`,
-                    representation: "path",
-                    value,
-                })),
-                model: options.model ? { id: options.model } : undefined,
-                reasoning: options.reasoning,
-                permission: options.permission,
-                autonomy: options.autonomy,
-                execDisplay: options.execDisplay,
-                intentId: options.intentId,
-                retryOf: options.retryOf,
-                interruptedBy: options.interruptedBy,
-                speech: options.speech,
-            },
-        } as unknown as StateAction);
+        this.requireClient().dispatch(
+            chat,
+            createAhpMessageSubmittedAction(
+                {
+                    id,
+                    mode,
+                    text,
+                    attachments: options.attachments,
+                    model: options.model,
+                    reasoning: options.reasoning,
+                    permission: options.permission,
+                    autonomy: options.autonomy,
+                    execDisplay: options.execDisplay,
+                    intentId: options.intentId,
+                    retryOf: options.retryOf,
+                    interruptedBy: options.interruptedBy,
+                    speech: options.speech,
+                },
+                () => crypto.randomUUID(),
+            ) as unknown as StateAction,
+        );
         return id;
     }
 
@@ -250,9 +243,11 @@ export class BrowserAhpClient {
 
     private apply(envelope: ActionEnvelope): void {
         this.officialMirror.apply(envelope);
-        // Only a reduced envelope actually changed local state — a rejected
-        // one must not trigger a re-render (see SymposiumAhpState.apply).
-        if (this.state.apply(envelope) === "reduced") this.options.onAction?.(envelope);
+        const outcome = this.state.apply(envelope);
+        // Rejected submissions also reach the presentation boundary so it can
+        // withdraw the optimistic bubble and explain the failure. State itself
+        // remains untouched; only stale/duplicate envelopes are fully ignored.
+        if (outcome !== "ignored") this.options.onAction?.(envelope);
     }
 
     private applySnapshot(snapshot: Parameters<SymposiumAhpState["applySnapshot"]>[0]): void {

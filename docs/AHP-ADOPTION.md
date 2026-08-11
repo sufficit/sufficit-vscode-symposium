@@ -208,6 +208,29 @@ requires the PWA, editor and sidebar AHP clients to remain stable for at least
 one released version before compatibility paths and rollback switches are
 removed.
 
+### State-authority hardening — 2026-08-11
+
+Message submission is now a command, `symposium/messageSubmitted`, rather than
+an optimistic `chat/pendingMessageSet` mutation. MessagePort and WebSocket/PWA
+clients share one command builder, the echoed envelope provides the correlation
+tuple `(id, mode, origin.clientId, origin.clientSeq, serverSeq)`, and only the
+host's `ChatQueue` projection may emit pending-message state actions. The old
+client spelling remains accepted temporarily but is no longer produced.
+
+Restart restoration also distinguishes durable from process-local state:
+
+| Preserved | Cleared on host restart |
+|---|---|
+| completed turns, draft, genuine projected queue | active turn and activity text |
+| session metadata and archive/read flags | busy/input-needed status |
+| model/message metadata | stale active clients and approval requests |
+
+The remaining compatibility boundary is presentation: the webview still uses
+the AHP-to-legacy view adapter while its components are moved to consume
+`ChatState` directly. `shadowRuntime` remains necessary until controllers emit
+AHP actions as their primary state path. Removing either component before that
+cutover would create a second source of truth again.
+
 ## Required invariants
 
 - The AHP host is the only authority for shared session state.
