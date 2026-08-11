@@ -236,6 +236,8 @@ export class ConfigPanel {
                         value = message.value === "true";
                     } else if (message.key === "symposium.chat.devMode") {
                         value = message.value === "true";
+                    } else if (message.key === "symposium.ahp.shadow.diagnostics") {
+                        value = message.value === "true";
                     } else if (message.key === "symposium.voice.whisper.threads") {
                         value = Math.max(1, Number(message.value) || 4);
                     } else if (

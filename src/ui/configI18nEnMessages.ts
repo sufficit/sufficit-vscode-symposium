@@ -146,6 +146,11 @@ export const CONFIG_EN_MESSAGES: Dict = {
         "Show zone identifier badges on every UI section of the chat. Hover any section to see its name (e.g. 'header', 'compose', 'chat', 'sessions', 'footer').",
     "config.prefs.devMode.on": "On",
     "config.prefs.devMode.off": "Off",
+    "config.prefs.ahpDiagnostics.name": "AHP Shadow Diagnostics",
+    "config.prefs.ahpDiagnostics.desc":
+        "Log the shadow runtime's projection mismatches to the Symposium output channel. Use when the queue or transcript disagrees with what the agent actually did — it reports which side drifted.",
+    "config.prefs.ahpDiagnostics.on": "On",
+    "config.prefs.ahpDiagnostics.off": "Off",
     "config.prefs.section.memoryInstruction": "Memory search hint",
     "config.prefs.memoryInstruction.desc":
         "Hint injected into the system prompt for logged-in users, guiding them to search Sufficit shared memory before asking you for context. Leave empty to use the built-in default. Only injected when logged in to Sufficit.",

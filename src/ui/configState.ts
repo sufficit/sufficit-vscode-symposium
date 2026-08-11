@@ -89,6 +89,9 @@ export async function buildConfigState(deps: ConfigPanelDeps): Promise<unknown> 
             maxHistoryMessages: openai.get<number>("maxHistoryMessages", 40),
             timeGapNotice: openai.get<string>("timeGapNotice", "5m"),
             devMode: chat.get<boolean>("devMode", false),
+            ahpDiagnostics: vscode.workspace
+                .getConfiguration("symposium.ahp.shadow")
+                .get<boolean>("diagnostics", false),
             sessionCache: chat.get<boolean>("sessionCache", true),
             sessionCacheRam: networkInfo.sessionCacheRam,
             sessionCacheCount: networkInfo.sessionCacheCount,

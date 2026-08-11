@@ -124,6 +124,28 @@ for (const position of POSITIONS) {
     });
 }
 
+/**
+ * The turn finished and the host went idle, yet the row is still listed and is
+ * never sent. That is the state the user photographed: an idle host whose queue
+ * is empty, and a client row nothing drains. Modelled with the user row
+ * carrying NO clientMessageId, which is what defeats every id-keyed guard.
+ */
+test("an idle host with an empty queue leaves no pending row behind", () => {
+    const h = harness();
+    h.emit({ type: "queue", items: [], held: false, busy: false });
+    h.emit({ type: "user", text: TEXT, attachments: [] });
+    h.emit({ type: "event", event: { kind: "turn-start", logicalTurnId: TURN_ID } });
+    h.dispatchOptimistic();
+    h.emit({ type: "event", event: { kind: "turn-end", durationMs: 9200 } });
+    h.emit({ type: "queue", items: [], held: false, busy: false });
+
+    assert.deepEqual(
+        rendered(h.legacy()).queued,
+        [],
+        "the host reported an empty queue while idle — nothing may still be listed",
+    );
+});
+
 /** A genuinely queued message (sent while a turn runs) must still show. */
 test("a message the host really queued stays in the panel", () => {
     const h = harness();

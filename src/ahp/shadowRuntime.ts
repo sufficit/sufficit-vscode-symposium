@@ -245,6 +245,7 @@ export class AhpShadowRuntime {
                     this.runtime.snapshot(record.handle.chatResource).state as ChatState,
                 );
                 this.apply(record, projectQueue(record.queue, items));
+                this.reportStrandedPending(key, record, items.length);
                 this.compare(key, record);
                 return;
             }
@@ -310,6 +311,22 @@ export class AhpShadowRuntime {
                 changes: sessionChatSummaryChanges(chat),
             });
         }
+    }
+
+    /**
+     * The host reported an empty queue but rows are still listed: the exact
+     * shape of the ghost row (idle agent, message never sent, row stays). Names
+     * the ids so the producer can be identified instead of guessed at.
+     */
+    private reportStrandedPending(key: string, record: ShadowRecord, hostQueued: number): void {
+        if (hostQueued > 0) return;
+        const chat = this.runtime.snapshot(record.handle.chatResource).state as ChatState;
+        const stranded = [
+            ...(chat.steeringMessage ? [`${chat.steeringMessage.id} (steering)`] : []),
+            ...(chat.queuedMessages ?? []).map((item) => item.id),
+        ];
+        if (!stranded.length) return;
+        this.mismatch("queue", key, `host queue empty, still pending: ${stranded.join(", ")}`);
     }
 
     private replaceNativeSession(key: string, record: ShadowRecord, nativeSessionId: string): void {

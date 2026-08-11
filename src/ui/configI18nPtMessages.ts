@@ -195,6 +195,11 @@ export const CONFIG_PT_MESSAGES: Dict = {
         "Mostra identificadores de zona em cada seção da interface do chat. Passe o mouse sobre qualquer seção para ver seu nome (ex: 'header', 'compose', 'chat', 'sessions', 'footer').",
     "config.prefs.devMode.on": "Ativado",
     "config.prefs.devMode.off": "Desativado",
+    "config.prefs.ahpDiagnostics.name": "Diagnóstico do AHP Shadow",
+    "config.prefs.ahpDiagnostics.desc":
+        "Registra no canal de saída do Symposium as divergências de projeção do shadow runtime. Use quando a fila ou o transcript discordarem do que o agente realmente fez — o log aponta qual lado divergiu.",
+    "config.prefs.ahpDiagnostics.on": "Ativado",
+    "config.prefs.ahpDiagnostics.off": "Desativado",
     "config.prefs.section.memoryInstruction": "Dica de busca na memória",
     "config.prefs.memoryInstruction.desc":
         "Dica injetada no prompt de sistema para usuários logados, orientando a buscar na memória compartilhada Sufficit antes de pedir contexto a você. Deixe vazio para usar o padrão embutido. Só injetada quando logado no Sufficit.",
