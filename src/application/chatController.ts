@@ -232,7 +232,15 @@ export class ChatController {
         return this.stream.addObserver(observer);
     }
     subscribeLive(observer: (message: unknown) => void): () => void {
-        return this.stream.addLiveObserver(observer);
+        const detach = this.stream.addLiveObserver(observer);
+        // The AHP shadow attaches here, and it may be restoring a ChatState
+        // persisted across a restart whose queue rows this controller has no
+        // idea about. Live observers get no replay, so without an immediate
+        // snapshot nothing ever contradicts those rows and they stay in the
+        // Queued panel forever. Same authority as attach()'s toSink push,
+        // which only reaches webview sinks (unused on the AHP transport).
+        observer(this.queueSnapshot());
+        return detach;
     }
     private emit(message: unknown): void {
         this.stream.emit(message);

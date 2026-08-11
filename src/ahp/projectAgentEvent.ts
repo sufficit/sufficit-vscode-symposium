@@ -1,24 +1,19 @@
 import type { AgentEvent } from "../adapters/types";
+import {
+    activity,
+    chatAction,
+    elapsed,
+    partId,
+    safeMeta,
+    type AhpProjectionAction,
+    type AhpProjectionState,
+} from "./projectionCore";
 
-export interface AhpProjectionAction {
-    channel: "chat" | "session";
-    action: Record<string, unknown>;
-}
-
-export interface AhpProjectionState {
-    turnId?: string;
-    startedAt?: number;
-    pendingUser?: { text: string; model?: string; attachments?: string[]; id?: string };
-    textPartId?: string;
-    reasoningPartId?: string;
-    failed?: boolean;
-    tools: Set<string>;
-    sequence: number;
-}
-
-export function createProjectionState(): AhpProjectionState {
-    return { tools: new Set(), sequence: 0 };
-}
+export {
+    createProjectionState,
+    type AhpProjectionAction,
+    type AhpProjectionState,
+} from "./projectionCore";
 
 export function rememberProjectedUser(
     state: AhpProjectionState,
@@ -181,6 +176,12 @@ function projectToolStart(
     event: Extract<AgentEvent, { kind: "tool-start" }>,
 ): AhpProjectionAction[] {
     if (!state.turnId) return [];
+    // Close the open text/reasoning parts. Deltas append to whichever part is
+    // still open, so keeping them open funnelled a whole turn's text into the
+    // ONE part created before the first tool — replay then showed all the text
+    // first and every tool bunched after it, instead of the real interleaving.
+    state.textPartId = undefined;
+    state.reasoningPartId = undefined;
     const id = event.toolId ?? partId(state, `tool-${event.toolName}`);
     state.tools.add(id);
     return [
@@ -360,29 +361,6 @@ function projectStatusNotice(
     ];
 }
 
-function activity(value: string | undefined): AhpProjectionAction[] {
-    return [
-        { channel: "chat", action: { type: "chat/activityChanged", activity: value } },
-        { channel: "session", action: { type: "session/activityChanged", activity: value } },
-    ];
-}
-
-function chatAction(
-    type: string,
-    turnId: string,
-    values: Record<string, unknown>,
-): AhpProjectionAction {
-    return { channel: "chat", action: { type, turnId, ...values } };
-}
-
-function partId(state: AhpProjectionState, kind: string): string {
-    return `${state.turnId ?? "turn"}:${kind}:${++state.sequence}`;
-}
-
-function elapsed(state: AhpProjectionState): number {
-    return state.startedAt ? Math.max(0, Date.now() - state.startedAt) : 0;
-}
-
 function resetTurn(state: AhpProjectionState): void {
     state.turnId = undefined;
     state.startedAt = undefined;
@@ -392,9 +370,4 @@ function resetTurn(state: AhpProjectionState): void {
     // A mid-turn steer is echoed live by projectInjectedUser; leaving it here
     // would wrongly seed the *next* unrelated turn-start.
     state.pendingUser = undefined;
-}
-
-function safeMeta(values: Record<string, unknown>): Record<string, unknown> | undefined {
-    const entries = Object.entries(values).filter(([, value]) => value !== undefined);
-    return entries.length ? { symposium: Object.fromEntries(entries) } : undefined;
 }

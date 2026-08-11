@@ -148,6 +148,90 @@ test("a non-terminal notice stays transient activity", () => {
     );
 });
 
+// FIX (2026-08-10): projectToolStart used to leave textPartId/reasoningPartId
+// open across a tool call. chat/delta appends to whichever part is still
+// open, so a whole turn's text funnelled into the ONE part created before the
+// first tool — replay showed all text first and every tool bunched after it.
+const INTERLEAVED_STREAM: AgentEvent[] = [
+    { kind: "turn-start", logicalTurnId: "turn-1" },
+    { kind: "text", text: "A" },
+    { kind: "tool-start", toolName: "read_file", toolId: "t1", detail: "first" },
+    { kind: "tool-end", toolName: "read_file", toolId: "t1", result: "ok" },
+    { kind: "text", text: "B" },
+    { kind: "tool-start", toolName: "read_file", toolId: "t2", detail: "second" },
+    { kind: "tool-end", toolName: "read_file", toolId: "t2", result: "ok" },
+    { kind: "text", text: "C" },
+    { kind: "turn-end", durationMs: 5 },
+];
+
+test("response parts keep their chronological order across tool boundaries", () => {
+    const state = runStream("openai", INTERLEAVED_STREAM);
+    const parts = state.turns[0].responseParts as unknown as {
+        kind: string;
+        content?: string;
+    }[];
+    assert.deepEqual(
+        parts.map((part) => part.kind),
+        ["markdown", "toolCall", "markdown", "toolCall", "markdown"],
+        "text must not funnel into one part while tools bunch at the end",
+    );
+    assert.deepEqual(
+        parts.filter((part) => part.kind === "markdown").map((part) => part.content),
+        ["A", "B", "C"],
+        "each text run is its own part, not one concatenated blob",
+    );
+});
+
+test("reasoning parts also stay separate across a tool boundary", () => {
+    const runtime = fixture("openai");
+    rememberProjectedUser(runtime.projection, "question");
+    for (const event of [
+        { kind: "turn-start", logicalTurnId: "turn-1" },
+        { kind: "thinking", text: "r1" },
+        { kind: "tool-start", toolName: "read_file", toolId: "t1", detail: "look" },
+        { kind: "thinking", text: "r2" },
+    ] as AgentEvent[]) {
+        apply(runtime, projectAgentEvent(runtime.projection, event));
+    }
+    const chat = runtime.host.snapshot(runtime.handle.chatResource).state as ChatState;
+    const active = chat.activeTurn;
+    assert.ok(active, "the turn is still open (no turn-end sent yet)");
+    const reasoning = (
+        active!.responseParts as unknown as { kind: string; content?: string }[]
+    ).filter((part) => part.kind === "reasoning");
+    assert.deepEqual(
+        reasoning.map((part) => part.content),
+        ["r1", "r2"],
+        "two separate reasoning parts, not one part holding both",
+    );
+});
+
+test("legacy round trip interleaves text and tools instead of grouping tools at the end", () => {
+    const state = runStream("openai", INTERLEAVED_STREAM);
+    const legacy = ahpChatToLegacy(state) as { type: string; event?: { kind?: string } }[];
+    const eventKinds = legacy
+        .filter((message) => message.type === "event")
+        .map((message) => message.event?.kind);
+    assert.deepEqual(eventKinds, [
+        "turn-start",
+        "text",
+        "tool-start",
+        "tool-end",
+        "text",
+        "tool-start",
+        "tool-end",
+        "text",
+        "turn-end",
+    ]);
+    const toolIds = legacy.flatMap((message) => {
+        const record = message as { type: string; event?: { kind?: string; toolId?: unknown } };
+        return record.type === "event" && record.event?.kind === "tool-start"
+            ? [record.event.toolId]
+            : [];
+    });
+    assert.deepEqual(toolIds, ["t1", "t2"], "tool order is preserved, not collapsed together");
+});
+
 function runStream(provider: string, events: AgentEvent[]): ChatState {
     const runtime = fixture(provider);
     rememberProjectedUser(runtime.projection, "question", "model");
