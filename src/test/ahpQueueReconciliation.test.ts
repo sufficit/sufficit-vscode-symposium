@@ -165,6 +165,45 @@ test("turnStarted without a queuedMessageId still drops the row it is starting o
     assert.equal(next.activeTurn?.id, "session/turn-1");
 });
 
+// Regression, user-reported: three identical messages queued on purpose. The
+// turn that starts on that text accounts for exactly ONE of them; a rule that
+// dropped every row with matching text emptied the panel while two were still
+// genuinely waiting.
+test("a turn starting on a repeated text drops one row, not all of them", () => {
+    const chat: ChatState = {
+        resource: "ahp-chat:/99999999-9999-9999-8999-999999999999",
+        title: "Repeated sends",
+        status: 33,
+        modifiedAt: "2026-08-11T00:00:00.000Z",
+        turns: [],
+        queuedMessages: [
+            { id: "local-a-5", message: { text: "testes", origin: { kind: "user" } } },
+            { id: "local-b-6", message: { text: "testes", origin: { kind: "user" } } },
+            { id: "local-c-7", message: { text: "testes", origin: { kind: "user" } } },
+        ],
+    } as unknown as ChatState;
+
+    const started = chatReducer(chat, {
+        type: "chat/turnStarted",
+        turnId: "session/turn-1",
+        message: { text: "testes", origin: { kind: "user" } },
+    } as never);
+
+    assert.deepEqual(
+        started.queuedMessages?.map((item) => item.id),
+        ["local-b-6", "local-c-7"],
+        "the oldest goes, the rest keep waiting",
+    );
+
+    // The turnComplete sweep must not finish the job off either.
+    const done = chatReducer(started, {
+        type: "chat/turnComplete",
+        turnId: "session/turn-1",
+        duration: 10,
+    } as never);
+    assert.equal(done.queuedMessages?.length, 1, "one more accounted for, one still pending");
+});
+
 test("a queued row with different text survives a turn start", () => {
     const chat: ChatState = {
         resource: "ahp-chat:/88888888-8888-8888-8888-888888888888",

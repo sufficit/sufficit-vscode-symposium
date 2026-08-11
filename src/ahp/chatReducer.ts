@@ -8,6 +8,7 @@ import type {
     UsageInfo,
 } from "@microsoft/agent-host-protocol";
 import { AHP_STATUS, replaceActivityStatus } from "./status";
+import { asArray, asRecord, nonNegative, optionalString, stringArray } from "./chatReducerValues";
 
 type ActionRecord = { type: string } & Record<string, unknown>;
 type PartRecord = Record<string, unknown> & {
@@ -121,17 +122,17 @@ function startTurn(state: ChatState, action: ActionRecord): ChatState {
     if (!turnId) return state;
     const queuedId = optionalString(action.queuedMessageId);
     const message = action.message as Message;
-    // Drop the pending row by id when we have one, and ALSO by exact text.
-    // queuedMessageId is only present when the projection still held the
-    // pendingUser slot for this turn; the first send after an idle period
-    // reaches turn-start without it, and every cleanup path keyed on the id
-    // then failed while the bubble rendered from action.message — the row
-    // that outlived v25-v33. The text match is what the turn is actually
-    // starting on, so a row carrying it is that same message by definition.
-    const startedText = message?.text;
-    const queuedMessages = state.queuedMessages?.filter(
-        (item) => item.id !== queuedId && !(!!startedText && item.message?.text === startedText),
-    );
+    // Drop the row by id when there is one; otherwise drop a SINGLE row
+    // carrying the same text. queuedMessageId is only present when the
+    // projection still held the pendingUser slot, and the first send after an
+    // idle period reaches turn-start without it — the row that outlived
+    // v25-v33. One row, because the same text may legitimately be queued
+    // several times and this turn accounts for exactly one of them.
+    const byId = state.queuedMessages?.filter((item) => item.id !== queuedId);
+    const queuedMessages =
+        byId && byId.length === state.queuedMessages?.length
+            ? dropFirstByText(byId, message?.text)
+            : byId;
     // A stuck activeTurn (missed turnComplete) must never cause this
     // turnStarted to be dropped whole — that leaves an immortal fake queue
     // row while the user bubble still renders. Supersede: finalize the stuck
@@ -279,9 +280,7 @@ function finalizeTurn(
  *  already started/finished — an optimistic row that missed its normal
  *  cleanup path. Conservative: exact text match only. */
 function pruneGhosts(state: ChatState, finalizedText: string): ChatState {
-    const queuedMessages = state.queuedMessages?.filter(
-        (item) => item.message.text !== finalizedText,
-    );
+    const queuedMessages = dropFirstByText(state.queuedMessages, finalizedText);
     const steeringMessage =
         state.steeringMessage?.message?.text === finalizedText ? undefined : state.steeringMessage;
     return {
@@ -289,6 +288,21 @@ function pruneGhosts(state: ChatState, finalizedText: string): ChatState {
         queuedMessages: queuedMessages?.length ? queuedMessages : undefined,
         steeringMessage,
     };
+}
+
+/**
+ * Removes ONE pending row carrying this text, not every one of them.
+ * Queueing the same text several times on purpose is normal ("testes" x3), and
+ * a text match only ever accounts for the single message the turn is handling.
+ */
+function dropFirstByText(
+    items: readonly PendingMessage[] | undefined,
+    text: string | undefined,
+): PendingMessage[] | undefined {
+    if (!items || !text) return items ? [...items] : undefined;
+    const index = items.findIndex((item) => item.message?.text === text);
+    if (index < 0) return [...items];
+    return [...items.slice(0, index), ...items.slice(index + 1)];
 }
 
 function setPending(state: ChatState, action: ActionRecord): ChatState {
@@ -373,26 +387,4 @@ function updateActive(
 ): ChatState {
     if (!state.activeTurn || state.activeTurn.id !== turnId) return state;
     return { ...state, activeTurn: change(state.activeTurn), modifiedAt: new Date().toISOString() };
-}
-
-function optionalString(value: unknown): string | undefined {
-    return typeof value === "string" ? value : undefined;
-}
-
-function stringArray(value: unknown): string[] {
-    return Array.isArray(value)
-        ? value.filter((item): item is string => typeof item === "string")
-        : [];
-}
-
-function asArray<T>(value: unknown): T[] {
-    return Array.isArray(value) ? (value as T[]) : [];
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function nonNegative(value: unknown): number {
-    return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
 }

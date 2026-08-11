@@ -264,9 +264,7 @@ export function handleHostMessage(payload: unknown): void {
             // queue projection, a restored ChatState) and only some of them
             // have a reliable cleanup path — this makes the contradiction
             // unrenderable instead of relying on each of them being correct.
-            const pending = items.filter(
-                (it) => !wasMessageDispatched(it.clientMessageId, it.text),
-            );
+            const pending = items.filter((it) => !wasMessageDispatched(it.clientMessageId));
             renderQueued(pending, !!data.held);
             // The host is authoritative on busy; this "queue" message always
             // carries its current value, so a client-local desync (e.g. the
@@ -312,7 +310,7 @@ export function handleHostMessage(payload: unknown): void {
         }
         case "user": {
             endStream();
-            markMessageDispatched(data.clientMessageId, data.text);
+            markMessageDispatched(data.clientMessageId);
             const el =
                 confirmOptimisticMessage(data.clientMessageId) ||
                 message("user", data.text, Date.now());
