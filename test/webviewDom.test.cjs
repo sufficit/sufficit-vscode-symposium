@@ -120,7 +120,10 @@ test("webview DOM renders the effective model and removes sessions absent from h
         ],
     });
     assert.equal(harness.document.querySelectorAll(".sessionItem").length, 2);
-    assert.match(harness.document.querySelector(".sessionItem[aria-selected='true']").textContent, /Alpha/);
+    assert.match(
+        harness.document.querySelector(".sessionItem[aria-selected='true']").textContent,
+        /Alpha/,
+    );
 
     harness.deliver({
         type: "sessions",
@@ -238,5 +241,29 @@ test("Retry sends stable visible text together with the AHP row index", () => {
     const retry = harness.sent.findLast((message) => message.type === "retry-last-message");
     assert.equal(retry.text, "retry this exact request");
     assert.equal(typeof retry.index, "number");
+    harness.dom.window.close();
+});
+
+test("held queue stays visibly paused while new messages remain direct", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({
+        type: "queue",
+        held: true,
+        busy: false,
+        items: [{ id: 7, text: "interrupted work", attachments: [] }],
+    });
+
+    const queue = harness.document.querySelector("#queued");
+    const banner = queue.querySelector(".qheldBanner");
+    assert.equal(queue.classList.contains("qheld"), true);
+    assert.equal(queue.querySelector(".qhead").textContent, "Queue paused");
+    assert.equal(banner.getAttribute("role"), "status");
+    assert.match(banner.textContent, /New messages send now/);
+    assert.match(harness.document.querySelector("#status").textContent, /1 held after error/);
+
+    harness.document.querySelector("#input").value = "new direct request";
+    harness.document.querySelector("#input").dispatchEvent(new harness.dom.window.Event("input"));
+    assert.match(harness.document.querySelector("#send").title, /paused queue stays unchanged/);
     harness.dom.window.close();
 });

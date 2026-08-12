@@ -35,8 +35,19 @@ export function selectPendingMessages(chat: ChatState): AhpQueueItem[] {
 
 /** A failed turn holds queued work until an explicit user action. */
 export function isPendingQueueHeld(chat: ChatState): boolean {
+    const explicit = [chat.steeringMessage, ...(chat.queuedMessages ?? [])]
+        .filter((item) => item !== undefined)
+        .map((item) => queueHeld(item.message))
+        .find((value) => value !== undefined);
+    if (explicit !== undefined) return explicit;
     if (chat.activeTurn) return false;
     return chat.turns[chat.turns.length - 1]?.state === "error";
+}
+
+function queueHeld(message: unknown): boolean | undefined {
+    const value = (message as { _meta?: { symposium?: { queueHeld?: unknown } } })?._meta?.symposium
+        ?.queueHeld;
+    return typeof value === "boolean" ? value : undefined;
 }
 
 export function attachmentValues(value: unknown): string[] {

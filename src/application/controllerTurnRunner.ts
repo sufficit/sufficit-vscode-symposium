@@ -13,7 +13,7 @@ import type { HubClient } from "../sync/hubClient";
 import { dispatchControllerMessage } from "./controllerDispatch";
 import type { HubState } from "./controllerHubState";
 import type { ControllerLiveState } from "./controllerLiveState";
-import type { ChatQueue, PendingMessage } from "./controllerQueue";
+import type { ChatQueue, PendingMessage, QueueDispatchOptions } from "./controllerQueue";
 import { completeTurn, type TurnCompletionContext } from "./controllerTurnCompletion";
 import {
     WatchdogContext,
@@ -82,11 +82,10 @@ export class ControllerTurnRunner {
         clearWatchdogFn(this.watchdogState);
     }
 
-    dispatch(message: PendingMessage): Promise<void> {
-        // Any dispatch (a normal send, a promoted queue item, a retry) is an
-        // explicit user action — release a prior turn-failure hold so the
-        // queue resumes normal FIFO draining from here.
-        this.deps.queue.release();
+    dispatch(message: PendingMessage, options: QueueDispatchOptions = {}): Promise<void> {
+        // Promoting or retrying explicitly releases a prior failure hold. A
+        // new direct request may opt to run beside that paused work instead.
+        if (!options.preserveQueueHold) this.deps.queue.release();
         // A retry is a new backend attempt. `retryOf` remains attribution
         // metadata, but reusing the old backend id lets a late cancel/turn-end
         // from the stalled attempt terminate the retry as well.

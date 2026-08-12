@@ -29,6 +29,7 @@ import {
     busy,
     canSteerInline,
     queued,
+    queueHeld,
     activeModel,
     loading,
     composerBlockedReason,
@@ -162,21 +163,27 @@ export function updateSendTitle() {
     sendGroup.classList.remove("busy", "redirect", "steer", "stopping");
     sendIcon.innerHTML = MODE_ICONS.send;
     (sendBtn as HTMLButtonElement).disabled = !canSend;
-    (sendBtn as HTMLButtonElement).title = canSend ? "Send (Enter)" : "Type a message to send";
+    (sendBtn as HTMLButtonElement).title = canSend
+        ? queueHeld
+            ? "Send now; paused queue stays unchanged (Enter)"
+            : "Send (Enter)"
+        : "Type a message to send";
     sendCaret.style.display = "none";
     stopBtn.style.display = "none";
 }
 
 export function setStatus(override?: string) {
-    const q = queued > 0 ? " · " + queued + " queued" : "";
+    const queueLabel = queued > 0 ? `${queued} ${queueHeld ? "held after error" : "queued"}` : "";
     status.textContent = composerBlockedReason
         ? ""
         : (override ??
           (busy
-              ? "thinking..." + (activeModel ? " · " + modelLabel(activeModel) : "") + q
-              : activeModel
-                ? "model: " + modelLabel(activeModel)
-                : ""));
+              ? ["thinking...", activeModel ? modelLabel(activeModel) : "", queueLabel]
+                    .filter(Boolean)
+                    .join(" · ")
+              : [activeModel ? "model: " + modelLabel(activeModel) : "", queueLabel]
+                    .filter(Boolean)
+                    .join(" · ")));
     // The model menu remains useful with an empty catalog: it exposes Refresh
     // models and manual entry, which is how a new Sufficit installation recovers
     // after presets/login become available. Reasoning has no such fallback.

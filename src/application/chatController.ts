@@ -296,7 +296,7 @@ export class ChatController {
             dedup: this.dedup,
             busy: () => this.live.busy,
             cancel: () => this.session?.cancel(),
-            dispatch: (message) => void this.runner.dispatch(message),
+            dispatch: (message, options) => void this.runner.dispatch(message, options),
             emitQueue: () => this.emitQueue(),
             log: (message) => this.onLog?.(message),
             getSession: () => this.session,

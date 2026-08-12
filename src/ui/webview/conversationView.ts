@@ -19,7 +19,7 @@ import { postMessage } from "./vscode";
 import { resizeInput } from "./inputSizing";
 import { setComposerBlocked, setStatus } from "./status";
 import { t } from "./i18n";
-import { attachments, setBusy, setConversationRows, setQueued } from "./state";
+import { attachments, setBusy, setConversationRows, setQueueHeld, setQueued } from "./state";
 import { setLastUsage, setLastTurn, setSessionCostUsd } from "./statusbar";
 import type { QueueItem } from "./types";
 
@@ -31,6 +31,7 @@ export function resetConversationView(): void {
     log.textContent = "";
     setBusy(false);
     setQueued(0);
+    setQueueHeld(false);
     setLastUsage(null);
     setLastTurn({});
     setSessionCostUsd(0);

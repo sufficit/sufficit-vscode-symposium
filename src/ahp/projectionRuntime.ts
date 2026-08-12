@@ -244,7 +244,7 @@ export class AhpProjectionRuntime {
                     record.queue,
                     this.runtime.snapshot(record.handle.chatResource).state as ChatState,
                 );
-                this.apply(record, projectQueue(record.queue, items));
+                this.apply(record, projectQueue(record.queue, items, message.held === true));
                 this.reportStrandedPending(key, record, items.length);
                 this.compare(key, record);
                 return;

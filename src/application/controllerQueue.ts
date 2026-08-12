@@ -2,6 +2,11 @@ import type { BusySendMode } from "../protocol/sendMode";
 
 export type SendMode = "send" | BusySendMode;
 
+export interface QueueDispatchOptions {
+    /** Starts an unrelated direct turn without releasing work held after an error. */
+    preserveQueueHold?: boolean;
+}
+
 export type QueueHoldReason = "turn-failed" | "restored";
 
 export interface QueueHold {
@@ -58,7 +63,8 @@ export class ChatQueue {
      * Set when the turn ahead of this queue failed: the queued messages are
      * NOT auto-dispatched (a failure is not a normal continuation point), but
      * they are NOT silently dropped either — the user-authored text stays put
-     * until an explicit release (promote / retry / a fresh manual send).
+     * until an explicit release (promote / retry). A fresh manual send runs
+     * independently and leaves the interrupted work paused.
      * Without this flag the hold was invisible: `attentionStatus` (the signal
      * that caused the hold) clears on the NEXT dispatch, so a later, unrelated
      * message would silently drain the stale queue out of order once it

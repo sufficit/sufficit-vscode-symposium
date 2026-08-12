@@ -1,5 +1,11 @@
 import type { AgentSession } from "../adapters/types";
-import type { ChatQueue, MessageDedup, PendingMessage, SendMode } from "./controllerQueue";
+import type {
+    ChatQueue,
+    MessageDedup,
+    PendingMessage,
+    QueueDispatchOptions,
+    SendMode,
+} from "./controllerQueue";
 import { tryInjectSteer } from "./controllerSteerInjection";
 import type { TurnTracker } from "./turn";
 
@@ -8,7 +14,7 @@ interface SendRouterContext {
     dedup: MessageDedup;
     busy: () => boolean;
     cancel: () => void;
-    dispatch: (message: PendingMessage) => void;
+    dispatch: (message: PendingMessage, options?: QueueDispatchOptions) => void;
     emitQueue: () => void;
     log?: (message: string) => void;
     /** Mid-turn steer injection; absent in tests and on backends without it. */
@@ -64,12 +70,23 @@ export function routeControllerSend(
         return;
     }
     if (!context.queue.isEmpty) {
+        if (context.queue.isHeld) {
+            // A new request is not consent to replay work interrupted by the
+            // previous failure. A Retry is the exception: it explicitly
+            // continues that failed turn and releases normal draining after
+            // it succeeds. Neither path may substitute the old queue head for
+            // the message the user just submitted.
+            const retrying = message.retryOf !== undefined || message.interruptedBy !== undefined;
+            context.emitQueue();
+            context.log?.(
+                `[send] "${preview}" — idle with ${context.queue.length} held: dispatching ${retrying ? "retry" : "new message"}, held queue ${retrying ? "released" : "preserved"}`,
+            );
+            context.dispatch(message, retrying ? undefined : { preserveQueueHold: true });
+            return;
+        }
         // Idle, but something is already waiting (typically a held queue left
-        // over from a failed turn). Preserve FIFO instead of letting this
-        // fresh send jump ahead of what's already queued: append it, then
-        // dispatch the head. Sending is itself the explicit action that
-        // releases a hold (dispatch() clears it), so this also resumes normal
-        // draining from here.
+        // over from a transport race). Preserve FIFO instead of letting this
+        // fresh send jump ahead: append it, then dispatch the head.
         context.queue.enqueue(message);
         const head = context.queue.shift();
         if (head) {

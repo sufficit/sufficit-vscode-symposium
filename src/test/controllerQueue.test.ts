@@ -202,3 +202,61 @@ test("a busy controller queues an AHP send until the running turn completes", ()
         ["second turn"],
     );
 });
+
+test("a fresh idle send preserves a queue held after failure and runs directly", () => {
+    const queue = new ChatQueue();
+    queue.enqueue({ text: "interrupted work", attachments: [], clientMessageId: "held" });
+    queue.hold({ reason: "turn-failed", turnId: "failed-turn", at: 1 });
+    const dispatched: string[] = [];
+    const snapshots: Array<{ length: number; held: boolean }> = [];
+
+    routeControllerSend({ text: "new request", attachments: [], clientMessageId: "new" }, "send", {
+        queue,
+        dedup: new MessageDedup(),
+        busy: () => false,
+        cancel: () => assert.fail("an idle send must not cancel"),
+        dispatch: (message, options) => {
+            if (!options?.preserveQueueHold) queue.release();
+            dispatched.push(message.text);
+        },
+        emitQueue: () => snapshots.push({ length: queue.length, held: queue.isHeld }),
+    });
+
+    assert.deepEqual(dispatched, ["new request"]);
+    assert.deepEqual(
+        queue.items().map((message) => message.text),
+        ["interrupted work"],
+    );
+    assert.equal(queue.isHeld, true);
+    assert.deepEqual(snapshots, [{ length: 1, held: true }]);
+});
+
+test("Retry dispatches the failed request instead of substituting the held queue head", () => {
+    const queue = new ChatQueue();
+    queue.enqueue({ text: "work behind failed turn", attachments: [] });
+    queue.hold({ reason: "turn-failed", turnId: "failed-turn", at: 1 });
+    const dispatched: string[] = [];
+
+    routeControllerSend(
+        { text: "failed request", attachments: [], retryOf: "failed-turn" },
+        "send",
+        {
+            queue,
+            dedup: new MessageDedup(),
+            busy: () => false,
+            cancel: () => assert.fail("Retry must not cancel while idle"),
+            dispatch: (message, options) => {
+                if (!options?.preserveQueueHold) queue.release();
+                dispatched.push(message.text);
+            },
+            emitQueue: () => undefined,
+        },
+    );
+
+    assert.deepEqual(dispatched, ["failed request"]);
+    assert.deepEqual(
+        queue.items().map((message) => message.text),
+        ["work behind failed turn"],
+    );
+    assert.equal(queue.isHeld, false, "successful Retry may resume FIFO draining");
+});

@@ -31,6 +31,7 @@ export function seedQueueProjection(state: QueueProjectionState, chat: ChatState
 export function projectQueue(
     state: QueueProjectionState,
     items: readonly PendingMessage[],
+    held = false,
 ): AhpProjectionAction[] {
     const actions: AhpProjectionAction[] = [];
     const current = new Map<string, "steering" | "queued">();
@@ -54,6 +55,7 @@ export function projectQueue(
                         representation: "path",
                         value: path,
                     })),
+                    _meta: { symposium: { queueHeld: held } },
                 },
             },
         });

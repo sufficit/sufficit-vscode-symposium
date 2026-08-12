@@ -134,7 +134,10 @@ test("a fresh central panel opens the sessions navigator and can return to the a
 test("effective model changes do not get hidden behind the next queued model", () => {
     assert.match(events, /ev\.kind === "model"/);
     assert.match(events, /if \(!queued\) \{\s*setModelValue\(model\);\s*setModelLabel\(\);\s*\}/);
-    assert.match(status, /"thinking\.\.\." \+ \(activeModel \? " · " \+ modelLabel\(activeModel\)/);
+    assert.match(
+        status,
+        /\["thinking\.\.\.", activeModel \? modelLabel\(activeModel\) : "", queueLabel\]/,
+    );
 });
 
 test("an adapter error does not release the busy composer before turn-end", () => {

@@ -5,6 +5,7 @@ import { ChatController } from "../application/chatController";
 import type { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import type { ApplicationPorts } from "../application/ports";
 import { seedQueueProjection, createQueueProjectionState, projectQueue } from "../ahp";
+import { isPendingQueueHeld } from "../ahp/client/chatSelectors";
 import { chatReducer } from "../ahp/chatReducer";
 
 /**
@@ -128,6 +129,43 @@ test("an optimistic row the projection never issued is still removed by host tru
     }
 
     assert.equal(next.queuedMessages, undefined);
+});
+
+test("host queue projection carries an explicit failure hold into AHP", () => {
+    const actions = projectQueue(
+        createQueueProjectionState(),
+        [{ id: 4, text: "paused", attachments: [] }],
+        true,
+    );
+    const pending = actions.find((item) => item.action.type === "chat/pendingMessageSet");
+    const message = pending?.action.message as {
+        _meta?: { symposium?: { queueHeld?: boolean } };
+    };
+
+    assert.equal(message._meta?.symposium?.queueHeld, true);
+});
+
+test("an explicit queue hold survives while an unrelated direct turn runs", () => {
+    const running = {
+        resource: "ahp-chat:/77777777-7777-5777-8777-777777777777",
+        title: "Running beside held work",
+        status: 33,
+        modifiedAt: "2026-08-12T00:00:00.000Z",
+        turns: [{ id: "t1", state: "error", message: { text: "failed" }, responseParts: [] }],
+        activeTurn: { id: "t2", startedAt: "x", message: { text: "new" }, responseParts: [] },
+        queuedMessages: [
+            {
+                id: "q1",
+                message: {
+                    text: "still paused",
+                    origin: { kind: "user" },
+                    _meta: { symposium: { queueHeld: true } },
+                },
+            },
+        ],
+    } as unknown as ChatState;
+
+    assert.equal(isPendingQueueHeld(running), true);
 });
 
 /**

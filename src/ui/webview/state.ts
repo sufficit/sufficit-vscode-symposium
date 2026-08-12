@@ -47,6 +47,7 @@ export function getOpenInPref(): string {
 export let activeSessionId = "";
 export let busy = false;
 export let queued = 0;
+export let queueHeld = false;
 export let loading = false;
 export let sessions: SessionListItem[] = [];
 export let sessionsLoaded = false;
@@ -158,6 +159,9 @@ export function setBusy(v: boolean) {
 }
 export function setQueued(v: number) {
     queued = v;
+}
+export function setQueueHeld(v: boolean) {
+    queueHeld = v;
 }
 export function setLoadingFlag(v: boolean) {
     loading = v;

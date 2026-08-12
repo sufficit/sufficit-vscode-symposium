@@ -1,7 +1,7 @@
 // Guardrails + queued-messages panels — split out of panels.ts (check:size).
 import { postMessage } from "./vscode";
 import { guardrailsEl, queuedEl } from "./dom";
-import { setQueued } from "./state";
+import { setQueueHeld, setQueued } from "./state";
 import { setStatus } from "./status";
 import { svgIcon } from "./icons";
 import { refreshPanelLayout } from "./panelBridge";
@@ -76,6 +76,7 @@ export function renderGuardrails(items: GuardrailItem[]): void {
 // ---- queued messages (editable until dispatched) ----
 export function renderQueued(items: QueueItem[], held = false): void {
     setQueued(items.length); // keep status text in sync
+    setQueueHeld(held && items.length > 0);
     queuedEl.textContent = "";
     if (!items.length) {
         queuedEl.classList.remove("has");
@@ -86,16 +87,18 @@ export function renderQueued(items: QueueItem[], held = false): void {
     queuedEl.classList.toggle("qheld", held);
     const head = document.createElement("div");
     head.className = "qhead";
-    head.textContent = "Queued";
+    head.textContent = held ? "Queue paused" : "Queued";
     queuedEl.appendChild(head);
     if (held) {
         const banner = document.createElement("div");
         banner.className = "qheldBanner";
+        banner.setAttribute("role", "status");
+        banner.setAttribute("aria-live", "polite");
         const text = document.createElement("span");
         text.textContent =
             items.length === 1
-                ? "Held — the turn before it failed. It will not send on its own."
-                : "Held — the turn before them failed. They will not send on their own.";
+                ? "The previous turn failed. New messages send now; this one stays paused until you choose Send next."
+                : "The previous turn failed. New messages send now; these stay paused until you choose Send next.";
         banner.appendChild(text);
         const discard = document.createElement("button");
         discard.className = "qheldDiscard";
