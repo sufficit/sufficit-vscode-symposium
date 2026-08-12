@@ -6,6 +6,7 @@ import { LiveSessions } from "../sessions/runtime";
 import { ChatSurfaceDeps } from "../ui/chatSurface";
 import { SufficitAuth } from "../auth/identity";
 import { configuredModel, setConfiguredModel } from "./config";
+import { sessionListStatus } from "../sessions/status";
 import type { AhpHostRuntime } from "../ahp/hostRuntime";
 import type { SymposiumApi } from "../api/symposiumApi";
 
@@ -48,7 +49,10 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                 }
             }
             const disk = store.decorate(await rawSessions(), true).map((s) => {
-                const status = runtime.statusFor(s.sessionId) ?? s.terminalStatus;
+                // `idle` means no turn is active, not that the last turn
+                // succeeded. Keep a persisted failure visible while the live
+                // controller remains attached to the session.
+                const status = sessionListStatus(runtime.statusFor(s.sessionId), s.terminalStatus);
                 const adapter = adapterByBackend.get(s.backend);
                 return { ...s, backendName: adapter?.displayName ?? s.backend, status };
             });

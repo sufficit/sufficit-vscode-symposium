@@ -11,6 +11,25 @@ export function liveSessionStatus(
     return attentionStatus ?? "idle";
 }
 
+/**
+ * Resolves the status shown for a stored session when a live runtime snapshot
+ * and the last persisted terminal outcome are both available.
+ *
+ * An idle controller is not a successful outcome: it only says that no turn
+ * is running right now. Preserve the persisted warning/error in that case so
+ * a failed session cannot be painted green merely because its controller is
+ * still attached to the workspace.
+ */
+export function sessionListStatus(
+    liveStatus: SessionStatus | undefined,
+    persistedTerminalStatus: SessionTerminalStatus | undefined,
+): SessionStatus | undefined {
+    if (liveStatus === "working" || liveStatus === "error" || liveStatus === "warning") {
+        return liveStatus;
+    }
+    return persistedTerminalStatus ?? liveStatus;
+}
+
 export type FollowSessionStatus = "working" | "idle";
 
 /**
