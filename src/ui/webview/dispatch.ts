@@ -147,6 +147,9 @@ export function handleHostMessage(payload: unknown): void {
                 setSideMode(data.sessionsSide);
                 layout();
             }
+            if (typeof data.chatOnly === "boolean") {
+                root.classList.toggle("chat-only", data.chatOnly);
+            }
             if (typeof data.devMode === "boolean") {
                 root.classList.toggle("dev-mode", data.devMode);
             }

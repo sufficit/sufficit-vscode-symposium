@@ -92,16 +92,39 @@ test("editor panels do not restore the last session over an explicit new session
         surfaceMessages,
         /if \([\s\S]*!this\.d\.chatOnly[\s\S]*!this\.d\.getController\(\)[\s\S]*restoreOrStart\(\)/,
     );
+    assert.match(surfaceMessages, /openIn !== "editor"[\s\S]*restoreOrStart\(\)/);
+});
+
+test("the initial surface layout is decided before a picker or restore can run", () => {
+    assert.match(
+        chatSurface,
+        /const sessionsOnly = this\.startInSessionsList \|\| \(!this\.chatOnly && openIn === "editor"\)/,
+    );
+    assert.match(
+        chatSurface,
+        /const chatOnly = this\.chatOnly && !this\.startInSessionsList[\s\S]*?sessionsOnly, chatOnly/,
+    );
     assert.match(
         surfaceMessages,
-        /editor panel is always explicit[\s\S]*restoring here would overwrite that/,
+        /const openIn = vscode\.workspace[\s\S]*?\.get<string>\("openIn", "editor"\)/,
+    );
+    assert.match(
+        surfaceMessages,
+        /!this\.d\.chatOnly[\s\S]*?openIn !== "editor"[\s\S]*?restoreOrStart\(\)/,
+    );
+    assert.match(
+        dispatch,
+        /typeof data\.chatOnly === "boolean"[\s\S]*?root\.classList\.toggle\("chat-only", data\.chatOnly\)/,
     );
 });
 
 test("a fresh central panel opens the sessions navigator and can return to the active session", () => {
     assert.match(chatPanel, /new ChatPanel\(context, deps, true\)/);
     assert.match(chatPanel, /startInSessionsList,?\s*\n?\s*\);/);
-    assert.match(chatSurface, /sessionsOnly: this\.startInSessionsList/);
+    assert.match(
+        chatSurface,
+        /const sessionsOnly = this\.startInSessionsList[\s\S]*?sessionsOnly,/,
+    );
     assert.match(surfaceMessagesTypes, /startInSessionsList: boolean/);
     assert.match(protocol, /\{ type: "open-active-session" \}/);
     assert.match(source("ui/webview/index.ts"), /type: "open-active-session"/);

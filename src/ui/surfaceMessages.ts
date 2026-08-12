@@ -40,12 +40,16 @@ export class SurfaceMessages {
                     void this.d.sync.pushAccount();
                     void this.d.sync.refreshTasks();
                     void this.d.sync.refreshGuardrails();
-                    // Only the sidebar restores its last session on first load.
-                    // An editor panel is always explicit (open session, terminal,
-                    // or new-session picker); restoring here would overwrite that
-                    // request with the last active session and add a network wait.
+                    // The sidebar restores its last session only when it is the
+                    // configured chat destination. In editor mode the sidebar is
+                    // deliberately a sessions navigator, so restoring here would
+                    // replace the navigator with the active conversation.
+                    const openIn = vscode.workspace
+                        .getConfiguration("symposium.chat")
+                        .get<string>("openIn", "editor");
                     if (
                         !this.d.chatOnly &&
+                        openIn !== "editor" &&
                         !this.d.getController() &&
                         !this.d.getFollowHandle() &&
                         !this.d.getTerminalSession()

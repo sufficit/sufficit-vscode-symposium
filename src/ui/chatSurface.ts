@@ -217,7 +217,9 @@ export class ChatSurface {
         const openIn = vscode.workspace
             .getConfiguration("symposium.chat")
             .get<string>("openIn", "editor");
-        this.post({ type: "prefs", openIn, sessionsOnly: this.startInSessionsList });
+        const sessionsOnly = this.startInSessionsList || (!this.chatOnly && openIn === "editor");
+        const chatOnly = this.chatOnly && !this.startInSessionsList;
+        this.post({ type: "prefs", openIn, sessionsOnly, chatOnly });
 
         for (const queued of this.queue) {
             void this.webview.postMessage(queued);
