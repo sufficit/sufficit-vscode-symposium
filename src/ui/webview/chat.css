@@ -239,6 +239,9 @@
     #root.narrow #sessionsPane { display: none; }
     #root.chat-only #sessionsPane { display: none; }
     #root.chat-only #listToggle { display: none; }
+    #sessionsBackBtn { display: none; }
+    #root.sessions-only #sessionsBackBtn,
+    #root.narrow.listOpen #sessionsBackBtn { display: inline-flex; }
     /* The anchored recent-session popover + new-session buttons are an
        editor-tab-only feature: in the sidebar their actions always target an
        editor tab (open/new-editor-session), which is surface-inappropriate.

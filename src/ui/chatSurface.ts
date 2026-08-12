@@ -84,9 +84,8 @@ export class ChatSurface {
         // Restores this exact webview after a host command temporarily moves
         // workbench focus away (notably VS Code's editor-dictation command).
         private readonly reveal?: () => void | Thenable<void>,
-        // Editor panels show only the open conversation; the sidebar shows the
-        // sessions list beside it.
         private readonly chatOnly = false,
+        private readonly startInSessionsList = false,
     ) {
         this.ahpPort = createSurfaceAhpPort(
             this.deps,
@@ -138,6 +137,7 @@ export class ChatSurface {
             markReady: () => this.markReady(),
             refreshSessions: () => this.refreshSessions(),
             refreshQuotas: (force) => this.quota.refresh(force),
+            startInSessionsList: this.startInSessionsList,
             openSession: (info) => this.openSession(info),
             restoreFocus: async () => {
                 await this.reveal?.();
@@ -217,7 +217,7 @@ export class ChatSurface {
         const openIn = vscode.workspace
             .getConfiguration("symposium.chat")
             .get<string>("openIn", "editor");
-        this.post({ type: "prefs", openIn, sessionsOnly: !this.chatOnly && openIn === "editor" });
+        this.post({ type: "prefs", openIn, sessionsOnly: this.startInSessionsList });
 
         for (const queued of this.queue) {
             void this.webview.postMessage(queued);

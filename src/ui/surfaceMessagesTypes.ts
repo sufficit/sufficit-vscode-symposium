@@ -18,6 +18,7 @@ export interface SurfaceMessagesDeps {
     refreshSessions: () => Promise<void>;
     refreshQuotas: (force?: boolean) => Promise<void>;
     chatOnly: boolean;
+    startInSessionsList: boolean;
     openSession: (info: SessionInfo) => void;
     restoreFocus: () => Promise<void>;
     getController: () => ChatController | undefined;

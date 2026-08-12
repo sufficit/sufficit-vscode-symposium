@@ -34,7 +34,7 @@ export class SurfaceMessages {
             switch (message?.type) {
                 case "ready": {
                     this.d.markReady();
-                    if (!this.d.chatOnly) {
+                    if (!this.d.chatOnly || this.d.startInSessionsList) {
                         void this.d.refreshSessions();
                     }
                     void this.d.sync.pushAccount();
@@ -51,6 +51,26 @@ export class SurfaceMessages {
                         !this.d.getTerminalSession()
                     ) {
                         void this.d.dialogues.restoreOrStart();
+                    }
+                    return;
+                }
+                case "open-active-session": {
+                    const last = this.d.deps.lastActive.get();
+                    if (!last) {
+                        this.d.post({ type: "toast", text: "No active session to return to." });
+                        return;
+                    }
+                    const sessions = await this.d.deps.listSessions();
+                    const info = sessions.find(
+                        (s) => s.sessionId === last.sessionId && s.backend === last.backend,
+                    );
+                    if (info) {
+                        this.d.openSession(info);
+                    } else {
+                        this.d.post({
+                            type: "toast",
+                            text: "The active session is no longer available.",
+                        });
                     }
                     return;
                 }

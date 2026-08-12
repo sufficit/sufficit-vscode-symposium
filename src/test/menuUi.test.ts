@@ -13,6 +13,10 @@ const dispatch = source("ui/webview/dispatch.ts");
 const commandHelpers = source("extension/commands/helpers.ts");
 const surfaceMessages = source("ui/surfaceMessages.ts");
 const surfaceListeners = source("ui/chatSurfaceListeners.ts");
+const chatPanel = source("ui/chatPanel.ts");
+const chatSurface = source("ui/chatSurface.ts");
+const surfaceMessagesTypes = source("ui/surfaceMessagesTypes.ts");
+const protocol = source("protocol/chat.ts");
 const events = source("ui/webview/events.ts");
 const status = source("ui/webview/status.ts");
 
@@ -92,6 +96,16 @@ test("editor panels do not restore the last session over an explicit new session
         surfaceMessages,
         /editor panel is always explicit[\s\S]*restoring here would overwrite that/,
     );
+});
+
+test("a fresh central panel opens the sessions navigator and can return to the active session", () => {
+    assert.match(chatPanel, /new ChatPanel\(context, deps, true\)/);
+    assert.match(chatPanel, /startInSessionsList,?\s*\n?\s*\);/);
+    assert.match(chatSurface, /sessionsOnly: this\.startInSessionsList/);
+    assert.match(surfaceMessagesTypes, /startInSessionsList: boolean/);
+    assert.match(protocol, /\{ type: "open-active-session" \}/);
+    assert.match(source("ui/webview/index.ts"), /type: "open-active-session"/);
+    assert.match(css, /#root\.sessions-only #sessionsBackBtn/);
 });
 
 test("effective model changes do not get hidden behind the next queued model", () => {
