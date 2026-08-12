@@ -1,11 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+    armWatchdog,
     forceEndStalledTurn,
     watchdogTimeoutMinutes,
     type WatchdogContext,
+    type WatchdogState,
 } from "../application/controllerWatchdog";
 import { completeTurn, type TurnCompletionContext } from "../application/controllerTurnCompletion";
+import { turnOriginOf } from "../application/controllerTurnRunner";
 import { TurnTracker, type TurnOrigin } from "../application/turn";
 
 function stalledContext(queuedCount = 0, origin: TurnOrigin = "user") {
@@ -90,4 +93,29 @@ test("an explicit retry gets its own silence deadline", () => {
     testContext.ctx.retrySilenceMinutes = () => 15;
 
     assert.equal(watchdogTimeoutMinutes(testContext.ctx), 15);
+});
+
+test("rearming invalidates a deadline callback from the previous attempt", () => {
+    const testContext = stalledContext();
+    const callbacks: Array<() => void> = [];
+    const state: WatchdogState = {
+        timer: undefined,
+        schedule: (callback) => {
+            callbacks.push(callback);
+            return callbacks.length as unknown as ReturnType<typeof setTimeout>;
+        },
+        cancel: () => undefined,
+    };
+
+    armWatchdog(testContext.ctx, state);
+    armWatchdog(testContext.ctx, state);
+
+    callbacks[0]();
+    assert.equal(testContext.turns.isBusy, true);
+    callbacks[1]();
+    assert.equal(testContext.turns.isBusy, false);
+});
+
+test("a retry marker survives when the original turn id is unavailable", () => {
+    assert.equal(turnOriginOf({ retryOf: undefined, interruptedBy: "stalled" }), "retry");
 });

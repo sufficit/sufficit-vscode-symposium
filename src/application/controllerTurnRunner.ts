@@ -50,8 +50,12 @@ interface ControllerTurnRunnerDeps {
 
 /** id is assigned only by ChatQueue.enqueue — its presence means this
  *  message spent time in the queue before reaching dispatch(). */
-function turnOriginOf(message: PendingMessage): TurnOrigin {
-    if (message.retryOf) return "retry";
+export function turnOriginOf(
+    message: Pick<PendingMessage, "retryOf" | "interruptedBy" | "id">,
+): TurnOrigin {
+    // `interruptedBy` is retained as a second marker because a retry may cross
+    // a client/reload boundary where attribution metadata is unavailable.
+    if (message.retryOf !== undefined || message.interruptedBy !== undefined) return "retry";
     if (message.id != null) return "queue";
     return "user";
 }
@@ -89,6 +93,10 @@ export class ControllerTurnRunner {
         const turn = this.deps.live.turns.begin(turnOriginOf(message), {
             intentId: message.intentId,
         });
+        // Start from the user's explicit dispatch, not from the previous
+        // attempt's deadline or from the first provider event. This resets the
+        // retry clock immediately, including slow adapter startup.
+        this.armWatchdog();
         return dispatchControllerMessage(message, {
             adapter: this.deps.adapter,
             options: this.deps.options,
