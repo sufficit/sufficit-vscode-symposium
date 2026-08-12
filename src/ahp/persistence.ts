@@ -4,6 +4,7 @@ import type { Snapshot, URI } from "@microsoft/agent-host-protocol";
 import type { AhpHostRuntime, AhpRuntimeExport } from "./hostRuntime";
 import {
     type AhpCompactionLimits,
+    compactHistoricalSnapshots,
     resnapshotOversizedSessions,
     trimRetained,
 } from "./persistenceCompaction";
@@ -138,7 +139,10 @@ export class AhpPersistence {
         const reSnapshotted = this.autoCompact
             ? resnapshotOversizedSessions(exported, this.compactionLimits())
             : exported;
-        const state = redactRuntime(reSnapshotted);
+        const compacted = this.autoCompact
+            ? compactHistoricalSnapshots(reSnapshotted, this.compactionLimits())
+            : reSnapshotted;
+        const state = redactRuntime(compacted);
         validateRuntime(state, this.maxSessionBytes);
         const envelope: PersistenceEnvelope = {
             protocolVersion: AHP_PROTOCOL_VERSION,

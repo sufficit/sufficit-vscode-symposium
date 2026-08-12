@@ -29,8 +29,13 @@ import {
 } from "./state";
 import { resolveMarkdownImage } from "./markdown";
 
-import { handleCatalogMessage } from "./dispatchCatalog";
-import { applyLocalAhpFrame } from "./localAhp";
+import {
+    beginCatalogHistoryCycle,
+    handleCatalogMessage,
+    whenCatalogHistoryIdle,
+} from "./dispatchCatalog";
+import { applyLocalAhpFrame, whenAhpChatRenderIdle } from "./localAhp";
+import { resetAhpChatRendering } from "./ahpChatView";
 import type { AgentEvent, HistoryMessage } from "../../adapters/types";
 import type { HostToWebview } from "../../protocol/chat";
 import type { MetaMessageData, QueueItem, WebviewAttachment } from "./types";
@@ -166,6 +171,8 @@ export function handleHostMessage(payload: unknown): void {
         }
         case "clear": {
             historyCycle++; // invalidate a reveal already queued for the prior session
+            beginCatalogHistoryCycle();
+            resetAhpChatRendering();
             hideAgentPicker(); // a session/dialogue is taking over the surface
             saveCurrentComposerDraft();
             clearComposer();
@@ -180,6 +187,7 @@ export function handleHostMessage(payload: unknown): void {
             // is rebuilt. The host sends history-end only after the replay (or
             // async adapter history load) has completed.
             historyCycle++;
+            beginCatalogHistoryCycle();
             setLoading(true, "Loading session…");
             break;
         }
@@ -188,10 +196,13 @@ export function handleHostMessage(payload: unknown): void {
             // A second snap on the next frame covers markdown/font layout that
             // settles between DOM insertion and paint.
             const cycle = historyCycle;
-            settleAtBottom(
-                () => cycle === historyCycle,
-                () => setLoading(false),
-            );
+            void Promise.all([whenCatalogHistoryIdle(), whenAhpChatRenderIdle()]).then(() => {
+                if (cycle !== historyCycle) return;
+                settleAtBottom(
+                    () => cycle === historyCycle,
+                    () => setLoading(false),
+                );
+            });
             break;
         }
         case "queue": {

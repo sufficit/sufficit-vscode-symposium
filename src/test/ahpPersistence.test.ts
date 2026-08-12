@@ -146,7 +146,7 @@ test("AHP persistence persists oversized session under raised per-session cap", 
         persistence.save(runtime);
         persistence.flushSync();
         const restored = persistence.load();
-        assert.ok(restored);
+        assert.ok(restored, diagnostics.join("\n"));
         const restoredRuntime = new AhpHostRuntime({ restored, replayCapacity: 20 });
         const restoredChat = restoredRuntime.snapshot(restoredRuntime.handles()[0].chatResource)
             .state as { turns?: { id: string }[] };
@@ -264,6 +264,60 @@ test("AHP persistence trims retained actions under the total cap", () => {
             restored.retainedActions.length < 500,
             "expected some retained actions to have been trimmed",
         );
+    } finally {
+        fs.rmSync(directory, { recursive: true, force: true });
+    }
+});
+
+test("AHP persistence compacts aggregate history when many sessions exceed the total cap", () => {
+    const directory = temporaryDirectory();
+    try {
+        const runtime = new AhpHostRuntime({ replayCapacity: 20 });
+        for (let session = 1; session <= 3; session++) {
+            runtime.registerSession({
+                provider: "codex",
+                nativeSessionId: `native-${session}`,
+                stableId: `10000000-0000-4000-8000-${String(session).padStart(12, "0")}`,
+                chatId: `20000000-0000-4000-8000-${String(session).padStart(12, "0")}`,
+                title: `Session ${session}`,
+            });
+        }
+        for (const handle of runtime.handles()) {
+            const turns = Array.from({ length: 70 }, (_, index) => ({
+                id: `${handle.nativeSessionId}-turn-${index}`,
+                startedAt: "2026-01-01T00:00:00Z",
+                message: { text: `question ${index}`, origin: { kind: "user" } },
+                responseParts: [
+                    { kind: "markdown", id: `part-${index}`, content: "x".repeat(1_500) },
+                ],
+                state: "complete",
+                duration: 100,
+            }));
+            runtime.dispatch(handle.chatResource, { type: "chat/turnsLoaded", turns });
+        }
+
+        const diagnostics: string[] = [];
+        const persistence = new AhpPersistence(directory, {
+            maxBytes: 120_000,
+            maxSessionBytes: 512_000,
+            autoCompact: true,
+            onDiagnostic: (message) => diagnostics.push(message),
+        });
+        persistence.saveSync(runtime);
+        persistence.flushSync();
+        const restored = persistence.load();
+
+        assert.ok(restored, diagnostics.join("\n"));
+        assert.ok(
+            diagnostics.some((message) => message.includes("historical turn")),
+            `expected aggregate history compaction, got: ${JSON.stringify(diagnostics)}`,
+        );
+        const persistedTurns = restored.snapshots.reduce((total, snapshot) => {
+            const turns = (snapshot.state as { turns?: unknown[] }).turns;
+            return total + (Array.isArray(turns) ? turns.length : 0);
+        }, 0);
+        assert.ok(persistedTurns < 210, `expected fewer than 210 turns, got ${persistedTurns}`);
+        assert.ok(persistedTurns >= 3, "expected at least one recent turn per session");
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }

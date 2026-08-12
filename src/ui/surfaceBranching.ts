@@ -78,20 +78,18 @@ export function retryLastMessage(
     d: SurfaceDialoguesDeps,
     index: number,
     errorMessage?: string,
+    expectedText?: string,
 ): void {
     const from = d.getController();
     if (!from || !Number.isInteger(index) || index < 0) {
         return;
     }
     const transcriptMessages = from.transcriptMessages();
-    const adjustedIndex = Math.min(index, transcriptMessages.length - 1);
-    if (adjustedIndex < 0) {
+    const target = resolveRetryTarget(transcriptMessages, index, expectedText);
+    if (!target) {
         return;
     }
-    const original = transcriptMessages[adjustedIndex];
-    if (!original || original.role !== "user") {
-        return;
-    }
+    const { message: original, index: adjustedIndex } = target;
     // Tell the model WHY it's being nudged to continue — otherwise a bare
     // resend looks like the user just said "continue" for no reason. Passed
     // in from the webview's click (not captured host-side): an in-memory
@@ -128,6 +126,38 @@ export function retryLastMessage(
         interruptedBy,
         retryOf,
     } as WebviewToHost);
+}
+
+/** Resolves a Retry against stable message content first. AHP snapshot replay
+ * can change the webview row index while the error card remains visible; an
+ * exact text match keeps that card attached to the message the user saw. */
+function resolveRetryTarget(
+    messages: Array<{ role: string; text: string }>,
+    requestedIndex: number,
+    expectedText?: string,
+): { message: { role: string; text: string }; index: number } | undefined {
+    const bounded = Math.min(requestedIndex, messages.length - 1);
+    const exact = messages[bounded];
+    if (exact?.role === "user" && (expectedText === undefined || exact.text === expectedText)) {
+        return { message: exact, index: bounded };
+    }
+    if (expectedText !== undefined) {
+        for (let candidate = messages.length - 1; candidate >= 0; candidate--) {
+            const message = messages[candidate];
+            if (message.role === "user" && message.text === expectedText) {
+                return { message, index: candidate };
+            }
+        }
+        return undefined;
+    }
+    // Backward compatibility for a button rendered by an older webview bundle.
+    for (let candidate = bounded; candidate >= 0; candidate--) {
+        const message = messages[candidate];
+        if (message?.role === "user") {
+            return { message, index: candidate };
+        }
+    }
+    return undefined;
 }
 
 /**

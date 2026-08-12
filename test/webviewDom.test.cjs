@@ -54,6 +54,7 @@ function createHarness(initialState = {}) {
         removeEventListener() {},
     });
     window.navigator.clipboard = { writeText: async () => {} };
+    window.CSS = { escape: (value) => String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&") };
     window.eval(bundle);
 
     return {
@@ -162,9 +163,10 @@ test("webview DOM distinguishes live usage, non-fatal errors and actionable syst
     harness.dom.window.close();
 });
 
-test("webview DOM announces AHP reconciliation and renders a chat snapshot once", () => {
+test("webview DOM announces AHP reconciliation and renders a chat snapshot once", async () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));
+    harness.deliver({ type: "history-start" });
     harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
     harness.deliver({
         type: "ahp-frame",
@@ -204,7 +206,37 @@ test("webview DOM announces AHP reconciliation and renders a chat snapshot once"
             },
         },
     });
+    harness.deliver({ type: "history-end" });
+    assert.equal(harness.document.querySelector("#root").classList.contains("loading"), true);
+    await new Promise((resolve) => setTimeout(resolve, 120));
     assert.match(harness.document.querySelector("#log").textContent, /AHP question/);
     assert.match(harness.document.querySelector("#log").textContent, /AHP answer/);
+    assert.equal(harness.document.querySelector("#root").classList.contains("loading"), false);
+    harness.dom.window.close();
+});
+
+test("Retry sends stable visible text together with the AHP row index", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({
+        type: "user",
+        text: "retry this exact request",
+        attachments: [],
+        clientMessageId: "client-retry",
+    });
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "error",
+            message: "Turn ended automatically: no activity for 5 minutes.",
+            retryable: true,
+        },
+    });
+
+    harness.document.querySelector(".retryBtn").click();
+
+    const retry = harness.sent.findLast((message) => message.type === "retry-last-message");
+    assert.equal(retry.text, "retry this exact request");
+    assert.equal(typeof retry.index, "number");
     harness.dom.window.close();
 });

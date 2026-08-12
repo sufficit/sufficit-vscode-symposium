@@ -16,6 +16,82 @@ export interface AhpCompactionLimits {
 }
 
 /**
+ * Bounds the aggregate cost of historical chat snapshots. Individual sessions
+ * can each be below maxSessionBytes while their combined persisted state still
+ * consumes the entire global cap (the real-world 40-session failure mode).
+ *
+ * The JSON/render-log repositories remain authoritative; persisted AHP state is
+ * only a reconnect cache. Keep a useful recent tail per chat and reclaim older
+ * turns before retained-action trimming, leaving headroom for fresh actions.
+ */
+export function compactHistoricalSnapshots(
+    state: AhpRuntimeExport,
+    limits: AhpCompactionLimits,
+): AhpRuntimeExport {
+    const targetBytes = Math.floor(limits.maxBytes * 0.75);
+    let estimatedBytes = byteLength({ ...state, retainedActions: [] as ActionEnvelope[] });
+    if (estimatedBytes <= targetBytes) return state;
+
+    const snapshots = [...state.snapshots];
+    let removedTurns = 0;
+    const changed = new Set<number>();
+    // Prefer a useful recent tail. If that is still too large, retain at least
+    // one completed turn per chat so restored sessions never appear fabricated.
+    for (const minimumTurns of [20, 1]) {
+        const candidates = snapshots
+            .map((snapshot, index) => ({
+                index,
+                snapshot,
+                turns: Array.isArray((snapshot.state as { turns?: unknown }).turns)
+                    ? ([...(snapshot.state as { turns: unknown[] }).turns] as unknown[])
+                    : undefined,
+            }))
+            .filter(
+                (
+                    candidate,
+                ): candidate is {
+                    index: number;
+                    snapshot: Snapshot;
+                    turns: unknown[];
+                } => (candidate.turns?.length ?? 0) > minimumTurns,
+            )
+            .sort((left, right) => byteLength(right.turns) - byteLength(left.turns));
+
+        for (const candidate of candidates) {
+            if (estimatedBytes <= targetBytes) break;
+            let removeCount = 0;
+            let reclaimed = 0;
+            while (
+                candidate.turns.length - removeCount > minimumTurns &&
+                estimatedBytes - reclaimed > targetBytes
+            ) {
+                reclaimed += byteLength(candidate.turns[removeCount]) + 1;
+                removeCount++;
+            }
+            if (removeCount === 0) continue;
+            const nextTurns = candidate.turns.slice(removeCount);
+            snapshots[candidate.index] = {
+                ...candidate.snapshot,
+                state: {
+                    ...(candidate.snapshot.state as unknown as Record<string, unknown>),
+                    turns: nextTurns,
+                } as Snapshot["state"],
+            };
+            estimatedBytes -= reclaimed;
+            removedTurns += removeCount;
+            changed.add(candidate.index);
+        }
+        if (estimatedBytes <= targetBytes) break;
+    }
+
+    if (removedTurns === 0) return state;
+    limits.onDiagnostic?.(
+        `[ahp] compacted ${removedTurns} historical turn(s) across ${changed.size} chat snapshot(s) for the total persistence budget`,
+    );
+    return { ...state, snapshots };
+}
+
+/**
  * Re-snapshots any session whose owned snapshots exceed the per-session
  * cap, so validateRuntime does not throw on a long-running host. If a fresh
  * snapshot still exceeds the cap (because the live chat turn history itself
@@ -109,7 +185,7 @@ export function trimRetained(
     limits: AhpCompactionLimits,
 ): AhpRuntimeExport {
     const retainedActions = state.retainedActions;
-    if (retainedActions.length <= 1) return state;
+    if (retainedActions.length === 0) return state;
 
     // Measure the immutable base (everything except retained actions) once,
     // then trim retained actions by count rather than by re-serializing the
@@ -121,13 +197,13 @@ export function trimRetained(
     const avgPerAction = Math.max(1, Math.ceil(retainedBytes / retainedActions.length));
     const overage = baseBytes + retainedBytes - limits.maxBytes;
     const estimatedRemovals = Math.min(
-        retainedActions.length - 1,
+        retainedActions.length,
         Math.ceil(overage / avgPerAction) + 1,
     );
     let trimmed = retainedActions.slice(estimatedRemovals);
     let iterations = 0;
     while (
-        trimmed.length > 1 &&
+        trimmed.length > 0 &&
         baseBytes + byteLength(trimmed) > limits.maxBytes &&
         iterations++ < 32
     ) {
@@ -140,11 +216,13 @@ export function trimRetained(
     ) {
         const reAdd = retainedActions.length - trimmed.length - 1;
         if (reAdd < 0) break;
-        trimmed = retainedActions.slice(reAdd);
+        const candidate = retainedActions.slice(reAdd);
+        if (baseBytes + byteLength(candidate) > limits.maxBytes) break;
+        trimmed = candidate;
     }
     const removed = retainedActions.length - trimmed.length;
     if (removed <= 0) return state;
-    const newFloor = trimmed[0]?.serverSeq ?? 0;
+    const newFloor = trimmed[0]?.serverSeq ?? state.serverSeq;
     limits.onDiagnostic?.(
         `[ahp] trimmed ${removed} retained action(s) to stay under the ${limits.maxBytes}-byte persistence cap (new floor serverSeq=${newFloor})`,
     );

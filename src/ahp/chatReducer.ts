@@ -104,11 +104,12 @@ export function chatReducer(state: ChatState, raw: StateAction): ChatState {
             // reopened and its history is reloaded while the AHP snapshot still
             // carries the previously loaded turns.
             const incoming = asArray<Turn>(action.turns);
-            const existingIds = new Set(state.turns.map((turn) => turn.id));
+            const existing = action.replace === true ? [] : state.turns;
+            const existingIds = new Set(existing.map((turn) => turn.id));
             const deduped = incoming.filter((turn) => !existingIds.has(turn.id));
             return {
                 ...state,
-                turns: [...deduped, ...state.turns],
+                turns: [...deduped, ...existing],
                 turnsNextCursor: optionalString(action.turnsNextCursor),
             };
         }

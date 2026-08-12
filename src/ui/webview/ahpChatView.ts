@@ -22,16 +22,71 @@ import { preserveScrollOnPrepend, setHasMoreHistory } from "./scroll";
 import { fillToolResult, renderApprovalRequest, renderTool } from "./tools";
 import { setBusy } from "./state";
 import { setStatus } from "./status";
+import { renderInSlices } from "./renderScheduler";
+
+let renderGeneration = 0;
+let pendingRender: Promise<void> = Promise.resolve();
+
+/** Cancels any historical snapshot that is still being painted. */
+export function resetAhpChatRendering(): void {
+    renderGeneration++;
+    pendingRender = Promise.resolve();
+}
+
+/** Resolves after the latest authoritative snapshot and its queued actions. */
+export function whenAhpChatRenderIdle(): Promise<void> {
+    return pendingRender;
+}
+
+/** Replaces the visible transcript from authoritative state without monopolizing
+ * Chromium's renderer thread. A newer snapshot invalidates the older job. */
+export function scheduleAhpChatSnapshot(chat: ChatState): Promise<void> {
+    const generation = ++renderGeneration;
+    const current = () => generation === renderGeneration;
+    const job = renderAhpChatSnapshot(chat, current).catch((error) => {
+        if (current()) {
+            console.error("Failed to render AHP chat snapshot", error);
+        }
+    });
+    pendingRender = job;
+    return job;
+}
+
+/** Preserves action order while an initial snapshot is still rendering. A
+ * first-page history replacement supersedes that snapshot instead of appending
+ * duplicate turns to it. */
+export function scheduleAhpChatAction(envelope: ActionEnvelope, chat?: ChatState): Promise<void> {
+    const action = envelope.action as unknown as Record<string, unknown>;
+    if (action.type === "chat/turnsLoaded" && action.replace === true && chat) {
+        return scheduleAhpChatSnapshot(chat);
+    }
+    const generation = renderGeneration;
+    pendingRender = pendingRender
+        .then(() => {
+            if (generation === renderGeneration) {
+                renderAhpChatAction(envelope, chat);
+            }
+        })
+        .catch((error) => {
+            if (generation === renderGeneration) {
+                console.error("Failed to render AHP chat action", error);
+            }
+        });
+    return pendingRender;
+}
 
 /** Reconstructs the conversation directly from authoritative ChatState. */
-export function renderAhpChatSnapshot(chat: ChatState): void {
+async function renderAhpChatSnapshot(chat: ChatState, stillCurrent: () => boolean): Promise<void> {
     hideAgentPicker();
     resetConversationView();
     setHasMoreHistory(!!chat.turnsNextCursor);
     const lastTurn = chat.turns.length - 1;
-    chat.turns.forEach((turn, index) =>
-        renderTurn(turn, false, index !== lastTurn || !!chat.activeTurn),
+    const completed = await renderInSlices(
+        chat.turns,
+        (turn, index) => renderTurn(turn, false, index !== lastTurn || !!chat.activeTurn),
+        { stillCurrent },
     );
+    if (!completed) return;
     if (chat.activeTurn) renderTurn(chat.activeTurn, true, false);
     renderAhpQueue(chat);
     setBusy(!!chat.activeTurn);

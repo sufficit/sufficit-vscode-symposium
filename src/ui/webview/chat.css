@@ -69,6 +69,15 @@
        history has a real scrollHeight and the pin lands at the bottom BEFORE the
        log is revealed — no visible jump on open. */
     #root.loading #log { visibility: hidden; }
+    /* Long restored transcripts remain measurable for bottom-pinning while
+       Chromium skips paint/layout work for rows outside the viewport. */
+    #log > .msg,
+    #log > .toolGroup,
+    #log > .statusNotice,
+    #log > .branchBanner {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 112px;
+    }
 
     /* In-chat agent picker (new session): replaces the native QuickPick. */
     #agentPicker {

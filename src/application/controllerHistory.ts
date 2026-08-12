@@ -29,7 +29,7 @@ export async function loadControllerHistory(
         if (hasRenderLog) {
             const messages = historyFromRenderLog(info.sessionId);
             if (messages.length > 0) {
-                emit({ type: "history", messages });
+                emit({ type: "history", messages, replace: true });
                 return undefined;
             }
         }
@@ -42,6 +42,7 @@ export async function loadControllerHistory(
         emit({
             type: "history",
             messages: page.messages,
+            replace: cursor === undefined,
             ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
         });
         return page.nextCursor;

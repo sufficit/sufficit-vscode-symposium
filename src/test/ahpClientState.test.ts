@@ -102,6 +102,29 @@ test("chat turnsLoaded deduplicates turns by id on repeated loads", () => {
     assert.equal(chat?.turns?.length, 2);
 });
 
+test("first history page replaces a stale restored AHP transcript", () => {
+    const state = new SymposiumAhpState();
+    const snapshot = chatSnapshot();
+    (snapshot.state as ChatState).turns = [
+        { id: "stale-1" },
+        { id: "stale-2" },
+    ] as ChatState["turns"];
+    state.applySnapshot(snapshot);
+
+    state.apply(
+        envelope(100, {
+            type: "chat/turnsLoaded",
+            replace: true,
+            turns: [{ id: "current-1" }],
+        }),
+    );
+
+    assert.deepEqual(
+        state.chats.get(CHAT)?.turns.map((turn) => turn.id),
+        ["current-1"],
+    );
+});
+
 test("AHP state reconstructs transcript and active lifecycle", () => {
     const state = new SymposiumAhpState();
     state.applySnapshot(chatSnapshot());

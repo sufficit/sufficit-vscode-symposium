@@ -1,7 +1,12 @@
 import type { AhpMessagePortEnvelope } from "../../ahp/messagePortProtocol";
 import { SymposiumAhpState } from "../../ahp/client/state";
 import { setHasMoreHistory } from "./scroll";
-import { renderAhpChatAction, renderAhpChatSnapshot } from "./ahpChatView";
+import {
+    resetAhpChatRendering,
+    scheduleAhpChatAction,
+    scheduleAhpChatSnapshot,
+    whenAhpChatRenderIdle,
+} from "./ahpChatView";
 
 let generation = 0;
 let state = new SymposiumAhpState();
@@ -18,6 +23,7 @@ export function applyLocalAhpFrame(message: unknown): boolean {
     if (frame.kind === "reset") {
         generation = frame.generation;
         state = new SymposiumAhpState();
+        resetAhpChatRendering();
         setHasMoreHistory(false);
         return true;
     }
@@ -35,14 +41,16 @@ export function applyLocalAhpFrame(message: unknown): boolean {
         setHasMoreHistory(
             !!(chatState as { turnsNextCursor?: string } | undefined)?.turnsNextCursor,
         );
-        if (chatState) renderAhpChatSnapshot(chatState);
+        if (chatState) void scheduleAhpChatSnapshot(chatState);
         return true;
     }
     const result = state.apply(frame.envelope);
     if (result === "ignored") return true;
-    renderAhpChatAction(frame.envelope, state.chats.get(frame.envelope.channel));
+    void scheduleAhpChatAction(frame.envelope, state.chats.get(frame.envelope.channel));
     return true;
 }
+
+export { whenAhpChatRenderIdle };
 
 function updateConnectionStatus(status: string, detail?: string): void {
     const element = document.getElementById("ahpConnectionStatus");

@@ -26,6 +26,15 @@ export function turnText(turn: ChatState["turns"][number]): string {
         .join("");
 }
 
+export function mergeExpectedTurns(
+    current: string[],
+    turns: ChatState["turns"],
+    history: { replace?: boolean },
+): string[] {
+    const next = turns.map(turnText);
+    return history.replace === true ? next : [...next, ...current];
+}
+
 export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
     const turns: ChatState["turns"] = [];
     let current: ChatState["turns"][number] | undefined;

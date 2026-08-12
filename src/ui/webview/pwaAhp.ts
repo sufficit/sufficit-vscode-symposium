@@ -4,7 +4,7 @@ import { nativeSessionId } from "../../ahp/client/state";
 import type { HostToWebview, WebviewToHost } from "../../protocol/chat";
 import { authHeaders, token } from "./pwaLogin";
 import type { PwaConfig } from "./pwaTypes";
-import { renderAhpChatAction, renderAhpChatSnapshot } from "./ahpChatView";
+import { scheduleAhpChatAction, scheduleAhpChatSnapshot } from "./ahpChatView";
 import { renderAhpSession, renderAhpSessions } from "./ahpSessionView";
 import { loadPendingInput } from "./conversationView";
 
@@ -141,14 +141,14 @@ function renderSnapshot(): void {
     if (!session) return;
     renderAhpSession(session);
     const chat = chatResource ? client.state.chats.get(chatResource) : undefined;
-    if (chat) renderAhpChatSnapshot(chat);
+    if (chat) void scheduleAhpChatSnapshot(chat);
 }
 
 function renderAction(envelope: ActionEnvelope): void {
     if (!client || !options) return;
     if (envelope.channel === chatResource) {
         const chat = client.state.chats.get(envelope.channel);
-        renderAhpChatAction(envelope, chat);
+        void scheduleAhpChatAction(envelope, chat);
     } else if (envelope.channel === sessionResource) {
         const session = client.state.sessions.get(envelope.channel);
         if (session) renderAhpSession(session);

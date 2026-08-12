@@ -51,6 +51,42 @@ test("plain retry resends the interrupted message with its timeout reason", () =
     ]);
 });
 
+test("plain retry survives AHP row-index drift by matching the visible user text", () => {
+    let handled: WebviewToHost | undefined;
+    const posted: unknown[] = [];
+    const controller = {
+        transcriptMessages: () => [
+            { role: "assistant", text: "older projected row" },
+            { role: "user", text: "retry this exact request" },
+            { role: "assistant", text: "failed response" },
+        ],
+    };
+    const deps = {
+        getController: () => controller,
+        post: (message: unknown) => posted.push(message),
+        dispatchAhp: (message: WebviewToHost) => {
+            handled = message;
+            return true;
+        },
+    } as unknown as SurfaceDialoguesDeps;
+
+    retryLastMessage(deps, 0, "stalled", "retry this exact request");
+
+    assert.equal(handled?.type, "send");
+    assert.equal(handled?.text, "retry this exact request");
+    assert.equal(handled?.retryOf, "retry");
+    assert.deepEqual(posted, [
+        {
+            type: "event",
+            event: {
+                kind: "status-notice",
+                text: "Continuing — told the model why: stalled",
+                anchorIndex: 1,
+            },
+        },
+    ]);
+});
+
 test("editResend retries unchanged Claude text in the same session", () => {
     let opened = 0;
     let handled: WebviewToHost | undefined;

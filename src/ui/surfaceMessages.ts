@@ -206,7 +206,11 @@ export class SurfaceMessages {
                 }
                 case "retry-last-message": {
                     if (typeof message.index === "number") {
-                        this.d.dialogues.retryLastMessage(message.index, message.errorMessage);
+                        this.d.dialogues.retryLastMessage(
+                            message.index,
+                            message.errorMessage,
+                            message.text,
+                        );
                     }
                     return;
                 }

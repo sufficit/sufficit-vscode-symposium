@@ -74,6 +74,7 @@ export function renderError(message: string, historical = false, retryable = fal
                 postMessage({
                     type: "retry-last-message",
                     index: lastUser.idx,
+                    text: lastUser.text,
                     errorMessage: message,
                 });
                 if (!busy) {

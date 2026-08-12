@@ -2,7 +2,7 @@ import type { AgentEvent, HistoryMessage } from "../adapters/types";
 import type { PendingMessage } from "../application/controllerQueue";
 import type { ChatState, SessionState } from "@microsoft/agent-host-protocol";
 import { AhpHostRuntime, type AhpRuntimeExport, type AhpSessionHandle } from "./hostRuntime";
-import { historyTurns, turnText } from "./historyProjection";
+import { historyTurns, mergeExpectedTurns, turnText } from "./historyProjection";
 import { AhpPersistence } from "./persistence";
 import {
     asRecord,
@@ -254,11 +254,12 @@ export class AhpProjectionRuntime {
                 this.runtime.dispatch(record.handle.chatResource, {
                     type: "chat/turnsLoaded",
                     turns,
+                    replace: message.replace === true,
                     ...(typeof message.nextCursor === "string"
                         ? { turnsNextCursor: message.nextCursor }
                         : {}),
                 });
-                record.expectedTurns.push(...turns.map(turnText));
+                record.expectedTurns = mergeExpectedTurns(record.expectedTurns, turns, message);
                 this.apply(record, []);
                 this.compare(key, record);
                 return;
