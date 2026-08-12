@@ -2,7 +2,7 @@
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
     "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.812.1",
+    "version": "2026.812.2",
     "publisher": "sufficit",
     "license": "MIT",
     "icon": "media/symposium-icon.png",
@@ -253,6 +253,12 @@
                     "default": 5,
                     "minimum": 0,
                     "description": "Minutes of no activity from the agent (no streamed text/tool events) before a turn is force-ended with a retryable error, so a stalled tool or dropped connection can't pin the session as \"working\" forever. Applies to all backends (Claude, Codex, Copilot, Sufficit AI/custom). Raise it for scenarios with long silent tool calls (e.g. slow test suites); set to 0 to disable the watchdog entirely."
+                },
+                "symposium.turnRetrySilenceMinutes": {
+                    "type": "number",
+                    "default": 15,
+                    "minimum": 0,
+                    "description": "Minutes of silence allowed for an explicit retry after a stalled turn. This separate recovery window prevents the Retry action from deterministically failing again at the normal stalled-turn timeout; set to 0 to disable the retry watchdog."
                 },
                 "symposium.hub.url": {
                     "type": "string",

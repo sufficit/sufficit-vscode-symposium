@@ -24,9 +24,8 @@ export interface PendingMessage {
     intentId?: string;
     /**
      * Set when this is a Retry: the logicalTurnId of the failed turn being
-     * retried (delivery 1C). When present, the adapter reuses that logicalTurnId
-     * instead of allocating a new one, so the retry is attributable to the
-     * original turn for observability — without duplicating the user message.
+     * retried. It is attribution metadata only; the adapter must allocate a
+     * fresh backend turn id so late events from the failed attempt stay stale.
      */
     retryOf?: string;
     text: string;

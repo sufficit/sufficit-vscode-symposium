@@ -117,7 +117,10 @@ export function retryLastMessage(
     // (when available) so the retry is attributable to the original turn — not a
     // new logical turn with a duplicate user message. Falls back to a fresh turn
     // when the id is unknown (e.g. after a reload).
-    const retryOf = from.lastTurnId;
+    // Keep a marker even after reload, when the host no longer knows the old
+    // backend id. The adapter uses presence to preserve the dangling user row;
+    // it still allocates a fresh backend turn id for every attempt.
+    const retryOf = from.lastTurnId ?? "retry";
     dispatchAhp(d, {
         type: "send",
         text: original.text,

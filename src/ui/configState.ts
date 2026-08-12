@@ -80,6 +80,7 @@ export async function buildConfigState(deps: ConfigPanelDeps): Promise<unknown> 
             memoryInstruction: chat.get<string>("memoryInstruction"),
             lmTools: root.get<string>("lmTools", "off"),
             turnSilenceMinutes: root.get<number>("turnSilenceMinutes", 5),
+            turnRetrySilenceMinutes: root.get<number>("turnRetrySilenceMinutes", 15),
             maxToolHops: openai.get<number>("maxToolHops", 50),
             noProgressStop: openai.get<number>("noProgressStop", 0),
             autoCompactAt: openai.get<number>("autoCompactAt", 0.8),

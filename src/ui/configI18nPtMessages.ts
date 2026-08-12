@@ -115,8 +115,12 @@ export const CONFIG_PT_MESSAGES: Dict = {
     "config.prefs.turnSilenceMinutes.name": "Tempo limite de turno travado",
     "config.prefs.turnSilenceMinutes.desc":
         'Encerra o turno automaticamente após esse tempo sem atividade do agente (ferramenta travada ou conexão perdida), pra sessão nunca ficar presa em "trabalhando" pra sempre. Aumente para cenários com chamadas de ferramenta longas e silenciosas (ex.: suítes de teste demoradas); desabilite para nunca parar sozinho.',
+    "config.prefs.turnRetrySilenceMinutes.name": "Tempo limite do retry",
+    "config.prefs.turnRetrySilenceMinutes.desc":
+        "Janela de silêncio separada para um retry explícito após um turno travado. Evita que o Retry falhe novamente no mesmo limite do turno normal.",
     "config.steps.2min": "2 minutos",
     "config.steps.5min": "5 minutos",
+    "config.steps.15min": "15 minutos",
     "config.steps.10min": "10 minutos",
     "config.steps.20min": "20 minutos",
     "config.steps.30min": "30 minutos",

@@ -83,9 +83,11 @@ export class ControllerTurnRunner {
         // explicit user action — release a prior turn-failure hold so the
         // queue resumes normal FIFO draining from here.
         this.deps.queue.release();
+        // A retry is a new backend attempt. `retryOf` remains attribution
+        // metadata, but reusing the old backend id lets a late cancel/turn-end
+        // from the stalled attempt terminate the retry as well.
         const turn = this.deps.live.turns.begin(turnOriginOf(message), {
             intentId: message.intentId,
-            expectedBackendId: message.retryOf,
         });
         return dispatchControllerMessage(message, {
             adapter: this.deps.adapter,
@@ -145,6 +147,8 @@ export class ControllerTurnRunner {
             emit: this.deps.emit,
             silenceMinutes: () =>
                 this.deps.ports.configuration.get("symposium", "turnSilenceMinutes", 5),
+            retrySilenceMinutes: () =>
+                this.deps.ports.configuration.get("symposium", "turnRetrySilenceMinutes", 15),
         };
     }
 }

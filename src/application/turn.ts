@@ -31,8 +31,8 @@ export interface TurnInit {
     origin: TurnOrigin;
     startedAt: number;
     intentId?: string;
-    /** logicalTurnId this turn intends to reuse (Retry). Informational: the
-     *  adapter may still allocate a fresh one (resumeTurn validates it). */
+    /** Compatibility metadata; retries now allocate a fresh backend id so
+     *  stale events cannot end the new attempt. */
     expectedBackendId?: string;
 }
 
@@ -222,20 +222,14 @@ export class TurnTracker {
 
     /** Starts a turn. If one is already live it is force-ended as
      *  "superseded" and logged — the invariant is enforced, not asserted.
-     *  Un-retires init.expectedBackendId so a Retry reusing a logicalTurnId
-     *  is not mistaken for a straggler. */
+     *  Retired backend ids stay retired so late events from a failed attempt
+     *  cannot be mistaken for the next retry. */
     begin(origin: TurnOrigin, init?: { intentId?: string; expectedBackendId?: string }): Turn {
         if (this._current) {
             this.deps.log?.(
                 `[turn] ${this._current.describe()} superseded by a new turn before it ended`,
             );
             this.end(this._current, "superseded");
-        }
-        if (init?.expectedBackendId) {
-            const idx = this.retired.indexOf(init.expectedBackendId);
-            if (idx >= 0) {
-                this.retired.splice(idx, 1);
-            }
         }
         const turn = new Turn({
             id: `t${++this.seq}`,

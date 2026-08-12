@@ -38,8 +38,10 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     private currentLogicalTurnId: string | undefined;
     /** Intent id propagated from the controller for the in-flight turn (no arbiter here — carried, not decided). */
     private currentIntentId: string | undefined;
-    /** logicalTurnId to reuse for a Retry (set by send when resumeTurnId is passed); consumed once by resumeTurn(). */
+    /** Backend-owned pause continuation id; separate from retry attribution. */
     private pendingResumeTurnId: string | undefined;
+    /** True while the next send is an explicit retry; consumed by appendUserTurn. */
+    private pendingRetry = false;
     /** True only while the last turn ended at the bounded tool-hop pause. */
     private pausedForToolCap = false;
     // Continuous follow-up anchor (small-context guardrail). `objective` is the
@@ -254,16 +256,13 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     }
 
     /**
-     * Reuses an existing logicalTurnId for a RETRY (delivery 1C): instead of
-     * allocating a fresh turn, the adapter continues under the same stable id so
-     * the retry is attributable to the original turn for observability. Does NOT
-     * increment the turn seq (it's the same logical turn) — but attemptIds
-     * continue advancing (the turnRunner assigns them per-hop). Falls back to a
-     * fresh bumpTurn when the id is absent/invalid (e.g. after a reload).
+     * Continues a backend-owned pause under the same logical turn. Explicit
+     * retries do not stage this id: they must get a fresh turn so late events
+     * from the stalled attempt cannot terminate the recovery attempt.
      */
     private resumeTurn(resumeTurnId?: string): string {
-        // Consume the staged retry id (one-shot — cleared so it can't leak to a
-        // later turn). The turnRunner reads it via getResumeTurnId before calling.
+        // Consume the staged continuation id (one-shot — cleared so it cannot
+        // leak to a later turn). The turnRunner reads it via getResumeTurnId.
         const id = resumeTurnId ?? this.pendingResumeTurnId;
         this.pendingResumeTurnId = undefined;
         // Validate the id belongs to THIS session and matches the expected format,
@@ -293,7 +292,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         images?: string[],
         preamble?: string[],
         intentId?: string,
-        resumeTurnId?: string,
+        retryOf?: string,
     ): void {
         // Intercept /compact: a local command (summarize the conversation to shrink
         // the model context), NOT a user turn to ship to the gateway.
@@ -305,9 +304,10 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         // Carry the controller-assigned intent id for the ledger rows of this
         // turn (no arbiter here — the controller decides; the adapter carries it).
         this.currentIntentId = intentId;
-        // Retry (1C): the logicalTurnId to reuse is staged here and consumed once
-        // by resumeTurn() at the start of the turn.
-        this.pendingResumeTurnId = resumeTurnId;
+        // A retry reuses the dangling user row, but the TurnRunner allocates a
+        // fresh logicalTurnId. Reusing the old id made late cancellation events
+        // indistinguishable from events belonging to this new attempt.
+        this.pendingRetry = retryOf !== undefined;
         const appended = appendUserTurn(
             {
                 cfg: this.cfg,
@@ -316,8 +316,9 @@ export class OpenAISession extends EventEmitter implements AgentSession {
                 turnSeq: this.turnSeq,
                 led: (role, content, extra) => this.led(role, content, extra),
             },
-            { text, images, preamble, resumeTurnId, intentId: this.currentIntentId },
+            { text, images, preamble, retry: this.pendingRetry, intentId: this.currentIntentId },
         );
+        this.pendingRetry = false;
         const taskText = text.trim();
         if (appended && isObjectiveText(taskText)) {
             this.objective = taskText.slice(0, 600);

@@ -203,7 +203,8 @@ export interface AgentSession extends EventEmitter {
         images?: string[],
         preamble?: string[],
         intentId?: string,
-        resumeTurnId?: string,
+        /** logicalTurnId of the failed attempt when this is an explicit retry. */
+        retryOf?: string,
     ): void;
     /**
      * Replaces the model for the next turn. The currently running CLI/API

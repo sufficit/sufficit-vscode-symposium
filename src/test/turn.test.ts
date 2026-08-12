@@ -102,19 +102,19 @@ test("TurnTracker.resolveEnd: mismatched id against a bound live turn is rejecte
     assert.equal((decision as { reason: string }).reason, "stale-id");
 });
 
-test("TurnTracker: Retry un-retires its expectedBackendId so the retried turn's end is accepted", () => {
+test("TurnTracker: Retry keeps the failed backend id retired", () => {
     const tracker = new TurnTracker();
     const failed = tracker.begin("user");
     tracker.resolveStart("backend-1");
     tracker.end(failed, "failed"); // retires "backend-1"
 
-    // Without un-retiring, resolving the retry's end for the SAME backend id
-    // (the adapter deliberately reuses it) would be rejected as stale.
-    const retry = tracker.begin("retry", { expectedBackendId: "backend-1" });
-    tracker.resolveStart("backend-1");
-    assert.equal(retry.backendId, "backend-1");
-    const decision = tracker.resolveEnd("backend-1");
-    assert.equal(decision.accept, true);
+    // A retry is a fresh backend attempt. A late event carrying the old id
+    // must be rejected instead of ending the retry.
+    const retry = tracker.begin("retry");
+    assert.equal(tracker.resolveStart("backend-1").accept, false);
+    assert.equal(retry.backendId, undefined);
+    assert.equal(tracker.resolveStart("backend-2").accept, true);
+    assert.equal(tracker.resolveEnd("backend-2").accept, true);
 });
 
 test("TurnTracker.begin supersedes a still-live turn instead of allowing two live turns", () => {

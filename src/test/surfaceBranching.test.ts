@@ -38,6 +38,7 @@ test("plain retry resends the interrupted message with its timeout reason", () =
     assert.equal(handled?.type, "send");
     assert.equal(handled?.text, "run the complete build");
     assert.equal(handled?.interruptedBy, reason);
+    assert.equal(handled?.retryOf, "retry");
     assert.deepEqual(posted, [
         {
             type: "event",

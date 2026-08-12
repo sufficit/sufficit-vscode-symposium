@@ -22,6 +22,20 @@ export interface WatchdogContext {
     /** Minutes of silence before a stalled turn is force-ended (symposium.turnSilenceMinutes);
      *  read fresh on every arm so a live settings change applies to the next turn. <= 0 disables it. */
     silenceMinutes(): number;
+    /** Optional longer window for an explicit retry of a stalled turn. */
+    retrySilenceMinutes?(): number;
+}
+
+/** Selects the deadline for the live turn. A retry is a deliberate recovery
+ * attempt, so it gets its own deadline instead of deterministically repeating
+ * the same five-minute failure that caused the retry. */
+export function watchdogTimeoutMinutes(ctx: WatchdogContext): number {
+    const normal = ctx.silenceMinutes();
+    if (ctx.turns.current?.origin !== "retry") {
+        return normal;
+    }
+    const retry = ctx.retrySilenceMinutes?.();
+    return retry === undefined ? normal : retry;
 }
 
 /** (Re)arms the silence watchdog; no-op when idle or when disabled (silenceMinutes <= 0). */
@@ -36,7 +50,7 @@ export function armWatchdog(
     if (!ctx.turns.isBusy) {
         return;
     }
-    const minutes = ctx.silenceMinutes();
+    const minutes = watchdogTimeoutMinutes(ctx);
     if (minutes <= 0) {
         return;
     }

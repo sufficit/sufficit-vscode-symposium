@@ -1,12 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { forceEndStalledTurn, type WatchdogContext } from "../application/controllerWatchdog";
+import {
+    forceEndStalledTurn,
+    watchdogTimeoutMinutes,
+    type WatchdogContext,
+} from "../application/controllerWatchdog";
 import { completeTurn, type TurnCompletionContext } from "../application/controllerTurnCompletion";
-import { TurnTracker } from "../application/turn";
+import { TurnTracker, type TurnOrigin } from "../application/turn";
 
-function stalledContext(queuedCount = 0) {
+function stalledContext(queuedCount = 0, origin: TurnOrigin = "user") {
     const turns = new TurnTracker();
-    turns.begin("user");
+    turns.begin(origin);
     const calls: string[] = [];
     const emitted: unknown[] = [];
     let queued = queuedCount;
@@ -79,4 +83,11 @@ test("a stale watchdog callback cannot end an already idle turn", () => {
 
     assert.deepEqual(testContext.calls, []);
     assert.deepEqual(testContext.emitted, []);
+});
+
+test("an explicit retry gets its own silence deadline", () => {
+    const testContext = stalledContext(0, "retry");
+    testContext.ctx.retrySilenceMinutes = () => 15;
+
+    assert.equal(watchdogTimeoutMinutes(testContext.ctx), 15);
 });

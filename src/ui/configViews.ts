@@ -266,6 +266,9 @@ export const configViews =
                 item(t("config.prefs.turnSilenceMinutes.name"), t("config.prefs.turnSilenceMinutes.desc"),
                     sel("symposium.turnSilenceMinutes", String(p.turnSilenceMinutes ?? 5),
                         [{ v: "0", l: t("config.value.disabled") }, { v: "2", l: t("config.steps.2min") }, { v: "5", l: t("config.steps.5min") }, { v: "10", l: t("config.steps.10min") }, { v: "20", l: t("config.steps.20min") }, { v: "30", l: t("config.steps.30min") }])) +
+                item(t("config.prefs.turnRetrySilenceMinutes.name"), t("config.prefs.turnRetrySilenceMinutes.desc"),
+                    sel("symposium.turnRetrySilenceMinutes", String(p.turnRetrySilenceMinutes ?? 15),
+                        [{ v: "0", l: t("config.value.disabled") }, { v: "5", l: t("config.steps.5min") }, { v: "10", l: t("config.steps.10min") }, { v: "15", l: t("config.steps.15min") }, { v: "20", l: t("config.steps.20min") }, { v: "30", l: t("config.steps.30min") }])) +
                 item(t("config.prefs.autoApprove.name"), t("config.prefs.autoApprove.desc"),
                     sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
                         [{ v: "true", l: t("config.prefs.autoApprove.yes") }, { v: "false", l: t("config.prefs.autoApprove.no") }]))

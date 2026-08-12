@@ -113,8 +113,12 @@ export const CONFIG_EN_MESSAGES: Dict = {
     "config.prefs.turnSilenceMinutes.name": "Stalled-turn timeout",
     "config.prefs.turnSilenceMinutes.desc":
         'Force-end a turn after this many minutes with no activity from the agent (stalled tool or dropped connection), so the session never gets stuck "working" forever. Raise it for scenarios with long silent tool calls (e.g. slow test suites); disable to never auto-stop.',
+    "config.prefs.turnRetrySilenceMinutes.name": "Retry timeout",
+    "config.prefs.turnRetrySilenceMinutes.desc":
+        "Separate silence window for an explicit retry after a stalled turn. It prevents Retry from failing again at the normal stalled-turn timeout.",
     "config.steps.2min": "2 minutes",
     "config.steps.5min": "5 minutes",
+    "config.steps.15min": "15 minutes",
     "config.steps.10min": "10 minutes",
     "config.steps.20min": "20 minutes",
     "config.steps.30min": "30 minutes",

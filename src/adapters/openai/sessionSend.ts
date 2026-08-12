@@ -15,7 +15,8 @@ export interface UserTurnInput {
     text: string;
     images?: string[];
     preamble?: string[];
-    resumeTurnId?: string;
+    /** Reuse the dangling user row, but never reuse the backend turn id. */
+    retry?: boolean;
     intentId?: string;
 }
 
@@ -26,7 +27,7 @@ export interface UserTurnInput {
  */
 export function appendUserTurn(ctx: UserTurnContext, input: UserTurnInput): boolean {
     const { cfg, sessionId, messages, turnSeq } = ctx;
-    const { text, images, preamble, resumeTurnId, intentId } = input;
+    const { text, images, preamble, retry, intentId } = input;
     // One-shot app instructions (todo capability, autonomy, policy) go in as
     // `developer` messages — above the user turn, below the preset's system —
     // instead of being glued onto the user text. Downgraded to `system` for
@@ -36,14 +37,13 @@ export function appendUserTurn(ctx: UserTurnContext, input: UserTurnInput): bool
     // user message with no assistant reply. Sending another user message would
     // break role alternation (Anthropic-backed providers 400 on user→user).
     // Close the gap with a short assistant turn so the new user is valid.
-    // BUT: a Retry (resumeTurnId set) of a failed turn leaves the same user
+    // BUT: an explicit Retry of a failed turn leaves the same user
     // message dangling — re-pushing it would duplicate it in model context
     // and the lossless ledger (defect 4.1). When retrying and the dangling
     // last message is textually identical, reuse it instead of re-pushing.
     const last = messages[messages.length - 1];
     const lastText = last && typeof last.content === "string" ? last.content : "";
-    const isRetryReuse =
-        typeof resumeTurnId === "string" && last && last.role === "user" && lastText === text;
+    const isRetryReuse = retry === true && last && last.role === "user" && lastText === text;
     if (last && last.role === "user" && !isRetryReuse) {
         messages.push({ role: "assistant", content: "(previous turn interrupted)" });
         ctx.led("assistant", "(previous turn interrupted)");
