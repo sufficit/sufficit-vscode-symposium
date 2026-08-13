@@ -98,15 +98,15 @@ export function retryLastMessage(
     const interruptedBy = errorMessage;
     if (interruptedBy) {
         // Visible confirmation (same status-notice channel as compaction/
-        // gap notices) — the note itself is a developer-role message the
-        // model sees but never renders as a chat bubble, so without this the
-        // user has no way to tell it was actually sent. anchorIndex links back
-        // to the original message instead of rendering a duplicate bubble.
+        // gap notices). This notice is UI-only; the adapter separately sends
+        // the original request and interruption reason to the model. Keeping
+        // that distinction explicit avoids implying that Retry created a new
+        // user message. anchorIndex links back to the original request.
         d.post({
             type: "event",
             event: {
                 kind: "status-notice",
-                text: `Continuing — told the model why: ${interruptedBy}`,
+                text: `Retrying the previous request — no new user message was added. The model received the interruption reason: ${interruptedBy}`,
                 anchorIndex: adjustedIndex,
             },
         });

@@ -244,6 +244,111 @@ test("Retry sends stable visible text together with the AHP row index", () => {
     harness.dom.window.close();
 });
 
+test("AHP retry stays a system operation without a synthetic user bubble", async () => {
+    const harness = createHarness();
+    const resource = "ahp-chat:/22222222-2222-5222-8222-222222222222";
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource,
+                fromSeq: 1,
+                state: {
+                    resource,
+                    title: "Retry",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [],
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "status-notice",
+            text: "Retrying the previous request — no new user message was added.",
+        },
+    });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "action",
+            generation: 1,
+            envelope: {
+                channel: resource,
+                serverSeq: 2,
+                origin: undefined,
+                action: {
+                    type: "chat/turnStarted",
+                    turnId: "retry-turn",
+                    startedAt: new Date(1).toISOString(),
+                    message: {
+                        text: "",
+                        origin: { kind: "user" },
+                        _meta: { synthetic: true },
+                    },
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    assert.match(harness.document.querySelector("#log").textContent, /no new user message/);
+    assert.equal(harness.document.querySelectorAll("#log .msg.user").length, 0);
+    assert.doesNotMatch(harness.document.querySelector("#log").textContent, /\(no text\)/);
+    assert.equal(harness.document.querySelector("#composer").classList.contains("working"), true);
+
+    // The same synthetic marker must remain hidden after an authoritative
+    // snapshot rebuild (session switch/reload), while real agent output stays.
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 2 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 2,
+            snapshot: {
+                resource,
+                fromSeq: 3,
+                state: {
+                    resource,
+                    title: "Retry",
+                    status: 1,
+                    modifiedAt: new Date(2).toISOString(),
+                    turns: [
+                        {
+                            id: "retry-turn",
+                            startedAt: new Date(1).toISOString(),
+                            duration: 1,
+                            state: "complete",
+                            message: {
+                                text: "",
+                                origin: { kind: "user" },
+                                _meta: { synthetic: true },
+                            },
+                            responseParts: [
+                                { kind: "markdown", id: "reply", content: "Recovered reply" },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    assert.equal(harness.document.querySelectorAll("#log .msg.user").length, 0);
+    assert.doesNotMatch(harness.document.querySelector("#log").textContent, /\(no text\)/);
+    assert.match(harness.document.querySelector("#log").textContent, /Recovered reply/);
+    harness.dom.window.close();
+});
+
 test("held queue stays visibly paused while new messages remain direct", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna", { busy: false }));

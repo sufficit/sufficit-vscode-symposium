@@ -44,7 +44,7 @@ test("plain retry resends the interrupted message with its timeout reason", () =
             type: "event",
             event: {
                 kind: "status-notice",
-                text: `Continuing — told the model why: ${reason}`,
+                text: `Retrying the previous request — no new user message was added. The model received the interruption reason: ${reason}`,
                 anchorIndex: 0,
             },
         },
@@ -80,7 +80,7 @@ test("plain retry survives AHP row-index drift by matching the visible user text
             type: "event",
             event: {
                 kind: "status-notice",
-                text: "Continuing — told the model why: stalled",
+                text: "Retrying the previous request — no new user message was added. The model received the interruption reason: stalled",
                 anchorIndex: 1,
             },
         },

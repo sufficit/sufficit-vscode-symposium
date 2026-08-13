@@ -103,12 +103,21 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
     switch (action.type) {
         case "chat/turnStarted": {
             const turnMessage = asRecord(action.message);
-            renderUserTurn(
-                String(turnMessage.text ?? ""),
-                attachmentValues(turnMessage.attachments),
-                optionalString(action.queuedMessageId),
-                optionalString(action.startedAt) ?? Date.now(),
-            );
+            // Retry/continue turns still need an AHP Turn.message for protocol
+            // integrity, but they are control operations, not new user speech.
+            // The projection marks those placeholder messages as synthetic;
+            // rendering one produced a misleading "You — (no text)" bubble.
+            if (!isSyntheticControlMessage(turnMessage)) {
+                renderUserTurn(
+                    String(turnMessage.text ?? ""),
+                    attachmentValues(turnMessage.attachments),
+                    optionalString(action.queuedMessageId),
+                    optionalString(action.startedAt) ?? Date.now(),
+                );
+            } else {
+                setBusy(true);
+                setStatus();
+            }
             break;
         }
         case "chat/responsePart": {
@@ -205,12 +214,17 @@ function renderTurn(
     historicalError: boolean,
 ): void {
     const meta = asRecord((turn as unknown as { _meta?: unknown })._meta);
-    renderUserTurn(
-        turn.message.text,
-        attachmentValues(turn.message.attachments),
-        optionalString(meta.queuedMessageId),
-        turn.startedAt ?? Date.now(),
-    );
+    const turnMessage = asRecord(turn.message);
+    // Apply the same control-message rule when rebuilding from a snapshot so
+    // the phantom bubble cannot return after switching sessions or reloading.
+    if (!isSyntheticControlMessage(turnMessage)) {
+        renderUserTurn(
+            turn.message.text,
+            attachmentValues(turn.message.attachments),
+            optionalString(meta.queuedMessageId),
+            turn.startedAt ?? Date.now(),
+        );
+    }
     for (const part of turn.responseParts) renderPart(part);
     if ("error" in turn && turn.error) {
         const error = asRecord(turn.error);
@@ -305,6 +319,10 @@ function isEmptyStreamAnchor(part: ResponsePart): boolean {
         (value.kind === "markdown" || value.kind === "reasoning") &&
         String(value.content ?? "") === ""
     );
+}
+
+function isSyntheticControlMessage(message: Record<string, unknown>): boolean {
+    return asRecord(message._meta).synthetic === true;
 }
 
 function affectsQueueOrLifecycle(type: string): boolean {
