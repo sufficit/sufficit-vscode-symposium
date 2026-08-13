@@ -1,4 +1,5 @@
 import { HubClient } from "./hubClient";
+import { LocalMemory } from "../adapters/aiTools/localMemory";
 
 /**
  * Guardrails are "absolute rules" for a Symposium chat session, stored as
@@ -14,6 +15,8 @@ import { HubClient } from "./hubClient";
  */
 
 export const GUARDRAIL_TYPE = "guardrail";
+export const MAX_GUARDRAIL_TEXT_LENGTH = 1000;
+export const MAX_SESSION_GUARDRAILS = 50;
 
 export interface GuardrailItem {
     id: string;
@@ -42,9 +45,15 @@ export async function fetchSessionGuardrails(
             summary?: string;
             title?: string;
             createdAtUtc?: string | number;
+            expiresAtUtc?: string | number;
         }>
     )
-        .filter((r) => r.type === GUARDRAIL_TYPE && (r.sessionId ?? "") === sessionId)
+        .filter(
+            (r) =>
+                r.type === GUARDRAIL_TYPE &&
+                (r.sessionId ?? "") === sessionId &&
+                (!r.expiresAtUtc || Date.parse(String(r.expiresAtUtc)) > Date.now()),
+        )
         .sort(
             (a, b) =>
                 Date.parse(String(a.createdAtUtc || "0")) -
@@ -54,7 +63,35 @@ export async function fetchSessionGuardrails(
             id: String(r.id),
             text: r.summary || r.title || "",
             ts: String(r.createdAtUtc || ""),
-        }));
+        }))
+        .filter((r) => r.text.length > 0)
+        .slice(0, MAX_SESSION_GUARDRAILS);
+}
+
+/** Lists guardrails written to the per-user local fallback store. */
+export async function fetchLocalSessionGuardrails(sessionId: string): Promise<GuardrailItem[]> {
+    if (!sessionId) return [];
+    const token = `symposium-session:${sessionId}`;
+    const recs = await new LocalMemory().searchMemory({
+        query: "",
+        type: GUARDRAIL_TYPE,
+        limit: 200,
+    });
+    return recs
+        .filter((r) =>
+            (r.tags ?? "")
+                .split(",")
+                .map((tag) => tag.trim())
+                .includes(token),
+        )
+        .sort(
+            (a, b) =>
+                Date.parse(String(a.createdAtUtc || "0")) -
+                Date.parse(String(b.createdAtUtc || "0")),
+        )
+        .map((r) => ({ id: r.id, text: r.summary || r.title || "", ts: r.createdAtUtc }))
+        .filter((r) => r.text.length > 0)
+        .slice(0, MAX_SESSION_GUARDRAILS);
 }
 
 /** Adds a guardrail for the session (privacy level internal, session-scoped). Returns the new id. */
@@ -64,6 +101,12 @@ export async function saveGuardrail(
     text: string,
 ): Promise<string> {
     const t = text.trim();
+    if (!t) {
+        throw new Error("guardrail text is required");
+    }
+    if (t.length > MAX_GUARDRAIL_TEXT_LENGTH) {
+        throw new Error(`guardrail text exceeds ${MAX_GUARDRAIL_TEXT_LENGTH} characters`);
+    }
     return hub.save({
         type: GUARDRAIL_TYPE,
         title: t.slice(0, 60),
@@ -95,6 +138,30 @@ export async function clearSessionGuardrails(hub: HubClient, sessionId: string):
             if (await removeGuardrail(hub, g.id)) {
                 n++;
             }
+        } catch {
+            /* best-effort */
+        }
+    }
+    return n;
+}
+
+/** Soft-deletes one guardrail from the local fallback store. */
+export async function removeLocalGuardrail(id: string): Promise<boolean> {
+    if (!id) return false;
+    const local = new LocalMemory();
+    const [obs] = await local.getByIds([id]);
+    if (!obs || obs.type !== GUARDRAIL_TYPE) return false;
+    await local.save({ ...obs, expiresAtUtc: new Date(Date.now() - 1000).toISOString() });
+    return true;
+}
+
+/** Soft-deletes all local fallback guardrails for a session. */
+export async function clearLocalSessionGuardrails(sessionId: string): Promise<number> {
+    const items = await fetchLocalSessionGuardrails(sessionId);
+    let n = 0;
+    for (const item of items) {
+        try {
+            if (await removeLocalGuardrail(item.id)) n++;
         } catch {
             /* best-effort */
         }

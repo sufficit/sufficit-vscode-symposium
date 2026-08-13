@@ -1,4 +1,8 @@
-import { clearSessionGuardrails, saveGuardrail } from "../../sync/guardrails";
+import {
+    clearSessionGuardrails,
+    MAX_GUARDRAIL_TEXT_LENGTH,
+    saveGuardrail,
+} from "../../sync/guardrails";
 import { LocalMemory } from "./localMemory";
 import type { ToolContext } from "./types";
 
@@ -98,6 +102,9 @@ async function save(args: Record<string, unknown>, ctx: ToolContext): Promise<st
 async function addGuardrail(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const text = String(args.text ?? "").trim();
     if (!text) return JSON.stringify({ error: "text is required" });
+    if (text.length > MAX_GUARDRAIL_TEXT_LENGTH) {
+        return JSON.stringify({ error: `text exceeds ${MAX_GUARDRAIL_TEXT_LENGTH} characters` });
+    }
     if (!ctx.sessionId) return JSON.stringify({ error: "no current session" });
     try {
         if (!ctx.hub.configured()) throw new Error("memory hub not configured");

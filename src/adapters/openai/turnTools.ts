@@ -1,5 +1,10 @@
 import { HubClient } from "../../sync/hubClient";
-import { AI_TOOLS, AI_TOOLS_RESPONSES } from "../aiTools/defs";
+import {
+    AI_TOOLS,
+    AI_TOOLS_RESPONSES,
+    UNIVERSAL_MEMORY_TOOLS,
+    UNIVERSAL_MEMORY_TOOLS_RESPONSES,
+} from "../aiTools/defs";
 import { LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES } from "../aiTools/localDefs";
 import { SUBAGENT_TOOLS, SUBAGENT_TOOLS_RESPONSES } from "../aiTools/subagentDefs";
 import { getSubagentHost } from "../aiTools/types";
@@ -10,7 +15,16 @@ import { classifyLmTool } from "../aiTools/permissionTiers";
 import { mergeToolDefinitions } from "./toolMerge";
 
 export function buildTurnTools(hubConfigured: boolean, responses: boolean) {
-    const memoryTools = hubConfigured ? (responses ? AI_TOOLS_RESPONSES : AI_TOOLS) : [];
+    // Guardrails and basic memory have a LocalMemory fallback, so their tool
+    // contract must remain visible even when the shared Hub is unavailable.
+    // Hub-only task/web tools are added only when the Hub is configured.
+    const memoryTools = hubConfigured
+        ? responses
+            ? AI_TOOLS_RESPONSES
+            : AI_TOOLS
+        : responses
+          ? UNIVERSAL_MEMORY_TOOLS_RESPONSES
+          : UNIVERSAL_MEMORY_TOOLS;
     const localTools = responses ? LOCAL_TOOLS_RESPONSES : LOCAL_TOOLS;
     const subagentTools = getSubagentHost()
         ? responses

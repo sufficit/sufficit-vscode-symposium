@@ -35,7 +35,7 @@ export async function prepareDispatch(
     // added mid-conversation (agent or UI) reaches the next outbound and a
     // transiently-empty first read doesn't cache empty forever. Injected on
     // every message below.
-    if (ctx.adapter.roleAware?.() === true && ctx.sessionId && ctx.hub.configured()) {
+    if (ctx.sessionId) {
         await ctx.reloadGuardrails();
     }
     // Tasks: refresh on EVERY dispatch to catch newly created tasks.

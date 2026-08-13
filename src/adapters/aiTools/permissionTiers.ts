@@ -30,7 +30,9 @@ const READ_TOOLS = new Set([
 ]);
 
 /** Irreversible or arbitrary-execution: gated even in "manager" mode. */
-const DESTRUCTIVE_TOOLS = new Set(["shell", "clear_guardrails", "agent_stop"]);
+// Guardrails alter every later turn in the session. Treat both creation and
+// removal as durable policy changes, so manager mode still asks for approval.
+const DESTRUCTIVE_TOOLS = new Set(["shell", "add_guardrail", "clear_guardrails", "agent_stop"]);
 
 /**
  * Bridged VS Code Language Model tools (runInTerminal/runTask/runTests/

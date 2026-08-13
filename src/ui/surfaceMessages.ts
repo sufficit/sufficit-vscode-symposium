@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { WebviewToHost } from "../protocol/chat";
 import { setTaskDone } from "../sync/tasks";
-import { removeGuardrail, clearSessionGuardrails } from "../sync/guardrails";
+import { clearSurfaceGuardrails, removeSurfaceGuardrail } from "./surfaceGuardrails";
 import { handleVoiceMessage } from "./surfaceMessageVoice";
 import { handleFileMessage } from "./surfaceMessageFiles";
 import { handleChangedFilesMessage } from "./surfaceMessageChangedFiles";
@@ -175,8 +175,8 @@ export class SurfaceMessages {
                     return;
                 }
                 case "remove-guardrail": {
-                    if (typeof message.id === "string" && this.d.hub.configured()) {
-                        await removeGuardrail(this.d.hub, message.id);
+                    if (typeof message.id === "string") {
+                        await removeSurfaceGuardrail(this.d.hub, message.id);
                         await this.d.getController()?.reloadGuardrails();
                         void this.d.sync.refreshGuardrails();
                     }
@@ -184,14 +184,14 @@ export class SurfaceMessages {
                 }
                 case "clear-guardrails": {
                     const sid = this.d.getController()?.sessionId;
-                    if (sid && this.d.hub.configured()) {
+                    if (sid) {
                         const ok = await vscode.window.showWarningMessage(
                             "Clear all guardrails for this session?",
                             { modal: true },
                             "Clear",
                         );
                         if (ok === "Clear") {
-                            await clearSessionGuardrails(this.d.hub, sid);
+                            await clearSurfaceGuardrails(this.d.hub, sid);
                             await this.d.getController()?.reloadGuardrails();
                             void this.d.sync.refreshGuardrails();
                         }

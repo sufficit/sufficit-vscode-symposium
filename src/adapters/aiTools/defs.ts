@@ -21,7 +21,7 @@ import { LOCAL_TOOLS, LOCAL_TOOL_NAMES, toResponsesShape } from "./localDefs";
 import type { OpenAITool } from "./types";
 
 // Universal tools: work with any backend via local fallbacks
-const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
+export const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
     {
         type: "function",
         function: {
@@ -119,6 +119,18 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         },
     },
 ];
+
+// Keep the policy text explicit even for older callers that import this
+// catalog directly: guardrail persistence is user-directed, not model-directed.
+for (const tool of UNIVERSAL_MEMORY_TOOLS) {
+    if (tool.function.name === "add_guardrail") {
+        tool.function.description =
+            "Add a durable guardrail for THIS chat session only when the user explicitly asks to establish or preserve that rule. Do not invent guardrails for temporary plans, internal preferences, or model commitments. The rule is injected into later messages; keep it short, specific, and imperative.";
+    } else if (tool.function.name === "clear_guardrails") {
+        tool.function.description =
+            "Remove ALL guardrails for THIS chat session only when the user explicitly asks to clear or remove them. Returns how many were removed. After this, no guardrails are injected until new ones are added.";
+    }
+}
 
 /**
  * Hub-only tools: require the sufficit-ai hub to function correctly (no local
@@ -272,6 +284,9 @@ export const AI_TOOLS: OpenAITool[] = [...UNIVERSAL_MEMORY_TOOLS, ...HUB_TOOLS];
 
 /** Responses-API (flat) shape for the memory/web tools. */
 export const AI_TOOLS_RESPONSES = AI_TOOLS.map(toResponsesShape);
+
+/** Responses-API shape for tools that do not require the memory hub. */
+export const UNIVERSAL_MEMORY_TOOLS_RESPONSES = UNIVERSAL_MEMORY_TOOLS.map(toResponsesShape);
 
 /** All AI tool names this bridge can expose. */
 export const ALL_AI_TOOL_NAMES = [...AI_TOOLS, ...LOCAL_TOOLS, ...SUBAGENT_TOOLS].map(

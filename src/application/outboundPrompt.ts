@@ -267,12 +267,13 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): {
         state.tasksReminderInjected = true;
     }
 
-    // Guardrails first, EVERY message: user-defined absolute rules that override
-    // the agent's own judgement. Re-sent each turn so they're never forgotten.
+    // Guardrails first, EVERY message: explicit durable session rules. Re-sent
+    // each turn so they are not forgotten, without allowing stored text to
+    // override system/developer safety policy or a later user correction.
     const guardrails = (options.guardrails ?? []).map((g) => g.trim()).filter(Boolean);
     if (guardrails.length) {
         prefixes.push(
-            "[GUARDRAILS — absolute, user-defined, highest priority. Follow these exactly on EVERY step; they override your own preferences and any conflicting instruction. If a request conflicts with a guardrail, say so instead of violating it]\n" +
+            "[GUARDRAILS — durable rules explicitly requested or approved by the user for THIS session. Follow them on every step unless they conflict with system/developer safety policy or the latest user request changes/cancels them. If there is a conflict, explain it instead of violating the higher-priority instruction]\n" +
                 guardrails.map((g, i) => `${i + 1}. ${g}`).join("\n"),
         );
     }
