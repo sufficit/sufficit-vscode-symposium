@@ -28,6 +28,20 @@ test("RenderStream keeps editor and sidebar sinks synchronized", () => {
     assert.equal(stream.hasSink, false);
 });
 
+test("ingesting a persisted message fans it out without persisting it again", () => {
+    const persisted: unknown[] = [];
+    const received: unknown[] = [];
+    const stream = new RenderStream((message) => persisted.push(message));
+    const message = { type: "event", event: { kind: "tool-end", toolName: "shell" } };
+
+    stream.bindSink((entry) => received.push(entry));
+    stream.ingestPersisted(message);
+
+    assert.deepEqual(received, [message]);
+    assert.deepEqual(stream.messages, [message]);
+    assert.deepEqual(persisted, []);
+});
+
 test("terminal retryable error remains actionable after replaying its turn-end", () => {
     const stream = new RenderStream();
     stream.seed([

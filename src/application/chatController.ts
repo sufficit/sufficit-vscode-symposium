@@ -15,6 +15,7 @@ import { RenderStream } from "./renderStream";
 import { transcriptText, transcriptMessages, transcriptMessagesUpTo } from "./controllerTranscript";
 import { ChatQueue, MessageDedup, PendingMessage, SendMode } from "./controllerQueue";
 import { ChangedFilesState } from "./changedFilesState";
+import { ControllerRenderPersistence } from "./controllerRenderPersistence";
 import { handleControllerMessage } from "./controllerMessageHandler";
 import {
     HubState,
@@ -28,10 +29,6 @@ import {
     armWatchdog as armWatchdogFn,
     clearWatchdog as clearWatchdogFn,
 } from "./controllerWatchdog";
-import {
-    persistEmit as persistEmitFn,
-    seedRenderLog as seedRenderLogFn,
-} from "./controllerPersist";
 import { OutboundPromptState } from "./outboundPrompt";
 import { ControllerEventHandler } from "./controllerEventHandler";
 import { loadControllerHistory } from "./controllerHistory";
@@ -68,13 +65,13 @@ export class ChatController {
     private readonly changed = new ChangedFilesState();
     private readonly queue = new ChatQueue();
     // Replayable and persisted render stream.
-    private readonly stream = new RenderStream((m) => this.persistEmit(m));
+    private readonly renderPersistence = new ControllerRenderPersistence(() => this.sessionId);
+    private readonly stream: RenderStream = this.renderPersistence.stream;
     // Force-ends a silent turn that would otherwise stay working forever.
     private readonly watchdogState = {
         timer: undefined as ReturnType<typeof setTimeout> | undefined,
     };
 
-    private readonly persistState = { count: 0 };
     private readonly hubState: HubState = {
         guardrails: [],
         guardrailsLoaded: false,
@@ -261,18 +258,8 @@ export class ChatController {
     setAiTools(names: string[]): void {
         this.session?.setAiTools?.(names);
     }
-    private persistEmit(message: unknown): void {
-        persistEmitFn(
-            { sessionId: () => this.sessionId, stream: this.stream, state: this.persistState },
-            message,
-        );
-    }
-
     seedRenderLog(): boolean {
-        const restored = seedRenderLogFn(
-            { sessionId: () => this.sessionId, stream: this.stream, state: this.persistState },
-            this.options.resumeSessionId,
-        );
+        const restored = this.renderPersistence.restore(this.options.resumeSessionId);
         this.queue.restore(restored.pending);
         return restored.seeded;
     }
@@ -331,6 +318,8 @@ export class ChatController {
     }
 
     private dispatch(message: PendingMessage): Promise<void> {
+        // This controller is taking write ownership of the resumed session.
+        this.renderPersistence.stop();
         this.attentionStatus = undefined;
         return dispatchControllerMessage(message, {
             adapter: this.adapter,
@@ -392,6 +381,7 @@ export class ChatController {
     }
 
     dispose(): void {
+        this.renderPersistence.stop();
         this.clearWatchdog();
         this.session?.dispose();
         this.session = undefined;

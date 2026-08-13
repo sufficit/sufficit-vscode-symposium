@@ -85,6 +85,49 @@ export function readRender(sessionId: string): unknown[] {
     return out;
 }
 
+/**
+ * Follows render messages appended after `fromIndex` by another process.
+ * `watchFile` is used instead of `watch` because Extension Hosts may be replaced
+ * independently and polling remains reliable across an append-only file's
+ * close/reopen cycle. Returns an idempotent unsubscribe function.
+ */
+export function followRender(
+    sessionId: string,
+    fromIndex: number,
+    onMessages: (messages: unknown[]) => void,
+    intervalMs = 500,
+): () => void {
+    const file = renderFile(sessionId);
+    let cursor = Math.max(0, fromIndex);
+    let disposed = false;
+    const sync = () => {
+        if (disposed) {
+            return;
+        }
+        const messages = readRender(sessionId);
+        if (messages.length < cursor) {
+            cursor = messages.length;
+            return;
+        }
+        if (messages.length === cursor) {
+            return;
+        }
+        const appended = messages.slice(cursor);
+        cursor = messages.length;
+        onMessages(appended);
+    };
+
+    fs.watchFile(file, { interval: intervalMs, persistent: false }, sync);
+    sync();
+    return () => {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
+        fs.unwatchFile(file, sync);
+    };
+}
+
 /** Deletes a session's render log (called on permanent session delete). */
 export function removeRender(sessionId: string): void {
     if (!sessionId) {

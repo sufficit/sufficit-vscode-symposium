@@ -20,6 +20,13 @@ export interface PersistContext {
     state: PersistState;
 }
 
+export interface RestoredRenderLog {
+    seeded: boolean;
+    pending: PendingMessage[];
+    /** Parsed on-disk entries, excluding the synthetic queue snapshot. */
+    persistedCount: number;
+}
+
 /**
  * Persists newly-emitted render messages once the session id is known. Pre-id
  * emits stay buffered in the stream and are flushed here on the first emit
@@ -59,14 +66,39 @@ export function persistEmit(ctx: PersistContext, message: unknown): void {
 export function seedRenderLog(
     ctx: PersistContext,
     resumeSessionId: string | undefined,
-): { seeded: boolean; pending: PendingMessage[] } {
+): RestoredRenderLog {
     if (!resumeSessionId || !renderLog.hasRender(resumeSessionId)) {
-        return { seeded: false, pending: [] };
+        return { seeded: false, pending: [], persistedCount: 0 };
     }
     const persisted = renderLog.readRender(resumeSessionId);
     const pending = recoverPersistedQueue(persisted);
     // A final canonical snapshot overwrites stale queue cards during replay.
     // It is intentionally not appended to disk; it is re-derived on each seed.
     ctx.state.count = ctx.stream.seed([...persisted, { type: "queue", items: pending }]);
-    return { seeded: true, pending };
+    return { seeded: true, pending, persistedCount: persisted.length };
+}
+
+/**
+ * Mirrors render events written by a still-running peer Extension Host into a
+ * reopened controller. Ingested entries skip persistence, while `state.count`
+ * advances with the local buffer so the next locally-owned emit is appended
+ * once instead of flushing the mirrored entries back to disk.
+ */
+export function followPersistedRenderLog(
+    ctx: PersistContext,
+    resumeSessionId: string,
+    persistedCount: number,
+    intervalMs = 500,
+): () => void {
+    return renderLog.followRender(
+        resumeSessionId,
+        persistedCount,
+        (messages) => {
+            for (const message of messages) {
+                ctx.stream.ingestPersisted(message);
+            }
+            ctx.state.count = ctx.stream.messages.length;
+        },
+        intervalMs,
+    );
 }

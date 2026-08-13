@@ -70,8 +70,26 @@ export class RenderStream {
         };
     }
 
+    /**
+     * Buffers and fans out a message that is already persisted elsewhere.
+     * This is the cross-Extension-Host replay path, so it deliberately skips
+     * the persistence hook and cannot append the same ledger entry twice.
+     */
+    ingestPersisted(message: unknown): void {
+        this.bufferAndFanOut(message);
+    }
+
     /** Buffers a render message and fans it out to all sinks + observers. */
     emit(message: unknown): void {
+        this.bufferAndFanOut(message);
+        try {
+            this.onPersist?.(message);
+        } catch {
+            /* persistence is best-effort */
+        }
+    }
+
+    private bufferAndFanOut(message: unknown): void {
         this.log.push(message);
         if (this.log.length > 5000) {
             this.log.shift();
@@ -81,11 +99,6 @@ export class RenderStream {
         }
         for (const observer of this.observers) {
             observer(message);
-        }
-        try {
-            this.onPersist?.(message);
-        } catch {
-            /* persistence is best-effort */
         }
     }
 
