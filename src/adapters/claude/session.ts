@@ -8,6 +8,7 @@ import { resolveExecutable } from "../exec";
 import { AgentSession, SessionStartOptions } from "../types";
 import { claudeResumeSessionId } from "./resume";
 import { imageBlock } from "./images";
+import { ClaudeSessionCoordination } from "./sessionCoordination";
 import { ClaudeAdapterConfig, mapUnifiedToClaudeFlag } from "./sessionConfig";
 import { ClaudeEventParser } from "./eventParser";
 
@@ -34,6 +35,8 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     private spawnedPermission = ""; // permission mode the live child was spawned with
     private spawnedModel = ""; // model passed to the live child at spawn time
     private turnChild: ChildProcessWithoutNullStreams | undefined;
+    private leaseGeneration: number | undefined;
+    private readonly coordination: ClaudeSessionCoordination;
     // Tool calls seen this turn with no matching tool_result yet. A backgrounded
     // Task/Agent call's own result can arrive well after the top-level "result"
     // line (the CLI keeps streaming the delegated work's events down the same
@@ -44,8 +47,10 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     constructor(
         private readonly config: ClaudeAdapterConfig,
         private readonly options: SessionStartOptions,
+        coordination?: ClaudeSessionCoordination,
     ) {
         super();
+        this.coordination = coordination ?? new ClaudeSessionCoordination({ log: config.log });
         if (this.options.resumeSessionId) {
             this.sessionId = claudeResumeSessionId(this.options.resumeSessionId);
         }
@@ -56,13 +61,18 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                 this.sessionId = id;
             },
             setTurnActive: (active) => {
-                this.turnActive = active;
-                if (!active) {
-                    this.turnChild = undefined;
-                }
+                this.setTurnActive(active);
             },
             emit: (event) => this.emit("event", event),
         });
+    }
+
+    private setTurnActive(active: boolean): void {
+        this.turnActive = active;
+        if (!active) {
+            this.turnChild = undefined;
+            this.leaseGeneration = this.coordination.release() ?? this.leaseGeneration;
+        }
     }
 
     /**
@@ -208,8 +218,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                 this.child = undefined;
             }
             if (this.turnChild === child) {
-                this.turnActive = false;
-                this.turnChild = undefined;
+                this.setTurnActive(false);
                 this.parser.resetPending();
             }
             this.cancelledChildren.delete(child);
@@ -239,10 +248,11 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             }
             // The process ended (incl. SIGINT from cancel/steer) without a final
             // result event — close the turn so the UI unblocks and the queue runs.
-            if (ownsTurn && this.turnActive && !this.disposed) {
-                this.turnActive = false;
-                this.turnChild = undefined;
-                this.emit("event", { kind: "turn-end" });
+            if (ownsTurn && this.turnActive) {
+                this.setTurnActive(false);
+                if (!this.disposed) {
+                    this.emit("event", { kind: "turn-end" });
+                }
             }
             if (ownsTurn || this.child === undefined) {
                 this.parser.resetPending();
@@ -263,6 +273,28 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     }
 
     send(text: string, images?: string[]): void {
+        const resume = claudeResumeSessionId(this.options.resumeSessionId || this.sessionId);
+        if (resume) {
+            const lease = this.coordination.acquire(resume);
+            if (!lease.acquired) {
+                this.config.log?.(`[claude] cross-window send blocked: ${lease.message}`);
+                this.emit("event", { kind: "error", message: lease.message, retryable: true });
+                this.emit("event", { kind: "turn-end" });
+                return;
+            }
+            const contextChanged =
+                lease.recoveredStaleOwner ||
+                (this.leaseGeneration !== undefined && lease.generation !== this.leaseGeneration);
+            if (contextChanged && this.child && !this.turnActive) {
+                this.config.log?.(
+                    `[claude] transcript changed in another window; respawning with --resume`,
+                );
+                this.cancelledChildren.add(this.child);
+                this.child.kill("SIGINT");
+                this.child = undefined;
+            }
+            this.leaseGeneration = lease.generation;
+        }
         // Claude pins the model at process startup. If the picker changes in an
         // existing conversation, restart only the CLI child and resume the same
         // Claude session so the next message uses the newly selected model.
@@ -291,8 +323,14 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             this.child.kill("SIGINT");
             this.child = undefined;
         }
-        this.turnActive = true;
-        const child = this.ensureStarted();
+        this.setTurnActive(true);
+        let child: ChildProcessWithoutNullStreams;
+        try {
+            child = this.ensureStarted();
+        } catch (error) {
+            this.setTurnActive(false);
+            throw error;
+        }
         this.turnChild = child;
         const content: Array<{
             type: string;
@@ -334,6 +372,9 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     dispose(): void {
         this.disposed = true;
         this.child?.kill();
+        if (!this.child) {
+            this.coordination.release();
+        }
         this.child = undefined;
         this.removeAllListeners();
     }

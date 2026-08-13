@@ -5,6 +5,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ClaudeSession } from "../adapters/claude/session";
+import { ClaudeSessionCoordination } from "../adapters/claude/sessionCoordination";
 import { claudeResumeSessionId } from "../adapters/claude/resume";
 import type { AgentEvent } from "../adapters/types";
 
@@ -123,6 +124,82 @@ readline.createInterface({ input: process.stdin }).on("line", () => {
         );
     } finally {
         session.dispose();
+        await fs.rm(dir, { recursive: true, force: true });
+    }
+});
+
+test("Claude serializes resumed turns across code-server windows and refreshes stale context", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-claude-windows-"));
+    const executable = path.join(dir, "fake-claude.cjs");
+    const argsLog = path.join(dir, "args.jsonl");
+    const coordinationRoot = path.join(dir, "coordination");
+    await fs.writeFile(
+        executable,
+        `#!/usr/bin/env node
+const fs = require("node:fs");
+const readline = require("node:readline");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.SYMPOSIUM_CLAUDE_ARGS, JSON.stringify(args) + "\\n");
+const resumeAt = args.indexOf("--resume");
+const sessionId = resumeAt >= 0 ? args[resumeAt + 1] : "new-session";
+process.stdout.write(JSON.stringify({ type: "system", subtype: "init", session_id: sessionId }) + "\\n");
+readline.createInterface({ input: process.stdin }).on("line", () => {
+    setTimeout(() => {
+        process.stdout.write(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "ok" }] } }) + "\\n");
+        process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok" }) + "\\n");
+    }, 100);
+});
+`,
+        { mode: 0o755 },
+    );
+
+    const config = {
+        executable,
+        model: "",
+        permissionMode: "plan",
+        env: { SYMPOSIUM_CLAUDE_ARGS: argsLog },
+    };
+    const options = { cwd: process.cwd(), resumeSessionId: "shared-resume-session" };
+    const first = new ClaudeSession(
+        config,
+        options,
+        new ClaudeSessionCoordination({ root: coordinationRoot }),
+    );
+    const second = new ClaudeSession(
+        config,
+        options,
+        new ClaudeSessionCoordination({ root: coordinationRoot }),
+    );
+
+    try {
+        const firstTurn = waitForTurnEnd(first);
+        const blockedTurn = waitForTurnEnd(second);
+        first.send("first window");
+        second.send("overlap");
+
+        const blockedEvents = await blockedTurn;
+        assert.ok(
+            blockedEvents.some(
+                (event) =>
+                    event.kind === "error" &&
+                    /already running in another code-server window/.test(event.message),
+            ),
+        );
+        await firstTurn;
+
+        const secondTurn = waitForTurnEnd(second);
+        second.send("second window after release");
+        await secondTurn;
+
+        const firstAgain = waitForTurnEnd(first);
+        first.send("first window after external change");
+        await firstAgain;
+
+        const launches = (await fs.readFile(argsLog, "utf8")).trim().split("\n");
+        assert.equal(launches.length, 3);
+    } finally {
+        first.dispose();
+        second.dispose();
         await fs.rm(dir, { recursive: true, force: true });
     }
 });
