@@ -6,7 +6,9 @@ Marketplace e no Open VSX. Toda alteração entregue deve seguir o mesmo fluxo:
 `versão → verify:package → commit na develop → push → tag → instalação local/remota`.
 
 O script `check:release` é executado dentro de `npm run verify` e garante que
-`package.json`, `package-lock.json` e `VERSION.md` estejam sincronizados. Em CI,
+`package.json`, `package-lock.json` e `VERSION.md` estejam sincronizados. No
+fluxo estrito, ele também exige `develop`, rejeita versões não novas e valida
+que a tag seja anotada e aponte para o commit publicado nessa branch. Em CI,
 uma tag só passa quando seu nome é exatamente `v<package.json.version>`.
 
 ## Fluxo obrigatório
@@ -15,7 +17,7 @@ uma tag só passa quando seu nome é exatamente `v<package.json.version>`.
 
    ```bash
    git switch develop
-   RELEASE_GUARDRAIL_REQUIRE_DEVELOP=1 npm run check:release
+   RELEASE_GUARDRAIL_REQUIRE_DEVELOP=1 RELEASE_GUARDRAIL_REQUIRE_NEW_VERSION=1 npm run check:release
    ```
 
 2. Atualize a versão CalVer sem criar commit/tag automático:
