@@ -50,6 +50,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           git fetch origin develop --depth=1
+          git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
           RELEASE_GUARDRAIL_REQUIRE_DEVELOP=1 npm run check:release
 
       - name: Verify
