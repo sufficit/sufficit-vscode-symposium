@@ -104,6 +104,15 @@ export const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
                         type: "string",
                         description: "The rule, short and imperative (one sentence).",
                     },
+                    expiresAtUtc: {
+                        type: "string",
+                        description: "Optional ISO-8601 expiration timestamp.",
+                    },
+                    origin: {
+                        type: "string",
+                        enum: ["user-approved", "agent-requested"],
+                        description: "Why this durable rule is being created.",
+                    },
                 },
                 required: ["text"],
             },

@@ -22,6 +22,8 @@ export interface GuardrailItem {
     id: string;
     text: string;
     ts?: string;
+    expiresAtUtc?: string;
+    origin?: "user-approved" | "agent-requested";
 }
 
 /** Lists a session's guardrails, oldest first (definition order). */
@@ -63,6 +65,7 @@ export async function fetchSessionGuardrails(
             id: String(r.id),
             text: r.summary || r.title || "",
             ts: String(r.createdAtUtc || ""),
+            expiresAtUtc: r.expiresAtUtc ? String(r.expiresAtUtc) : undefined,
         }))
         .filter((r) => r.text.length > 0)
         .slice(0, MAX_SESSION_GUARDRAILS);
@@ -99,6 +102,10 @@ export async function saveGuardrail(
     hub: HubClient,
     sessionId: string,
     text: string,
+    options: {
+        expiresAtUtc?: string;
+        origin?: "user-approved" | "agent-requested";
+    } = {},
 ): Promise<string> {
     const t = text.trim();
     if (!t) {
@@ -107,12 +114,27 @@ export async function saveGuardrail(
     if (t.length > MAX_GUARDRAIL_TEXT_LENGTH) {
         throw new Error(`guardrail text exceeds ${MAX_GUARDRAIL_TEXT_LENGTH} characters`);
     }
+    const origin = options.origin ?? "agent-requested";
+    if (origin !== "user-approved" && origin !== "agent-requested") {
+        throw new Error("guardrail origin must be user-approved or agent-requested");
+    }
+    if (options.expiresAtUtc) {
+        const expiry = Date.parse(options.expiresAtUtc);
+        if (!Number.isFinite(expiry)) {
+            throw new Error("guardrail expiry must be a valid ISO-8601 timestamp");
+        }
+        if (expiry <= Date.now()) {
+            throw new Error("guardrail expiry must be in the future");
+        }
+    }
     return hub.save({
         type: GUARDRAIL_TYPE,
         title: t.slice(0, 60),
         summary: t,
         sessionId,
         privacyLevel: "internal",
+        ...(options.expiresAtUtc ? { expiresAtUtc: options.expiresAtUtc } : {}),
+        tags: `guardrail,origin:${origin}`,
     });
 }
 

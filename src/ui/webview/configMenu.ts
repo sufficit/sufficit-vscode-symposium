@@ -17,6 +17,8 @@ const TOOL_LABELS: Record<string, string> = {
     memory_search: "Search memory",
     memory_get_observations: "Read memory",
     memory_save: "Save memory",
+    add_guardrail: "Add session guardrail",
+    clear_guardrails: "Clear session guardrails",
     web_search: "Web search",
     fetch_url: "Fetch URL",
     open_url: "Open URL (browser)",

@@ -93,6 +93,10 @@ export interface SlashCommand {
 /** Options for starting or resuming a live session. */
 export interface SessionStartOptions {
     cwd: string;
+    /** Stable Symposium conversation id sent to session-scoped MCP tools. */
+    guardrailSessionId?: string;
+    /** Origin recorded by the remote guardrail contract. */
+    guardrailOrigin?: "user-approved" | "agent-requested";
     /**
      * Authorized write roots for this session: when set (non-empty), host-level
      * containment blocks write_file/edit_file and shell cwd outside these paths

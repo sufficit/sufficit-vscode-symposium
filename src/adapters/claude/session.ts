@@ -11,6 +11,7 @@ import { imageBlock } from "./images";
 import { ClaudeSessionCoordination } from "./sessionCoordination";
 import { ClaudeAdapterConfig, mapUnifiedToClaudeFlag } from "./sessionConfig";
 import { ClaudeEventParser } from "./eventParser";
+import { buildSufficitMcpServer, currentSufficitMcpToken, isSufficitMcpName } from "../sufficitMcp";
 
 export type { ClaudeAdapterConfig } from "./sessionConfig";
 
@@ -59,6 +60,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             getSessionId: () => this.sessionId,
             setSessionId: (id) => {
                 this.sessionId = id;
+                this.options.guardrailSessionId = id;
             },
             setTurnActive: (active) => {
                 this.setTurnActive(active);
@@ -83,6 +85,21 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
      */
     private buildMcpConfig(): string | undefined {
         const servers: Record<string, unknown> = { ...(this.config.mcpServers ?? {}) };
+        for (const name of Object.keys(servers)) {
+            if (isSufficitMcpName(name)) {
+                delete servers[name];
+            }
+        }
+        const sufficit = buildSufficitMcpServer(
+            currentSufficitMcpToken(),
+            this.options.guardrailSessionId || this.sessionId,
+            "vscode-claude",
+            this.options.guardrailOrigin,
+            this.options.permission,
+        );
+        if (sufficit) {
+            servers.sufficit_ai = sufficit;
+        }
         if (this.config.playwright && !servers.playwright) {
             // Pin to the bundled Chromium explicitly: @playwright/mcp defaults to
             // the system "chrome" channel when one is installed, and a branded
@@ -103,6 +120,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             fs.mkdirSync(dir, { recursive: true });
             const file = path.join(dir, "claude-mcp.json");
             fs.writeFileSync(file, JSON.stringify({ mcpServers: servers }, null, 2), "utf8");
+            fs.chmodSync(file, 0o600);
             return file;
         } catch (err) {
             this.config.log?.(`[claude] mcp config write failed: ${err}`);

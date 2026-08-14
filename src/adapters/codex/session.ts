@@ -13,6 +13,7 @@ import {
 } from "./codexMcpConfig";
 import { CodexEventParser } from "./eventParser";
 import { syncCodexSufficitMcp } from "./sufficitMcp";
+import { isSufficitMcpName } from "../sufficitMcp";
 
 /** Resolve a picker value into the explicit model argument for one Codex turn. */
 export function codexModelArgs(selected: string | undefined, configured: string): string[] {
@@ -71,6 +72,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
             getSessionId: () => this.sessionId,
             setSessionId: (id) => {
                 this.sessionId = id;
+                this.options.guardrailSessionId = id;
             },
             isCancelled: () => this.cancelled,
             setReportedError: () => {
@@ -133,7 +135,20 @@ export class CodexSession extends EventEmitter implements AgentSession {
         // Extension activation performs the same sync eagerly, but awaiting it
         // here closes the race where a user starts Codex before activation or a
         // login/token-refresh callback has finished.
-        await syncCodexSufficitMcp();
+        const mcpSessionId =
+            this.options.guardrailSessionId && !/^new-\d+$/.test(this.options.guardrailSessionId)
+                ? this.options.guardrailSessionId
+                : this.sessionId && !/^new-\d+$/.test(this.sessionId)
+                  ? this.sessionId
+                  : undefined;
+        await syncCodexSufficitMcp(
+            false,
+            undefined,
+            mcpSessionId,
+            this.options.guardrailOrigin,
+            true,
+            this.options.permission,
+        );
         if (this.disposed || sequence !== this.turnSequence) {
             return;
         }
@@ -171,12 +186,17 @@ export class CodexSession extends EventEmitter implements AgentSession {
         const servers: Record<string, { command?: string; args?: string[] }> = {
             ...(this.config.mcpServers ?? {}),
         };
+        for (const name of Object.keys(servers)) {
+            if (isSufficitMcpName(name)) {
+                delete servers[name];
+            }
+        }
         if (this.config.playwright && !servers.playwright) {
             servers.playwright = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
         }
         // Merge VSCode MCP servers (from mcp.json), letting explicit config override
         for (const [name, server] of Object.entries(this.vscodeMcpServers)) {
-            if (!servers[name]) {
+            if (!isSufficitMcpName(name) && !servers[name]) {
                 servers[name] = server;
             }
         }

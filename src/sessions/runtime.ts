@@ -136,6 +136,13 @@ export class LiveSessions {
         adapter: AgentAdapter,
         options: SessionStartOptions,
     ): { key: string; controller: ChatController } {
+        const key = options.resumeSessionId ?? `new-${++this.seq}`;
+        // The backend id may not exist until the first turn. Give MCP a
+        // conversation-scoped identity immediately, then each CLI replaces it
+        // with the native id when that id is announced by the backend.
+        if (!options.guardrailSessionId) {
+            options.guardrailSessionId = key;
+        }
         const controller = new ChatController(
             adapter,
             options,
@@ -143,7 +150,6 @@ export class LiveSessions {
             () => this.onChange?.(),
             symposiumLog,
         );
-        const key = options.resumeSessionId ?? `new-${++this.seq}`;
         controller.setRuntimeKey(key);
         this.controllers.set(key, controller);
         // A resumed session may have a persisted terminal error in the store.

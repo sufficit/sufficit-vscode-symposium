@@ -7,6 +7,7 @@ import * as path from "path";
 import { resolveExecutable } from "../exec";
 import { AgentSession, SessionStartOptions } from "../types";
 import { isTransientErrorMessage } from "../transientError";
+import { buildSufficitMcpServer, currentSufficitMcpToken, isSufficitMcpName } from "../sufficitMcp";
 
 export interface CopilotAdapterConfig {
     executable: string;
@@ -34,6 +35,7 @@ function buildMcpConfigFile(
         fs.mkdirSync(dir, { recursive: true });
         const file = path.join(dir, name);
         fs.writeFileSync(file, JSON.stringify({ mcpServers: servers }, null, 2), "utf8");
+        fs.chmodSync(file, 0o600);
         return file;
     } catch {
         return undefined;
@@ -88,7 +90,23 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         if (this.sessionId) {
             args.push("--resume", this.sessionId);
         }
-        const mcp = buildMcpConfigFile(this.config, "copilot-mcp.json");
+        const mcpServers: Record<string, unknown> = { ...(this.config.mcpServers ?? {}) };
+        for (const name of Object.keys(mcpServers)) {
+            if (isSufficitMcpName(name)) {
+                delete mcpServers[name];
+            }
+        }
+        const sufficit = buildSufficitMcpServer(
+            currentSufficitMcpToken(),
+            this.options.guardrailSessionId || this.sessionId,
+            "vscode-copilot",
+            this.options.guardrailOrigin,
+            this.options.permission,
+        );
+        if (sufficit) {
+            mcpServers.sufficit_ai = sufficit;
+        }
+        const mcp = buildMcpConfigFile({ ...this.config, mcpServers }, "copilot-mcp.json");
         if (mcp) {
             args.push("--mcp-config", mcp);
         }
@@ -226,6 +244,7 @@ export class CopilotSession extends EventEmitter implements AgentSession {
             case "result":
                 if (typeof event.sessionId === "string" && !this.sessionId) {
                     this.sessionId = event.sessionId;
+                    this.options.guardrailSessionId = event.sessionId;
                     this.emit("event", { kind: "session", sessionId: event.sessionId });
                 }
                 break;
