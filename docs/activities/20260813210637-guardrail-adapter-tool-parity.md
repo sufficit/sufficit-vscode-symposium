@@ -27,6 +27,9 @@ Claude, Codex e Copilot.
 - O serviço MCP do `sufficit-ai` passou a publicar e executar as duas operações,
   validar sessão confiável, autorização, modo `plan`, limite de 1000 caracteres
   e expiração, além de filtrar guardrails por sessão nas leituras.
+- Claude reinicia o processo com `--resume` quando a primeira resposta anuncia
+  a sessão nativa e o MCP passa a estar disponível, evitando uma conversa que
+  ficaria permanentemente sem a ferramenta após o primeiro turno.
 - O catálogo do Symposium e a camada de aprovação classificam criação e
   remoção como mudanças destrutivas de política, exigindo aprovação uniforme.
 
@@ -54,6 +57,6 @@ Claude, Codex e Copilot.
 
 ## Release
 
-A release `v2026.813.6` foi publicada após `verify:package`, commit na
-`develop`, push, tag anotada e CI. O VSIX foi instalado e confirmado no VS Code
-local e no code-server de desenvolvimento.
+O pacote de release é `v2026.813.7`; ele segue o guardrail de
+`verify:package`, commit na `develop`, push, tag anotada, CI e instalação do
+VSIX no VS Code local e no code-server de desenvolvimento.

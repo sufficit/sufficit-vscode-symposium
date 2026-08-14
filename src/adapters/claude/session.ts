@@ -1,8 +1,5 @@
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import { EventEmitter } from "events";
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
 import * as readline from "readline";
 import { resolveExecutable } from "../exec";
 import { AgentSession, SessionStartOptions } from "../types";
@@ -11,7 +8,8 @@ import { imageBlock } from "./images";
 import { ClaudeSessionCoordination } from "./sessionCoordination";
 import { ClaudeAdapterConfig, mapUnifiedToClaudeFlag } from "./sessionConfig";
 import { ClaudeEventParser } from "./eventParser";
-import { buildSufficitMcpServer, currentSufficitMcpToken, isSufficitMcpName } from "../sufficitMcp";
+import { buildClaudeMcpConfig } from "./mcpConfig";
+import { currentSufficitMcpToken, shouldRestartSufficitMcp } from "../sufficitMcp";
 
 export type { ClaudeAdapterConfig } from "./sessionConfig";
 
@@ -35,6 +33,8 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     private readonly cancelledChildren = new WeakSet<ChildProcessWithoutNullStreams>();
     private spawnedPermission = ""; // permission mode the live child was spawned with
     private spawnedModel = ""; // model passed to the live child at spawn time
+    private spawnedGuardrailSessionId: string | undefined;
+    private spawnedGuardrailToken: string | undefined;
     private turnChild: ChildProcessWithoutNullStreams | undefined;
     private leaseGeneration: number | undefined;
     private readonly coordination: ClaudeSessionCoordination;
@@ -84,48 +84,15 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
      * Playwright tools, giving Claude assisted browser navigation.
      */
     private buildMcpConfig(): string | undefined {
-        const servers: Record<string, unknown> = { ...(this.config.mcpServers ?? {}) };
-        for (const name of Object.keys(servers)) {
-            if (isSufficitMcpName(name)) {
-                delete servers[name];
-            }
-        }
-        const sufficit = buildSufficitMcpServer(
-            currentSufficitMcpToken(),
+        const result = buildClaudeMcpConfig(
+            this.config,
             this.options.guardrailSessionId || this.sessionId,
-            "vscode-claude",
             this.options.guardrailOrigin,
             this.options.permission,
         );
-        if (sufficit) {
-            servers.sufficit_ai = sufficit;
-        }
-        if (this.config.playwright && !servers.playwright) {
-            // Pin to the bundled Chromium explicitly: @playwright/mcp defaults to
-            // the system "chrome" channel when one is installed, and a branded
-            // Google Chrome's live Safe Browsing/component-update check fails
-            // closed (net::ERR_ACCESS_DENIED on every navigation) on hosts whose
-            // firewall doesn't allow that outbound traffic — bundled Chromium has
-            // no such check and works the same everywhere.
-            servers.playwright = {
-                command: "npx",
-                args: ["-y", "@playwright/mcp@latest", "--browser", "chromium"],
-            };
-        }
-        if (Object.keys(servers).length === 0) {
-            return undefined;
-        }
-        try {
-            const dir = path.join(os.homedir(), ".symposium");
-            fs.mkdirSync(dir, { recursive: true });
-            const file = path.join(dir, "claude-mcp.json");
-            fs.writeFileSync(file, JSON.stringify({ mcpServers: servers }, null, 2), "utf8");
-            fs.chmodSync(file, 0o600);
-            return file;
-        } catch (err) {
-            this.config.log?.(`[claude] mcp config write failed: ${err}`);
-            return undefined;
-        }
+        this.spawnedGuardrailSessionId = result.guardrailSessionId;
+        this.spawnedGuardrailToken = result.guardrailToken;
+        return result.path;
     }
 
     private ensureStarted(): ChildProcessWithoutNullStreams {
@@ -327,12 +294,24 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         ).flag;
         if (
             this.child &&
-            (desired !== this.spawnedPermission || desiredModel !== this.spawnedModel)
+            (desired !== this.spawnedPermission ||
+                desiredModel !== this.spawnedModel ||
+                shouldRestartSufficitMcp(
+                    currentSufficitMcpToken(),
+                    this.options.guardrailSessionId || this.sessionId,
+                    "vscode-claude",
+                    this.options.guardrailOrigin,
+                    this.options.permission,
+                    this.spawnedGuardrailSessionId,
+                    this.spawnedGuardrailToken,
+                ))
         ) {
             const reason =
                 desiredModel !== this.spawnedModel
                     ? `model ${this.spawnedModel || "default"} -> ${desiredModel || "default"}`
-                    : `permission ${this.spawnedPermission} -> ${desired}`;
+                    : desired !== this.spawnedPermission
+                      ? `permission ${this.spawnedPermission} -> ${desired}`
+                      : "guardrail MCP configuration changed";
             this.config.log?.(`[claude] ${reason}; respawning with --resume`);
             if (!this.turnActive) {
                 this.turnChild = undefined;

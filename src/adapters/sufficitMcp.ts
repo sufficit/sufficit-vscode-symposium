@@ -42,6 +42,21 @@ export function currentSufficitMcpToken(): string | null {
     return process.env[SUFFICIT_MCP_TOKEN_ENV] || null;
 }
 
+export function shouldRestartSufficitMcp(
+    token: string | null,
+    sessionId: string | undefined,
+    sourceId: string,
+    origin: GuardrailOrigin | undefined,
+    permission: string | undefined,
+    spawnedSessionId: string | undefined,
+    spawnedToken: string | undefined,
+): boolean {
+    const ready = buildSufficitMcpServer(token, sessionId, sourceId, origin, permission);
+    return ready
+        ? spawnedSessionId !== sessionId?.trim() || spawnedToken !== token
+        : !!spawnedSessionId;
+}
+
 /**
  * Creates the strict HTTP MCP shape accepted by Claude/Copilot and the VS Code
  * MCP importer. No server is returned without both a token and a session id;
