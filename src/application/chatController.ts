@@ -8,9 +8,14 @@ import {
 import { todosSummary } from "../adapters/todos";
 import { probeRtk } from "../adapters/rtk";
 import { HubClient } from "../sync/hubClient";
-import { RenderStream } from "./renderStream";
 import { transcriptText, transcriptMessages, transcriptMessagesUpTo } from "./controllerTranscript";
-import { ChatQueue, MessageDedup, PendingMessage, SendMode } from "./controllerQueue";
+import {
+    ChatQueue,
+    MessageDedup,
+    PendingMessage,
+    type QueueDispatchOptions,
+    SendMode,
+} from "./controllerQueue";
 import { ChangedFilesState } from "./changedFilesState";
 import {
     HubState,
@@ -19,10 +24,6 @@ import {
     reloadTasks as reloadHubTasks,
     pendingTasksSummary as hubPendingTasksSummary,
 } from "./controllerHubState";
-import {
-    persistEmit as persistEmitFn,
-    seedRenderLog as seedRenderLogFn,
-} from "./controllerPersist";
 import { OutboundPromptState } from "./outboundPrompt";
 import { loadControllerHistory } from "./controllerHistory";
 import { stableSessionKey } from "./sessionIdentity";
@@ -31,6 +32,9 @@ import { routeControllerSend } from "./controllerSendRouter";
 import { ControllerLiveState } from "./controllerLiveState";
 import { ControllerClientActions } from "./controllerClientActions";
 import { ControllerTurnRunner } from "./controllerTurnRunner";
+import { ControllerRenderPersistence } from "./controllerRenderPersistence";
+import type { RenderLogRecord } from "../renderLog";
+import { reconcilePeerQueue } from "./controllerPeerQueue";
 
 export class ChatController {
     private runtimeKey: string | undefined;
@@ -54,9 +58,13 @@ export class ChatController {
     private readonly changed = new ChangedFilesState();
     private readonly queue = new ChatQueue();
     // Persisted internal event stream; AHP owns client reconstruction.
-    private readonly stream = new RenderStream((m) => this.persistEmit(m));
-
-    private readonly persistState = { count: 0 };
+    private readonly renderPersistence = new ControllerRenderPersistence(() => this.sessionId, {
+        onExternalMessage: (message, record) => this.onExternalRenderMessage(message, record),
+        onStatusChanged: () => this.onStatusChange?.(),
+        onOwnershipAcquired: () => this.drainExternalQueueIfOwner(),
+        log: (message) => this.onLog?.(message),
+    });
+    private readonly stream = this.renderPersistence.stream;
     private readonly hubState: HubState = {
         guardrails: [],
         guardrailsLoaded: false,
@@ -75,9 +83,7 @@ export class ChatController {
         },
         takeQueued: () => (this.queue.isHeld ? undefined : this.queue.shift()),
         emitQueue: () => this.emitQueue(),
-        dispatch: (message) => {
-            void this.runner.dispatch(message);
-        },
+        dispatch: (message) => this.dispatchOwned(message),
         holdQueue: (hold) => this.queue.hold(hold),
         queuedCount: () => this.queue.length,
         log: (message) => this.onLog?.(message),
@@ -89,7 +95,7 @@ export class ChatController {
         statusChanged: () => this.onStatusChange?.(),
         onSend: (message, mode) => this.onSend(message, mode),
         emitQueue: () => this.emitQueue(),
-        dispatch: (message) => void this.runner.dispatch(message),
+        dispatch: (message) => this.dispatchOwned(message),
     });
     private readonly runner: ControllerTurnRunner;
 
@@ -147,11 +153,12 @@ export class ChatController {
     }
 
     get isBusy(): boolean {
-        return this.live.busy;
+        return this.live.busy || this.renderPersistence.peerBusy;
     }
 
     get attentionStatus(): SessionTerminalStatus | undefined {
-        return this.live.attentionStatus;
+        if (this.isBusy) return undefined;
+        return this.live.attentionStatus ?? this.renderPersistence.peerAttention;
     }
 
     get lastTurnId(): string | undefined {
@@ -231,18 +238,8 @@ export class ChatController {
     setAiTools(names: string[]): void {
         this.session?.setAiTools?.(names);
     }
-    private persistEmit(message: unknown): void {
-        persistEmitFn(
-            { sessionId: () => this.sessionId, stream: this.stream, state: this.persistState },
-            message,
-        );
-    }
-
     seedRenderLog(): boolean {
-        const restored = seedRenderLogFn(
-            { sessionId: () => this.sessionId, stream: this.stream, state: this.persistState },
-            this.options.resumeSessionId,
-        );
+        const restored = this.renderPersistence.restore(this.options.resumeSessionId);
         this.queue.restore(restored.pending);
         // Whether a restored queue was "waiting for a turn" or "held after a
         // failure" isn't durably recorded (the flag is in-memory only). A
@@ -295,9 +292,12 @@ export class ChatController {
         routeControllerSend(msg, mode, {
             queue: this.queue,
             dedup: this.dedup,
-            busy: () => this.live.busy,
+            // A live peer owner is a writable session, but not from this
+            // controller. Route the message through the shared durable queue
+            // instead of starting a second adapter resume.
+            busy: () => this.live.busy || !this.renderPersistence.canDispatch(),
             cancel: () => this.session?.cancel(),
-            dispatch: (message, options) => void this.runner.dispatch(message, options),
+            dispatch: (message, options) => this.dispatchOwned(message, options),
             emitQueue: () => this.emitQueue(),
             log: (message) => this.onLog?.(message),
             getSession: () => this.session,
@@ -318,6 +318,43 @@ export class ChatController {
 
     private emitQueue(): void {
         this.emit(this.queueSnapshot());
+    }
+
+    private dispatchOwned(message: PendingMessage, options: QueueDispatchOptions = {}): void {
+        if (!this.renderPersistence.canDispatch()) {
+            this.queue.unshift(message);
+            this.emitQueue();
+            this.onLog?.("[render-owner] dispatch deferred to the session owner");
+            return;
+        }
+        void this.runner.dispatch(message, options);
+    }
+
+    private onExternalRenderMessage(message: unknown, record: RenderLogRecord): boolean | void {
+        return reconcilePeerQueue(message, record, {
+            queue: this.queue,
+            isOwner: this.renderPersistence.isOwner,
+            emitCanonical: () => this.emitQueue(),
+            ingestNormalized: (normalized) => this.stream.ingestPersisted(normalized),
+            snapshot: () => this.queueSnapshot(),
+            drain: () => this.drainExternalQueueIfOwner(),
+        });
+    }
+
+    private drainExternalQueueIfOwner(): void {
+        if (
+            !this.renderPersistence.isOwner ||
+            this.live.busy ||
+            this.queue.isHeld ||
+            this.queue.isEmpty
+        ) {
+            return;
+        }
+        const next = this.queue.shift();
+        if (!next) return;
+        this.emitQueue();
+        this.onLog?.("[render-owner] dispatching a message queued by a peer controller");
+        void this.runner.dispatch(next);
     }
 
     async reloadGuardrails(): Promise<void> {
@@ -355,6 +392,7 @@ export class ChatController {
         this.runner.clearWatchdog();
         this.session?.dispose();
         this.session = undefined;
+        this.renderPersistence.dispose();
         this.queue.clear();
     }
 }

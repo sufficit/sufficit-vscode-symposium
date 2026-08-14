@@ -62,17 +62,26 @@ export class RenderStream {
 
     /** Buffers a render message and fans it out to application observers. */
     emit(message: unknown): void {
+        this.bufferAndFanOut(message);
+        try {
+            this.onPersist?.(message);
+        } catch {
+            /* persistence is best-effort */
+        }
+    }
+
+    /** Fans out a row already persisted by a peer without writing it again. */
+    ingestPersisted(message: unknown): void {
+        this.bufferAndFanOut(message);
+    }
+
+    private bufferAndFanOut(message: unknown): void {
         this.log.push(message);
         if (this.log.length > 5000) {
             this.log.shift();
         }
         for (const observer of this.observers) {
             observer(message);
-        }
-        try {
-            this.onPersist?.(message);
-        } catch {
-            /* persistence is best-effort */
         }
     }
 

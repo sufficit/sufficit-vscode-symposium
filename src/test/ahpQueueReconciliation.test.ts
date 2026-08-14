@@ -53,6 +53,15 @@ test("subscribeLive immediately delivers queue and transient file state", () => 
     detach();
 });
 
+test("a fresh controller exposes idle shared-render state and seeds safely without a session", () => {
+    const controller = new ChatController(stubAdapter(), { cwd: process.cwd() }, stubPorts());
+
+    assert.equal(controller.isBusy, false);
+    assert.equal(controller.attentionStatus, undefined);
+    assert.equal(controller.seedRenderLog(), false);
+    controller.dispose();
+});
+
 test("a restored ghost queue row is removed once the host queue snapshot arrives", () => {
     // Simulates a state.json persisted across a restart: the client ChatState
     // still carries a queued row, but this session's host ChatQueue is empty

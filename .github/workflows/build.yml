@@ -19,6 +19,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Changed-line coverage compares the PR merge commit with the exact
+          # base SHA. The default depth of 1 omits that parent and makes
+          # `git diff <base>...HEAD` fail before the real checks can run.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
