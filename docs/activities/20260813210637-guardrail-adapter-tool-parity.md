@@ -1,6 +1,6 @@
 # Activity — paridade de ferramentas de guardrail entre adaptadores
 
-**Status:** Em validação de release
+**Status:** Concluída
 **Data:** 2026-08-13
 **Plano de origem:** `docs/plans/20260813-guardrail-adapter-tool-parity.md`
 
@@ -54,6 +54,6 @@ Claude, Codex e Copilot.
 
 ## Release
 
-A release `v2026.813.6` será publicada somente após `verify:package`, commit na
-`develop`, push, tag anotada, CI e instalação no VS Code local e no code-server
-de desenvolvimento.
+A release `v2026.813.6` foi publicada após `verify:package`, commit na
+`develop`, push, tag anotada e CI. O VSIX foi instalado e confirmado no VS Code
+local e no code-server de desenvolvimento.
