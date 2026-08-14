@@ -33,7 +33,11 @@ async function build() {
         external: ["vscode", "ws"],
         sourcemap: isDev ? "inline" : false,
         minify: !isDev,
-        treeShaking: false, // Disable tree-shaking to keep scanKind and its dependencies
+        // All runtime entry points are statically imported from extension.ts, so
+        // unused-code elimination is safe and keeps the packaged host below its
+        // enforced size budget. In particular, scanKind is retained through the
+        // direct import in extension/commands/create.ts.
+        treeShaking: true,
         logLevel: "info",
     });
 

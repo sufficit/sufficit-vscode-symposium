@@ -14,6 +14,30 @@ test("ChatQueue restores persisted messages and keeps ids monotonic", () => {
     ]);
 });
 
+test("ChatQueue merges concurrent peer proposals without id collisions or duplicate replay", () => {
+    const queue = new ChatQueue();
+    const first = { id: 1, clientMessageId: "client-a", text: "first", attachments: [] };
+    const second = { id: 1, clientMessageId: "client-b", text: "second", attachments: [] };
+
+    assert.equal(queue.merge([first], "writer-a"), true);
+    assert.equal(queue.merge([second], "writer-b"), true);
+    assert.equal(queue.merge([first], "writer-a"), false);
+    assert.deepEqual(
+        queue.items().map((message) => message.text),
+        ["first", "second"],
+    );
+    assert.equal(new Set(queue.items().map((message) => message.id)).size, 2);
+});
+
+test("ChatQueue gives headless peer proposals a durable identity", () => {
+    const queue = new ChatQueue();
+    const message = { id: 7, text: "headless", attachments: [] };
+
+    assert.equal(queue.merge([message], "writer-a"), true);
+    assert.equal(queue.merge([message], "writer-a"), false);
+    assert.equal(queue.items()[0].intentId, "render-peer:writer-a:7");
+});
+
 test("persisted queue recovery keeps a genuinely pending message", () => {
     const recovered = recoverPersistedQueue([
         { type: "queue", items: [{ id: 3, text: "send me", attachments: [], model: "model-a" }] },

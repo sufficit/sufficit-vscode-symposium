@@ -184,6 +184,44 @@ export class ChatQueue {
         }
     }
 
+    /**
+     * Merges a follower's queue proposal into the owner's canonical queue.
+     * Browser-generated client ids are globally stable; headless sends fall
+     * back to a durable writer/id intent key. Numeric row ids are reassigned
+     * on collision so edit/promote/remove never target a sibling's message.
+     */
+    merge(messages: PendingMessage[], writerId: string): boolean {
+        let changed = false;
+        const identities = new Set(this.messages.map(queueIdentity).filter(isString));
+        const ids = new Set(
+            this.messages.flatMap((message) =>
+                typeof message.id === "number" && Number.isFinite(message.id) ? [message.id] : [],
+            ),
+        );
+        for (const [index, original] of messages.entries()) {
+            const message = { ...original, attachments: [...original.attachments] };
+            if (!message.clientMessageId && !message.intentId) {
+                message.intentId = `render-peer:${writerId}:${message.id ?? index}`;
+            }
+            const identity = queueIdentity(message);
+            if (identity && identities.has(identity)) continue;
+            if (
+                typeof message.id !== "number" ||
+                !Number.isFinite(message.id) ||
+                ids.has(message.id)
+            ) {
+                message.id = ++this.seq;
+            } else {
+                this.seq = Math.max(this.seq, message.id);
+            }
+            ids.add(message.id);
+            if (identity) identities.add(identity);
+            this.messages.push(message);
+            changed = true;
+        }
+        return changed;
+    }
+
     /** Full durable snapshot; the webview ignores dispatch-only metadata. */
     items(): PendingMessage[] {
         return this.messages.map((message) => ({
@@ -191,6 +229,16 @@ export class ChatQueue {
             attachments: [...message.attachments],
         }));
     }
+}
+
+function queueIdentity(message: PendingMessage): string | undefined {
+    if (message.clientMessageId) return `client:${message.clientMessageId}`;
+    if (message.intentId) return `intent:${message.intentId}`;
+    return undefined;
+}
+
+function isString(value: string | undefined): value is string {
+    return value !== undefined;
 }
 
 function sameAttachments(first: string[], second: unknown): boolean {
