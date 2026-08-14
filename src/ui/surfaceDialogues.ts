@@ -347,7 +347,7 @@ export class SurfaceDialogues {
             sideEffectDetach();
             ahpDetach?.();
         });
-        if (!existing && info && (!seededVisual || ahpDetach)) {
+        if (info && (existing || !seededVisual || ahpDetach)) {
             // In AHP mode the webview renders ChatState.turns, which are only
             // populated by the {type:"history"} envelope that loadHistory emits
             // (projectionRuntime.onMessage → chat/turnsLoaded). The seeded visual
@@ -359,7 +359,11 @@ export class SurfaceDialogues {
             // envelope is emitted — otherwise the projection has no observer and the
             // turns are silently dropped.
             this.d.deps.ahp.sync();
-            void controller.loadHistory(info).finally(() => {
+            // A live controller can outlive its webview while its restored AHP
+            // channel is empty/stale. Re-project authoritative history on every
+            // reopen; when the stream is already seeded, keep that derived page
+            // transient so it cannot duplicate the persisted render ledger.
+            void controller.loadHistory(info, !!existing || seededVisual).finally(() => {
                 if (generation === this.generation) {
                     this.d.post({ type: "history-end" });
                 }

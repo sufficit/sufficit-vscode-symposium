@@ -259,12 +259,13 @@ export class ChatController {
     private historyInfo?: SessionInfo;
     private historyCursor?: string;
 
-    async loadHistory(info: SessionInfo): Promise<void> {
+    async loadHistory(info: SessionInfo, transient = false): Promise<void> {
         this.historyInfo = info;
         this.historyCursor = undefined;
-        this.historyCursor = await loadControllerHistory(this.adapter, info, (message) =>
-            this.emit(message),
-        );
+        this.historyCursor = await loadControllerHistory(this.adapter, info, (message) => {
+            if (transient) this.stream.notify(message);
+            else this.emit(message);
+        });
     }
 
     /**
