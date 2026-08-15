@@ -45,6 +45,25 @@ export function rawLineType(line: string): string | undefined {
     }
 }
 
+/** Turn activity encoded by current and legacy Claude Code JSONL formats. */
+export function rawLineActivity(line: string): "working" | "idle" | undefined {
+    if (!line.trim()) return undefined;
+    try {
+        const entry = JSON.parse(line) as {
+            type?: unknown;
+            isMeta?: unknown;
+            message?: { stop_reason?: unknown };
+        };
+        if (entry.isMeta === true) return undefined;
+        if (entry.type === "result") return "idle";
+        if (entry.type === "user") return "working";
+        if (entry.type !== "assistant") return undefined;
+        return entry.message?.stop_reason === "end_turn" ? "idle" : "working";
+    } catch {
+        return undefined;
+    }
+}
+
 /** Parses one transcript JSONL line into chat messages (text + tool calls). */
 export function parseTranscriptLine(
     line: string,

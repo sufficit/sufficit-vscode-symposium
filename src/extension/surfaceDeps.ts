@@ -48,7 +48,9 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                     store.setLineage(l.sessionId, l.lineageId);
                 }
             }
-            const disk = store.decorate(await rawSessions(), true).map((s) => {
+            const stored = store.decorate(await rawSessions(), true);
+            runtime.trackSharedSessions(stored.map((session) => session.sessionId));
+            const disk = stored.map((s) => {
                 // `idle` means no turn is active, not that the last turn
                 // succeeded. Keep a persisted failure visible while the live
                 // controller remains attached to the session.

@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import { FollowHandle, HistoryMessage, SessionInfo } from "../types";
-import { parseTranscriptLine, rawLineType } from "./transcript";
+import { parseTranscriptLine, rawLineActivity } from "./transcript";
 
 export function followClaudeSession(
     info: SessionInfo,
@@ -15,10 +15,8 @@ export function followClaudeSession(
     let reading = false;
     let watcher: fs.FSWatcher | undefined;
 
-    const IDLE_FALLBACK_MS = 9000;
     let statusCb: ((status: "working" | "idle") => void) | undefined;
     let lastStatus: "working" | "idle" | undefined;
-    let idleTimer: ReturnType<typeof setTimeout> | undefined;
     const emitStatus = (s: "working" | "idle") => {
         if (s === lastStatus) {
             return;
@@ -26,21 +24,8 @@ export function followClaudeSession(
         lastStatus = s;
         statusCb?.(s);
     };
-    const clearIdleTimer = () => {
-        if (idleTimer) {
-            clearTimeout(idleTimer);
-            idleTimer = undefined;
-        }
-    };
     const setStatus = (s: "working" | "idle") => {
-        if (s === "working") {
-            emitStatus("working");
-            clearIdleTimer();
-            idleTimer = setTimeout(() => emitStatus("idle"), IDLE_FALLBACK_MS);
-        } else {
-            clearIdleTimer();
-            emitStatus("idle");
-        }
+        emitStatus(s);
     };
     const inferInitialStatus = async (): Promise<"working" | "idle" | undefined> => {
         if (!file) {
@@ -50,13 +35,8 @@ export function followClaudeSession(
         const start = Math.max(0, stat.size - 65536);
         const tail = await fs.promises.readFile(file, "utf8").then((s) => s.slice(start));
         for (const line of tail.split("\n").reverse()) {
-            const t = rawLineType(line);
-            if (t === "result") {
-                return "idle";
-            }
-            if (t === "user" || t === "assistant") {
-                return "working";
-            }
+            const status = rawLineActivity(line);
+            if (status) return status;
         }
         return undefined;
     };
@@ -79,12 +59,8 @@ export function followClaudeSession(
                     const lines = carry.split("\n");
                     carry = lines.pop() ?? "";
                     for (const line of lines) {
-                        const t = rawLineType(line);
-                        if (t === "result") {
-                            setStatus("idle");
-                        } else if (t === "user" || t === "assistant") {
-                            setStatus("working");
-                        }
+                        const status = rawLineActivity(line);
+                        if (status) setStatus(status);
                         for (const message of parseTranscriptLine(line)) {
                             onMessage(message);
                         }
@@ -126,10 +102,17 @@ export function followClaudeSession(
         }
         const timer = setInterval(() => void drain(), 1500);
         stopTimer = () => clearInterval(timer);
-        followStops.get(info.sessionId)?.();
-        followStops.set(info.sessionId, stopTimer);
     };
 
+    const stop = () => {
+        if (closed) return;
+        closed = true;
+        watcher?.close();
+        stopTimer?.();
+        if (followStops.get(info.sessionId) === stop) followStops.delete(info.sessionId);
+    };
+    followStops.get(info.sessionId)?.();
+    followStops.set(info.sessionId, stop);
     void begin();
 
     return {
@@ -139,14 +122,6 @@ export function followClaudeSession(
                 cb(lastStatus);
             }
         },
-        dispose: () => {
-            closed = true;
-            clearIdleTimer();
-            watcher?.close();
-            stopTimer?.();
-            if (followStops.get(info.sessionId) === stopTimer) {
-                followStops.delete(info.sessionId);
-            }
-        },
+        dispose: stop,
     };
 }

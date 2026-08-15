@@ -2,6 +2,7 @@ import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "../application/chatController";
 import type { SessionStatus, SessionTerminalStatus } from "../adapters/sessionInfo";
 import { FollowStatusRegistry, liveSessionStatus } from "./status";
+import { SharedRenderStatusRegistry } from "./sharedRenderStatus";
 import type { ApplicationPorts } from "../application/ports";
 import { symposiumLog } from "../extension/log";
 
@@ -19,13 +20,21 @@ export class LiveSessions {
     // keep running after its chat view is switched away. It is cleared only
     // when the session is explicitly deleted or the follow is truly stopped.
     private readonly followStatus = new FollowStatusRegistry();
+    private readonly sharedStatus: SharedRenderStatusRegistry;
     private seq = 0;
 
     /** `onChange` fires when any controller starts/stops working. */
     constructor(
         private readonly ports: ApplicationPorts,
         private readonly onChange?: () => void,
-    ) {}
+    ) {
+        this.sharedStatus = new SharedRenderStatusRegistry(onChange, { log: symposiumLog });
+    }
+
+    /** Watches machine-wide render ownership for sessions listed in this host. */
+    trackSharedSessions(sessionIds: Iterable<string>): void {
+        this.sharedStatus.track(sessionIds);
+    }
 
     /**
      * Records the inferred working/idle status of a followed session (one with
@@ -71,7 +80,7 @@ export class LiveSessions {
         if (controller) {
             return liveSessionStatus(controller.isBusy, controller.attentionStatus);
         }
-        return this.followStatus.get(sessionId);
+        return this.followStatus.get(sessionId) ?? this.sharedStatus.get(sessionId);
     }
 
     /** Live sessions for the list (incl. brand-new ones not yet on disk). */
@@ -186,5 +195,6 @@ export class LiveSessions {
         }
         this.controllers.clear();
         this.followStatus.clear();
+        this.sharedStatus.dispose();
     }
 }
