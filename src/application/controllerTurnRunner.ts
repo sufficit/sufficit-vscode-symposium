@@ -45,6 +45,7 @@ interface ControllerTurnRunnerDeps {
     emit(message: unknown): void;
     emitQueue(): void;
     statusChanged(): void;
+    releaseOwnership(): void;
     log(message: string): void;
 }
 
@@ -141,6 +142,7 @@ export class ControllerTurnRunner {
             dispatch: (message) => void this.dispatch(message),
             holdQueue: (hold) => this.deps.queue.hold(hold),
             queuedCount: () => this.deps.queue.length,
+            releaseOwnership: this.deps.releaseOwnership,
             log: this.deps.log,
         };
     }

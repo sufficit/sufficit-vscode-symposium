@@ -90,6 +90,7 @@ export class ChatController {
         dispatch: (message) => this.dispatchOwned(message),
         holdQueue: (hold) => this.queue.hold(hold),
         queuedCount: () => this.queue.length,
+        releaseOwnership: () => this.renderPersistence.releaseOwnership(),
         log: (message) => this.onLog?.(message),
     });
     readonly client = new ControllerClientActions({
@@ -138,6 +139,7 @@ export class ChatController {
             emit: (message) => this.emit(message),
             emitQueue: () => this.emitQueue(),
             statusChanged: () => this.onStatusChange?.(),
+            releaseOwnership: () => this.renderPersistence.releaseOwnership(),
             log: (message) => this.onLog?.(message),
         });
         void probeRtk(options.cwd);

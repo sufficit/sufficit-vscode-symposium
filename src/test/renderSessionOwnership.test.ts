@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
-import { RenderSessionOwnership } from "../application/renderSessionOwnership";
+import {
+    RENDER_OWNER_PROTOCOL,
+    RenderSessionOwnership,
+} from "../application/renderSessionOwnership";
 
 test("only one live controller owns a native session", () => {
     withOwnershipRoot((root) => {
@@ -62,6 +66,39 @@ test("ownership handles pre-session and repeated lifecycle checks as no-ops", ()
         assert.equal(ownership.ensure("native-session"), true);
         assert.equal(ownership.ensure("native-session"), true);
         ownership.release();
+    });
+});
+
+test("ownership records its protocol and notices when another controller replaced the lock", () => {
+    withOwnershipRoot((root) => {
+        const first = new RenderSessionOwnership(
+            { id: "first", pid: 501 },
+            { root, isPidAlive: () => true },
+        );
+        const sessionId = "native-session";
+        assert.equal(first.ensure(sessionId), true);
+
+        const lockPath = path.join(
+            root,
+            `${createHash("sha256").update(sessionId).digest("hex")}.lock`,
+        );
+        const ownerFile = path.join(lockPath, "owner.json");
+        const recorded = JSON.parse(fs.readFileSync(ownerFile, "utf8")) as {
+            protocol?: number;
+        };
+        assert.equal(recorded.protocol, RENDER_OWNER_PROTOCOL);
+
+        fs.writeFileSync(
+            ownerFile,
+            JSON.stringify({
+                id: "replacement",
+                pid: 502,
+                protocol: RENDER_OWNER_PROTOCOL,
+                startedAt: new Date().toISOString(),
+            }),
+        );
+        assert.equal(first.owns(sessionId), false);
+        first.release();
     });
 });
 

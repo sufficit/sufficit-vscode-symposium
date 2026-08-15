@@ -36,6 +36,7 @@ export class ControllerRenderPersistence {
     private stopFollower: (() => void) | undefined;
     private followedSessionId: string | undefined;
     private owned = false;
+    private yielded = false;
 
     constructor(
         private readonly sessionId: () => string | undefined,
@@ -79,11 +80,25 @@ export class ControllerRenderPersistence {
     canDispatch(): boolean {
         const id = this.sessionId();
         if (!id) return true;
+        // A fresh local action is an explicit reason to compete again after
+        // this controller yielded an idle session to its peers.
+        this.yielded = false;
         this.ensureFollowing(id);
         if (this.owned && this.ownership.owns(id)) return true;
         const acquired = this.ownership.ensure(id);
         if (acquired) this.becomeOwner(true);
         return acquired;
+    }
+
+    /**
+     * Returns an idle native session to the shared owner pool. The adapter
+     * object may stay warm in this controller; a later send reacquires the
+     * lease before it can resume the native session.
+     */
+    releaseOwnership(): void {
+        this.ownership.release();
+        this.owned = false;
+        this.yielded = true;
     }
 
     dispose(): void {
@@ -123,6 +138,7 @@ export class ControllerRenderPersistence {
         this.stopFollower?.();
         if (this.followedSessionId && this.followedSessionId !== sessionId) {
             this.ownership.release();
+            this.yielded = false;
         }
         this.followedSessionId = sessionId;
         this.owned = this.ownership.ensure(sessionId);
@@ -154,7 +170,10 @@ export class ControllerRenderPersistence {
     private pollOwnership(sessionId: string): void {
         const statusChanged = this.peer.refreshLiveness();
         if (statusChanged) this.options.onStatusChanged?.();
-        if (!this.owned && this.ownership.ensure(sessionId)) {
+        if (this.owned && !this.ownership.owns(sessionId)) {
+            this.owned = false;
+        }
+        if (!this.owned && !this.yielded && this.ownership.ensure(sessionId)) {
             this.becomeOwner(false);
         }
     }
@@ -162,6 +181,7 @@ export class ControllerRenderPersistence {
     private becomeOwner(fromDispatch: boolean): void {
         const changed = !this.owned;
         this.owned = true;
+        this.yielded = false;
         if (changed && !fromDispatch) this.options.onOwnershipAcquired?.();
     }
 }

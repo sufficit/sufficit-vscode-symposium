@@ -30,6 +30,7 @@ function stalledContext(queuedCount = 0, origin: TurnOrigin = "user") {
         dispatch: () => calls.push("dispatch"),
         holdQueue: () => calls.push("holdQueue"),
         queuedCount: () => queued,
+        releaseOwnership: () => calls.push("releaseOwnership"),
     };
     const ctx: WatchdogContext = {
         turns,
@@ -69,6 +70,7 @@ test("stalled turn is canceled, marked failed and exposed as retryable", () => {
     // the queue and announces it — this is the watchdog-bypass bug this
     // refactor closes (a stalled turn used to leave the queue un-held).
     assert.equal(testContext.calls.includes("holdQueue"), true);
+    assert.equal(testContext.calls.includes("releaseOwnership"), true);
     const notice = testContext.emitted.at(-1) as { event: { kind: string; severity?: string } };
     assert.equal(notice.event.kind, "status-notice");
     assert.equal(notice.event.severity, "warning");

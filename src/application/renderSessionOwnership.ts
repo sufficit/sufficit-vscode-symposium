@@ -5,6 +5,7 @@ import * as path from "node:path";
 import type { RenderWriter } from "../renderLog";
 
 interface OwnershipRecord extends RenderWriter {
+    protocol: number;
     startedAt: string;
 }
 
@@ -16,6 +17,7 @@ export interface RenderSessionOwnershipOptions {
 }
 
 const OWNER_GRACE_MS = 30_000;
+export const RENDER_OWNER_PROTOCOL = 2;
 
 /**
  * Elects one controller as the writable owner of a native session while every
@@ -42,7 +44,13 @@ export class RenderSessionOwnership {
     }
 
     owns(sessionId: string): boolean {
-        return this.held?.sessionId === sessionId;
+        const held = this.held;
+        if (held?.sessionId !== sessionId) return false;
+        const owner = readOwner(held.lockPath);
+        if (owner?.id === this.writer.id && owner.pid === this.writer.pid) return true;
+        this.held = undefined;
+        this.log?.(`[render-owner] ownership changed for ${sessionId}`);
+        return false;
     }
 
     /** Acquires a missing/stale owner lock, or reports that a live peer owns it. */
@@ -61,6 +69,7 @@ export class RenderSessionOwnership {
                 created = true;
                 const record: OwnershipRecord = {
                     ...this.writer,
+                    protocol: RENDER_OWNER_PROTOCOL,
                     startedAt: new Date(this.now()).toISOString(),
                 };
                 fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify(record), {
@@ -121,6 +130,7 @@ function readOwner(lockPath: string): OwnershipRecord | undefined {
         const value = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8")) as {
             id?: unknown;
             pid?: unknown;
+            protocol?: unknown;
             startedAt?: unknown;
         };
         if (
@@ -128,7 +138,12 @@ function readOwner(lockPath: string): OwnershipRecord | undefined {
             typeof value.pid === "number" &&
             typeof value.startedAt === "string"
         ) {
-            return value as OwnershipRecord;
+            return {
+                id: value.id,
+                pid: value.pid,
+                protocol: typeof value.protocol === "number" ? value.protocol : 1,
+                startedAt: value.startedAt,
+            };
         }
     } catch {
         // The owner may still be between mkdir and its atomic-enough metadata write.

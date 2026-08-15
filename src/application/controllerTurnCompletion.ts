@@ -23,6 +23,7 @@ export interface TurnCompletionContext {
     dispatch(message: PendingMessage): void;
     holdQueue(hold: QueueHold): void;
     queuedCount(): number;
+    releaseOwnership(): void;
     log?(message: string): void;
 }
 
@@ -82,6 +83,7 @@ export function completeTurn(
         // a missed broadcast) never gets corrected, because nothing else
         // tells it "the queue is actually empty" on a heldCount === 0 turn.
         ctx.emitQueue();
+        ctx.releaseOwnership();
         return;
     }
     const next = ctx.takeQueued();
@@ -97,5 +99,7 @@ export function completeTurn(
     ctx.emitQueue();
     if (next) {
         ctx.dispatch(next);
+    } else {
+        ctx.releaseOwnership();
     }
 }

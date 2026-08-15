@@ -57,3 +57,8 @@ a drenagem indefinidamente.
 Uma instalação de VSIX não substitui código já carregado em Extension Hosts
 antigos. Todas as janelas do code-server precisam recarregar uma vez para que
 owner e followers usem o protocolo desta release.
+
+Essa limitação foi removida para os ciclos seguintes pela **v2026.815.3**: o
+owner passou a devolver sessões ociosas ao pool ao final de cada turno. A
+migração do owner legado já carregado ainda exige encerrar uma única vez o
+Extension Host antigo que mantém o lock.

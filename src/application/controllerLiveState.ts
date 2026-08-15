@@ -15,6 +15,7 @@ interface ControllerLiveStateDeps {
     dispatch(message: PendingMessage): void;
     holdQueue(hold: QueueHold): void;
     queuedCount(): number;
+    releaseOwnership(): void;
     log?(message: string): void;
 }
 
@@ -46,6 +47,7 @@ export class ControllerLiveState {
             dispatch: deps.dispatch,
             holdQueue: deps.holdQueue,
             queuedCount: deps.queuedCount,
+            releaseOwnership: deps.releaseOwnership,
             log: deps.log,
         });
     }

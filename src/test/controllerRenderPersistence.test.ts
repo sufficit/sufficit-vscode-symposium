@@ -107,10 +107,20 @@ test("peer controllers share live render state, project AHP once and hand owners
                 false,
             );
 
-            leader.dispose();
-            alive.delete(101);
+            // A terminal/idle controller yields ownership even while its
+            // Extension Host remains alive. This is what lets another
+            // code-server browser apply held-queue commands without requiring
+            // every older tab to be reloaded first.
+            leader.releaseOwnership();
             await waitFor(() => follower.isOwner && ownershipAcquired === 1);
             assert.equal(follower.canDispatch(), true);
+            assert.equal(leader.isOwner, false);
+
+            // Yielding suppresses only background re-acquisition. A later
+            // explicit local send is allowed to compete for the lease again.
+            follower.releaseOwnership();
+            assert.equal(leader.canDispatch(), true);
+            assert.equal(leader.isOwner, true);
         } finally {
             projection.dispose();
             leader.dispose();
