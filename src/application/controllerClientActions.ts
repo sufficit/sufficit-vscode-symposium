@@ -1,5 +1,6 @@
 import type { AgentSession } from "../adapters/types";
 import type { ChatQueue, PendingMessage, SendMode } from "./controllerQueue";
+import type { PeerQueueCommand } from "./controllerPeerQueue";
 import type { TurnTracker } from "./turn";
 
 interface ControllerClientActionDeps {
@@ -10,6 +11,9 @@ interface ControllerClientActionDeps {
     onSend(message: PendingMessage, mode: SendMode): void;
     emitQueue(): void;
     dispatch(message: PendingMessage): void;
+    canMutateQueue(): boolean;
+    emitPeerQueueCommand(command: PeerQueueCommand): void;
+    log?(message: string): void;
 }
 
 /** Host-authoritative commands shared by API, AHP and legacy webview clients. */
@@ -36,6 +40,8 @@ export class ControllerClientActions {
     }
 
     removeQueued(id: string): boolean {
+        if (!this.deps.queue.hasExternal(id)) return false;
+        if (this.forward({ type: "queue-command", action: "remove", id })) return true;
         const changed = this.deps.queue.removeExternal(id);
         if (changed) this.deps.emitQueue();
         return changed;
@@ -45,20 +51,31 @@ export class ControllerClientActions {
      *  on the held-queue banner after a turn failure). */
     clearQueued(): boolean {
         if (this.deps.queue.isEmpty) return false;
+        if (this.forward({ type: "queue-command", action: "clear" })) return true;
         this.deps.queue.clear();
         this.deps.emitQueue();
         return true;
     }
 
     reorderQueued(order: readonly string[]): boolean {
+        if (!this.deps.queue.wouldReorderExternal(order)) return false;
+        if (this.forward({ type: "queue-command", action: "reorder", order: [...order] })) {
+            return true;
+        }
         const changed = this.deps.queue.reorderExternal(order);
         if (changed) this.deps.emitQueue();
         return changed;
     }
 
     promoteQueued(id: string): boolean {
+        if (!this.deps.queue.hasExternal(id)) return false;
+        if (this.forward({ type: "queue-command", action: "promote", id })) return true;
         const queued = this.deps.queue.takeExternal(id);
         if (!queued) return false;
+        // "Send next" is the user's explicit release of a queue paused after
+        // failure. Without this, dispatch re-enters with held=true and every
+        // normal drain path refuses to run it.
+        this.deps.queue.release();
         if (this.deps.turns.isBusy) {
             this.deps.queue.unshift(queued);
             this.deps.emitQueue();
@@ -68,6 +85,15 @@ export class ControllerClientActions {
             this.deps.emitQueue();
             this.deps.dispatch(queued);
         }
+        return true;
+    }
+
+    private forward(command: PeerQueueCommand): boolean {
+        if (this.deps.canMutateQueue()) return false;
+        this.deps.emitPeerQueueCommand(command);
+        this.deps.log?.(
+            `[render-owner] queue ${command.action} command deferred to the session owner`,
+        );
         return true;
     }
 

@@ -20,6 +20,7 @@ test("owner merges a follower proposal and emits one canonical queue", () => {
             ingestNormalized: () => normalized++,
             snapshot: () => ({ type: "queue", items: queue.items() }),
             drain: () => drained++,
+            applyCommand: () => assert.fail("a queue snapshot is not a command"),
         },
     );
 
@@ -48,6 +49,7 @@ test("follower replaces its queue from an authoritative owner snapshot", () => {
         ingestNormalized: (message) => ingested.push(message),
         snapshot: () => ({ type: "queue", items: queue.items(), held: queue.isHeld }),
         drain: () => drained++,
+        applyCommand: () => assert.fail("a queue snapshot is not a command"),
     });
 
     assert.equal(result, false);
@@ -76,6 +78,7 @@ test("follower normalizes another follower proposal without persisting it", () =
             },
             snapshot: () => ({ type: "queue", items: queue.items() }),
             drain: () => undefined,
+            applyCommand: () => assert.fail("a queue snapshot is not a command"),
         },
     );
 
@@ -93,9 +96,38 @@ test("non-queue render messages are not intercepted", () => {
             ingestNormalized: () => assert.fail("not called"),
             snapshot: () => assert.fail("not called"),
             drain: () => assert.fail("not called"),
+            applyCommand: () => assert.fail("not called"),
         }),
         undefined,
     );
+});
+
+test("only the owner applies a durable follower queue command", () => {
+    const queue = new ChatQueue();
+    const applied: unknown[] = [];
+    const context = {
+        queue,
+        isOwner: true,
+        emitCanonical: () => assert.fail("command handler owns canonical emission"),
+        ingestNormalized: () => assert.fail("commands are not projected"),
+        snapshot: () => assert.fail("commands have no snapshot"),
+        drain: () => assert.fail("command handler owns draining"),
+        applyCommand: (command: unknown) => applied.push(command),
+    };
+
+    assert.equal(
+        reconcilePeerQueue(
+            { type: "queue-command", action: "promote", id: "queued-1" },
+            peerRecord(false),
+            context,
+        ),
+        false,
+    );
+    assert.deepEqual(applied, [{ type: "queue-command", action: "promote", id: "queued-1" }]);
+
+    context.isOwner = false;
+    reconcilePeerQueue({ type: "queue-command", action: "clear" }, peerRecord(false), context);
+    assert.equal(applied.length, 1, "a second follower must not apply the command");
 });
 
 function queueMessage(items: unknown[], held: boolean): unknown {

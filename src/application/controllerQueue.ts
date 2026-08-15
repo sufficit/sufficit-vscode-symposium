@@ -137,6 +137,12 @@ export class ChatQueue {
         return this.takeExternal(id) !== undefined;
     }
 
+    hasExternal(id: string): boolean {
+        return this.messages.some(
+            (message) => message.clientMessageId === id || String(message.id) === id,
+        );
+    }
+
     takeExternal(id: string): PendingMessage | undefined {
         const index = this.messages.findIndex(
             (message) => message.clientMessageId === id || String(message.id) === id,
@@ -163,6 +169,22 @@ export class ChatQueue {
             (id, index) =>
                 id !== (this.messages[index].clientMessageId ?? String(this.messages[index].id)),
         );
+    }
+
+    wouldReorderExternal(order: readonly string[]): boolean {
+        const before = this.messages.map(
+            (message) => message.clientMessageId ?? String(message.id),
+        );
+        const rank = new Map(order.map((id, index) => [id, index]));
+        const after = [...before].sort((first, second) => {
+            const a = rank.get(first);
+            const b = rank.get(second);
+            if (a === undefined && b === undefined) return 0;
+            if (a === undefined) return 1;
+            if (b === undefined) return -1;
+            return a - b;
+        });
+        return before.some((id, index) => id !== after[index]);
     }
 
     clear(): void {
