@@ -41,14 +41,19 @@ test("Claude retries spawn after ENOENT instead of reusing the dead child", asyn
 
     try {
         const first = waitForTurnEnd(session);
-        session.send("first attempt");
+        session.send("first attempt", undefined, undefined, "intent-1");
         const firstEvents = await first;
 
         const second = waitForTurnEnd(session);
-        session.send("second attempt");
+        session.send("second attempt", undefined, undefined, "intent-2");
         const secondEvents = await second;
 
-        for (const events of [firstEvents, secondEvents]) {
+        for (const [index, events] of [firstEvents, secondEvents].entries()) {
+            assert.deepEqual(events[0], {
+                kind: "turn-start",
+                logicalTurnId: `claude/turn-${index + 1}`,
+                intentId: `intent-${index + 1}`,
+            });
             assert.ok(
                 events.some((event) => event.kind === "error" && /ENOENT/.test(event.message)),
             );

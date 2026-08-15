@@ -36,6 +36,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     private spawnedGuardrailSessionId: string | undefined;
     private spawnedGuardrailToken: string | undefined;
     private turnChild: ChildProcessWithoutNullStreams | undefined;
+    private turnSequence = 0;
     private leaseGeneration: number | undefined;
     private readonly coordination: ClaudeSessionCoordination;
     // Tool calls seen this turn with no matching tool_result yet. A backgrounded
@@ -257,7 +258,28 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         this.parser.handleLine(line, !!sourceChild && this.cancelledChildren.has(sourceChild));
     }
 
-    send(text: string, images?: string[]): void {
+    send(
+        text: string,
+        images?: string[],
+        _preamble?: string[],
+        intentId?: string,
+        _retryOf?: string,
+    ): void {
+        // Claude's stream-json protocol has no explicit turn-start event. Emit
+        // Symposium's normalized boundary before any synchronous notice,
+        // coordination error or provider delta so the live AHP projection has
+        // an active turn to receive text/tools/status. Without this boundary,
+        // the ledger was updated but the webview discarded every live delta;
+        // reopening the session appeared to "fix" it only because history was
+        // reconstructed from Claude's native transcript.
+        const turnNumber = ++this.turnSequence;
+        const turnSessionId =
+            claudeResumeSessionId(this.options.resumeSessionId || this.sessionId) || "claude";
+        this.emit("event", {
+            kind: "turn-start",
+            logicalTurnId: `${turnSessionId}/turn-${turnNumber}`,
+            ...(intentId ? { intentId } : {}),
+        });
         const resume = claudeResumeSessionId(this.options.resumeSessionId || this.sessionId);
         if (resume) {
             const lease = this.coordination.acquire(resume);
