@@ -41,7 +41,7 @@ export function projectAgentEvent(
         case "tool-output":
             return projectToolOutput(state, event.toolId, event.text);
         case "tool-end":
-            return projectToolEnd(state, event.toolId, event.toolName, event.result);
+            return projectToolEnd(state, event);
         case "approval-request":
             return projectApproval(state, event, false);
         case "approval-resolved":
@@ -190,7 +190,12 @@ function projectToolStart(
             toolName: event.toolName,
             displayName: event.toolName,
             intention: event.detail,
-            _meta: safeMeta({ path: event.path, added: event.added, removed: event.removed }),
+            _meta: safeMeta({
+                path: event.path,
+                added: event.added,
+                removed: event.removed,
+                todos: event.todos,
+            }),
         }),
         chatAction("chat/toolCallReady", state.turnId, {
             toolCallId: id,
@@ -218,18 +223,21 @@ function projectToolOutput(
 
 function projectToolEnd(
     state: AhpProjectionState,
-    toolId: string | undefined,
-    toolName: string,
-    result: string | undefined,
+    event: Extract<AgentEvent, { kind: "tool-end" }>,
 ): AhpProjectionAction[] {
     if (!state.turnId) return [];
-    const id = toolId ?? [...state.tools].find((candidate) => candidate.includes(toolName));
+    const id =
+        event.toolId ?? [...state.tools].find((candidate) => candidate.includes(event.toolName));
     if (!id) return [];
     state.tools.delete(id);
     return [
         chatAction("chat/toolCallComplete", state.turnId, {
             toolCallId: id,
-            result: { success: true, content: result ? [{ kind: "text", text: result }] : [] },
+            result: {
+                success: true,
+                content: event.result ? [{ kind: "text", text: event.result }] : [],
+            },
+            _meta: safeMeta({ todos: event.todos }),
         }),
         ...activity(state.tools.size ? "Running tools" : "Thinking"),
     ];

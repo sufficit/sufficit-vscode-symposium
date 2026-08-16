@@ -6,6 +6,7 @@ import {
     isPendingQueueHeld,
     selectPendingMessages,
 } from "../../ahp/client/chatSelectors";
+import { toolTodosFromMetadata } from "../../ahp/toolMetadata";
 import { applyEvent } from "./events";
 import { renderQueueView, renderUserTurn, resetConversationView } from "./conversationView";
 import { hideAgentPicker } from "./agentPicker";
@@ -139,6 +140,7 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
                 toolId: optionalString(action.toolCallId),
                 toolName: String(action.displayName ?? action.toolName ?? "Tool"),
                 detail: stringContent(action.intention),
+                todos: toolTodosFromMetadata(action._meta),
             });
             break;
         case "chat/toolCallContentChanged":
@@ -172,6 +174,7 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
                 toolId: optionalString(action.toolCallId),
                 toolName: "Tool",
                 result: contentText(asRecord(action.result).content),
+                todos: toolTodosFromMetadata(action._meta),
             });
             break;
         case "chat/error": {
@@ -266,6 +269,7 @@ function renderPart(part: ResponsePart): void {
     renderTool(name, stringContent(tool.intention ?? tool.invocationMessage), {
         toolId: id,
         input: optionalString(tool.toolInput),
+        todos: toolTodosFromMetadata(tool._meta),
     });
     const output = contentText(tool.content) || contentText(asRecord(tool.result).content);
     if (output) fillToolResult(id, output, isToolFinished(tool.status));

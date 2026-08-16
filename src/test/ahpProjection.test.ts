@@ -11,6 +11,8 @@ import {
     stableAhpUuid,
     type AhpProjectionAction,
 } from "../ahp";
+import { toolTodosFromMetadata } from "../ahp/toolMetadata";
+import { historyTurns } from "../ahp/historyProjection";
 
 const STREAM: AgentEvent[] = [
     { kind: "turn-start", logicalTurnId: "turn-1" },
@@ -84,6 +86,73 @@ test("projection keeps tool approval correlation and excludes arbitrary provider
     assert.equal(session.inputNeeded?.length ?? 0, 0);
     assert.equal(serialized.includes("process.env"), false);
     assert.equal(serialized.includes("credential"), false);
+});
+
+test("native task snapshots survive AHP projection, completion and replay state", () => {
+    const runtime = fixture("claude");
+    rememberProjectedUser(runtime.projection, "work");
+    apply(
+        runtime,
+        projectAgentEvent(runtime.projection, {
+            kind: "turn-start",
+            logicalTurnId: "tasks",
+        }),
+    );
+    apply(
+        runtime,
+        projectAgentEvent(runtime.projection, {
+            kind: "tool-start",
+            toolName: "TaskCreate",
+            toolId: "create-1",
+            path: "/tmp/work",
+            todos: [{ content: "Inspect projection", status: "pending", order: 1 }],
+        }),
+    );
+
+    const projectedTool = () => {
+        const chat = runtime.host.snapshot(runtime.handle.chatResource).state as ChatState;
+        const part = chat.activeTurn?.responseParts[0] as unknown as {
+            toolCall?: { _meta?: unknown };
+        };
+        return part.toolCall?._meta;
+    };
+    assert.deepEqual(toolTodosFromMetadata(projectedTool()), [
+        { content: "Inspect projection", status: "pending", order: 1 },
+    ]);
+
+    apply(
+        runtime,
+        projectAgentEvent(runtime.projection, {
+            kind: "tool-end",
+            toolName: "TaskCreate",
+            toolId: "create-1",
+            todos: [{ content: "Inspect projection", status: "in_progress", order: 1 }],
+        }),
+    );
+    assert.deepEqual(toolTodosFromMetadata(projectedTool()), [
+        { content: "Inspect projection", status: "in_progress", order: 1 },
+    ]);
+    assert.equal(
+        (projectedTool() as { symposium?: { path?: string } }).symposium?.path,
+        "/tmp/work",
+        "completion metadata must not erase start metadata",
+    );
+});
+
+test("native task snapshots survive backend history projection on session reopen", () => {
+    const [turn] = historyTurns([
+        { role: "user", text: "work" },
+        {
+            role: "tool",
+            text: null,
+            toolName: "TaskCreate",
+            todos: [{ content: "Persist task panel", status: "pending", order: 1 }],
+        },
+    ]);
+    const part = turn.responseParts[0] as unknown as { toolCall?: { _meta?: unknown } };
+    assert.deepEqual(toolTodosFromMetadata(part.toolCall?._meta), [
+        { content: "Persist task panel", status: "pending", order: 1 },
+    ]);
 });
 
 // A terminal notice is why the turn stopped. Projected as activity only it was

@@ -8,6 +8,7 @@ import type {
     TurnState,
     ChatState,
 } from "@microsoft/agent-host-protocol";
+import { safeMeta } from "./projectionCore";
 
 const MESSAGE_USER = "user" as MessageKind.User;
 const PART_MARKDOWN = "markdown" as ResponsePartKind.Markdown;
@@ -78,6 +79,12 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
                     confirmed: TOOL_NOT_NEEDED,
                     success: true,
                     pastTenseMessage: message.detail ?? "Tool completed",
+                    _meta: safeMeta({
+                        path: message.path,
+                        added: message.added,
+                        removed: message.removed,
+                        todos: message.todos,
+                    }),
                 },
             });
         } else if (message.role === "error") {

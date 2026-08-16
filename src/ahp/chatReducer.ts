@@ -9,6 +9,7 @@ import type {
 } from "@microsoft/agent-host-protocol";
 import { AHP_STATUS, replaceActivityStatus } from "./status";
 import { asArray, asRecord, nonNegative, optionalString, stringArray } from "./chatReducerValues";
+import { mergeToolMetadata } from "./toolMetadata";
 
 type ActionRecord = { type: string } & Record<string, unknown>;
 type PartRecord = Record<string, unknown> & {
@@ -64,6 +65,7 @@ export function chatReducer(state: ChatState, raw: StateAction): ChatState {
                 ...tool,
                 status: "completed",
                 result: action.result,
+                _meta: mergeToolMetadata(tool._meta, action._meta),
             }));
         case "chat/toolCallResultConfirmed":
             return updateTool(state, action, (tool) => ({
