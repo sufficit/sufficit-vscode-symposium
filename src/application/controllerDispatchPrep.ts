@@ -35,13 +35,13 @@ export async function prepareDispatch(
     // added mid-conversation (agent or UI) reaches the next outbound and a
     // transiently-empty first read doesn't cache empty forever. Injected on
     // every message below.
-    if (ctx.sessionId) {
-        await ctx.reloadGuardrails();
-    }
-    // Tasks: refresh on EVERY dispatch to catch newly created tasks.
-    if (ctx.sessionId && ctx.hub.configured()) {
-        await ctx.reloadTasks();
-    }
+    const refreshes: Promise<void>[] = [];
+    if (ctx.sessionId) refreshes.push(ctx.reloadGuardrails());
+    // Tasks: refresh on EVERY dispatch to catch newly created tasks. These are
+    // independent reads of the same Hub, so running them sequentially doubled
+    // dispatch latency and let one stalled request hide the other.
+    if (ctx.sessionId && ctx.hub.configured()) refreshes.push(ctx.reloadTasks());
+    await Promise.all(refreshes);
     // Resume hook (deterministic, no LLM): on a CONTINUITY message (idle or
     // queued, NOT steered), prepend this session's latest checkpoint so it
     // resumes from its own anchor. De-duped by id.

@@ -190,6 +190,38 @@ test("prepareDispatch reloads guardrails for non-role-aware adapters", async () 
     assert.equal(reloads, 1);
 });
 
+test("prepareDispatch refreshes independent guardrail and task context concurrently", async () => {
+    const started: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const preparing = prepareDispatch(
+        {
+            adapter: { roleAware: () => false } as any,
+            sessionId: "sess-parallel",
+            hub: hubStub(),
+            options: { cwd: "/tmp" },
+            reloadGuardrails: async () => {
+                started.push("guardrails");
+                await gate;
+            },
+            reloadTasks: async () => {
+                started.push("tasks");
+                await gate;
+            },
+            getInjectedCheckpointId: () => undefined,
+            setInjectedCheckpointId: () => undefined,
+        },
+        { text: "continue", attachments: [], mode: "send" },
+    );
+
+    await Promise.resolve();
+    assert.deepEqual(started, ["guardrails", "tasks"]);
+    release();
+    await preparing;
+});
+
 test("removeGuardrail: soft-deletes (past expiry) so the item drops from the list", async () => {
     const hub = hubStub();
     const sid = "sess-D";
