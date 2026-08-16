@@ -17,6 +17,12 @@ interface ClaudeUsageFetch {
     message?: string;
 }
 
+export function claudeUsageAuthMessage(reason: "missing-token" | "rejected-token"): string {
+    return reason === "missing-token"
+        ? "Live Claude account usage is unavailable because no usable Claude Code OAuth token was found. Claude requests may still work through the CLI or an API key; this only affects account-usage display."
+        : "Claude's live usage endpoint rejected the OAuth token (HTTP 401). Claude requests may still work through the CLI; this only affects account-usage display. Cached data may be out of date.";
+}
+
 function asObject(value: unknown): JsonObject | undefined {
     return typeof value === "object" && value !== null && !Array.isArray(value)
         ? (value as JsonObject)
@@ -310,8 +316,7 @@ async function fetchClaudeUsage(): Promise<ClaudeUsageFetch> {
     const accessToken = await claudeOAuthToken();
     if (!accessToken) {
         return {
-            message:
-                "Live Claude usage is unavailable because Claude Code is signed out. Run `claude auth login`, then refresh.",
+            message: claudeUsageAuthMessage("missing-token"),
         };
     }
     const controller = new AbortController();
@@ -329,7 +334,7 @@ async function fetchClaudeUsage(): Promise<ClaudeUsageFetch> {
             return {
                 message:
                     response.status === 401
-                        ? "Live Claude usage authentication expired or was revoked. Run `claude auth login`, then refresh."
+                        ? claudeUsageAuthMessage("rejected-token")
                         : `Live Claude usage refresh failed (HTTP ${response.status}). Cached data may be out of date.`,
             };
         }
