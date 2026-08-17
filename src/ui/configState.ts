@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import { readToolCredential } from "../config/agentFrontmatter";
 import { removeLegacySufficitToolImports } from "../config/importResources";
-import { ensureSufficitNativeServer, listServers } from "../config/servers";
+import { ensureSufficitNativeServers } from "../config/nativeMcpServers";
+import { listServers } from "../config/servers";
 import { getSttState } from "../voice/sttService";
 import type { ConfigPanelDeps } from "./configTypes";
 
@@ -42,10 +43,10 @@ export async function buildConfigState(deps: ConfigPanelDeps): Promise<unknown> 
     const networkInfo = await networkState(deps);
     if (profile) {
         try {
-            ensureSufficitNativeServer();
+            ensureSufficitNativeServers();
             removeLegacySufficitToolImports();
         } catch (error) {
-            console.error("Failed to ensure Sufficit native MCP server:", error);
+            console.error("Failed to ensure Sufficit native MCP servers:", error);
         }
     }
     const chat = vscode.workspace.getConfiguration("symposium.chat");

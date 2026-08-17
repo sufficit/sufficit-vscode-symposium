@@ -7,7 +7,11 @@ import * as path from "path";
 import { resolveExecutable } from "../exec";
 import { AgentSession, SessionStartOptions } from "../types";
 import { isTransientErrorMessage } from "../transientError";
-import { buildSufficitMcpServer, currentSufficitMcpToken, isSufficitMcpName } from "../sufficitMcp";
+import {
+    buildAutomaticSufficitMcpServers,
+    currentSufficitMcpToken,
+    isAutomaticSufficitMcpName,
+} from "../sufficitMcp";
 
 export interface CopilotAdapterConfig {
     executable: string;
@@ -92,20 +96,20 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         }
         const mcpServers: Record<string, unknown> = { ...(this.config.mcpServers ?? {}) };
         for (const name of Object.keys(mcpServers)) {
-            if (isSufficitMcpName(name)) {
+            if (isAutomaticSufficitMcpName(name)) {
                 delete mcpServers[name];
             }
         }
-        const sufficit = buildSufficitMcpServer(
-            currentSufficitMcpToken(),
-            this.options.guardrailSessionId || this.sessionId,
-            "vscode-copilot",
-            this.options.guardrailOrigin,
-            this.options.permission,
+        Object.assign(
+            mcpServers,
+            buildAutomaticSufficitMcpServers(
+                currentSufficitMcpToken(),
+                this.options.guardrailSessionId || this.sessionId,
+                "vscode-copilot",
+                this.options.guardrailOrigin,
+                this.options.permission,
+            ),
         );
-        if (sufficit) {
-            mcpServers.sufficit_ai = sufficit;
-        }
         const mcp = buildMcpConfigFile({ ...this.config, mcpServers }, "copilot-mcp.json");
         if (mcp) {
             args.push("--mcp-config", mcp);

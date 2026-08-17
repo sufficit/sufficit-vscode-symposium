@@ -3,9 +3,13 @@ import * as os from "os";
 import * as path from "path";
 
 import {
-    buildSufficitMcpServer,
+    SUFFICIT_IDENTITY_MCP_SERVER,
+    SUFFICIT_MCP_SERVER,
+    buildAutomaticSufficitMcpServers,
+    currentSufficitIdentityMcpUrl,
     currentSufficitMcpToken,
-    isSufficitMcpName,
+    isAutomaticSufficitMcpName,
+    shouldRestartSufficitMcp,
     type GuardrailOrigin,
 } from "../sufficitMcp";
 
@@ -13,6 +17,7 @@ export interface ClaudeMcpConfigResult {
     path?: string;
     guardrailSessionId?: string;
     guardrailToken?: string;
+    identityUrl?: string;
 }
 
 export function buildClaudeMcpConfig(
@@ -27,11 +32,17 @@ export function buildClaudeMcpConfig(
 ): ClaudeMcpConfigResult {
     const servers: Record<string, unknown> = { ...(config.mcpServers ?? {}) };
     for (const name of Object.keys(servers)) {
-        if (isSufficitMcpName(name)) delete servers[name];
+        if (isAutomaticSufficitMcpName(name)) delete servers[name];
     }
     const token = currentSufficitMcpToken();
-    const sufficit = buildSufficitMcpServer(token, sessionId, "vscode-claude", origin, permission);
-    if (sufficit) servers.sufficit_ai = sufficit;
+    const automatic = buildAutomaticSufficitMcpServers(
+        token,
+        sessionId,
+        "vscode-claude",
+        origin,
+        permission,
+    );
+    Object.assign(servers, automatic);
     if (config.playwright && !servers.playwright) {
         servers.playwright = {
             command: "npx",
@@ -47,11 +58,32 @@ export function buildClaudeMcpConfig(
         fs.chmodSync(file, 0o600);
         return {
             path: file,
-            guardrailSessionId: sufficit ? sessionId?.trim() : undefined,
-            guardrailToken: sufficit ? (token ?? undefined) : undefined,
+            guardrailSessionId: automatic[SUFFICIT_MCP_SERVER] ? sessionId?.trim() : undefined,
+            guardrailToken: Object.keys(automatic).length ? (token ?? undefined) : undefined,
+            identityUrl: automatic[SUFFICIT_IDENTITY_MCP_SERVER]
+                ? currentSufficitIdentityMcpUrl()
+                : undefined,
         };
     } catch (error) {
         config.log?.(`[claude] mcp config write failed: ${error}`);
         return {};
     }
+}
+
+export function shouldRestartClaudeMcp(
+    sessionId: string | undefined,
+    origin: GuardrailOrigin | undefined,
+    permission: string | undefined,
+    spawned: Pick<ClaudeMcpConfigResult, "guardrailSessionId" | "guardrailToken" | "identityUrl">,
+): boolean {
+    return shouldRestartSufficitMcp(
+        currentSufficitMcpToken(),
+        sessionId,
+        "vscode-claude",
+        origin,
+        permission,
+        spawned.guardrailSessionId,
+        spawned.guardrailToken,
+        spawned.identityUrl,
+    );
 }

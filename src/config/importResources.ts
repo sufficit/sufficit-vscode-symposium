@@ -3,7 +3,7 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { ensureScaffold, resourcePath, sanitize } from "./root";
-import { isSufficitNativeMcpIdentity } from "./mcpIdentity";
+import { isSufficitBuiltinMcpIdentity } from "./mcpIdentity";
 
 export interface ImportCount {
     created: number;
@@ -152,7 +152,7 @@ export function removeLegacySufficitToolImports(): number {
         if (
             !entry.isFile() ||
             !entry.name.endsWith(".md") ||
-            !isSufficitNativeMcpIdentity(entry.name.slice(0, -3))
+            !isSufficitBuiltinMcpIdentity(entry.name.slice(0, -3))
         ) {
             continue;
         }
@@ -269,7 +269,7 @@ export function importTools(): ImportCount {
     }
     for (const { file, source } of files) {
         for (const { name, entry } of readMcpJson(file)) {
-            if (isSufficitNativeMcpIdentity(name)) {
+            if (isSufficitBuiltinMcpIdentity(name)) {
                 counts.skipped++;
                 continue;
             }
@@ -278,7 +278,7 @@ export function importTools(): ImportCount {
     }
     // Codex stores MCP servers as TOML (~/.codex/config.toml).
     for (const { name, entry } of readCodexToml(path.join(home, ".codex", "config.toml"))) {
-        if (isSufficitNativeMcpIdentity(name)) {
+        if (isSufficitBuiltinMcpIdentity(name)) {
             counts.skipped++;
             continue;
         }

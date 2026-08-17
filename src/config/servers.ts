@@ -9,7 +9,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { repoDir, sanitize } from "./root";
-import { isSufficitNativeMcpIdentity, SUFFICIT_NATIVE_MCP_ID } from "./mcpIdentity";
+import { isSufficitBuiltinMcpIdentity } from "./mcpIdentity";
 
 /**
  * Writes `content` to `file` only when it differs from what is already on disk.
@@ -212,61 +212,6 @@ export function deleteServer(serverName: string): boolean {
 }
 
 /**
- * Checks if the Sufficit AI native MCP server should be included
- * (based on whether user is logged in)
- */
-export function shouldIncludeSufficitServer(): boolean {
-    // This will be called by the extension to check auth state
-    // For now, return false - extension will override this
-    return false;
-}
-
-/**
- * Ensures the native Sufficit MCP server exists (when logged in)
- */
-export function ensureSufficitNativeServer(): void {
-    const serverName = SUFFICIT_NATIVE_MCP_ID;
-    writeManifest(serverName, {
-        id: SUFFICIT_NATIVE_MCP_ID,
-        name: serverName,
-        description: "Native Sufficit AI MCP server (auto-detected when logged in)",
-        version: "1.0.0",
-        source: "builtin",
-        transport: "builtin",
-        builtin: true,
-    });
-
-    // Write built-in tools
-    const sufficitTools = [
-        { name: "memory_search", desc: "Search shared Sufficit AI memory" },
-        { name: "memory_save", desc: "Persist to shared Sufficit AI memory" },
-        { name: "memory_get_observations", desc: "Fetch full memory observations by IDs" },
-        { name: "spawn_agent", desc: "Delegate task to another agent" },
-        { name: "list_agents", desc: "List spawned subagents" },
-        { name: "agent_status", desc: "Get subagent status" },
-        { name: "agent_send", desc: "Send message to subagent" },
-        { name: "agent_stop", desc: "Stop a subagent" },
-    ];
-
-    sufficitTools.forEach((tool) => {
-        const content = `---
-name: ${tool.name}
-description: ${tool.desc}
-server: sufficit-ai
-builtin: true
----
-
-# ${tool.name}
-
-${tool.desc}
-
-This tool is automatically provided by the Sufficit AI MCP server when you are logged in.
-`;
-        writeServerItem(serverName, "tools", tool.name, content);
-    });
-}
-
-/**
  * Imports MCP servers from Claude/Codex config files
  * Reorganizes them into the servers/ directory structure
  */
@@ -366,7 +311,7 @@ function createServerFromConfig(
     config: Record<string, string | undefined>,
     result: ImportServersResult,
 ): void {
-    if (isSufficitNativeMcpIdentity(name)) {
+    if (isSufficitBuiltinMcpIdentity(name)) {
         result.serversSkipped++;
         return;
     }

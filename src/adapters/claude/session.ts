@@ -8,8 +8,11 @@ import { imageBlock } from "./images";
 import { ClaudeSessionCoordination } from "./sessionCoordination";
 import { ClaudeAdapterConfig, mapUnifiedToClaudeFlag } from "./sessionConfig";
 import { ClaudeEventParser } from "./eventParser";
-import { buildClaudeMcpConfig } from "./mcpConfig";
-import { currentSufficitMcpToken, shouldRestartSufficitMcp } from "../sufficitMcp";
+import {
+    buildClaudeMcpConfig,
+    shouldRestartClaudeMcp,
+    type ClaudeMcpConfigResult,
+} from "./mcpConfig";
 
 export type { ClaudeAdapterConfig } from "./sessionConfig";
 
@@ -33,8 +36,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
     private readonly cancelledChildren = new WeakSet<ChildProcessWithoutNullStreams>();
     private spawnedPermission = ""; // permission mode the live child was spawned with
     private spawnedModel = ""; // model passed to the live child at spawn time
-    private spawnedGuardrailSessionId: string | undefined;
-    private spawnedGuardrailToken: string | undefined;
+    private spawnedMcp: ClaudeMcpConfigResult = {};
     private turnChild: ChildProcessWithoutNullStreams | undefined;
     private turnSequence = 0;
     private leaseGeneration: number | undefined;
@@ -91,8 +93,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             this.options.guardrailOrigin,
             this.options.permission,
         );
-        this.spawnedGuardrailSessionId = result.guardrailSessionId;
-        this.spawnedGuardrailToken = result.guardrailToken;
+        this.spawnedMcp = result;
         return result.path;
     }
 
@@ -318,14 +319,11 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             this.child &&
             (desired !== this.spawnedPermission ||
                 desiredModel !== this.spawnedModel ||
-                shouldRestartSufficitMcp(
-                    currentSufficitMcpToken(),
+                shouldRestartClaudeMcp(
                     this.options.guardrailSessionId || this.sessionId,
-                    "vscode-claude",
                     this.options.guardrailOrigin,
                     this.options.permission,
-                    this.spawnedGuardrailSessionId,
-                    this.spawnedGuardrailToken,
+                    this.spawnedMcp,
                 ))
         ) {
             const reason =
@@ -333,7 +331,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
                     ? `model ${this.spawnedModel || "default"} -> ${desiredModel || "default"}`
                     : desired !== this.spawnedPermission
                       ? `permission ${this.spawnedPermission} -> ${desired}`
-                      : "guardrail MCP configuration changed";
+                      : "authenticated MCP configuration changed";
             this.config.log?.(`[claude] ${reason}; respawning with --resume`);
             if (!this.turnActive) {
                 this.turnChild = undefined;

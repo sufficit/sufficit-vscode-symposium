@@ -33,6 +33,7 @@ import { registerCommands } from "./extension/commands";
 import { initSttStorage } from "./voice/sttService";
 import { initVscodeSpeechBridge } from "./voice/vscodeSpeechBridge";
 import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/codex/sufficitMcp";
+import { setSufficitIdentityMcpUrl } from "./adapters/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
 import { registerExtensionAhpRuntime } from "./extension/ahpRuntime";
 
@@ -149,14 +150,22 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     context.subscriptions.push(auth.onDidChange(() => ConfigPanel.refresh()));
     context.subscriptions.push({ dispose: () => auth.dispose() });
     void auth.startAutoRefresh(); // silent token refresh so the session never lapses
-    // Plug the Sufficit token into the Codex MCP sufficit_ai server automatically.
+    // Both native Sufficit MCPs reuse the Identity login token automatically.
     setCodexSufficitTokenProvider((forceRefresh) => auth.getAccessToken(forceRefresh));
+    const syncAuthenticatedMcps = () => {
+        const issuer = vscode.workspace
+            .getConfiguration("symposium.identity")
+            .get<string>("url", "https://identity.sufficit.com.br");
+        setSufficitIdentityMcpUrl(`${issuer.replace(/\/+$/, "")}/api/mcp`);
+        void syncCodexSufficitMcp().catch((error) => symposiumLog(`[mcp] sync failed: ${error}`));
+    };
+    context.subscriptions.push(auth.onDidChange(syncAuthenticatedMcps));
     context.subscriptions.push(
-        auth.onDidChange(async () => {
-            await syncCodexSufficitMcp();
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration("symposium.identity.url")) syncAuthenticatedMcps();
         }),
     );
-    void syncCodexSufficitMcp();
+    syncAuthenticatedMcps();
     // Native Accounts-menu integration (avatar/login at the bottom of the activity bar).
     SufficitAuthProvider.register(context, auth);
     // Hub/MCP requests use the logged-in identity token when available.

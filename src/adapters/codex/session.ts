@@ -13,7 +13,7 @@ import {
 } from "./codexMcpConfig";
 import { CodexEventParser } from "./eventParser";
 import { syncCodexSufficitMcp } from "./sufficitMcp";
-import { isSufficitMcpName } from "../sufficitMcp";
+import { isAutomaticSufficitMcpName } from "../sufficitMcp";
 
 /** Resolve a picker value into the explicit model argument for one Codex turn. */
 export function codexModelArgs(selected: string | undefined, configured: string): string[] {
@@ -187,7 +187,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
             ...(this.config.mcpServers ?? {}),
         };
         for (const name of Object.keys(servers)) {
-            if (isSufficitMcpName(name)) {
+            if (isAutomaticSufficitMcpName(name)) {
                 delete servers[name];
             }
         }
@@ -196,7 +196,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
         }
         // Merge VSCode MCP servers (from mcp.json), letting explicit config override
         for (const [name, server] of Object.entries(this.vscodeMcpServers)) {
-            if (!isSufficitMcpName(name) && !servers[name]) {
+            if (!isAutomaticSufficitMcpName(name) && !servers[name]) {
                 servers[name] = server;
             }
         }
