@@ -93,6 +93,7 @@ export class SurfaceDialogues {
                 cwd: this.d.deps.cwdFor(info),
                 resumeSessionId: info.sessionId,
                 model: info.model,
+                reasoning: info.reasoning,
                 lineageId: info.lineageId,
             },
             info.title,

@@ -50,13 +50,21 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
             }
             const stored = store.decorate(await rawSessions(), true);
             runtime.trackSharedSessions(stored.map((session) => session.sessionId));
+            const liveById = new Map(liveInfos.map((live) => [live.sessionId, live]));
             const disk = stored.map((s) => {
                 // `idle` means no turn is active, not that the last turn
                 // succeeded. Keep a persisted failure visible while the live
                 // controller remains attached to the session.
                 const status = sessionListStatus(runtime.statusFor(s.sessionId), s.terminalStatus);
                 const adapter = adapterByBackend.get(s.backend);
-                return { ...s, backendName: adapter?.displayName ?? s.backend, status };
+                const live = liveById.get(s.sessionId);
+                return {
+                    ...s,
+                    model: live?.model ?? s.model,
+                    reasoning: live?.reasoning ?? s.reasoning,
+                    backendName: adapter?.displayName ?? s.backend,
+                    status,
+                };
             });
             const known = new Set(disk.map((s) => s.sessionId));
             const live = liveInfos
@@ -115,6 +123,8 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                 store.setParent(sessionId, parentId),
             setLineage: (sessionId: string, lineageId: string | undefined) =>
                 store.setLineage(sessionId, lineageId),
+            setDisplayMetadata: (sessionId: string, model?: string, reasoning?: string) =>
+                store.setDisplayMetadata(sessionId, model, reasoning),
         },
     };
 }

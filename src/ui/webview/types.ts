@@ -22,6 +22,8 @@ export interface SessionListItem {
     gitBranch?: string;
     lineageId?: string;
     parentId?: string;
+    model?: string;
+    reasoning?: string;
     status?: "working" | "idle" | "error" | "warning" | "stored";
     archived?: boolean;
     pinned?: boolean;

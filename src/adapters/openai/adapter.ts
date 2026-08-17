@@ -89,6 +89,7 @@ export class OpenAIAdapter implements AgentAdapter {
                     cwd: s.cwd,
                     updatedAt: new Date(s.updatedAt),
                     model: s.model,
+                    reasoning: s.reasoning,
                     lineageId: s.lineageId,
                 });
             }
@@ -111,6 +112,7 @@ export class OpenAIAdapter implements AgentAdapter {
                 cwd: meta.cwd || "",
                 updatedAt: meta.updatedAt ? new Date(meta.updatedAt) : new Date(0),
                 model: meta.model || "",
+                reasoning: meta.reasoning,
             });
         }
         return Promise.resolve(out);

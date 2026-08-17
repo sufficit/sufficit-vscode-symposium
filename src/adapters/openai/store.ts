@@ -9,6 +9,7 @@ export interface StoredSession {
     title: string;
     cwd: string;
     model: string;
+    reasoning?: string;
     updatedAt: string;
     messages: ChatMsg[];
     /** Conversation lineage inherited at branch time (see SessionStartOptions.lineageId). */

@@ -19,6 +19,8 @@ const surfaceMessagesTypes = source("ui/surfaceMessagesTypes.ts");
 const protocol = source("protocol/chat.ts");
 const events = source("ui/webview/events.ts");
 const status = source("ui/webview/status.ts");
+const menus = source("ui/webview/menus.ts");
+const sessionItem = source("ui/webview/sessionItem.ts");
 
 function zIndex(selector: string): number {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -29,6 +31,16 @@ function zIndex(selector: string): number {
 
 test("themed tooltip stays above the shared dropdown menu", () => {
     assert.ok(zIndex("#tip") > zIndex("#ctxMenu"));
+    assert.match(css, /#tip\s*\{[\s\S]*?box-sizing:\s*border-box;/);
+    assert.match(css, /#tip\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/);
+    assert.match(menus, /window\.innerHeight - tr\.height - padding/);
+});
+
+test("session hover metadata exposes the effective model and effort", () => {
+    assert.match(sessionItem, /sessionMetadata\(/);
+    assert.match(sessionItem, /model: s\.model/);
+    assert.match(sessionItem, /reasoning: s\.reasoning/);
+    assert.match(sessionItem, /sub\.title = metadata\.tooltip/);
 });
 
 test("choice menu exposes persistent and accessible selected states", () => {

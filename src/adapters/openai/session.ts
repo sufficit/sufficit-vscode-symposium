@@ -176,6 +176,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             title: this.title,
             cwd: this.options.cwd,
             model: this.runtime.model(),
+            reasoning: this.options.reasoning,
             updatedAt: new Date().toISOString(),
             messages: this.messages,
             lineageId: this.lineageId,

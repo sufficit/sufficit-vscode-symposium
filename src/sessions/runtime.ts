@@ -93,6 +93,8 @@ export class LiveSessions {
         terminalStatus?: SessionTerminalStatus;
         parentId?: string;
         lineageId?: string;
+        model?: string;
+        reasoning?: string;
     }[] {
         const out = [];
         for (const [key, c] of this.controllers) {
@@ -105,6 +107,8 @@ export class LiveSessions {
                 terminalStatus: c.attentionStatus,
                 parentId: c.parentId,
                 lineageId: c.lineageId,
+                model: c.getModel() || undefined,
+                reasoning: c.getReasoning() || undefined,
             });
         }
         return out;

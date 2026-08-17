@@ -201,6 +201,7 @@ export class ChatController {
     getModel(): string {
         return this.session?.getModel?.() || this.options.model || "";
     }
+    getReasoning = (): string => this.options.reasoning || "";
 
     transcript(): string {
         return transcriptText(this.stream.messages);

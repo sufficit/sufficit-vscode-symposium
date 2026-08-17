@@ -205,6 +205,8 @@ export interface ClaudeSessionMeta {
     cwd?: string;
     gitBranch?: string;
     originSessionId?: string;
+    model?: string;
+    reasoning?: string;
 }
 
 const claudeMetaCache = new JsonlMetadataCache<ClaudeSessionMeta>();
@@ -220,6 +222,8 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
     let title: string | undefined;
     let cwd: string | undefined;
     let gitBranch: string | undefined;
+    let model: string | undefined;
+    let reasoning: string | undefined;
     for (const line of content.split("\n").slice(0, 30)) {
         try {
             const entry = JSON.parse(line);
@@ -228,6 +232,15 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
             }
             if (!gitBranch && typeof entry.gitBranch === "string" && entry.gitBranch) {
                 gitBranch = entry.gitBranch;
+            }
+            const message = entry.message;
+            if (!model && typeof message?.model === "string" && message.model) {
+                model = message.model;
+            }
+            const effort =
+                entry.effort ?? entry.reasoning ?? message?.effort ?? message?.reasoning_effort;
+            if (!reasoning && typeof effort === "string" && effort) {
+                reasoning = effort;
             }
             if (!title && entry.type === "user") {
                 const c = entry.message?.content;
@@ -242,7 +255,7 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
                     }
                 }
             }
-            if (title && cwd && gitBranch) {
+            if (title && cwd && gitBranch && model && reasoning) {
                 break;
             }
         } catch {
@@ -263,5 +276,12 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
         }
         originSessionId = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
     }
-    return { title, cwd, gitBranch, originSessionId };
+    return {
+        title,
+        cwd,
+        gitBranch,
+        originSessionId,
+        ...(model ? { model } : {}),
+        ...(reasoning ? { reasoning } : {}),
+    };
 }

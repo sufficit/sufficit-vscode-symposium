@@ -414,8 +414,11 @@
         /* Menus live at layer 1000. Tooltips for controls inside those menus
            must remain above them instead of being clipped visually behind the
            menu surface. */
-        position: fixed; z-index: 1100; max-width: 320px; padding: 4px 9px;
-        border-radius: 5px; font-size: 0.8em; line-height: 1.35; white-space: normal;
+        position: fixed; z-index: 1100; box-sizing: border-box;
+        max-width: min(320px, calc(100vw - 16px)); max-height: min(40vh, 240px);
+        padding: 4px 9px; overflow: auto;
+        border-radius: 5px; font-size: 0.8em; line-height: 1.35;
+        white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
         background: var(--vscode-editorHoverWidget-background, var(--vscode-menu-background, #252526));
         color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground, #ccc));
         border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, rgba(128,128,128,0.35)));

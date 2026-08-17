@@ -34,5 +34,6 @@ export interface ChatSurfaceDeps {
     store: {
         setParent(sessionId: string, parentId: string | undefined): void;
         setLineage(sessionId: string, lineageId: string | undefined): void;
+        setDisplayMetadata(sessionId: string, model?: string, reasoning?: string): void;
     };
 }

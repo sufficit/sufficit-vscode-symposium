@@ -99,10 +99,11 @@ export function showToast(message: string, kind: "info" | "error" = "info"): voi
 // it after. Works on hover AND keyboard focus (a11y).
 let tipTarget: HTMLElement | null = null;
 export function placeTip(target: HTMLElement): void {
+    const padding = 8;
     const r = target.getBoundingClientRect();
     const tr = tipEl.getBoundingClientRect();
     let left = r.left + r.width / 2 - tr.width / 2;
-    left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+    left = Math.max(padding, Math.min(left, window.innerWidth - tr.width - padding));
     let top = r.top - tr.height - 8;
     if (top < 8) {
         top = r.bottom + 8;
@@ -110,6 +111,7 @@ export function placeTip(target: HTMLElement): void {
     } else {
         tipEl.classList.remove("below");
     }
+    top = Math.max(padding, Math.min(top, window.innerHeight - tr.height - padding));
     tipEl.style.left = left + "px";
     tipEl.style.top = top + "px";
 }

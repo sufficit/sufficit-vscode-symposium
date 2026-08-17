@@ -178,13 +178,14 @@ function transcriptSummary(file: string): SessionInfo | undefined {
     let title = "Copilot Chat";
     let firstUser = "";
     let updated = 0;
+    let model: string | undefined, reasoning: string | undefined;
     try {
         const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
         for (const line of lines) {
             if (!line.trim()) {
                 continue;
             }
-            let ev: { timestamp?: string; type: string; data?: unknown };
+            let ev: { timestamp?: string; type: string; data?: unknown } & Record<string, unknown>;
             try {
                 ev = JSON.parse(line);
             } catch {
@@ -193,6 +194,19 @@ function transcriptSummary(file: string): SessionInfo | undefined {
             const ts = parseTimestamp(ev.timestamp);
             if (ts && ts > updated) {
                 updated = ts;
+            }
+            const data: Record<string, unknown> =
+                typeof ev.data === "object" && ev.data !== null
+                    ? (ev.data as Record<string, unknown>)
+                    : {};
+            const candidateModel = ev.model ?? data.model;
+            const candidateReasoning =
+                ev.effort ?? ev.reasoning ?? data.effort ?? data.reasoning ?? data.reasoningEffort;
+            if (typeof candidateModel === "string" && candidateModel) {
+                model = candidateModel;
+            }
+            if (typeof candidateReasoning === "string" && candidateReasoning) {
+                reasoning = candidateReasoning;
             }
             if (!firstUser && ev.type === "user.message") {
                 const data =
@@ -244,6 +258,8 @@ function transcriptSummary(file: string): SessionInfo | undefined {
         title,
         updatedAt: updated ? new Date(updated) : undefined,
         transcriptPath: file,
+        ...(model ? { model } : {}),
+        ...(reasoning ? { reasoning } : {}),
     };
 }
 

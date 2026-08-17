@@ -327,6 +327,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     notifyStatus = () => {
         for (const live of runtime.liveInfos()) {
             store.setTerminalStatus(live.sessionId, live.terminalStatus);
+            store.setDisplayMetadata(live.sessionId, live.model, live.reasoning);
         }
         if (statusTimer) {
             clearTimeout(statusTimer);
