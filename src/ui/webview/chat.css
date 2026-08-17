@@ -469,11 +469,17 @@
     }
     @keyframes menuIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     #ctxMenu .mi { padding: 6px 12px; cursor: pointer; font-size: 0.9em; transition: background 100ms ease; }
+    #ctxMenu button.mi {
+        width: 100%; border: 0; background: transparent; color: inherit;
+        font: inherit; text-align: start;
+    }
     #ctxMenu .mi:hover,
-    #ctxMenu .mi.active {
+    #ctxMenu .mi.active,
+    #ctxMenu .mi:focus-visible {
         background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground)));
         color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, inherit));
     }
+    #ctxMenu .mi:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
     #ctxMenu .mi.danger { color: var(--vscode-errorForeground); }
     #ctxMenu .sep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, rgba(128,128,128,0.3)); }
     #ctxMenu .menuSearch {

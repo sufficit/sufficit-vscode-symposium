@@ -21,6 +21,8 @@ const events = source("ui/webview/events.ts");
 const status = source("ui/webview/status.ts");
 const menus = source("ui/webview/menus.ts");
 const sessionItem = source("ui/webview/sessionItem.ts");
+const markdown = source("ui/webview/markdown.ts");
+const i18n = source("ui/webview/i18n.ts");
 
 function zIndex(selector: string): number {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -51,6 +53,26 @@ test("choice menu exposes persistent and accessible selected states", () => {
         css,
         /#ctxMenu \.mi \.miact\.on\s*\{[^}]*opacity:\s*1;[^}]*background:[^}]*box-shadow:/s,
     );
+});
+
+test("Markdown links expose their original destination through an accessible context menu", () => {
+    assert.match(
+        markdown,
+        /anchor\.addEventListener\("contextmenu", \(event\) =>[\s\S]*?showLinkMenu\([\s\S]*?event,[\s\S]*?href,[\s\S]*?\(\) => anchor\.click\(\),/,
+    );
+    assert.match(
+        markdown,
+        /action\.addEventListener\("contextmenu", \(event\) =>[\s\S]*?showLinkMenu\([\s\S]*?event as MouseEvent, href, \(\) => action\.click\(\),/,
+    );
+    assert.match(menus, /export function showLinkMenu\(/);
+    assert.match(menus, /item\.setAttribute\("role", "menuitem"\)/);
+    assert.match(menus, /copyText\(address, \(\) => showToast\(t\("chat\.link\.copied"\)\)\)/);
+    assert.match(menus, /const x = ev\.clientX \|\| rect\?\.left \|\| 4/);
+    assert.match(
+        css,
+        /#ctxMenu button\.mi\s*\{[^}]*width:\s*100%;[^}]*background:\s*transparent;/s,
+    );
+    assert.equal(i18n.match(/"chat\.link\.copyAddress"/g)?.length, 2);
 });
 
 test("completed native plan rows are dismissed after their acknowledgement animation", () => {

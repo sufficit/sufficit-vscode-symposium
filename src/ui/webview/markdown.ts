@@ -1,6 +1,7 @@
 // Extracted from the chat webview client. Pure DOM/string helpers (no shared state).
 import { postMessage } from "./vscode";
 import { codeBlock, tagBlock, codexTagStart } from "./markdownCode";
+import { showLinkMenu } from "./menus";
 export { copyText } from "./markdownCode";
 import {
     inlineTokenRegex,
@@ -241,6 +242,11 @@ function markdownImage(label: string, href: string): HTMLElement {
         action.setAttribute("title", href);
         action.setAttribute("rel", "noopener noreferrer");
     }
+    if (local || remote) {
+        action.addEventListener("contextmenu", (event) =>
+            showLinkMenu(event as MouseEvent, href, () => action.click(), local ? "file" : "link"),
+        );
+    }
     const image = document.createElement("img");
     image.alt = accessibleLabel;
     image.loading = "lazy";
@@ -312,6 +318,14 @@ function appendMarkdownLink(parent: HTMLElement, label: string, href: string): v
         anchor.title = href;
         anchor.rel = "noopener noreferrer";
     }
+    anchor.addEventListener("contextmenu", (event) =>
+        showLinkMenu(
+            event,
+            href,
+            () => anchor.click(),
+            isLocalMarkdownTarget(href) ? "file" : "link",
+        ),
+    );
     parent.appendChild(anchor);
 }
 
