@@ -2,7 +2,7 @@
 
 > Data: 2026-08-18 09:57 (BRT)  
 > Status: concluída  
-> Release: `v2026.818.1`
+> Release: `v2026.818.2`
 
 ## Objetivo
 
@@ -19,6 +19,10 @@ a descoberta de sessões também lia o esforço, mas não o incluía no objeto
 retornado. Como consequência, a UI podia mostrar apenas o adaptador ou ficar
 sem metadados, mesmo quando o CLI havia informado modelo e esforço.
 
+Na validação ponta a ponta foi encontrado um segundo descarte: a restauração
+preferencial pelo `render.jsonl` reconstruía somente texto e removia modelo e
+esforço antes de montar o histórico enviado à webview.
+
 ## Implementação
 
 - preservada a informação de modelo e esforço nos tipos de histórico e eventos;
@@ -29,6 +33,8 @@ sem metadados, mesmo quando o CLI havia informado modelo e esforço.
 - usado o esforço configurado como fallback somente para mensagens novas,
   sem inventar metadados em históricos que não os possuem;
 - corrigida a perda do esforço na descoberta de sessões do Codex;
+- preservados modelo e esforço na projeção do `render.jsonl` para histórico e
+  handoff;
 - adicionados testes de parsing, propagação e renderização.
 
 ## Guardrails
@@ -45,5 +51,6 @@ Validação completa aprovada com `npm run verify`, incluindo release guardrail,
 formatação, lint, TypeScript, webview, testes unitários, cobertura, limite de
 400 linhas, complexidade, engenharia, arquitetura e compilação dos bundles.
 
-A publicação, instalação local e instalação no code-server são registradas no
-handoff da release após a confirmação dos respectivos checksums.
+A publicação da versão anterior foi verde, mas esta correção adicional gera a
+release `v2026.818.2` para incluir a regressão do `render.jsonl`. A instalação
+local e no code-server será verificada pelo checksum do VSIX desta revisão.

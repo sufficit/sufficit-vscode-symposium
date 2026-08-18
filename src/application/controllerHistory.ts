@@ -68,7 +68,12 @@ function historyFromRenderLog(sessionId: string): HistoryMessage[] {
             if (row.role === "user") {
                 messages.push({ role: "user", text: row.text });
             } else if (row.role === "assistant") {
-                messages.push({ role: "assistant", text: row.text });
+                messages.push({
+                    role: "assistant",
+                    text: row.text,
+                    ...(row.model ? { model: row.model } : {}),
+                    ...(row.reasoning ? { reasoning: row.reasoning } : {}),
+                });
             } else if (row.role === "status-notice") {
                 messages.push({ role: "status-notice", text: row.text, severity: row.severity });
             }

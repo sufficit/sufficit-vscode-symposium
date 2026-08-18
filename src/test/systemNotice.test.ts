@@ -6,7 +6,7 @@ import {
     legacyGuardrailStopNotice,
     toolHopLimitNotice,
 } from "../adapters/openai/turnNotices";
-import { transcriptMessages } from "../application/controllerTranscript";
+import { replayRows, transcriptMessages } from "../application/controllerTranscript";
 
 test("OpenAI guardrail stops are system warnings, not assistant text", () => {
     const event = guardrailStopNotice("Stopped after repeated tool calls.");
@@ -31,6 +31,57 @@ test("system warnings are excluded from the assistant transcript", () => {
         { role: "user", text: "Run the task" },
         { role: "assistant", text: "Working", thinking: undefined },
     ]);
+});
+
+test("render-log transcript preserves the model and effort for assistant rows", () => {
+    assert.deepEqual(
+        replayRows([
+            {
+                type: "event",
+                event: {
+                    kind: "text",
+                    text: "A",
+                    model: "claude-opus-5",
+                    reasoning: "high",
+                },
+            },
+            { type: "event", event: { kind: "text", text: "B" } },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [
+            {
+                role: "assistant",
+                text: "AB",
+                thinking: undefined,
+                model: "claude-opus-5",
+                reasoning: "high",
+            },
+        ],
+    );
+    assert.deepEqual(
+        replayRows([
+            {
+                type: "history",
+                messages: [
+                    {
+                        role: "assistant",
+                        text: "Stored reply",
+                        model: "codex-1",
+                        reasoning: "medium",
+                    },
+                ],
+            },
+        ]),
+        [
+            {
+                role: "assistant",
+                text: "Stored reply",
+                thinking: undefined,
+                model: "codex-1",
+                reasoning: "medium",
+            },
+        ],
+    );
 });
 
 test("legacy persisted guardrail text is restored as a system warning", () => {
