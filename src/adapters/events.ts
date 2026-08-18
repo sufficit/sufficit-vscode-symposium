@@ -15,7 +15,13 @@ export type SystemNoticeSeverity = "info" | "warning" | "error";
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
     | { kind: "model"; model: string }
-    | { kind: "text"; text: string; model?: string; modelLabel?: string }
+    | {
+          kind: "text";
+          text: string;
+          model?: string;
+          modelLabel?: string;
+          reasoning?: string;
+      }
     /** System-authored annotation, never assistant output.
      *  anchorIndex: conversation-row index to scroll to/highlight when clicked. */
     | {

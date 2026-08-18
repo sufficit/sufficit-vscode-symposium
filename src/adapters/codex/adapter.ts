@@ -262,6 +262,7 @@ export class CodexAdapter implements AgentAdapter {
 function parseCodexHistory(content: string, defaultModel: string | undefined): HistoryMessage[] {
     const messages: HistoryMessage[] = [];
     let activeModel = defaultModel;
+    let activeReasoning: string | undefined;
     for (const line of content.split("\n")) {
         if (!line.trim()) {
             continue;
@@ -272,6 +273,8 @@ function parseCodexHistory(content: string, defaultModel: string | undefined): H
                 type: string;
                 role?: string;
                 model?: string;
+                effort?: string;
+                reasoning?: string;
                 content?: Array<{ type: string; text?: string }>;
             };
         }
@@ -284,6 +287,10 @@ function parseCodexHistory(content: string, defaultModel: string | undefined): H
         }
         if (entry.type === "turn_context" && typeof entry.payload?.model === "string") {
             activeModel = entry.payload.model;
+            const effort = entry.payload.effort ?? entry.payload.reasoning;
+            if (typeof effort === "string" && effort) {
+                activeReasoning = effort;
+            }
             continue;
         }
         if (entry.type !== "response_item" || entry.payload?.type !== "message") {
@@ -309,6 +316,7 @@ function parseCodexHistory(content: string, defaultModel: string | undefined): H
                 role,
                 text,
                 model: role === "assistant" ? activeModel : undefined,
+                ...(role === "assistant" && activeReasoning ? { reasoning: activeReasoning } : {}),
             });
         } else if (!text && hasNonTextContent && role === "user") {
             messages.push({ role, text: null });

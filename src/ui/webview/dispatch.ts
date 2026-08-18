@@ -244,7 +244,7 @@ export function handleHostMessage(payload: unknown): void {
                     path: m.path,
                     diff: m.diff,
                 });
-            else message("assistant", m.text, m.ts, m.model);
+            else message("assistant", m.text, m.ts, m.model, m.reasoning);
             break;
         }
         case "user": {

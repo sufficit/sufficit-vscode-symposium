@@ -26,6 +26,8 @@ export interface HistoryMessage {
      *  (preserved across backend/model handoff so each bubble keeps its origin). */
     model?: string;
     modelLabel?: string;
+    /** Effective reasoning/effort used for this assistant message, when known. */
+    reasoning?: string;
     // For tool rows: the backend tool name and a short human target, so stored
     // transcripts render the same icon+verb+target as live events. input/result
     // hold the full (pretty) payloads for the expandable panel.

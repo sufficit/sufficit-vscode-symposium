@@ -60,6 +60,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         }
         this.parser = new ClaudeEventParser({
             model: () => this.options.model || this.config.model,
+            reasoning: () => this.options.reasoning,
             getSessionId: () => this.sessionId,
             setSessionId: (id) => {
                 this.sessionId = id;

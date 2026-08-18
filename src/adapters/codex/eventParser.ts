@@ -9,6 +9,7 @@ interface ParserDeps {
     /** Effective model for the live turn ("" until the backend reports one). */
     model: () => string;
     setModel: (model: string) => void;
+    reasoning: () => string | undefined;
     getSessionId: () => string | undefined;
     setSessionId: (id: string) => void;
     /** True while the current child is being killed on purpose (errors are noise). */
@@ -126,12 +127,14 @@ export class CodexEventParser {
                 kind: "text",
                 text: item.text,
                 model: this.deps.model() || undefined,
+                reasoning: this.deps.reasoning(),
             });
         } else if (itemType === "reasoning" && typeof item.text === "string") {
             this.deps.emit({
                 kind: "text",
                 text: item.text,
                 model: this.deps.model() || undefined,
+                reasoning: this.deps.reasoning(),
             });
         } else if (itemType === "command_execution" && typeof item.command === "string") {
             this.deps.emit({

@@ -23,6 +23,9 @@ const menus = source("ui/webview/menus.ts");
 const sessionItem = source("ui/webview/sessionItem.ts");
 const markdown = source("ui/webview/markdown.ts");
 const i18n = source("ui/webview/i18n.ts");
+const messageRow = source("ui/webview/messageRow.ts");
+const dispatchCatalog = source("ui/webview/dispatchCatalog.ts");
+const codexDiscovery = source("adapters/codex/sessionDiscovery.ts");
 
 function zIndex(selector: string): number {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -43,6 +46,18 @@ test("session hover metadata exposes the effective model and effort", () => {
     assert.match(sessionItem, /model: s\.model/);
     assert.match(sessionItem, /reasoning: s\.reasoning/);
     assert.match(sessionItem, /sub\.title = metadata\.tooltip/);
+});
+
+test("assistant message headers expose the model and effort used for that reply", () => {
+    assert.match(messageRow, /roleModel/);
+    assert.match(messageRow, /roleEffort/);
+    assert.match(messageRow, /chat\.message\.model/);
+    assert.match(messageRow, /chat\.message\.effort/);
+    assert.match(dispatchCatalog, /message\("assistant", m\.text, m\.ts, m\.model, m\.reasoning\)/);
+    assert.match(events, /streamDelta\(ev\.text, ev\.model, ev\.reasoning\)/);
+    assert.match(codexDiscovery, /reasoning: meta\.reasoning/);
+    assert.equal(i18n.match(/"chat\.message\.model"/g)?.length, 2);
+    assert.equal(i18n.match(/"chat\.message\.effort"/g)?.length, 2);
 });
 
 test("choice menu exposes persistent and accessible selected states", () => {

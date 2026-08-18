@@ -15,6 +15,7 @@ import { parseClaudeQuota } from "./usage";
 
 interface ParserDeps {
     model: () => string | undefined;
+    reasoning: () => string | undefined;
     getSessionId: () => string | undefined;
     setSessionId: (id: string) => void;
     setTurnActive: (active: boolean) => void;
@@ -58,7 +59,12 @@ export class ClaudeEventParser {
         const delta = record(stream.delta);
         if (delta?.type === "text_delta" && typeof delta.text === "string") {
             this.streamedText = true;
-            this.deps.emit({ kind: "text", text: delta.text });
+            this.deps.emit({
+                kind: "text",
+                text: delta.text,
+                model: this.deps.model(),
+                reasoning: this.deps.reasoning(),
+            });
         } else if (
             delta?.type === "thinking_delta" &&
             typeof delta.thinking === "string" &&
@@ -89,7 +95,14 @@ export class ClaudeEventParser {
                     this.deps.emit({ kind: "thinking", text: block.thinking });
                 }
             } else if (block.type === "text" && typeof block.text === "string") {
-                if (!this.streamedText) this.deps.emit({ kind: "text", text: block.text });
+                if (!this.streamedText) {
+                    this.deps.emit({
+                        kind: "text",
+                        text: block.text,
+                        model: this.deps.model(),
+                        reasoning: this.deps.reasoning(),
+                    });
+                }
             } else if (block.type === "tool_use") {
                 this.handleToolUse(block);
             }

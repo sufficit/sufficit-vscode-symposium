@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { HistoryMessage, SessionInfo } from "../types";
-
+import { copilotMessageMetadata } from "./messageMetadata";
 function candidateWorkspaceStorageRoots(): string[] {
     const h = os.homedir();
     return [
@@ -307,31 +307,31 @@ export function transcriptHistory(file: string): HistoryMessage[] {
 export function transcriptHistoryFromText(content: string): HistoryMessage[] {
     const out: HistoryMessage[] = [];
     for (const line of content.split(/\r?\n/)) {
-        if (!line.trim()) {
-            continue;
-        }
-        let ev: { timestamp?: string; type: string; data?: { content?: string } };
+        if (!line.trim()) continue;
+        let ev: { timestamp?: string; type: string; data?: unknown } & Record<string, unknown>;
         try {
             ev = JSON.parse(line);
         } catch {
             continue;
         }
         const ts = parseTimestamp(ev.timestamp);
+        const data = (ev.data ?? {}) as Record<string, unknown>;
         if (ev.type === "user.message") {
-            const content = ev.data?.content;
+            const content = data.content;
             if (typeof content === "string" && content.trim()) {
                 out.push({ role: "user", text: content, ts });
             }
             continue;
         }
         if (ev.type === "assistant.message") {
-            const data =
-                typeof ev.data === "object" && ev.data !== null
-                    ? (ev.data as Record<string, unknown>)
-                    : {};
             const content = data.content;
             if (typeof content === "string" && content.trim()) {
-                out.push({ role: "assistant", text: content, ts });
+                out.push({
+                    role: "assistant",
+                    text: content,
+                    ts,
+                    ...copilotMessageMetadata(ev, data),
+                });
             }
             const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
             for (const t of toolRequests) {

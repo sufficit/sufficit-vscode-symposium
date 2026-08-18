@@ -13,6 +13,7 @@ import { endThinkingStream } from "./thinking";
 import { createSystemNotice } from "./systemNotice";
 import { t } from "./i18n";
 import { presentTurnError } from "../errorPresentation";
+import { reasoningDefault, reasoningValue } from "./models";
 export { renderThinkBlock, streamThinkingDelta } from "./thinking";
 
 // Tracks the Retry bar for the most recent retry click, so it can be
@@ -282,11 +283,17 @@ function flushStreamRender() {
         renderMarkdown(streamBody, streamText);
     }
 }
-export function streamDelta(text: string, model?: string): void {
+export function streamDelta(text: string, model?: string, reasoning?: string): void {
     const stick = nearBottom();
     endThinkingStream(); // close any open thinking block before first text token
     if (!streamMsg) {
-        streamMsg = message("assistant", "", Date.now(), model || activeModel || "");
+        streamMsg = message(
+            "assistant",
+            "",
+            Date.now(),
+            model || activeModel || "",
+            reasoning || (reasoningValue !== "default" ? reasoningValue : reasoningDefault),
+        );
         streamBody = streamMsg.querySelector(".md");
         streamText = "";
     }

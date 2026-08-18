@@ -53,6 +53,7 @@ type HistoryMessage = HistoryToolOptions & {
     text: string | null;
     ts?: string | number;
     model?: string;
+    reasoning?: string;
     clientMessageId?: string;
     toolName?: string;
     detail?: string;
@@ -331,6 +332,6 @@ function renderHistoryMessage(m: HistoryMessage): void {
         // A replayed tool-loop Continue action would be stale.
         renderStatusNotice(m.text, undefined, m.severity);
     } else {
-        message("assistant", m.text, m.ts, m.model);
+        message("assistant", m.text, m.ts, m.model, m.reasoning);
     }
 }

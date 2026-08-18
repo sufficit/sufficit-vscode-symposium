@@ -75,7 +75,14 @@ export function parseTranscriptLine(
     interface TranscriptEntry {
         isMeta?: boolean;
         type: "user" | "assistant" | "result";
+        model?: string;
+        effort?: string;
+        reasoning?: string;
         message?: {
+            model?: string;
+            effort?: string;
+            reasoning?: string;
+            reasoning_effort?: string;
             content?:
                 | string
                 | Array<{
@@ -104,6 +111,19 @@ export function parseTranscriptLine(
         return [];
     }
     const messages: HistoryMessage[] = [];
+    const entryModel =
+        typeof entry.model === "string"
+            ? entry.model
+            : typeof entry.message?.model === "string"
+              ? entry.message.model
+              : undefined;
+    const entryEffort =
+        entry.effort ??
+        entry.reasoning ??
+        entry.message?.effort ??
+        entry.message?.reasoning ??
+        entry.message?.reasoning_effort;
+    const entryReasoning = typeof entryEffort === "string" ? entryEffort : undefined;
     if (entry.type === "user") {
         const content = entry.message?.content;
         if (typeof content === "string") {
@@ -153,7 +173,12 @@ export function parseTranscriptLine(
                         messages.push({ role: "thinking", text: block.thinking });
                     }
                 } else if (block.type === "text" && typeof block.text === "string") {
-                    messages.push({ role: "assistant", text: block.text });
+                    messages.push({
+                        role: "assistant",
+                        text: block.text,
+                        ...(entryModel ? { model: entryModel } : {}),
+                        ...(entryReasoning ? { reasoning: entryReasoning } : {}),
+                    });
                 } else if (block.type === "tool_use") {
                     const counts = diffCounts(block.name ?? "", block.input);
                     messages.push({

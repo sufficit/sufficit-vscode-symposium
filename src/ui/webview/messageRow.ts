@@ -6,6 +6,7 @@ import { renderMarkdown, copyText } from "./markdown";
 import { svgIcon } from "./icons";
 import { beginComposerEdit } from "./composerBridge";
 import { endToolGroup } from "./messageToolGroup";
+import { t } from "./i18n";
 
 // A chat message with a small role label (user/assistant); assistant text
 // is rendered as markdown.
@@ -18,12 +19,14 @@ const BACKEND_NAMES: Record<string, string> = {
 // Track last rendered assistant context to show role label only on change
 export type MessageElement = HTMLDivElement & { _raw?: string };
 let lastMsgBackend = "",
-    lastMsgModel = "";
+    lastMsgModel = "",
+    lastMsgReasoning = "";
 export function message(
     role: string,
     text: string | null,
     ts?: string | number,
     model?: string,
+    reasoning?: string,
 ): MessageElement {
     const stick = nearBottom();
     endToolGroup();
@@ -36,15 +39,18 @@ export function message(
     label.className = "role " + role;
     if (role === "assistant") {
         const effectiveModel = model || activeModel || "";
+        const effectiveReasoning = reasoning?.trim() || "";
         const sameContext =
             currentBackend === lastMsgBackend &&
             effectiveModel === lastMsgModel &&
+            effectiveReasoning === lastMsgReasoning &&
             lastMsgBackend !== "";
         if (sameContext) {
             label.classList.add("rolePassive");
         }
         lastMsgBackend = currentBackend;
         lastMsgModel = effectiveModel;
+        lastMsgReasoning = effectiveReasoning;
         const av = document.createElement("span");
         av.className = "avatar";
         av.appendChild(svgIcon("robot"));
@@ -58,14 +64,22 @@ export function message(
         if (ml) {
             const mdl = document.createElement("span");
             mdl.className = "roleModel";
-            mdl.textContent = ml;
+            mdl.textContent = t("chat.message.model") + ml;
+            mdl.title = effectiveModel;
             label.appendChild(mdl);
+        }
+        if (effectiveReasoning) {
+            const effort = document.createElement("span");
+            effort.className = "roleEffort";
+            effort.textContent = t("chat.message.effort") + effectiveReasoning;
+            label.appendChild(effort);
         }
     } else {
         // Reset after user message so the next assistant reply always shows its label
         if (role === "user") {
             lastMsgBackend = "";
             lastMsgModel = "";
+            lastMsgReasoning = "";
         }
         const name = document.createElement("span");
         name.textContent = "You";
@@ -167,4 +181,5 @@ export function message(
 export function resetLastMsg(): void {
     lastMsgBackend = "";
     lastMsgModel = "";
+    lastMsgReasoning = "";
 }

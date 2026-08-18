@@ -3,7 +3,11 @@ import test from "node:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { rawLineActivity, readSessionMeta } from "../adapters/claude/transcript";
+import {
+    parseTranscriptLine,
+    rawLineActivity,
+    readSessionMeta,
+} from "../adapters/claude/transcript";
 
 test("Claude transcript activity recognizes current end_turn boundaries", () => {
     assert.equal(
@@ -54,4 +58,27 @@ test("Claude session metadata exposes the model and recorded effort when present
     assert.equal(meta.model, "claude-opus-5");
     assert.equal(meta.reasoning, "high");
     fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("Claude history keeps model and effort on each assistant message", () => {
+    const messages = parseTranscriptLine(
+        JSON.stringify({
+            type: "assistant",
+            timestamp: "2026-08-18T12:00:00.000Z",
+            message: {
+                model: "claude-opus-5",
+                effort: "high",
+                content: [{ type: "text", text: "Finished the task." }],
+            },
+        }),
+    );
+    assert.deepEqual(messages, [
+        {
+            role: "assistant",
+            text: "Finished the task.",
+            model: "claude-opus-5",
+            reasoning: "high",
+            ts: Date.parse("2026-08-18T12:00:00.000Z"),
+        },
+    ]);
 });

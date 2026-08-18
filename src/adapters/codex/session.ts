@@ -66,6 +66,10 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.effectiveModel = options.model || config.model;
         this.parser = new CodexEventParser({
             model: () => this.effectiveModel,
+            reasoning: () =>
+                this.options.reasoning && this.options.reasoning !== "default"
+                    ? this.options.reasoning
+                    : undefined,
             setModel: (model) => {
                 this.effectiveModel = model;
             },
