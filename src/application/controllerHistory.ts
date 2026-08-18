@@ -27,7 +27,7 @@ export async function loadControllerHistory(
     if (!cursor) {
         const hasRenderLog = renderLog.hasRender(info.sessionId);
         if (hasRenderLog) {
-            const messages = historyFromRenderLog(info.sessionId);
+            const messages = historyFromRenderLog(info);
             if (messages.length > 0) {
                 emit({ type: "history", messages, replace: true });
                 return undefined;
@@ -59,20 +59,24 @@ export async function loadControllerHistory(
 }
 
 /** Converts the Symposium render log into HistoryMessages (lossless). */
-function historyFromRenderLog(sessionId: string): HistoryMessage[] {
+function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
     try {
-        const log = renderLog.readRender(sessionId);
+        const log = renderLog.readRender(info.sessionId);
         const rows = replayRows(log);
         const messages: HistoryMessage[] = [];
         for (const row of rows) {
             if (row.role === "user") {
                 messages.push({ role: "user", text: row.text });
             } else if (row.role === "assistant") {
+                // Older render logs have no per-message metadata. Use the
+                // durable last-known session values as a compatibility fallback.
+                const model = row.model || info.model;
+                const reasoning = row.reasoning || info.reasoning;
                 messages.push({
                     role: "assistant",
                     text: row.text,
-                    ...(row.model ? { model: row.model } : {}),
-                    ...(row.reasoning ? { reasoning: row.reasoning } : {}),
+                    ...(model ? { model } : {}),
+                    ...(reasoning ? { reasoning } : {}),
                 });
             } else if (row.role === "status-notice") {
                 messages.push({ role: "status-notice", text: row.text, severity: row.severity });

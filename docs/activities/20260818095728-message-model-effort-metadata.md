@@ -2,7 +2,7 @@
 
 > Data: 2026-08-18 09:57 (BRT)  
 > Status: concluída  
-> Release: `v2026.818.2`
+> Release: `v2026.818.3`
 
 ## Objetivo
 
@@ -35,6 +35,8 @@ esforço antes de montar o histórico enviado à webview.
 - corrigida a perda do esforço na descoberta de sessões do Codex;
 - preservados modelo e esforço na projeção do `render.jsonl` para histórico e
   handoff;
+- aplicado fallback compatível para render logs antigos, usando o último modelo
+  e esforço persistidos em `SessionInfo`;
 - adicionados testes de parsing, propagação e renderização.
 
 ## Guardrails
@@ -51,6 +53,7 @@ Validação completa aprovada com `npm run verify`, incluindo release guardrail,
 formatação, lint, TypeScript, webview, testes unitários, cobertura, limite de
 400 linhas, complexidade, engenharia, arquitetura e compilação dos bundles.
 
-A publicação da versão anterior foi verde, mas esta correção adicional gera a
-release `v2026.818.2` para incluir a regressão do `render.jsonl`. A instalação
-local e no code-server será verificada pelo checksum do VSIX desta revisão.
+A publicação das versões anteriores foi verde, mas esta correção adicional
+gera a release `v2026.818.3` para incluir a compatibilidade com render logs
+antigos. A instalação local e no code-server será verificada pelo checksum do
+VSIX desta revisão.
