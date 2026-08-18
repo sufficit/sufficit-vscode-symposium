@@ -17,6 +17,12 @@ export interface ConsumeCallbacks {
     onStatusNotice?: (notice: string) => void;
 }
 
+export interface StreamInterruption {
+    kind: "cancelled" | "transport";
+    /** Low-level detail is kept for the diagnostic/error presentation. */
+    message?: string;
+}
+
 /**
  * Reads an OpenAI-compatible SSE stream (chat-completions OR responses API),
  * emitting text deltas via `onText` and accumulating streamed tool_calls so the
@@ -37,6 +43,7 @@ export async function consumeStream(
     reasoning: string;
     toolCalls: ToolCall[];
     aborted: boolean;
+    interruption?: StreamInterruption;
     usage?: ApiUsage;
 }> {
     const reader = stream.getReader();
@@ -305,12 +312,21 @@ export async function consumeStream(
         } catch {
             /* ignore */
         }
+        const errorName =
+            err && typeof err === "object" && "name" in err
+                ? String((err as { name?: unknown }).name || "")
+                : "";
+        const errorMessage = err instanceof Error ? err.message : String(err || "");
         finishText();
         return {
             text: assistant,
             reasoning,
             toolCalls: calls.filter((c) => c && c.function.name),
             aborted: true,
+            interruption: {
+                kind: errorName === "AbortError" ? "cancelled" : "transport",
+                ...(errorMessage ? { message: errorMessage } : {}),
+            },
         };
     }
     return done();

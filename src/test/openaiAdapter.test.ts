@@ -21,6 +21,15 @@ function sseStream(body: string): ReadableStream<Uint8Array> {
     });
 }
 
+function interruptedStream(): ReadableStream<Uint8Array> {
+    return {
+        getReader: () => ({
+            read: () => Promise.reject(new Error("socket closed")),
+            cancel: () => Promise.resolve(),
+        }),
+    } as unknown as ReadableStream<Uint8Array>;
+}
+
 const timing = { requestStartedAt: 0, responseStartedAt: 0 };
 
 test("consumeStream surfaces chat-completions reasoning_content as thinking", async () => {
@@ -61,6 +70,15 @@ test("consumeStream surfaces responses-API reasoning_text delta as thinking", as
     });
     assert.equal(out.reasoning, "think");
     assert.equal(out.text, "answer");
+});
+
+test("consumeStream reports an unexpected transport interruption", async () => {
+    const out = await consumeStream(interruptedStream(), "m", timing, false, {
+        onText: () => {},
+        onError: () => {},
+    });
+    assert.equal(out.aborted, true);
+    assert.deepEqual(out.interruption, { kind: "transport", message: "socket closed" });
 });
 
 test("consumeStream hides gateway think blocks split across content deltas", async () => {

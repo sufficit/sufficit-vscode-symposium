@@ -21,6 +21,7 @@ import {
     toolHistoryMaterializationNotice,
     toolHistoryPairingNotice,
     toolHopLimitNotice,
+    transportInterruptionNotice,
 } from "./turnNotices";
 import { TurnRunnerDeps } from "./turnRunnerDeps";
 import { shouldRefreshNativeAuthorization } from "./httpAuth";
@@ -209,39 +210,44 @@ export class TurnRunner {
                     break;
                 }
                 const m = this.d.model();
-                const { text, reasoning, toolCalls, aborted, usage } = await consumeStream(
-                    res.body,
-                    m,
-                    { requestStartedAt, responseStartedAt },
-                    responses,
-                    {
-                        onText: (delta) =>
-                            this.d.emit({
-                                kind: "text",
-                                text: delta,
-                                model: m,
-                                modelLabel: this.d.label(m),
-                            }),
-                        onReasoning: (delta) => this.d.emit({ kind: "thinking", text: delta }),
-                        // Classify: a mid-stream provider failure (the gateway
-                        // already sent 200 + SSE headers, so the status can no
-                        // longer carry 429/503) was emitted with no retryable
-                        // flag at all, which reads as "Retry is unavailable" —
-                        // even for "model is at capacity", which is precisely
-                        // the case worth retrying.
-                        onError: (message) =>
-                            this.d.emit({
-                                kind: "error",
-                                message,
-                                retryable: isTransientErrorMessage(message),
-                            }),
-                        onStatusNotice: (notice) =>
-                            this.d.emit({ kind: "status-notice", text: notice }),
-                    },
-                );
+                const { text, reasoning, toolCalls, aborted, interruption, usage } =
+                    await consumeStream(
+                        res.body,
+                        m,
+                        { requestStartedAt, responseStartedAt },
+                        responses,
+                        {
+                            onText: (delta) =>
+                                this.d.emit({
+                                    kind: "text",
+                                    text: delta,
+                                    model: m,
+                                    modelLabel: this.d.label(m),
+                                }),
+                            onReasoning: (delta) => this.d.emit({ kind: "thinking", text: delta }),
+                            // Classify: a mid-stream provider failure (the gateway
+                            // already sent 200 + SSE headers, so the status can no
+                            // longer carry 429/503) was emitted with no retryable
+                            // flag at all, which reads as "Retry is unavailable" —
+                            // even for "model is at capacity", which is precisely
+                            // the case worth retrying.
+                            onError: (message) =>
+                                this.d.emit({
+                                    kind: "error",
+                                    message,
+                                    retryable: isTransientErrorMessage(message),
+                                }),
+                            onStatusNotice: (notice) =>
+                                this.d.emit({ kind: "status-notice", text: notice }),
+                        },
+                    );
 
                 if (usage) {
                     emitTurnUsage(this.d, usage);
+                }
+
+                if (interruption?.kind === "transport" && !this.cancelled) {
+                    this.d.emit(transportInterruptionNotice(interruption.message));
                 }
 
                 await this.d.maybeAutoCompact();

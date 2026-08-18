@@ -116,6 +116,16 @@ export function toolHopLimitNotice(maxHops: number): AgentEvent {
     };
 }
 
+/** Makes an unexpected SSE drop visible and retryable without losing partial output. */
+export function transportInterruptionNotice(detail?: string): AgentEvent {
+    const suffix = detail ? ` (${detail})` : "";
+    return {
+        kind: "error",
+        message: `Sufficit AI connection interrupted before the response completed${suffix}. The partial response was preserved; retry to continue.`,
+        retryable: true,
+    };
+}
+
 /**
  * Reports that the dispatched history had to be repaired to satisfy the tool
  * pairing contract. Only the request is affected — the persisted transcript is

@@ -10,6 +10,21 @@ function sseResponse(): Response {
     );
 }
 
+function interruptedResponse(): Response {
+    const body = {
+        getReader: () => ({
+            read: () => Promise.reject(new Error("socket closed")),
+            cancel: () => Promise.resolve(),
+        }),
+    } as unknown as ReadableStream<Uint8Array>;
+    return {
+        ok: true,
+        status: 200,
+        statusText: "OK",
+        body,
+    } as Response;
+}
+
 function deps(emit: (event: Parameters<TurnRunnerDeps["emit"]>[0]) => void): TurnRunnerDeps {
     const messages: ChatMessage[] = [{ role: "user", content: "prompt" }];
     let turn = 0;
@@ -84,6 +99,25 @@ test("an aborted OpenAI run cannot emit turn-end after its replacement", async (
 
         assert.equal(requests, 2);
         assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test("an unexpected provider stream drop becomes a retryable error", async () => {
+    const originalFetch = globalThis.fetch;
+    const events: Array<{ kind: string; message?: string; retryable?: boolean }> = [];
+    globalThis.fetch = (() => Promise.resolve(interruptedResponse())) as typeof fetch;
+
+    try {
+        const runner = new TurnRunner(deps((event) => events.push(event)) as TurnRunnerDeps);
+        await runner.run();
+
+        const error = events.find((event) => event.kind === "error");
+        assert.ok(error);
+        assert.equal(error.retryable, true);
+        assert.match(error.message || "", /connection interrupted/i);
+        assert.equal(events.at(-1)?.kind, "turn-end");
     } finally {
         globalThis.fetch = originalFetch;
     }
