@@ -77,10 +77,7 @@ export function appendToolFailureRecoveryFeedback(
     const tools = [...new Set(toolNames)].filter(Boolean).slice(0, 4).join(", ") || "tool";
     const feedback: ChatMessage = {
         role: supportsDeveloperRole ? "developer" : "system",
-        content:
-            `[Symposium tool failure recovery] The latest ${tools} call returned an error. ` +
-            "Treat that result as authoritative for the attempted arguments; do not repeat the same call with the same arguments. " +
-            "Inspect the failure, choose a different safe action or corrected input, and report a concrete blocker when no alternative exists.",
+        content: `${tools} failed. Do not repeat the same arguments; use a different action or report the blocker.`,
     };
     messages.push(feedback);
     return feedback;

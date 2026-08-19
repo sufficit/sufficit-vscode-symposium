@@ -151,8 +151,8 @@ test("tool failure recovery feedback forbids retrying identical arguments", () =
     const feedback = appendToolFailureRecoveryFeedback(messages, ["read_file", "read_file"], true);
 
     assert.equal(feedback.role, "developer");
-    assert.match(String(feedback.content), /read_file call returned an error/);
-    assert.match(String(feedback.content), /do not repeat the same call with the same arguments/i);
+    assert.match(String(feedback.content), /read_file failed/);
+    assert.match(String(feedback.content), /do not repeat the same arguments/i);
     assert.deepEqual(messages.at(-1), feedback);
 });
 
