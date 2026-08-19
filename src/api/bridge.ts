@@ -10,6 +10,7 @@ import { handleBridgeRequest } from "./bridgeRequest";
 import { loadBridgeTlsMaterial } from "./bridgeTls";
 import type { SymposiumApi } from "./symposiumApi";
 import { configuredBridgePolicy } from "./bridgeConfiguration";
+import { createSymposiumDiscovery, createSymposiumOpenApi } from "./discovery";
 import { AhpWebSocketServer, type AhpHostRuntime } from "../ahp";
 
 type HostRejection = {
@@ -166,11 +167,30 @@ export class RemoteBridge {
         return handleBridgeRequest(request, response, token, {
             api: this.api,
             log: this.log,
+            discovery: {
+                manifest: () =>
+                    createSymposiumDiscovery(this.api.version, this.discoveryCapabilities()),
+                openapi: () => createSymposiumOpenApi(this.api.version),
+            },
             listening: this.listening,
             lastRejection: this.lastRejection,
             setLastRejection: (rejection) => {
                 this.lastRejection = rejection;
             },
         });
+    }
+
+    private discoveryCapabilities(): string[] {
+        try {
+            const state = this.getAhpRuntime?.()?.snapshot("ahp-root://").state as {
+                _meta?: { symposium?: { capabilities?: unknown } };
+            };
+            const capabilities = state._meta?.symposium?.capabilities;
+            return Array.isArray(capabilities)
+                ? capabilities.filter((value): value is string => typeof value === "string")
+                : [];
+        } catch {
+            return [];
+        }
     }
 }

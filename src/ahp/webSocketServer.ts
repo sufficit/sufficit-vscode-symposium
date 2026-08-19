@@ -5,6 +5,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { isHostAllowed, type BridgePolicy } from "../api/bridgePolicy";
 import type { SymposiumApi } from "../api/symposiumApi";
 import { AHP_ROOT_URI } from "./channelUris";
+import { SYMPOSIUM_DISCOVERY_PATH, SYMPOSIUM_OPENAPI_PATH } from "../api/discovery";
 import type { AhpHostRuntime } from "./hostRuntime";
 import { isAhpUpgradeAuthorized, rejectAhpUpgrade } from "./webSocketAuth";
 export { ahpTokenProtocol } from "./webSocketAuth";
@@ -232,6 +233,10 @@ export class AhpWebSocketServer {
                 name: "symposium-vscode",
                 version: this.options.api.version,
                 title: "Symposium",
+                discovery: {
+                    manifest: SYMPOSIUM_DISCOVERY_PATH,
+                    openapi: SYMPOSIUM_OPENAPI_PATH,
+                },
             },
             snapshots,
         });

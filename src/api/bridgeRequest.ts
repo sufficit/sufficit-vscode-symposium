@@ -24,6 +24,10 @@ type Rejection = {
 export interface BridgeRequestDeps {
     api: SymposiumApi;
     log: (message: string) => void;
+    discovery?: {
+        manifest: () => unknown;
+        openapi: () => unknown;
+    };
     listening?: { host: string; port: number };
     lastRejection?: Rejection;
     setLastRejection: (rejection: Rejection) => void;
@@ -51,6 +55,18 @@ export async function handleBridgeRequest(
             return writeBridgeJson(response, 404, { error: "not found" });
         }
         return serveBridgeStatic(route.parts.slice(1).join("/") || "index.html", response);
+    }
+    if (route.method === "GET" && route.parts.join("/") === ".well-known/symposium.json") {
+        if (!deps.discovery) return writeBridgeJson(response, 404, { error: "not found" });
+        return writeBridgeJson(response, 200, deps.discovery.manifest(), {
+            "Cache-Control": "no-cache",
+        });
+    }
+    if (route.method === "GET" && route.parts.length === 1 && route.parts[0] === "openapi.json") {
+        if (!deps.discovery) return writeBridgeJson(response, 404, { error: "not found" });
+        return writeBridgeJson(response, 200, deps.discovery.openapi(), {
+            "Cache-Control": "no-cache",
+        });
     }
     if (!isConfiguredBridgeAuthorized(request, url, token)) {
         return writeBridgeJson(response, 401, { error: "unauthorized" });

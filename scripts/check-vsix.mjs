@@ -75,8 +75,9 @@ const budgets = new Map([
     // Bumped from 750KB after the turn-lifecycle refactor (turn.ts,
     // controllerTurnRunner.ts, codex/eventParser.ts, ahp persistence split,
     // etc.) added real functionality, not bloat. Headroom above the current
-    // ~755KB actual for near-term growth.
-    ["extension/out/extension.js", 785 * 1024],
+    // ~755KB actual for near-term growth. The 786KB ceiling includes the
+    // machine-readable Symposium/AHP discovery contract.
+    ["extension/out/extension.js", 786 * 1024],
     ["extension/out/ui/webview.bundle.js", 320 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
