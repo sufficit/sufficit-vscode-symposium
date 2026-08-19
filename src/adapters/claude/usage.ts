@@ -4,15 +4,15 @@ import { JsonlAdapterUsage } from "../quotaCache";
 import { parseAdapterQuota } from "../quota";
 import type { AdapterQuotaSnapshot, AdapterUsageProvider, UsageQuotaWindow } from "../types";
 import { claudeOAuthMetadata, claudeOAuthToken } from "./credentials";
+import { requestClaudeUsage } from "./usageRequest";
 
 type JsonObject = Record<string, unknown>;
 
 const LIMIT_MESSAGE =
     /(?:you(?:'|’)ve\s+)?hit your\s+(.+?)\s+limit\s*[·-]\s*resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)/i;
-const USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
 const CACHE_TTL_MS = 60_000;
 
-interface ClaudeUsageFetch {
+export interface ClaudeUsageFetch {
     snapshot?: AdapterQuotaSnapshot;
     message?: string;
 }
@@ -312,24 +312,25 @@ const transcriptUsage = new JsonlAdapterUsage(
     parseClaudeQuota,
 );
 
-async function fetchClaudeUsage(): Promise<ClaudeUsageFetch> {
-    const accessToken = await claudeOAuthToken();
+export async function fetchClaudeUsage(): Promise<ClaudeUsageFetch> {
+    let accessToken = await claudeOAuthToken();
     if (!accessToken) {
         return {
             message: claudeUsageAuthMessage("missing-token"),
         };
     }
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
     try {
-        const response = await fetch(USAGE_ENDPOINT, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "anthropic-beta": "oauth-2025-04-20",
-                "user-agent": "sufficit-vscode-symposium/claude-usage",
-            },
-            signal: controller.signal,
-        });
+        let response = await requestClaudeUsage(accessToken);
+        if (response.status === 401) {
+            // Claude can revoke/rotate an access token before its local
+            // expiresAt. The CLI repairs that state on the next request, but
+            // the usage panel must recover without requiring a dummy message.
+            const refreshed = await claudeOAuthToken(true);
+            if (refreshed && refreshed !== accessToken) {
+                accessToken = refreshed;
+                response = await requestClaudeUsage(accessToken);
+            }
+        }
         if (!response.ok) {
             return {
                 message:
@@ -352,8 +353,6 @@ async function fetchClaudeUsage(): Promise<ClaudeUsageFetch> {
                     ? "Live Claude usage refresh timed out. Cached data may be out of date."
                     : "Live Claude usage refresh failed. Cached data may be out of date.",
         };
-    } finally {
-        clearTimeout(timeout);
     }
 }
 

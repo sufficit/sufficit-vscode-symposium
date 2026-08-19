@@ -160,13 +160,13 @@ function persist(oauth: StoredOAuth): void {
  * Returns a bearer token for the Anthropic API when the user is logged in to
  * Claude Code, refreshing on demand. Empty string when no usable credential.
  */
-export async function claudeOAuthToken(): Promise<string> {
+export async function claudeOAuthToken(forceRefresh = false): Promise<string> {
     const creds = readCredentials();
     const oauth = creds?.claudeAiOauth;
     if (!oauth?.accessToken) {
         return "";
     }
-    if (isFresh(oauth)) {
+    if (!forceRefresh && isFresh(oauth)) {
         return oauth.accessToken;
     }
     // Multiple code-server windows can ask for the token at the same time.
