@@ -7,7 +7,6 @@
  * `chatHtml` can inject it inline into the nonce-guarded <script> exactly as
  * before — the build output, not a hand-written blob.
  */
-import { readFileSync } from "fs";
-import { join } from "path";
+import { readBundleAsset } from "./bundleAsset";
 
-export const chatClientJs = readFileSync(join(__dirname, "webview.bundle.js"), "utf8");
+export const chatClientJs = readBundleAsset("webview.bundle.js");
