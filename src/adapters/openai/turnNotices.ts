@@ -65,6 +65,28 @@ export function appendRepeatedToolCallFeedback(
 }
 
 /**
+ * Adds an explicit recovery hint after a tool returned a structured error.
+ * The raw result remains in the tool message, but this makes the next action
+ * unambiguous for models that otherwise retry the same invalid arguments.
+ */
+export function appendToolFailureRecoveryFeedback(
+    messages: ChatMessage[],
+    toolNames: string[],
+    supportsDeveloperRole: boolean,
+): ChatMessage {
+    const tools = [...new Set(toolNames)].filter(Boolean).slice(0, 4).join(", ") || "tool";
+    const feedback: ChatMessage = {
+        role: supportsDeveloperRole ? "developer" : "system",
+        content:
+            `[Symposium tool failure recovery] The latest ${tools} call returned an error. ` +
+            "Treat that result as authoritative for the attempted arguments; do not repeat the same call with the same arguments. " +
+            "Inspect the failure, choose a different safe action or corrected input, and report a concrete blocker when no alternative exists.",
+    };
+    messages.push(feedback);
+    return feedback;
+}
+
+/**
  * Returns the most recent unresolved repeated-call fingerprint. It is active
  * only for the user turn immediately following the stop; any assistant/tool
  * activity in between proves that execution already moved on.
