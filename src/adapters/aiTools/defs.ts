@@ -70,7 +70,7 @@ export const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         function: {
             name: "memory_save",
             description:
-                "Persist a memory observation to shared Sufficit memory (e.g. a durable fact, decision, or task-checkpoint). Never store secrets.",
+                "Persist context to shared Sufficit memory (fact, decision, or checkpoint). It never edits files or proves a change. Never store secrets.",
             parameters: {
                 type: "object",
                 properties: {

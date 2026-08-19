@@ -250,13 +250,8 @@ export class ChatController {
     }
     seedRenderLog(): boolean {
         const restored = this.renderPersistence.restore(this.options.resumeSessionId);
+        this.live.hydrateTodosFromMessages(this.renderPersistence.stream.messages);
         this.queue.restore(restored.pending);
-        // Whether a restored queue was "waiting for a turn" or "held after a
-        // failure" isn't durably recorded (the flag is in-memory only). A
-        // non-empty queue surviving a full reload/restart is always some kind
-        // of interrupted state, so treat it as held rather than assume it's
-        // safe to silently auto-fire — the next explicit send/promote/retry
-        // releases it either way.
         if (restored.pending.length > 0) {
             this.queue.hold();
         }
@@ -270,6 +265,7 @@ export class ChatController {
         this.historyInfo = info;
         this.historyCursor = undefined;
         this.historyCursor = await loadControllerHistory(this.adapter, info, (message) => {
+            this.live.hydrateTodosFromMessage(message);
             if (transient) this.stream.notify(message);
             else this.emit(message);
         });
@@ -332,6 +328,7 @@ export class ChatController {
     }
 
     private onExternalRenderMessage(message: unknown, record: RenderLogRecord): boolean | void {
+        this.live.hydrateTodosFromMessage(message);
         return reconcilePeerQueue(message, record, {
             queue: this.queue,
             isOwner: this.renderPersistence.isOwner,

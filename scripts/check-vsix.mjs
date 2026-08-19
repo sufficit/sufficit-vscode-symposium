@@ -72,12 +72,15 @@ for (const entry of missing) failures.push(`required packaged path is missing: $
 for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`);
 
 const budgets = new Map([
-    // Bumped from 750KB after the turn-lifecycle refactor (turn.ts,
+    // Bumped from 786KB after workspace/memory separation and native-task
+    // rehydration added real runtime behavior, not packaged bloat. The 787KB
+    // ceiling keeps the existing host-bundle guardrail with small headroom.
+    // Earlier it was bumped from 750KB after the turn-lifecycle refactor (turn.ts,
     // controllerTurnRunner.ts, codex/eventParser.ts, ahp persistence split,
     // etc.) added real functionality, not bloat. Headroom above the current
-    // ~755KB actual for near-term growth. The 786KB ceiling includes the
+    // ~755KB actual for near-term growth. The 787KB ceiling includes the
     // machine-readable Symposium/AHP discovery contract.
-    ["extension/out/extension.js", 786 * 1024],
+    ["extension/out/extension.js", 787 * 1024],
     ["extension/out/ui/webview.bundle.js", 320 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

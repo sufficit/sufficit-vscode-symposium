@@ -80,7 +80,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         function: {
             name: "write_file",
             description:
-                "Create a NEW file, or fully overwrite a file, with the given UTF-8 content. Creates parent directories as needed. PREFER this (and edit_file) over shell redirection/sed/awk/tee to write files: these tools are tracked — the edit shows in the changed-files panel and can be reverted. Use edit_file for a surgical change to an existing file; use write_file when you are authoring the whole file.",
+                "Create a NEW file, or fully overwrite a file, with the given UTF-8 content. This is the workspace mutation tool; memory_save cannot replace it. PREFER this (and edit_file) over shell redirection/sed/awk/tee: edits are tracked and revertable. Use edit_file for surgical changes; use write_file for a whole file.",
             parameters: {
                 type: "object",
                 properties: {
@@ -99,7 +99,7 @@ export const LOCAL_TOOLS: OpenAITool[] = [
         function: {
             name: "edit_file",
             description:
-                "Apply a surgical edit to an existing text file by replacing an exact string. PREFER this over shell sed/awk/perl for editing files: it is tracked (shows a diff in the changed-files panel and can be reverted), whereas shell edits are opaque and not revertable. `old_string` must match the file content exactly (including whitespace/indentation). If it matches more than once, include more surrounding context, set occurrence_index to replace a specific 1-based match, or set replace_all to change every occurrence.",
+                "Apply a surgical edit to an existing text file by replacing an exact string. This is the workspace mutation tool; memory_save cannot replace it. PREFER this over shell sed/awk/perl: edits are tracked and revertable. `old_string` must match exactly. If it matches more than once, add context, set occurrence_index, or set replace_all.",
             parameters: {
                 type: "object",
                 properties: {

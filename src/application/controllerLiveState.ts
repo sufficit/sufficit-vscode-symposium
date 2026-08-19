@@ -1,4 +1,5 @@
 import type { TodoItem } from "../adapters/types";
+import { latestTodoSnapshot, todoSnapshotFromRenderMessage } from "./todoState";
 import type { PendingMessage, QueueHold } from "./controllerQueue";
 import { ControllerEventHandler } from "./controllerEventHandler";
 import type { TrackingMode } from "./outboundPrompt";
@@ -50,6 +51,28 @@ export class ControllerLiveState {
             releaseOwnership: deps.releaseOwnership,
             log: deps.log,
         });
+    }
+
+    /** Hydrates native task state from restored or peer render snapshots. */
+    setTodos(todos: TodoItem[]): void {
+        this.todos = todos;
+    }
+
+    hydrateTodosFromMessage(message: unknown): void {
+        const direct = todoSnapshotFromRenderMessage(message);
+        if (direct !== undefined) {
+            this.todos = direct;
+            return;
+        }
+        const value = message as { type?: unknown; messages?: unknown[] } | null;
+        if (value?.type === "history" && Array.isArray(value.messages)) {
+            this.hydrateTodosFromMessages(value.messages);
+        }
+    }
+
+    hydrateTodosFromMessages(messages: readonly unknown[]): void {
+        const snapshot = latestTodoSnapshot(messages);
+        if (snapshot !== undefined) this.todos = snapshot;
     }
 
     get busy(): boolean {
