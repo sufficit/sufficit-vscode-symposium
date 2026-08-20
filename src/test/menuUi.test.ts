@@ -54,7 +54,7 @@ test("assistant message headers expose the model and effort used for that reply"
     assert.match(messageRow, /chat\.message\.model/);
     assert.match(messageRow, /chat\.message\.effort/);
     assert.match(dispatchCatalog, /message\("assistant", m\.text, m\.ts, m\.model, m\.reasoning\)/);
-    assert.match(events, /streamDelta\(ev\.text, ev\.model, ev\.reasoning\)/);
+    assert.match(events, /streamDelta\(ev\.text, ev\.model, ev\.reasoning, ev\.ts\)/);
     assert.match(codexDiscovery, /reasoning: meta\.reasoning/);
     assert.equal(i18n.match(/"chat\.message\.model"/g)?.length, 2);
     assert.equal(i18n.match(/"chat\.message\.effort"/g)?.length, 2);

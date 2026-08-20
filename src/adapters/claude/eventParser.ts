@@ -27,6 +27,8 @@ export class ClaudeEventParser {
     private streamedThinking = false;
     private pendingToolIds = new Set<string>();
     private deferredTurnEnd: { costUsd?: number; durationMs?: number } | undefined;
+    private observedModel: string | undefined;
+    private turnTimestamp: number | undefined;
     private readonly tasks = new ClaudeTaskTracker();
 
     constructor(private readonly deps: ParserDeps) {}
@@ -36,6 +38,11 @@ export class ClaudeEventParser {
         this.deferredTurnEnd = undefined;
     }
 
+    /** Starts a fresh normalized turn without losing the session-level model. */
+    beginTurn(): void {
+        this.turnTimestamp = undefined;
+    }
+
     handleLine(line: string, sourceCancelled = false): void {
         if (!line.trim()) return;
         let event: Record<string, unknown>;
@@ -43,6 +50,11 @@ export class ClaudeEventParser {
             event = JSON.parse(line);
         } catch {
             return;
+        }
+        this.observeMetadata(event);
+        const timestamp = timestampMs(event.timestamp);
+        if (timestamp !== undefined && this.turnTimestamp === undefined) {
+            this.turnTimestamp = timestamp;
         }
         const quota = parseClaudeQuota(event, "claude");
         if (quota) this.deps.emit({ kind: "quota", ...quota });
@@ -62,8 +74,9 @@ export class ClaudeEventParser {
             this.deps.emit({
                 kind: "text",
                 text: delta.text,
-                model: this.deps.model(),
+                model: this.observedModel || this.deps.model(),
                 reasoning: this.deps.reasoning(),
+                ...(this.turnTimestamp !== undefined ? { ts: this.turnTimestamp } : {}),
             });
         } else if (
             delta?.type === "thinking_delta" &&
@@ -81,7 +94,7 @@ export class ClaudeEventParser {
         this.deps.emit({
             kind: "session",
             sessionId: event.session_id,
-            model: typeof event.model === "string" ? event.model : undefined,
+            model: this.observedModel,
         });
     }
 
@@ -99,8 +112,9 @@ export class ClaudeEventParser {
                     this.deps.emit({
                         kind: "text",
                         text: block.text,
-                        model: this.deps.model(),
+                        model: this.observedModel || this.deps.model(),
                         reasoning: this.deps.reasoning(),
+                        ...(this.turnTimestamp !== undefined ? { ts: this.turnTimestamp } : {}),
                     });
                 }
             } else if (block.type === "tool_use") {
@@ -177,6 +191,7 @@ export class ClaudeEventParser {
             this.deps.setTurnActive(false);
             this.deps.emit({ kind: "turn-end", ...end });
         }
+        this.turnTimestamp = undefined;
     }
 
     private emitUsage(usage: Record<string, unknown>): void {
@@ -187,8 +202,17 @@ export class ClaudeEventParser {
             inputTokens: number(usage.input_tokens) + cacheRead,
             outputTokens: number(usage.output_tokens),
             cacheRead,
-            contextWindow: contextWindowFor(this.deps.model() ?? ""),
+            contextWindow: contextWindowFor(this.observedModel || this.deps.model() || ""),
         });
+    }
+
+    private observeMetadata(event: Record<string, unknown>): void {
+        const nested = record(event.event);
+        const message = record(event.message) || record(nested?.message);
+        const model = event.model || message?.model;
+        if (typeof model === "string" && model) {
+            this.observedModel = model;
+        }
     }
 }
 
@@ -202,6 +226,12 @@ function number(value: unknown): number {
 
 function optionalNumber(value: unknown): number | undefined {
     return typeof value === "number" ? value : undefined;
+}
+
+function timestampMs(value: unknown): number | undefined {
+    if (typeof value !== "string") return undefined;
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function resultError(event: Record<string, unknown>): string {

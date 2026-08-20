@@ -283,14 +283,19 @@ function flushStreamRender() {
         renderMarkdown(streamBody, streamText);
     }
 }
-export function streamDelta(text: string, model?: string, reasoning?: string): void {
+export function streamDelta(
+    text: string,
+    model?: string,
+    reasoning?: string,
+    ts?: string | number,
+): void {
     const stick = nearBottom();
     endThinkingStream(); // close any open thinking block before first text token
     if (!streamMsg) {
         streamMsg = message(
             "assistant",
             "",
-            Date.now(),
+            ts ?? Date.now(),
             model || activeModel || "",
             reasoning || (reasoningValue !== "default" ? reasoningValue : reasoningDefault),
         );

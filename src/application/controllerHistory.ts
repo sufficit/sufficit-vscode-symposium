@@ -66,7 +66,10 @@ function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
         const messages: HistoryMessage[] = [];
         for (const row of rows) {
             if (row.role === "user") {
-                messages.push({ role: "user", text: row.text });
+                messages.push({
+                    role: "user",
+                    text: row.text,
+                });
             } else if (row.role === "assistant") {
                 // Older render logs have no per-message metadata. Use the
                 // durable last-known session values as a compatibility fallback.
@@ -77,6 +80,7 @@ function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
                     text: row.text,
                     ...(model ? { model } : {}),
                     ...(reasoning ? { reasoning } : {}),
+                    ...(row.ts !== undefined ? { ts: row.ts } : {}),
                 });
             } else if (row.role === "status-notice") {
                 messages.push({ role: "status-notice", text: row.text, severity: row.severity });

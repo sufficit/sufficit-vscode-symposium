@@ -14,6 +14,7 @@ export type TranscriptRow = {
     thinking?: string;
     model?: string;
     reasoning?: string;
+    ts?: number;
 };
 
 /** Visible user/assistant rows from the render log. */
@@ -154,6 +155,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
     let thinkingBuf = "";
     let assistantModel: string | undefined;
     let assistantReasoning: string | undefined;
+    let assistantTs: number | undefined;
     const flushAssistant = () => {
         const text = assistantBuf.trim();
         const thinking = thinkingBuf.trim();
@@ -164,17 +166,20 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                 thinking: thinking || undefined,
                 ...(assistantModel ? { model: assistantModel } : {}),
                 ...(assistantReasoning ? { reasoning: assistantReasoning } : {}),
+                ...(assistantTs !== undefined ? { ts: assistantTs } : {}),
             });
         }
         assistantBuf = "";
         thinkingBuf = "";
         assistantModel = undefined;
         assistantReasoning = undefined;
+        assistantTs = undefined;
     };
     for (const message of log as Array<{
         type?: string;
         messages?: unknown[];
         text?: unknown;
+        ts?: unknown;
         event?: {
             kind?: string;
             text?: string;
@@ -182,6 +187,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
             reasoning?: string;
             terminal?: boolean;
             severity?: "info" | "warning" | "error";
+            ts?: number;
         };
     }>) {
         if (message?.type === "history" && Array.isArray(message.messages)) {
@@ -226,6 +232,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                 if (typeof message.event.reasoning === "string" && message.event.reasoning) {
                     assistantReasoning ??= message.event.reasoning;
                 }
+                assistantTs ??= message.event.ts;
                 assistantBuf += message.event.text || "";
             }
         } else if (message?.type === "event" && message.event?.kind === "thinking") {

@@ -21,6 +21,8 @@ export type AgentEvent =
           model?: string;
           modelLabel?: string;
           reasoning?: string;
+          /** Provider timestamp (ms) for the reply represented by this text. */
+          ts?: number;
       }
     /** System-authored annotation, never assistant output.
      *  anchorIndex: conversation-row index to scroll to/highlight when clicked. */

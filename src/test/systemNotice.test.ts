@@ -90,6 +90,52 @@ test("render-log transcript preserves the model and effort for assistant rows", 
     );
 });
 
+test("render-log history preserves the provider timestamp for assistant rows", async () => {
+    const originalHome = process.env.HOME;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-render-timestamp-"));
+    process.env.HOME = path.join(root, "home");
+    fs.mkdirSync(process.env.HOME, { recursive: true });
+    const sessionId = "timestamped-render-session";
+    const emitted: unknown[] = [];
+    const ts = Date.parse("2026-08-18T12:00:00.000Z");
+    try {
+        appendRender(sessionId, {
+            type: "event",
+            event: {
+                kind: "text",
+                text: "Historical reply",
+                model: "claude-opus-5",
+                reasoning: "high",
+                ts,
+            },
+        });
+        appendRender(sessionId, { type: "event", event: { kind: "turn-end" } });
+        await loadControllerHistory(
+            { backend: "claude" } as AgentAdapter,
+            { backend: "claude", sessionId, title: "Timestamped" },
+            (message) => emitted.push(message),
+        );
+        assert.deepEqual(emitted, [
+            {
+                type: "history",
+                messages: [
+                    {
+                        role: "assistant",
+                        text: "Historical reply",
+                        model: "claude-opus-5",
+                        reasoning: "high",
+                        ts,
+                    },
+                ],
+                replace: true,
+            },
+        ]);
+    } finally {
+        process.env.HOME = originalHome;
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
 test("old render logs use session metadata as a compatibility fallback", async () => {
     const originalHome = process.env.HOME;
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-render-history-"));

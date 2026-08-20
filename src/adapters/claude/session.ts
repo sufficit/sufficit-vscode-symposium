@@ -277,6 +277,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         const turnNumber = ++this.turnSequence;
         const turnSessionId =
             claudeResumeSessionId(this.options.resumeSessionId || this.sessionId) || "claude";
+        this.parser.beginTurn();
         this.emit("event", {
             kind: "turn-start",
             logicalTurnId: `${turnSessionId}/turn-${turnNumber}`,

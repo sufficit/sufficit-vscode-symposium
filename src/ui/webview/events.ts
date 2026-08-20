@@ -63,7 +63,7 @@ export function applyEvent(ev: AgentEvent): void {
                 legacyNotice.action,
             );
         } else {
-            streamDelta(ev.text, ev.model, ev.reasoning);
+            streamDelta(ev.text, ev.model, ev.reasoning, ev.ts);
         }
     } else if (ev.kind === "status-notice")
         renderStatusNotice(ev.text, ev.anchorIndex, ev.severity, ev.action);
