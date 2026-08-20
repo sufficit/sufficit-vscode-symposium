@@ -10,6 +10,7 @@ import type {
 import { AHP_STATUS, replaceActivityStatus } from "./status";
 import { asArray, asRecord, nonNegative, optionalString, stringArray } from "./chatReducerValues";
 import { mergeToolMetadata } from "./toolMetadata";
+import { mergeAssistantMetadata } from "./assistantMetadata";
 
 type ActionRecord = { type: string } & Record<string, unknown>;
 type PartRecord = Record<string, unknown> & {
@@ -199,6 +200,7 @@ function appendPartContent(
             return {
                 ...record,
                 content: String(record.content ?? "") + String(action.content ?? ""),
+                _meta: mergeAssistantMetadata(record._meta, action._meta),
             } as unknown as ResponsePart;
         }),
     );

@@ -34,8 +34,7 @@ export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
 export class TurnRunner {
     private abort: AbortController | undefined;
-    // Aborting only kills the in-flight request; each hop allocates a fresh
-    // controller, so without this latch the tool loop just runs on.
+    // Abort each hop and latch cancellation so the surrounding tool loop also stops.
     private cancelled = false;
     private pendingTasksCompact = false;
     private readonly runSequence = new RunSequence();
@@ -48,10 +47,7 @@ export class TurnRunner {
     }
 
     async run(): Promise<void> {
-        // Every exit path must release an injection that never got spliced, so
-        // it falls back to the queue instead of vanishing. close() is
-        // generation-guarded: a superseded run must not steal the window from
-        // the run that replaced it.
+        // Release an unused injection so it returns to the queue; close() is generation-guarded.
         const close = this.d.injections?.open();
         try {
             await this.runTurn();
@@ -223,6 +219,8 @@ export class TurnRunner {
                                     text: delta,
                                     model: m,
                                     modelLabel: this.d.label(m),
+                                    reasoning: effort,
+                                    ts: responseStartedAt,
                                 }),
                             onReasoning: (delta) => this.d.emit({ kind: "thinking", text: delta }),
                             // Classify: a mid-stream provider failure (the gateway
@@ -384,8 +382,7 @@ export class TurnRunner {
             return;
         }
         this.d.safePersist();
-        // Include the stable logicalTurnId in the commit subject so `git log`
-        // (and the timeline view) shows a durable, reopen-stable id per turn.
+        // Include the stable logicalTurnId in git history for reopen-stable turn identity.
         void ledger.commitTurn(
             this.d.sessionId,
             `turn ${this.d.getTurnNo()} (${logicalTurnId}) — user→assistant (model=${this.d.model()})`,

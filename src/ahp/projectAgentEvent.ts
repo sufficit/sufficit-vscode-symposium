@@ -1,4 +1,5 @@
 import type { AgentEvent } from "../adapters/types";
+import { assistantMetadata } from "./assistantMetadata";
 import {
     activity,
     chatAction,
@@ -33,7 +34,7 @@ export function projectAgentEvent(
         case "turn-start":
             return startTurn(state, event.logicalTurnId);
         case "text":
-            return projectText(state, event.text);
+            return projectText(state, event);
         case "thinking":
             return projectReasoning(state, event.text);
         case "tool-start":
@@ -131,21 +132,35 @@ export function projectInjectedUser(
     ];
 }
 
-function projectText(state: AhpProjectionState, text: string): AhpProjectionAction[] {
-    if (!state.turnId || !text) return [];
+function projectText(
+    state: AhpProjectionState,
+    event: Extract<AgentEvent, { kind: "text" }>,
+): AhpProjectionAction[] {
+    if (!state.turnId || !event.text) return [];
     const actions: AhpProjectionAction[] = [];
+    const metadata = assistantMetadata({
+        ts: event.ts,
+        model: event.model,
+        reasoning: event.reasoning,
+    });
     if (!state.textPartId) {
         state.textPartId = partId(state, "text");
         actions.push(
             chatAction("chat/responsePart", state.turnId, {
-                part: { kind: "markdown", id: state.textPartId, content: "" },
+                part: {
+                    kind: "markdown",
+                    id: state.textPartId,
+                    content: "",
+                    ...(metadata ? { _meta: metadata } : {}),
+                },
             }),
         );
     }
     actions.push(
         chatAction("chat/delta", state.turnId, {
             partId: state.textPartId,
-            content: text,
+            content: event.text,
+            ...(metadata ? { _meta: metadata } : {}),
         }),
     );
     return actions;

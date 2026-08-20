@@ -25,6 +25,9 @@ const markdown = source("ui/webview/markdown.ts");
 const i18n = source("ui/webview/i18n.ts");
 const messageRow = source("ui/webview/messageRow.ts");
 const dispatchCatalog = source("ui/webview/dispatchCatalog.ts");
+const ahpChatView = source("ui/webview/ahpChatView.ts");
+const messages = source("ui/webview/messages.ts");
+const openaiTurnRunner = source("adapters/openai/turnRunner.ts");
 const codexDiscovery = source("adapters/codex/sessionDiscovery.ts");
 
 function zIndex(selector: string): number {
@@ -55,6 +58,14 @@ test("assistant message headers expose the model and effort used for that reply"
     assert.match(messageRow, /chat\.message\.effort/);
     assert.match(dispatchCatalog, /message\("assistant", m\.text, m\.ts, m\.model, m\.reasoning\)/);
     assert.match(events, /streamDelta\(ev\.text, ev\.model, ev\.reasoning, ev\.ts\)/);
+    assert.match(ahpChatView, /readAssistantMetadata\(action\._meta\)/);
+    assert.match(
+        ahpChatView,
+        /message\("assistant", content, metadata\.ts, metadata\.model, metadata\.reasoning\)/,
+    );
+    assert.doesNotMatch(ahpChatView, /message\("assistant", content, Date\.now\(\)\)/);
+    assert.doesNotMatch(messages, /ts \?\? Date\.now\(\)/);
+    assert.match(openaiTurnRunner, /reasoning: effort,[\s\S]*?ts: responseStartedAt/);
     assert.match(codexDiscovery, /reasoning: meta\.reasoning/);
     assert.equal(i18n.match(/"chat\.message\.model"/g)?.length, 2);
     assert.equal(i18n.match(/"chat\.message\.effort"/g)?.length, 2);

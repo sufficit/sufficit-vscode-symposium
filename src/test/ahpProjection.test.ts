@@ -13,6 +13,7 @@ import {
 } from "../ahp";
 import { toolTodosFromMetadata } from "../ahp/toolMetadata";
 import { historyTurns } from "../ahp/historyProjection";
+import { readAssistantMetadata } from "../ahp/assistantMetadata";
 
 const STREAM: AgentEvent[] = [
     { kind: "turn-start", logicalTurnId: "turn-1" },
@@ -153,6 +154,60 @@ test("native task snapshots survive backend history projection on session reopen
     assert.deepEqual(toolTodosFromMetadata(part.toolCall?._meta), [
         { content: "Persist task panel", status: "pending", order: 1 },
     ]);
+});
+
+test("assistant timestamp, model and effort survive live and history AHP projection", () => {
+    const timestamp = Date.parse("2026-08-19T22:52:53.087Z");
+    const state = runStream("claude", [
+        { kind: "turn-start", logicalTurnId: "metadata" },
+        {
+            kind: "text",
+            text: "answer",
+            ts: timestamp,
+            model: "claude-sonnet-5",
+            reasoning: "xhigh",
+        },
+        { kind: "turn-end" },
+    ]);
+    const livePart = state.turns[0].responseParts[0] as unknown as {
+        _meta?: { symposium?: Record<string, unknown> };
+    };
+    assert.deepEqual(livePart._meta?.symposium, {
+        ts: timestamp,
+        model: "claude-sonnet-5",
+        reasoning: "xhigh",
+    });
+
+    const [history] = historyTurns([
+        { role: "user", text: "question" },
+        {
+            role: "assistant",
+            text: "answer",
+            ts: timestamp,
+            model: "claude-sonnet-5",
+            reasoning: "xhigh",
+        },
+    ]);
+    const historyPart = history.responseParts[0] as unknown as {
+        _meta?: { symposium?: Record<string, unknown> };
+    };
+    assert.deepEqual(historyPart._meta?.symposium, livePart._meta?.symposium);
+
+    assert.deepEqual(
+        readAssistantMetadata({
+            symposium: {
+                ts: "2026-08-19T22:52:53.087Z",
+                model: "claude-sonnet-5",
+                reasoning: "xhigh",
+            },
+        }),
+        {
+            ts: timestamp,
+            model: "claude-sonnet-5",
+            reasoning: "xhigh",
+        },
+        "AHP clients may serialize dates; the webview boundary normalizes them to milliseconds",
+    );
 });
 
 // A terminal notice is why the turn stopped. Projected as activity only it was

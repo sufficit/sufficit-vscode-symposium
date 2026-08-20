@@ -295,7 +295,7 @@ export function streamDelta(
         streamMsg = message(
             "assistant",
             "",
-            ts ?? Date.now(),
+            ts,
             model || activeModel || "",
             reasoning || (reasoningValue !== "default" ? reasoningValue : reasoningDefault),
         );

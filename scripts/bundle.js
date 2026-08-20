@@ -28,6 +28,9 @@ async function build() {
         platform: "node",
         target: "node22",
         format: "cjs",
+        // Node 22 loads UTF-8 source natively; avoid inflating localized text
+        // and symbols into ASCII escape sequences in the packaged host.
+        charset: "utf8",
         // VS Code supplies `vscode`; `ws` is shipped as the one audited runtime
         // dependency in the VSIX instead of inflating the single host bundle.
         external: ["vscode", "ws"],

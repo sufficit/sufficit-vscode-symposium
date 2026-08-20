@@ -2,6 +2,7 @@ import type { HistoryMessage } from "../adapters/types";
 import type {
     MessageKind,
     ResponsePartKind,
+    ResponsePart,
     ToolCallConfirmationReason,
     ToolCallStatus,
     ToolResultContentType,
@@ -9,6 +10,7 @@ import type {
     ChatState,
 } from "@microsoft/agent-host-protocol";
 import { safeMeta } from "./projectionCore";
+import { assistantMetadata } from "./assistantMetadata";
 
 const MESSAGE_USER = "user" as MessageKind.User;
 const PART_MARKDOWN = "markdown" as ResponsePartKind.Markdown;
@@ -56,7 +58,12 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
                 kind: PART_MARKDOWN,
                 id: `history-${index + 1}-text`,
                 content: message.text ?? "",
-            });
+                _meta: assistantMetadata({
+                    ts: message.ts,
+                    model: message.model,
+                    reasoning: message.reasoning,
+                }),
+            } as unknown as ResponsePart);
         } else if (message.role === "thinking") {
             turn.responseParts.push({
                 kind: PART_REASONING,

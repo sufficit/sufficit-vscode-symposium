@@ -7,6 +7,7 @@ import {
     selectPendingMessages,
 } from "../../ahp/client/chatSelectors";
 import { toolTodosFromMetadata } from "../../ahp/toolMetadata";
+import { readAssistantMetadata } from "../../ahp/assistantMetadata";
 import { applyEvent } from "./events";
 import { renderQueueView, renderUserTurn, resetConversationView } from "./conversationView";
 import { hideAgentPicker } from "./agentPicker";
@@ -128,9 +129,11 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
             if (part && !isEmptyStreamAnchor(part)) renderPart(part);
             break;
         }
-        case "chat/delta":
-            applyEvent({ kind: "text", text: String(action.content ?? "") });
+        case "chat/delta": {
+            const metadata = readAssistantMetadata(action._meta);
+            applyEvent({ kind: "text", text: String(action.content ?? ""), ...metadata });
             break;
+        }
         case "chat/reasoning":
             applyEvent({ kind: "thinking", text: String(action.content ?? "") });
             break;
@@ -249,7 +252,10 @@ function renderPart(part: ResponsePart): void {
     const value = part as unknown as Record<string, unknown>;
     if (value.kind === "markdown") {
         const content = String(value.content ?? "");
-        if (content) message("assistant", content, Date.now());
+        const metadata = readAssistantMetadata(value._meta);
+        if (content) {
+            message("assistant", content, metadata.ts, metadata.model, metadata.reasoning);
+        }
         return;
     }
     if (value.kind === "reasoning") {

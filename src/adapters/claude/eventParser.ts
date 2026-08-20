@@ -26,21 +26,26 @@ export class ClaudeEventParser {
     private streamedText = false;
     private streamedThinking = false;
     private pendingToolIds = new Set<string>();
+    private backgroundTaskIds = new Set<string>();
     private deferredTurnEnd: { costUsd?: number; durationMs?: number } | undefined;
+    private waitingForBackgroundFollowup = false;
     private observedModel: string | undefined;
-    private turnTimestamp: number | undefined;
+    private latestTimestamp: number | undefined;
     private readonly tasks = new ClaudeTaskTracker();
 
     constructor(private readonly deps: ParserDeps) {}
 
     resetPending(): void {
         this.pendingToolIds.clear();
+        this.backgroundTaskIds.clear();
         this.deferredTurnEnd = undefined;
+        this.waitingForBackgroundFollowup = false;
+        this.latestTimestamp = undefined;
     }
 
     /** Starts a fresh normalized turn without losing the session-level model. */
     beginTurn(): void {
-        this.turnTimestamp = undefined;
+        this.latestTimestamp = undefined;
     }
 
     handleLine(line: string, sourceCancelled = false): void {
@@ -53,9 +58,7 @@ export class ClaudeEventParser {
         }
         this.observeMetadata(event);
         const timestamp = timestampMs(event.timestamp);
-        if (timestamp !== undefined && this.turnTimestamp === undefined) {
-            this.turnTimestamp = timestamp;
-        }
+        if (timestamp !== undefined) this.latestTimestamp = timestamp;
         const quota = parseClaudeQuota(event, "claude");
         if (quota) this.deps.emit({ kind: "quota", ...quota });
         if (event.type === "stream_event") this.handleStream(event);
@@ -76,7 +79,7 @@ export class ClaudeEventParser {
                 text: delta.text,
                 model: this.observedModel || this.deps.model(),
                 reasoning: this.deps.reasoning(),
-                ...(this.turnTimestamp !== undefined ? { ts: this.turnTimestamp } : {}),
+                ...(this.latestTimestamp !== undefined ? { ts: this.latestTimestamp } : {}),
             });
         } else if (
             delta?.type === "thinking_delta" &&
@@ -89,13 +92,32 @@ export class ClaudeEventParser {
     }
 
     private handleSystem(event: Record<string, unknown>): void {
-        if (event.subtype !== "init" || typeof event.session_id !== "string") return;
-        this.deps.setSessionId(event.session_id);
-        this.deps.emit({
-            kind: "session",
-            sessionId: event.session_id,
-            model: this.observedModel,
-        });
+        if (event.subtype === "init" && typeof event.session_id === "string") {
+            this.deps.setSessionId(event.session_id);
+            this.deps.emit({
+                kind: "session",
+                sessionId: event.session_id,
+                model: this.observedModel,
+            });
+            return;
+        }
+        if (event.subtype === "background_tasks_changed") {
+            this.backgroundTaskIds = new Set(
+                (Array.isArray(event.tasks) ? event.tasks : [])
+                    .map((task) => record(task)?.task_id)
+                    .filter((id): id is string => typeof id === "string" && !!id),
+            );
+            if (this.backgroundTaskIds.size > 0) this.waitingForBackgroundFollowup = true;
+            return;
+        }
+        if (event.subtype === "task_started" || event.subtype === "task_progress") {
+            if (typeof event.task_id === "string") this.backgroundTaskIds.add(event.task_id);
+            this.waitingForBackgroundFollowup = true;
+            return;
+        }
+        if (event.subtype === "task_notification" && typeof event.task_id === "string") {
+            this.backgroundTaskIds.delete(event.task_id);
+        }
     }
 
     private handleAssistant(event: Record<string, unknown>): void {
@@ -114,7 +136,7 @@ export class ClaudeEventParser {
                         text: block.text,
                         model: this.observedModel || this.deps.model(),
                         reasoning: this.deps.reasoning(),
-                        ...(this.turnTimestamp !== undefined ? { ts: this.turnTimestamp } : {}),
+                        ...(this.latestTimestamp !== undefined ? { ts: this.latestTimestamp } : {}),
                     });
                 }
             } else if (block.type === "tool_use") {
@@ -156,6 +178,7 @@ export class ClaudeEventParser {
             const block = record(raw);
             if (block?.type !== "tool_result") continue;
             const id = typeof block.tool_use_id === "string" ? block.tool_use_id : undefined;
+            this.observeAsyncToolResult(event.toolUseResult);
             if (id) this.pendingToolIds.delete(id);
             this.deps.emit({
                 kind: "tool-end",
@@ -165,11 +188,7 @@ export class ClaudeEventParser {
                 todos: this.tasks.observeToolResult(id, event.toolUseResult),
             });
         }
-        if (this.deferredTurnEnd && this.pendingToolIds.size === 0) {
-            this.deps.setTurnActive(false);
-            this.deps.emit({ kind: "turn-end", ...this.deferredTurnEnd });
-            this.deferredTurnEnd = undefined;
-        }
+        this.finishDeferredToolResult();
     }
 
     private handleResult(event: Record<string, unknown>, sourceCancelled: boolean): void {
@@ -185,13 +204,44 @@ export class ClaudeEventParser {
             costUsd: optionalNumber(event.total_cost_usd),
             durationMs: optionalNumber(event.duration_ms),
         };
-        if (this.pendingToolIds.size > 0) {
+        if (this.pendingToolIds.size > 0 || this.backgroundTaskIds.size > 0) {
+            this.deferredTurnEnd = end;
+            if (this.backgroundTaskIds.size > 0) this.waitingForBackgroundFollowup = true;
+        } else if (this.waitingForBackgroundFollowup && !this.deferredTurnEnd) {
+            // A background task may complete immediately before the parent's
+            // intermediate result. Keep the turn open for the task-notification
+            // follow-up; its own result is the authoritative terminal boundary.
             this.deferredTurnEnd = end;
         } else {
-            this.deps.setTurnActive(false);
-            this.deps.emit({ kind: "turn-end", ...end });
+            this.finishTurn(end);
         }
-        this.turnTimestamp = undefined;
+    }
+
+    private observeAsyncToolResult(value: unknown): void {
+        const result = record(value);
+        if (result?.status !== "async_launched") return;
+        if (typeof result.agentId === "string") this.backgroundTaskIds.add(result.agentId);
+        this.waitingForBackgroundFollowup = true;
+    }
+
+    private finishDeferredToolResult(): void {
+        if (
+            !this.deferredTurnEnd ||
+            this.pendingToolIds.size > 0 ||
+            this.backgroundTaskIds.size > 0 ||
+            this.waitingForBackgroundFollowup
+        ) {
+            return;
+        }
+        this.finishTurn(this.deferredTurnEnd);
+    }
+
+    private finishTurn(end: { costUsd?: number; durationMs?: number }): void {
+        this.deps.setTurnActive(false);
+        this.deps.emit({ kind: "turn-end", ...end });
+        this.deferredTurnEnd = undefined;
+        this.waitingForBackgroundFollowup = false;
+        this.latestTimestamp = undefined;
     }
 
     private emitUsage(usage: Record<string, unknown>): void {
