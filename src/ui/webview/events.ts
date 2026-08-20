@@ -8,6 +8,7 @@ import {
     resolvePendingRetry,
     streamDelta,
     streamThinkingDelta,
+    updateLastAssistantModel,
 } from "./messages";
 import { bindWorkingSet } from "./panels";
 import {
@@ -19,7 +20,7 @@ import {
     sessionCostUsd,
 } from "./statusbar";
 import { setStatus } from "./status";
-import { modelLabel, modelList, setModelLabel, setModelValue } from "./models";
+import { modelLabel, setModelLabel, setModelValue } from "./models";
 import { sendBtn } from "./dom";
 import {
     activeModel,
@@ -106,11 +107,7 @@ export function applyEvent(ev: AgentEvent): void {
         renderError(ev.message, ev.historical, ev.retryable);
     } else if (ev.kind === "session") {
         if (ev.model) {
-            setActiveModel(ev.model);
-            if (modelList.includes(ev.model)) {
-                setModelValue(ev.model);
-                setModelLabel();
-            }
+            applyEffectiveModel(ev.model);
         }
         setActiveSessionId(ev.sessionId || activeSessionId);
         bindWorkingSet(ev.sessionId);
@@ -155,6 +152,7 @@ function applyEffectiveModel(model: unknown): void {
         return;
     }
     setActiveModel(model);
+    updateLastAssistantModel(model);
     // A queued message already captured its own model. Keep that picker value
     // until the queued turn starts; otherwise show the model actually used.
     if (!queued) {

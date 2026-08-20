@@ -7,9 +7,10 @@ function parser(
     events: AgentEvent[],
     reasoning = "high",
     activeStates: boolean[] = [],
+    model?: string,
 ): ClaudeEventParser {
     return new ClaudeEventParser({
-        model: () => undefined,
+        model: () => model,
         reasoning: () => reasoning,
         getSessionId: () => "session",
         setSessionId: () => undefined,
@@ -17,6 +18,28 @@ function parser(
         emit: (event) => events.push(event),
     });
 }
+
+test("Claude usage carries the effective model for late UI metadata", () => {
+    const events: AgentEvent[] = [];
+    const instance = parser(events, "high", [], "claude-opus-5");
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "result",
+            usage: { input_tokens: 12, output_tokens: 4 },
+            duration_ms: 25,
+        }),
+    );
+
+    assert.deepEqual(events[0], {
+        kind: "usage",
+        inputTokens: 12,
+        outputTokens: 4,
+        cacheRead: 0,
+        model: "claude-opus-5",
+        contextWindow: 200_000,
+    });
+});
 
 test("Claude live text keeps provider timestamp, model and effort", () => {
     const events: AgentEvent[] = [];

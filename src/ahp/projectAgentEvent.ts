@@ -48,6 +48,7 @@ export function projectAgentEvent(
         case "approval-resolved":
             return projectApprovalResolved(state, event.toolId, event.approved);
         case "usage":
+            if (event.model) state.model = event.model;
             return projectUsage(state, event);
         case "error":
             return projectError(state, event.message, event.retryable);
@@ -57,6 +58,8 @@ export function projectAgentEvent(
             return projectStatusNotice(state, event);
         case "session":
         case "model":
+            if (event.model) state.model = event.model;
+            return [];
         case "quota":
             return [];
     }
@@ -140,7 +143,7 @@ function projectText(
     const actions: AhpProjectionAction[] = [];
     const metadata = assistantMetadata({
         ts: event.ts,
-        model: event.model,
+        model: event.model || state.model,
         reasoning: event.reasoning,
     });
     if (!state.textPartId) {
@@ -314,13 +317,14 @@ function projectUsage(
     event: Extract<AgentEvent, { kind: "usage" }>,
 ): AhpProjectionAction[] {
     if (!state.turnId) return [];
+    const model = event.model || state.model;
     return [
         chatAction("chat/usage", state.turnId, {
             usage: {
                 inputTokens: event.inputTokens,
                 outputTokens: event.outputTokens,
                 cacheReadTokens: event.cacheRead,
-                model: event.model,
+                model,
                 _meta: safeMeta({
                     totalTokens: event.totalTokens,
                     reasoningTokens: event.reasoningTokens,

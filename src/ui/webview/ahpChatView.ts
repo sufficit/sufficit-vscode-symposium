@@ -231,7 +231,8 @@ function renderTurn(
             turn.startedAt ?? Date.now(),
         );
     }
-    for (const part of turn.responseParts) renderPart(part);
+    const usageModel = optionalString(asRecord(turn.usage).model);
+    for (const part of turn.responseParts) renderPart(part, usageModel);
     if ("error" in turn && turn.error) {
         const error = asRecord(turn.error);
         renderError(
@@ -248,13 +249,19 @@ function renderTurn(
     }
 }
 
-function renderPart(part: ResponsePart): void {
+function renderPart(part: ResponsePart, fallbackModel?: string): void {
     const value = part as unknown as Record<string, unknown>;
     if (value.kind === "markdown") {
         const content = String(value.content ?? "");
         const metadata = readAssistantMetadata(value._meta);
         if (content) {
-            message("assistant", content, metadata.ts, metadata.model, metadata.reasoning);
+            message(
+                "assistant",
+                content,
+                metadata.ts,
+                metadata.model || fallbackModel,
+                metadata.reasoning,
+            );
         }
         return;
     }

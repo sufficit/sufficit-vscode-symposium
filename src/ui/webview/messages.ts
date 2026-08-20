@@ -266,7 +266,7 @@ export function branchBanner(title: string, detail: string): HTMLDivElement {
 
 export { endToolGroup, toolGroupBody, bumpToolGroup } from "./messageToolGroup";
 import { endToolGroup } from "./messageToolGroup";
-export { message, resetLastMsg } from "./messageRow";
+export { message, resetLastMsg, updateLastAssistantModel } from "./messageRow";
 import { message } from "./messageRow";
 import type { MessageElement } from "./messageRow";
 

@@ -178,6 +178,26 @@ export function message(
     return wrap;
 }
 
+/** Adds model metadata discovered after the assistant bubble was created. */
+export function updateLastAssistantModel(model: string | undefined): void {
+    const effectiveModel = model?.trim();
+    if (!effectiveModel) return;
+    const rows = log.querySelectorAll<HTMLDivElement>(".msg.assistant");
+    const row = rows.item(rows.length - 1);
+    const label = row?.querySelector<HTMLElement>(".role");
+    if (!label) return;
+    const chip = label.querySelector<HTMLElement>(".roleModel") ?? document.createElement("span");
+    chip.className = "roleModel";
+    chip.textContent = t("chat.message.model") + modelLabel(effectiveModel);
+    chip.title = effectiveModel;
+    if (!chip.parentElement) {
+        const effort = label.querySelector<HTMLElement>(".roleEffort");
+        const time = label.querySelector<HTMLElement>(".msgTime");
+        label.insertBefore(chip, effort ?? time ?? null);
+    }
+    lastMsgModel = effectiveModel;
+}
+
 export function resetLastMsg(): void {
     lastMsgBackend = "";
     lastMsgModel = "";

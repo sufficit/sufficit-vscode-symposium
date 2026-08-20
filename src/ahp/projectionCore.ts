@@ -8,6 +8,8 @@ export interface AhpProjectionAction {
 export interface AhpProjectionState {
     turnId?: string;
     startedAt?: number;
+    /** Effective provider model announced by the adapter for this stream. */
+    model?: string;
     pendingUser?: { text: string; model?: string; attachments?: string[]; id?: string };
     textPartId?: string;
     reasoningPartId?: string;

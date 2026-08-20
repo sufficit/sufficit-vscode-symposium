@@ -54,15 +54,14 @@ test("session hover metadata exposes the effective model and effort", () => {
 test("assistant message headers expose the model and effort used for that reply", () => {
     assert.match(messageRow, /roleModel/);
     assert.match(messageRow, /roleEffort/);
+    assert.match(messageRow, /updateLastAssistantModel/);
+    assert.match(events, /updateLastAssistantModel\(model\)/);
     assert.match(messageRow, /chat\.message\.model/);
     assert.match(messageRow, /chat\.message\.effort/);
     assert.match(dispatchCatalog, /message\("assistant", m\.text, m\.ts, m\.model, m\.reasoning\)/);
     assert.match(events, /streamDelta\(ev\.text, ev\.model, ev\.reasoning, ev\.ts\)/);
     assert.match(ahpChatView, /readAssistantMetadata\(action\._meta\)/);
-    assert.match(
-        ahpChatView,
-        /message\("assistant", content, metadata\.ts, metadata\.model, metadata\.reasoning\)/,
-    );
+    assert.match(ahpChatView, /metadata\.model \|\| fallbackModel/);
     assert.doesNotMatch(ahpChatView, /message\("assistant", content, Date\.now\(\)\)/);
     assert.doesNotMatch(messages, /ts \?\? Date\.now\(\)/);
     assert.match(openaiTurnRunner, /reasoning: effort,[\s\S]*?ts: responseStartedAt/);

@@ -252,6 +252,7 @@ export class ClaudeEventParser {
             inputTokens: number(usage.input_tokens) + cacheRead,
             outputTokens: number(usage.output_tokens),
             cacheRead,
+            model: this.observedModel || this.deps.model(),
             contextWindow: contextWindowFor(this.observedModel || this.deps.model() || ""),
         });
     }
