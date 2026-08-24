@@ -165,11 +165,10 @@ function remoteMemoryError(operation: string, error: unknown): string {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[Symposium] Hub ${operation} failed: ${message}`);
     return JSON.stringify({
-        error: `Sufficit AI memory ${operation} failed: ${message}`,
+        error: `Memory ${operation} failed: ${message}`,
         retryable: true,
         _memory_source: "remote_unavailable",
-        _notice:
-            "Canonical Sufficit AI memory is unavailable. No local fallback was read or written.",
+        _notice: "No local fallback was read or written.",
     });
 }
 

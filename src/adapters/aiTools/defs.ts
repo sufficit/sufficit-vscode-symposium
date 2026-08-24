@@ -22,34 +22,31 @@ export const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "memory_search",
-            description:
-                "Search canonical Sufficit AI memory using exact, semantic, or hybrid retrieval. Returns compact records with scores, token estimates, and selection reasons. Use before non-trivial tasks and to recall prior context.",
+            description: "Search canonical memory with exact, semantic, or hybrid ranking.",
             parameters: {
                 type: "object",
                 properties: {
                     query: {
                         type: "string",
-                        description: "Free-text query matched against title and summary.",
+                        description: "Text matched against title and summary.",
                     },
                     type: {
                         type: "string",
-                        description:
-                            "Optional type filter, e.g. guideline, fact, task-checkpoint, agent-def.",
+                        description: "Optional memory type.",
                     },
-                    limit: { type: "integer", description: "Max records (1-50). Default 20." },
+                    limit: { type: "integer", description: "Maximum records; default 20." },
                     strategy: {
                         type: "string",
                         enum: ["Exact", "Semantic", "Hybrid"],
-                        description: "Retrieval strategy. Default Hybrid.",
+                        description: "Ranking strategy; default Hybrid.",
                     },
                     maxTokens: {
                         type: "integer",
-                        description: "Total token budget for selected records. Default 1600.",
+                        description: "Selection token budget; default 1600.",
                     },
                     diversityLambda: {
                         type: "number",
-                        description:
-                            "MMR balance from 0 to 1; higher values favor relevance. Default 0.65.",
+                        description: "MMR relevance balance (0-1); default 0.65.",
                     },
                 },
                 required: ["query"],
@@ -60,8 +57,7 @@ export const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "memory_get_observations",
-            description:
-                "Fetch full memory observations (including payload) by their ids, after a memory_search returned promising ids.",
+            description: "Fetch full memory records by ids returned from search.",
             parameters: {
                 type: "object",
                 properties: {
