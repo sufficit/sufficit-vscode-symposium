@@ -38,32 +38,23 @@ async function search(args: Record<string, unknown>, ctx: ToolContext): Promise<
         query: String(args.query ?? ""),
         type: args.type ? String(args.type) : undefined,
         limit: typeof args.limit === "number" ? args.limit : undefined,
+        strategy: memorySearchStrategy(args.strategy),
+        maxTokens: typeof args.maxTokens === "number" ? args.maxTokens : 1_600,
+        diversityLambda: typeof args.diversityLambda === "number" ? args.diversityLambda : 0.65,
     };
     try {
-        return JSON.stringify(await ctx.hub.searchMemory(query));
+        return JSON.stringify(await ctx.hub.searchMemory(query, ctx.sessionId));
     } catch (error) {
-        warnFallback("searchMemory", error);
-        return JSON.stringify({
-            _notice:
-                "SHARED MEMORY UNAVAILABLE: Using local fallback. Results are from local session storage only, not from shared cross-agent knowledge.",
-            _memory_source: "local_fallback",
-            records: await new LocalMemory().searchMemory(query),
-        });
+        return remoteMemoryError("searchMemory", error);
     }
 }
 
 async function getObservations(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
     try {
-        return JSON.stringify(await ctx.hub.getByIds(ids));
+        return JSON.stringify(await ctx.hub.getByIds(ids, ctx.sessionId));
     } catch (error) {
-        warnFallback("getByIds", error);
-        return JSON.stringify({
-            _notice:
-                "SHARED MEMORY UNAVAILABLE: Using local fallback. Observations are from local session storage only, not from shared cross-agent knowledge.",
-            _memory_source: "local_fallback",
-            observations: await new LocalMemory().getByIds(ids),
-        });
+        return remoteMemoryError("getByIds", error);
     }
 }
 
@@ -88,14 +79,7 @@ async function save(args: Record<string, unknown>, ctx: ToolContext): Promise<st
         });
         return JSON.stringify({ id });
     } catch (error) {
-        warnFallback("save", error);
-        const id = await new LocalMemory().save({ ...entry, type });
-        return JSON.stringify({
-            id,
-            _notice:
-                "SHARED MEMORY UNAVAILABLE: Saved to local fallback storage only. This observation is NOT available in shared cross-agent knowledge.",
-            _memory_source: "local_fallback",
-        });
+        return remoteMemoryError("save", error);
     }
 }
 
@@ -175,4 +159,20 @@ function warnFallback(operation: string, error: unknown): void {
     console.warn(
         `[Symposium] Hub ${operation} failed, using local memory: ${error instanceof Error ? error.message : String(error)}`,
     );
+}
+
+function remoteMemoryError(operation: string, error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[Symposium] Hub ${operation} failed: ${message}`);
+    return JSON.stringify({
+        error: `Sufficit AI memory ${operation} failed: ${message}`,
+        retryable: true,
+        _memory_source: "remote_unavailable",
+        _notice:
+            "Canonical Sufficit AI memory is unavailable. No local fallback was read or written.",
+    });
+}
+
+function memorySearchStrategy(value: unknown): "Exact" | "Semantic" | "Hybrid" {
+    return value === "Exact" || value === "Semantic" || value === "Hybrid" ? value : "Hybrid";
 }

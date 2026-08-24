@@ -122,3 +122,24 @@ test("an unexpected provider stream drop becomes a retryable error", async () =>
         globalThis.fetch = originalFetch;
     }
 });
+
+test("main Sufficit turn sends session provenance in body and trusted header", async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedBody: Record<string, unknown> | undefined;
+    let capturedHeaders: Headers | undefined;
+    globalThis.fetch = ((_url: string | URL, init?: RequestInit) => {
+        capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        capturedHeaders = new Headers(init?.headers);
+        return Promise.resolve(sseResponse());
+    }) as typeof fetch;
+
+    try {
+        const runner = new TurnRunner(deps(() => undefined));
+        await runner.run();
+
+        assert.equal(capturedBody?.session_id, "lifecycle-test");
+        assert.equal(capturedHeaders?.get("X-Symposium-Session-Id"), "lifecycle-test");
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});

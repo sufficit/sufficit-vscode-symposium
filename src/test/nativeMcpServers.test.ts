@@ -24,6 +24,9 @@ test("native MCP catalog keeps AI and Identity distinct and complete", () => {
     assert.equal(manifests.get("sufficit-ai")?.builtin, true);
     assert.equal(manifests.get("sufficit-identity")?.transport, "builtin");
     assert.ok(tools.get("sufficit-ai")?.includes("memory_search"));
+    assert.ok(tools.get("sufficit-ai")?.includes("memory_candidates"));
+    assert.ok(tools.get("sufficit-ai")?.includes("memory_candidate_accept"));
+    assert.ok(tools.get("sufficit-ai")?.includes("memory_candidate_reject"));
     assert.ok(tools.get("sufficit-identity")?.includes("vault_resolve"));
     assert.ok(tools.get("sufficit-identity")?.includes("me_session_revoke"));
 });

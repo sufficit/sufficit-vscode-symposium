@@ -13,10 +13,25 @@ const nativeServers: NativeMcpDefinition[] = [
         description: "Native Sufficit AI MCP server (auto-detected when logged in)",
         tools: [
             { name: "memory_search", description: "Search shared Sufficit AI memory" },
+            { name: "memory_timeline", description: "Read chronological context around a memory" },
             { name: "memory_save", description: "Persist to shared Sufficit AI memory" },
             {
                 name: "memory_get_observations",
                 description: "Fetch full memory observations by IDs",
+            },
+            {
+                name: "memory_related",
+                description: "Explore related memories in the synapse graph",
+            },
+            { name: "memory_update", description: "Curate an existing authorized memory" },
+            { name: "memory_candidates", description: "List staged memory-learning candidates" },
+            {
+                name: "memory_candidate_accept",
+                description: "Accept and promote an authorized memory candidate",
+            },
+            {
+                name: "memory_candidate_reject",
+                description: "Reject an authorized memory candidate",
             },
             { name: "spawn_agent", description: "Delegate task to another agent" },
             { name: "list_agents", description: "List spawned subagents" },

@@ -309,11 +309,23 @@ export class Compactor {
                 { role: "user", content: this.renderForSummary(messages) },
             ];
             const body = responses
-                ? { model: this.d.model(), input: toResponsesInput(reqMessages), stream: false }
-                : { model: this.d.model(), messages: reqMessages, stream: false };
+                ? {
+                      model: this.d.model(),
+                      input: toResponsesInput(reqMessages),
+                      stream: false,
+                      session_id: this.d.sessionId,
+                  }
+                : {
+                      model: this.d.model(),
+                      messages: reqMessages,
+                      stream: false,
+                      session_id: this.d.sessionId,
+                  };
             const headers = this.d.headers(loginToken);
             // Observability hint only: the gateway validates the JSON model independently.
             headers["X-Sufficit-Requested-Model"] = this.d.model();
+            headers["X-Symposium-Session-Id"] = this.d.sessionId;
+            headers["X-Sufficit-Memory-Learning"] = "off";
             const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
             if (!res.ok) {
                 return "";

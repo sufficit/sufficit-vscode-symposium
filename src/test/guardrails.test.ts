@@ -165,6 +165,9 @@ test("guardrail tools remain available without Hub and are approval-gated", () =
     assert.ok(names.includes("add_guardrail"));
     assert.ok(names.includes("clear_guardrails"));
     assert.ok(!names.includes("web_search"));
+    assert.ok(!names.includes("memory_search"));
+    assert.ok(!names.includes("memory_get_observations"));
+    assert.ok(!names.includes("memory_save"));
     assert.equal(classifyTool("add_guardrail"), "destructive");
 });
 

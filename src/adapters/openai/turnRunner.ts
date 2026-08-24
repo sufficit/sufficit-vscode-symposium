@@ -34,7 +34,6 @@ export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
 export class TurnRunner {
     private abort: AbortController | undefined;
-    // Abort each hop and latch cancellation so the surrounding tool loop also stops.
     private cancelled = false;
     private pendingTasksCompact = false;
     private readonly runSequence = new RunSequence();
@@ -130,11 +129,17 @@ export class TurnRunner {
                     this.d.emit(pairingNotice);
                 }
                 const body: Record<string, unknown> = responses
-                    ? { model: this.d.model(), input: toResponsesInput(outMessages), stream: true }
+                    ? {
+                          model: this.d.model(),
+                          input: toResponsesInput(outMessages),
+                          stream: true,
+                          session_id: this.d.sessionId,
+                      }
                     : {
                           model: this.d.model(),
                           messages: outMessages,
                           stream: true,
+                          session_id: this.d.sessionId,
                           stream_options: { include_usage: true },
                       };
                 const allow = this.d.options.aiTools;
@@ -177,10 +182,8 @@ export class TurnRunner {
                 const signal = this.abort.signal;
                 const post = (token: string | null | undefined) => {
                     const headers = this.d.headers(token);
-                    // Lets the gateway activity page show the requested model before it has
-                    // buffered/bound a potentially very large request body. The server treats
-                    // this as an unverified hint and confirms the preset independently.
                     headers["X-Sufficit-Requested-Model"] = this.d.model();
+                    headers["X-Symposium-Session-Id"] = this.d.sessionId;
                     return fetch(url, { method: "POST", headers, body: bodyJson, signal });
                 };
                 let res = await post(loginToken);

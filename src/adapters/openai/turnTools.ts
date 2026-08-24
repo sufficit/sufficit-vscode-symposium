@@ -15,16 +15,16 @@ import { classifyLmTool } from "../aiTools/permissionTiers";
 import { mergeToolDefinitions } from "./toolMerge";
 
 export function buildTurnTools(hubConfigured: boolean, responses: boolean) {
-    // Guardrails and basic memory have a LocalMemory fallback, so their tool
-    // contract must remain visible even when the shared Hub is unavailable.
-    // Hub-only task/web tools are added only when the Hub is configured.
+    // Canonical memory is remote-only. Offline mode keeps only session
+    // guardrails, whose local path is explicitly a compatibility mechanism.
     const memoryTools = hubConfigured
         ? responses
             ? AI_TOOLS_RESPONSES
             : AI_TOOLS
-        : responses
-          ? UNIVERSAL_MEMORY_TOOLS_RESPONSES
-          : UNIVERSAL_MEMORY_TOOLS;
+        : (responses ? UNIVERSAL_MEMORY_TOOLS_RESPONSES : UNIVERSAL_MEMORY_TOOLS).filter((tool) => {
+              const name = "name" in tool ? tool.name : tool.function.name;
+              return name === "add_guardrail" || name === "clear_guardrails";
+          });
     const localTools = responses ? LOCAL_TOOLS_RESPONSES : LOCAL_TOOLS;
     const subagentTools = getSubagentHost()
         ? responses

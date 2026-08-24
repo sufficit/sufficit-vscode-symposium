@@ -23,6 +23,28 @@ export interface CompactRecord {
     tags?: string;
     /** Caller session id (when the observation was scoped to a session). */
     sessionId?: string;
+    textScore?: number;
+    vectorScore?: number;
+    freshnessScore?: number;
+    popularityScore?: number;
+    diversityScore?: number;
+    relevanceScore?: number;
+    estimatedTokens?: number;
+    selectionReason?: string;
+    retrievalStrategy?: string;
+    source?: string;
+}
+
+export type MemorySearchStrategy = "Exact" | "Semantic" | "Hybrid";
+
+export interface MemorySearchRequest {
+    query?: string;
+    type?: string;
+    limit?: number;
+    sessionId?: string;
+    strategy?: MemorySearchStrategy;
+    maxTokens?: number;
+    diversityLambda?: number;
 }
 
 export interface Observation {
@@ -143,7 +165,7 @@ export class HubClient {
         return this.base().length > 0;
     }
 
-    private async headers(): Promise<Record<string, string>> {
+    private async headers(sessionId?: string): Promise<Record<string, string>> {
         const h: Record<string, string> = {
             "Content-Type": "application/json",
             Accept: "application/json",
@@ -165,15 +187,18 @@ export class HubClient {
             h["X-MEMORY-CONTEXT-ID"] = ctx;
         }
         h["X-MEMORY-SOURCE-ID"] = this.source() || "symposium";
+        if (sessionId) {
+            h["X-Symposium-Session-Id"] = sessionId;
+        }
         return h;
     }
 
-    private request(url: string, init: RequestInit = {}): Promise<Response> {
+    private request(url: string, init: RequestInit = {}, sessionId?: string): Promise<Response> {
         return withAbortableDeadline(
             "Sufficit Hub request",
             HUB_REQUEST_TIMEOUT_MS,
             async (signal) => {
-                const headers = new Headers(await this.headers());
+                const headers = new Headers(await this.headers(sessionId));
                 new Headers(init.headers).forEach((value, key) => headers.set(key, value));
                 return fetch(url, { ...init, headers, signal });
             },
@@ -198,17 +223,19 @@ export class HubClient {
         return this.searchMemory({ type, limit });
     }
 
-    /** Free-form memory search (query/type/limit). Returns compact records. */
-    async searchMemory(params: {
-        query?: string;
-        type?: string;
-        limit?: number;
-        sessionId?: string;
-    }): Promise<CompactRecord[]> {
-        const res = await this.request(`${this.base()}/api/memory/search`, {
-            method: "POST",
-            body: JSON.stringify({ limit: 20, ...params }),
-        });
+    /** Free-form memory search with optional hybrid ranking controls. */
+    async searchMemory(
+        params: MemorySearchRequest,
+        trustedSessionId = params.sessionId,
+    ): Promise<CompactRecord[]> {
+        const res = await this.request(
+            `${this.base()}/api/memory/search`,
+            {
+                method: "POST",
+                body: JSON.stringify({ limit: 20, ...params }),
+            },
+            trustedSessionId,
+        );
         if (!res.ok) {
             throw new Error(`memory search failed: ${res.status}`);
         }
@@ -228,14 +255,18 @@ export class HubClient {
     }
 
     /** Fetches full observations (with payload) by id. */
-    async getByIds(ids: string[]): Promise<Observation[]> {
+    async getByIds(ids: string[], trustedSessionId?: string): Promise<Observation[]> {
         if (ids.length === 0) {
             return [];
         }
-        const res = await this.request(`${this.base()}/api/memory/observations`, {
-            method: "POST",
-            body: JSON.stringify({ ids }),
-        });
+        const res = await this.request(
+            `${this.base()}/api/memory/observations`,
+            {
+                method: "POST",
+                body: JSON.stringify({ ids }),
+            },
+            trustedSessionId,
+        );
         if (!res.ok) {
             throw new Error(`getByIds failed: ${res.status}`);
         }
@@ -244,10 +275,14 @@ export class HubClient {
 
     /** Upserts an observation (id present → update, absent → create). Returns new id. */
     async save(observation: Observation): Promise<string> {
-        const res = await this.request(`${this.base()}/api/memory/save`, {
-            method: "POST",
-            body: JSON.stringify(observation),
-        });
+        const res = await this.request(
+            `${this.base()}/api/memory/save`,
+            {
+                method: "POST",
+                body: JSON.stringify(observation),
+            },
+            observation.sessionId,
+        );
         if (!res.ok) {
             throw new Error(`save failed: ${res.status}`);
         }
