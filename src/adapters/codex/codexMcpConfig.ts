@@ -14,6 +14,7 @@ export interface CodexAdapterConfig {
     playwright?: boolean;
     /** Extra MCP servers ({ name: { command, args } }). */
     mcpServers?: Record<string, { command?: string; args?: string[] }>;
+    log?: (message: string) => void;
 }
 
 export function codexWorkspaceArgs(cwd: string, workspaceDirs: readonly string[] = []): string[] {

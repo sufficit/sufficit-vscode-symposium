@@ -27,6 +27,7 @@ export interface CodexMeta {
     cwd?: string;
     title?: string;
     model?: string;
+    reasoning?: string;
     lineageId?: string;
     parentId?: string;
     continuationBlockedReason?: "codex-subagent";
@@ -90,6 +91,7 @@ function parseCodexMeta(content: string): CodexMeta {
     let cwd: string | undefined;
     let title: string | undefined;
     let model: string | undefined;
+    let reasoning: string | undefined;
     let lineageId: string | undefined;
     let parentId: string | undefined;
     let continuationBlockedReason: "codex-subagent" | undefined;
@@ -107,6 +109,8 @@ function parseCodexMeta(content: string): CodexMeta {
                 role?: string;
                 content?: Array<{ type: string; text?: string }>;
                 model?: string;
+                effort?: string;
+                reasoning?: string;
                 parent_thread_id?: string | null;
                 source?: {
                     subagent?: {
@@ -139,6 +143,10 @@ function parseCodexMeta(content: string): CodexMeta {
             }
         } else if (entry.type === "turn_context" && typeof entry.payload?.model === "string") {
             model = entry.payload.model;
+            const effort = entry.payload.effort ?? entry.payload.reasoning;
+            if (typeof effort === "string" && effort) {
+                reasoning = effort;
+            }
         } else if (
             !title &&
             index < 60 &&
@@ -175,6 +183,7 @@ function parseCodexMeta(content: string): CodexMeta {
         cwd,
         title,
         model,
+        ...(reasoning ? { reasoning } : {}),
         ...(lineageId ? { lineageId } : {}),
         ...(parentId ? { parentId } : {}),
         ...(continuationBlockedReason ? { continuationBlockedReason } : {}),

@@ -15,7 +15,11 @@ export async function runSubagentTool(
         return JSON.stringify(host.status(String(args.id ?? "")) ?? { error: "no such subagent" });
     }
     if (name === "agent_send") {
-        const ok = host.send(String(args.id ?? ""), String(args.text ?? ""));
+        const text = String(args.text ?? "").trim();
+        if (!text) {
+            return JSON.stringify({ ok: false, error: "text is required and cannot be empty" });
+        }
+        const ok = host.send(String(args.id ?? ""), text);
         return JSON.stringify({
             ok,
             error: ok ? undefined : "no such subagent (or it was stopped)",

@@ -32,6 +32,7 @@ export async function listCodexSessions(cached: readonly SessionInfo[]): Promise
                     sessionId: meta.id,
                     title: meta.title ?? path.basename(file),
                     model: meta.model,
+                    reasoning: meta.reasoning,
                     lineageId: meta.lineageId,
                     parentId: meta.parentId,
                     continuationBlockedReason: meta.continuationBlockedReason,

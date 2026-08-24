@@ -1,0 +1,15 @@
+{
+    "$schema": "https://unpkg.com/knip@6/schema.json",
+    "entry": ["src/extension.ts", "src/ui/webview/index.ts"],
+    "project": ["src/**/*.ts"],
+    "ignore": [
+        "src/ui/chatClient.ts",
+        "src/ui/chatStyles.ts",
+        "src/ui/chatHtml.ts",
+        "src/ui/configHtml.ts",
+        "src/pwa/sw.js",
+        "src/test/**",
+        "test/**"
+    ],
+    "ignoreDependencies": ["@vscode/test-electron"]
+}

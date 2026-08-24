@@ -107,14 +107,17 @@ test("parseCodexUsage: input_tokens already includes cached (not double-counted)
     assert.equal(u.cacheRead, 73600);
 });
 
-test("parseCodexUsage: falls back to total_token_usage when no last_", () => {
-    const ev = { info: { total_token_usage: { input_tokens: 42, output_tokens: 7 } } };
-    assert.deepEqual(parseCodexUsage(ev), {
-        inputTokens: 42,
-        outputTokens: 7,
-        cacheRead: 0,
-        contextWindow: undefined,
-    });
+test("parseCodexUsage: rejects cumulative total_token_usage as current context", () => {
+    const ev = {
+        info: {
+            total_token_usage: {
+                input_tokens: 476_945_930,
+                output_tokens: 1_045_566,
+            },
+            model_context_window: 258_400,
+        },
+    };
+    assert.equal(parseCodexUsage(ev), undefined);
 });
 
 test("parseCodexUsage: undefined when no usage present", () => {

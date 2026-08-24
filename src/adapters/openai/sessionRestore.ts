@@ -40,6 +40,7 @@ export function restoreOpenAISession(
     } else if (stored) {
         messages.push(...stored.messages);
         if (!options.model && stored.model) options.model = stored.model;
+        if (!options.reasoning && stored.reasoning) options.reasoning = stored.reasoning;
     } else {
         if (options.systemPrompt) messages.push({ role: "system", content: options.systemPrompt });
         if (options.developerPrompt) {

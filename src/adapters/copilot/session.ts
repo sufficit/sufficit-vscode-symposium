@@ -6,6 +6,12 @@ import * as os from "os";
 import * as path from "path";
 import { resolveExecutable } from "../exec";
 import { AgentSession, SessionStartOptions } from "../types";
+import { isTransientErrorMessage } from "../transientError";
+import {
+    buildAutomaticSufficitMcpServers,
+    currentSufficitMcpToken,
+    isAutomaticSufficitMcpName,
+} from "../sufficitMcp";
 
 export interface CopilotAdapterConfig {
     executable: string;
@@ -33,6 +39,7 @@ function buildMcpConfigFile(
         fs.mkdirSync(dir, { recursive: true });
         const file = path.join(dir, name);
         fs.writeFileSync(file, JSON.stringify({ mcpServers: servers }, null, 2), "utf8");
+        fs.chmodSync(file, 0o600);
         return file;
     } catch {
         return undefined;
@@ -87,7 +94,23 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         if (this.sessionId) {
             args.push("--resume", this.sessionId);
         }
-        const mcp = buildMcpConfigFile(this.config, "copilot-mcp.json");
+        const mcpServers: Record<string, unknown> = { ...(this.config.mcpServers ?? {}) };
+        for (const name of Object.keys(mcpServers)) {
+            if (isAutomaticSufficitMcpName(name)) {
+                delete mcpServers[name];
+            }
+        }
+        Object.assign(
+            mcpServers,
+            buildAutomaticSufficitMcpServers(
+                currentSufficitMcpToken(),
+                this.options.guardrailSessionId || this.sessionId,
+                "vscode-copilot",
+                this.options.guardrailOrigin,
+                this.options.permission,
+            ),
+        );
+        const mcp = buildMcpConfigFile({ ...this.config, mcpServers }, "copilot-mcp.json");
         if (mcp) {
             args.push("--mcp-config", mcp);
         }
@@ -99,20 +122,32 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         this.current = child;
 
         const rl = readline.createInterface({ input: child.stdout! });
-        rl.on("line", (line) => this.handleLine(line));
+        rl.on("line", (line) => {
+            if (this.current === child) {
+                this.handleLine(line);
+            }
+        });
 
         let stderr = "";
         child.stderr!.on("data", (chunk) => {
             stderr += String(chunk);
         });
         child.on("error", (error) => {
+            if (this.current !== child) {
+                return;
+            }
+            this.current = undefined;
             this.emit("event", {
                 kind: "error",
                 message: `copilot spawn failed: ${error.message}`,
+                retryable: false,
             });
             this.emit("event", { kind: "turn-end" });
         });
         child.on("exit", (code) => {
+            if (this.current !== child) {
+                return;
+            }
             this.current = undefined;
             if (this.disposed) {
                 return;
@@ -122,6 +157,7 @@ export class CopilotSession extends EventEmitter implements AgentSession {
                 this.emit("event", {
                     kind: "error",
                     message: `copilot exited with code ${code}: ${detail}`,
+                    retryable: true,
                 });
             }
             this.emit("event", { kind: "turn-end" });
@@ -198,18 +234,21 @@ export class CopilotSession extends EventEmitter implements AgentSession {
                     typeof event.data === "object" && event.data !== null
                         ? (event.data as Record<string, unknown>)
                         : {};
+                const errorMessage =
+                    "message" in data && typeof data.message === "string"
+                        ? data.message
+                        : "unknown copilot error";
                 this.emit("event", {
                     kind: "error",
-                    message:
-                        "message" in data && typeof data.message === "string"
-                            ? data.message
-                            : "unknown copilot error",
+                    message: errorMessage,
+                    retryable: isTransientErrorMessage(errorMessage),
                 });
                 break;
             }
             case "result":
                 if (typeof event.sessionId === "string" && !this.sessionId) {
                     this.sessionId = event.sessionId;
+                    this.options.guardrailSessionId = event.sessionId;
                     this.emit("event", { kind: "session", sessionId: event.sessionId });
                 }
                 break;

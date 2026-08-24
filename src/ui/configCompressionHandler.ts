@@ -4,7 +4,7 @@ import type { ConfigHandlerCtx, ConfigMessage } from "./configTypes";
 
 /**
  * Handles compression-preset webview messages for a live ConfigPanel. Mirrors
- * the controllerMessageHandler precedent: a free function over a context
+ * the shared handler pattern: a free function over a context
  * interface. Returns true when the message type was handled (so the dispatcher
  * can stop); false otherwise.
  *

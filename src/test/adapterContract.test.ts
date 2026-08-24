@@ -24,7 +24,7 @@ function collectTurn(session: AgentSession, text = "contract prompt"): Promise<A
                 resolveTurn(events);
             }
         });
-        session.send(text);
+        session.send(text, undefined, undefined, `contract-${session.backend}`);
     });
 }
 
@@ -38,6 +38,21 @@ async function assertAdapterContract(adapter: AgentAdapter): Promise<void> {
         assert.equal(session.backend, adapter.backend);
         const events = await collectTurn(session);
         assert.equal(events.at(-1)?.kind, "turn-end");
+        if (adapter.backend === "claude") {
+            const startIndex = events.findIndex((event) => event.kind === "turn-start");
+            const textIndex = events.findIndex((event) => event.kind === "text");
+            assert.equal(
+                startIndex,
+                0,
+                `Claude must open the turn before ${JSON.stringify(events)}`,
+            );
+            assert.ok(textIndex > startIndex, "Claude text must follow its turn-start boundary");
+            assert.deepEqual(events[startIndex], {
+                kind: "turn-start",
+                logicalTurnId: "claude/turn-1",
+                intentId: "contract-claude",
+            });
+        }
         assert.ok(
             events.some((event) => event.kind === "text"),
             `${adapter.backend} emitted ${JSON.stringify(events)}`,

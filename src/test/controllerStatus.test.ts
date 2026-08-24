@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ControllerEventHandler } from "../application/controllerEventHandler";
+import { TurnTracker } from "../application/turn";
 
 function handlerState() {
-    const state = { busy: true, warning: false, error: false };
+    const turns = new TurnTracker();
+    turns.begin("user");
+    let ownershipReleases = 0;
     const handler = new ControllerEventHandler({
-        isBusy: () => state.busy,
-        setBusy: (value) => {
-            state.busy = value;
-        },
+        turns,
         armWatchdog: () => undefined,
         clearWatchdog: () => undefined,
         emit: () => undefined,
@@ -16,31 +16,29 @@ function handlerState() {
         recordChanged: () => undefined,
         setTodos: () => undefined,
         trackingMode: () => undefined,
-        markTurnFailed: () => {
-            state.error = true;
-        },
-        markTurnWarning: () => {
-            state.warning = true;
-        },
-        setLogicalTurnId: () => undefined,
         takeQueued: () => undefined,
         emitQueue: () => undefined,
         dispatch: () => undefined,
-        turnFailed: () => state.error,
+        holdQueue: () => undefined,
+        queuedCount: () => 0,
+        releaseOwnership: () => ownershipReleases++,
     });
-    return { state, handler };
+    return { turns, handler, ownershipReleases: () => ownershipReleases };
 }
 
-test("terminal warning marks a stopped session for attention", () => {
-    const { state, handler } = handlerState();
+test("terminal warning marks a stopped session for attention and releases idle ownership", () => {
+    const { turns, handler, ownershipReleases } = handlerState();
     handler.handle({ kind: "status-notice", severity: "warning", terminal: true, text: "stopped" });
     handler.handle({ kind: "turn-end" });
-    assert.equal(state.warning, true);
-    assert.equal(state.busy, false);
+    assert.equal(turns.attention, "warning");
+    assert.equal(turns.isBusy, false);
+    assert.equal(ownershipReleases(), 1);
 });
 
 test("non-terminal warnings do not mark the session as stopped", () => {
-    const { state, handler } = handlerState();
+    const { turns, handler } = handlerState();
     handler.handle({ kind: "status-notice", severity: "warning", text: "still running" });
-    assert.equal(state.warning, false);
+    // Still live — attention is hidden while busy regardless, but the
+    // underlying turn must not have recorded it either.
+    assert.equal(turns.current?.attention, undefined);
 });

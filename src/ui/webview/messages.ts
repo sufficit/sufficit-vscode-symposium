@@ -13,6 +13,7 @@ import { endThinkingStream } from "./thinking";
 import { createSystemNotice } from "./systemNotice";
 import { t } from "./i18n";
 import { presentTurnError } from "../errorPresentation";
+import { reasoningDefault, reasoningValue } from "./models";
 export { renderThinkBlock, streamThinkingDelta } from "./thinking";
 
 // Tracks the Retry bar for the most recent retry click, so it can be
@@ -74,6 +75,7 @@ export function renderError(message: string, historical = false, retryable = fal
                 postMessage({
                     type: "retry-last-message",
                     index: lastUser.idx,
+                    text: lastUser.text,
                     errorMessage: message,
                 });
                 if (!busy) {
@@ -151,6 +153,25 @@ export function optimisticUserMessage(clientMessageId: string, text: string): Me
     el.classList.add("pendingConfirm");
     el.dataset.clientMessageId = clientMessageId;
     return el;
+}
+
+/**
+ * A send raced the host's busy state: the composer showed an optimistic
+ * bubble as if dispatched immediately, but the host actually queued it
+ * (still busy). Drop the premature bubble — the Queued panel is now the
+ * only place it should appear — instead of showing both at once.
+ */
+export function withdrawOptimisticMessage(clientMessageId?: string): void {
+    if (!clientMessageId) {
+        return;
+    }
+    const el = log.querySelector(
+        `[data-client-message-id="${CSS.escape(clientMessageId)}"]`,
+    ) as HTMLElement | null;
+    if (el && el.classList.contains("pendingConfirm")) {
+        el.remove();
+        refreshEmpty();
+    }
 }
 
 export function confirmOptimisticMessage(clientMessageId?: string): HTMLElement | null {
@@ -245,7 +266,7 @@ export function branchBanner(title: string, detail: string): HTMLDivElement {
 
 export { endToolGroup, toolGroupBody, bumpToolGroup } from "./messageToolGroup";
 import { endToolGroup } from "./messageToolGroup";
-export { message, resetLastMsg } from "./messageRow";
+export { message, resetLastMsg, updateLastAssistantModel } from "./messageRow";
 import { message } from "./messageRow";
 import type { MessageElement } from "./messageRow";
 
@@ -262,11 +283,22 @@ function flushStreamRender() {
         renderMarkdown(streamBody, streamText);
     }
 }
-export function streamDelta(text: string, model?: string): void {
+export function streamDelta(
+    text: string,
+    model?: string,
+    reasoning?: string,
+    ts?: string | number,
+): void {
     const stick = nearBottom();
     endThinkingStream(); // close any open thinking block before first text token
     if (!streamMsg) {
-        streamMsg = message("assistant", "", Date.now(), model || activeModel || "");
+        streamMsg = message(
+            "assistant",
+            "",
+            ts,
+            model || activeModel || "",
+            reasoning || (reasoningValue !== "default" ? reasoningValue : reasoningDefault),
+        );
         streamBody = streamMsg.querySelector(".md");
         streamText = "";
     }

@@ -2,30 +2,41 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { RenderStream } from "../application/renderStream";
 
-test("RenderStream keeps editor and sidebar sinks synchronized", () => {
+test("RenderStream keeps replay and live observers synchronized", () => {
     const stream = new RenderStream();
-    const editor: unknown[] = [];
-    const sidebar: unknown[] = [];
+    const projection: unknown[] = [];
+    const effects: unknown[] = [];
 
-    const detachEditor = stream.bindSink((message) => editor.push(message));
+    const detachProjection = stream.addObserver((message) => projection.push(message));
     stream.emit({ type: "event", event: { kind: "delta", text: "one" } });
-    const detachSidebar = stream.bindSink((message) => sidebar.push(message));
+    const detachEffects = stream.addLiveObserver((message) => effects.push(message));
     stream.emit({ type: "event", event: { kind: "delta", text: "two" } });
 
-    assert.equal(stream.hasSink, true);
-    assert.deepEqual(editor, [
+    assert.deepEqual(projection, [
         { type: "event", event: { kind: "delta", text: "one" } },
         { type: "event", event: { kind: "delta", text: "two" } },
     ]);
-    assert.deepEqual(sidebar, editor);
+    assert.deepEqual(effects, [{ type: "event", event: { kind: "delta", text: "two" } }]);
 
-    detachSidebar();
+    detachEffects();
     stream.emit({ type: "event", event: { kind: "delta", text: "three" } });
-    assert.equal(sidebar.length, 2);
-    assert.equal(editor.length, 3);
+    assert.equal(effects.length, 1);
+    assert.equal(projection.length, 3);
 
-    detachEditor();
-    assert.equal(stream.hasSink, false);
+    detachProjection();
+});
+
+test("RenderStream transient notifications reach live observers without persistence", () => {
+    const persisted: unknown[] = [];
+    const live: unknown[] = [];
+    const stream = new RenderStream((message) => persisted.push(message));
+    stream.addLiveObserver((message) => live.push(message));
+
+    stream.notify({ type: "changed-files", items: [] });
+
+    assert.deepEqual(live, [{ type: "changed-files", items: [] }]);
+    assert.deepEqual(persisted, []);
+    assert.deepEqual(stream.messages, []);
 });
 
 test("terminal retryable error remains actionable after replaying its turn-end", () => {
@@ -44,7 +55,7 @@ test("terminal retryable error remains actionable after replaying its turn-end",
     ]);
     const replayed: unknown[] = [];
 
-    stream.bindSink((message) => replayed.push(message));
+    stream.addObserver((message) => replayed.push(message));
 
     const error = replayed[1] as { event: { historical?: boolean; retryable?: boolean } };
     assert.equal(error.event.retryable, true);
@@ -63,7 +74,7 @@ test("a later conversation turn neutralizes an earlier retry action on replay", 
     ]);
     const replayed: unknown[] = [];
 
-    stream.bindSink((message) => replayed.push(message));
+    stream.addObserver((message) => replayed.push(message));
 
     const error = replayed[0] as { event: { historical?: boolean; retryable?: boolean } };
     assert.equal(error.event.retryable, true);

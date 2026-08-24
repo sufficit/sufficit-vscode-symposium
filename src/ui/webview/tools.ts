@@ -176,6 +176,15 @@ export function renderTool(
     if (!hasName && !hasContent) {
         return null;
     }
+    // TodoWrite specifically only ever has something to show via the
+    // opts.todos branch above (the checklist panel) — there's no separate
+    // "detail"/"input"/"result" worth an expandable row for it. If one of
+    // its 3 emitters (codex, claude, the fence-parsed synthetic one) fires
+    // without the todos payload attached, falling through here used to
+    // paint an "Updated plan" row with nothing behind the expand arrow.
+    if (name === "TodoWrite" && !hasContent) {
+        return null;
+    }
     const stick = nearBottom();
     const meta = TOOL_META[name] || { icon: "tool", verb: prettyToolName(name) };
     const wrap = document.createElement("div");

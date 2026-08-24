@@ -11,18 +11,24 @@ import { DEFAULT_REASONING_EFFORT, nativeReasoning, REASONING_MAPS } from "../re
 import {
     AgentAdapter,
     AgentSession,
-    HistoryMessage,
+    HistoryPage,
     SessionInfo,
     SessionStartOptions,
     SlashCommand,
 } from "../types";
+import {
+    decodeHistoryCursor,
+    encodeHistoryCursor,
+    readJsonlRange,
+    readJsonlTail,
+} from "../jsonlPrefix";
 import { getCached, setCached, ModelCacheEntry } from "../modelCache";
 import { CopilotAdapterConfig, CopilotSession } from "./session";
 import {
     allCopilotSessions,
     copilotTranscriptFiles,
     deleteImportedCopilotSession,
-    transcriptHistory,
+    transcriptHistoryFromText,
 } from "./transcripts";
 import { copilotUsage } from "./usage";
 
@@ -75,11 +81,34 @@ export class CopilotAdapter implements AgentAdapter {
         );
     }
 
-    history(info: SessionInfo): Promise<HistoryMessage[]> {
+    async history(info: SessionInfo, cursor?: string): Promise<HistoryPage> {
         const file =
             info.transcriptPath ??
             copilotTranscriptFiles().find((p) => path.basename(p, ".jsonl") === info.sessionId);
-        return Promise.resolve(file ? transcriptHistory(file) : []);
+        if (!file) {
+            return { messages: [] };
+        }
+        const endByte = decodeHistoryCursor(cursor);
+        const PAGE_BYTES = 1024 * 1024;
+        let content: string;
+        let nextEndByte: number | undefined;
+        if (endByte === undefined) {
+            content = await readJsonlTail(file, 4 * 1024 * 1024);
+            try {
+                const stat = await fs.promises.stat(file);
+                nextEndByte = Math.max(0, stat.size - 4 * 1024 * 1024);
+                if (nextEndByte === 0) nextEndByte = undefined;
+            } catch {
+                nextEndByte = undefined;
+            }
+        } else {
+            const range = await readJsonlRange(file, endByte, PAGE_BYTES);
+            content = range.content;
+            nextEndByte = range.nextEndByte;
+        }
+        const messages = transcriptHistoryFromText(content);
+        const nextCursor = nextEndByte !== undefined ? encodeHistoryCursor(nextEndByte) : undefined;
+        return { messages, nextCursor };
     }
 
     deleteSession(info: SessionInfo): Promise<string[] | void> {

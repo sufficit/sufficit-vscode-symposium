@@ -7,6 +7,7 @@ import {
     EXECUTION_CONTINUITY_PREAMBLE,
     handoffReferenceNote,
     SHELL_EXECUTION_PREAMBLE,
+    WORKSPACE_MUTATION_PREAMBLE,
     planTrackingPreamble,
     responseLanguageName,
     responseLanguagePreamble,
@@ -49,6 +50,22 @@ test("buildOutboundPrompt keeps native shell guidance on every turn", () => {
     const second = buildOutboundPrompt({ text: "Continue", fileAttachments: [], ...first.state });
     assert.ok(second.text.includes(SHELL_EXECUTION_PREAMBLE));
     assert.ok(second.text.includes(EXECUTION_CONTINUITY_PREAMBLE));
+});
+
+test("workspace mutations cannot be replaced by memory checkpoints", () => {
+    const first = buildOutboundPrompt({
+        text: "Edit the source file",
+        fileAttachments: [],
+        policyInjected: true,
+        todoInjected: true,
+        seedInjected: true,
+        autonomyInjected: false,
+        checkpoints: true,
+    });
+    assert.ok(first.text.includes(WORKSPACE_MUTATION_PREAMBLE));
+    assert.match(first.text, /Use read_file\/edit_file\/write_file/);
+    assert.match(first.text, /memory_save does not edit files/);
+    assert.match(first.text, /verify on disk/);
 });
 
 test("buildOutboundPrompt injects canceled policy once", () => {

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { HUB_REQUEST_TIMEOUT_MS, withAbortableDeadline } from "./requestDeadline";
 
 /**
  * HTTP client for the sufficit-ai memory + vault REST API (the sync hub).
@@ -60,9 +61,9 @@ export interface SymposiumRemoteUrlResult {
 
 export interface RelayRegisterResult {
     ok: boolean;
-    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium/relay). */
+    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium?ws=relay). */
     relayWsUrl?: string;
-    /** Public URL prefix for this machine (e.g. https://ai.sufficit.com.br/symposium/<machineId>). */
+    /** Public URL prefix containing the gateway's owner-scoped relay machine ID. */
     publicUrlPrefix?: string;
 }
 
@@ -167,15 +168,25 @@ export class HubClient {
         return h;
     }
 
+    private request(url: string, init: RequestInit = {}): Promise<Response> {
+        return withAbortableDeadline(
+            "Sufficit Hub request",
+            HUB_REQUEST_TIMEOUT_MS,
+            async (signal) => {
+                const headers = new Headers(await this.headers());
+                new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+                return fetch(url, { ...init, headers, signal });
+            },
+        );
+    }
+
     /** Liveness probe for the health-gate. Returns false on any failure. */
     async health(): Promise<boolean> {
         if (!this.configured()) {
             return false;
         }
         try {
-            const res = await fetch(`${this.base()}/api/memory/health`, {
-                headers: await this.headers(),
-            });
+            const res = await this.request(`${this.base()}/api/memory/health`);
             return res.ok;
         } catch {
             return false;
@@ -194,9 +205,8 @@ export class HubClient {
         limit?: number;
         sessionId?: string;
     }): Promise<CompactRecord[]> {
-        const res = await fetch(`${this.base()}/api/memory/search`, {
+        const res = await this.request(`${this.base()}/api/memory/search`, {
             method: "POST",
-            headers: await this.headers(),
             body: JSON.stringify({ limit: 20, ...params }),
         });
         if (!res.ok) {
@@ -207,9 +217,8 @@ export class HubClient {
 
     /** Web search via the sufficit-ai gateway (SearXNG-backed). Returns raw JSON. */
     async webSearch(query: string, limit = 8): Promise<unknown> {
-        const res = await fetch(`${this.base()}/api/ai/websearch`, {
+        const res = await this.request(`${this.base()}/api/ai/websearch`, {
             method: "POST",
-            headers: await this.headers(),
             body: JSON.stringify({ query, limit }),
         });
         if (!res.ok) {
@@ -223,9 +232,8 @@ export class HubClient {
         if (ids.length === 0) {
             return [];
         }
-        const res = await fetch(`${this.base()}/api/memory/observations`, {
+        const res = await this.request(`${this.base()}/api/memory/observations`, {
             method: "POST",
-            headers: await this.headers(),
             body: JSON.stringify({ ids }),
         });
         if (!res.ok) {
@@ -236,9 +244,8 @@ export class HubClient {
 
     /** Upserts an observation (id present → update, absent → create). Returns new id. */
     async save(observation: Observation): Promise<string> {
-        const res = await fetch(`${this.base()}/api/memory/save`, {
+        const res = await this.request(`${this.base()}/api/memory/save`, {
             method: "POST",
-            headers: await this.headers(),
             body: JSON.stringify(observation),
         });
         if (!res.ok) {
@@ -258,7 +265,7 @@ export class HubClient {
         }
         try {
             const url = `${this.base()}/api/vault/secrets/resolve?reference=${encodeURIComponent(reference)}`;
-            const res = await fetch(url, { headers: await this.headers() });
+            const res = await this.request(url);
             if (!res.ok) {
                 return null; // 404 unknown / 410 expired / 401 etc.
             }
@@ -275,9 +282,8 @@ export class HubClient {
             return null;
         }
         try {
-            const res = await fetch(`${this.base()}/api/symposium/join`, {
+            const res = await this.request(`${this.base()}/api/symposium/join`, {
                 method: "POST",
-                headers: await this.headers(),
             });
             if (!res.ok) {
                 return null;
@@ -294,9 +300,7 @@ export class HubClient {
             return null;
         }
         try {
-            const res = await fetch(`${this.base()}/api/symposium/remote-url`, {
-                headers: await this.headers(),
-            });
+            const res = await this.request(`${this.base()}/api/symposium/remote-url`);
             if (!res.ok) {
                 return null;
             }
@@ -316,9 +320,8 @@ export class HubClient {
             return null;
         }
         try {
-            const res = await fetch(`${this.base()}/api/symposium/relay/register`, {
+            const res = await this.request(`${this.base()}/api/symposium/relay/register`, {
                 method: "POST",
-                headers: { ...(await this.headers()), "content-type": "application/json" },
                 body: JSON.stringify({ machineId }),
             });
             if (!res.ok) {

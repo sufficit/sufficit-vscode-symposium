@@ -1,16 +1,14 @@
-/** Application-owned replayable render stream.
+/** Application-owned persisted render event stream.
  *
- * Render-stream buffer for a chat session: keeps a replayable log of render
- * messages, fans each out to every attached webview sink plus any read-only
- * followers, and replays the buffer to a sink/observer on (re)bind so a late
- * joiner or a reattached webview sees the full conversation.
+ * Keeps a bounded log for transcript/persistence purposes and fans new events
+ * out to application observers. UI reconstruction belongs to the AHP runtime;
+ * this stream no longer owns webview sinks or UI replay.
  *
  * Owned by ChatController as a collaborator so the controller file stays focused
  * on turn/session logic rather than stream plumbing.
  */
 export class RenderStream {
     private readonly log: unknown[] = [];
-    private readonly sinks = new Set<(message: unknown) => void>();
     private readonly observers = new Set<(message: unknown) => void>();
 
     /**
@@ -23,8 +21,8 @@ export class RenderStream {
     /**
      * Preloads prior render messages into the buffer WITHOUT persisting or fanning
      * them out — used to restore a reopened session's exact visual before the
-     * webview sink binds (bindSink then replays the seeded log). Returns the new
-     * buffer length so callers can mark how much is already persisted.
+     * projection is rebuilt. Returns the new buffer length so callers can mark
+     * how much is already persisted.
      */
     seed(messages: unknown[]): number {
         // A session interrupted mid-turn (window closed, crash) persists a
@@ -38,25 +36,9 @@ export class RenderStream {
         return this.log.length;
     }
 
-    /** True while at least one webview sink is bound. */
-    get hasSink(): boolean {
-        return this.sinks.size > 0;
-    }
-
     /** The buffered render log (read-only use, e.g. transcript building). */
     get messages(): unknown[] {
         return this.log;
-    }
-
-    /** Binds one webview sink, replays the buffered log, and returns its disposer. */
-    bindSink(sink: (message: unknown) => void): () => void {
-        this.sinks.add(sink);
-        for (const message of this.log) {
-            sink(message);
-        }
-        return () => {
-            this.sinks.delete(sink);
-        };
     }
 
     /** Adds a read-only follower, replays the log to it, returns an unsubscribe. */
@@ -70,18 +52,17 @@ export class RenderStream {
         };
     }
 
-    /** Buffers a render message and fans it out to all sinks + observers. */
+    /** Adds a live-only observer without replaying historical render messages. */
+    addLiveObserver(observer: (message: unknown) => void): () => void {
+        this.observers.add(observer);
+        return () => {
+            this.observers.delete(observer);
+        };
+    }
+
+    /** Buffers a render message and fans it out to application observers. */
     emit(message: unknown): void {
-        this.log.push(message);
-        if (this.log.length > 5000) {
-            this.log.shift();
-        }
-        for (const sink of this.sinks) {
-            sink(message);
-        }
-        for (const observer of this.observers) {
-            observer(message);
-        }
+        this.bufferAndFanOut(message);
         try {
             this.onPersist?.(message);
         } catch {
@@ -89,11 +70,24 @@ export class RenderStream {
         }
     }
 
-    /** Sends a transient message to every attached webview sink. */
-    toSink(message: unknown): void {
-        for (const sink of this.sinks) {
-            sink(message);
+    /** Fans out a row already persisted by a peer without writing it again. */
+    ingestPersisted(message: unknown): void {
+        this.bufferAndFanOut(message);
+    }
+
+    private bufferAndFanOut(message: unknown): void {
+        this.log.push(message);
+        if (this.log.length > 5000) {
+            this.log.shift();
         }
+        for (const observer of this.observers) {
+            observer(message);
+        }
+    }
+
+    /** Sends a transient application signal without persisting or replaying it. */
+    notify(message: unknown): void {
+        for (const observer of this.observers) observer(message);
     }
 }
 
@@ -108,8 +102,8 @@ function eventKind(m: unknown): string | undefined {
 
 /**
  * Removes any "turn-start" event that is never followed by a matching "turn-end"
- * — the signature of a session interrupted mid-turn. Without this the replay
- * would leave the webview stuck in the "thinking" compose state. Balanced
+ * — the signature of a session interrupted mid-turn. Without this the restored
+ * projection could remain stuck in a running state. Balanced
  * turn-start/turn-end pairs are kept intact.
  */
 function dropOrphanTurnStart(messages: unknown[]): unknown[] {
@@ -135,8 +129,8 @@ function dropOrphanTurnStart(messages: unknown[]): unknown[] {
 
 /**
  * Marks every "error" event as historical, except the current terminal error
- * (optionally followed by its mandatory turn-end). Without this, replaying a
- * saved session re-renders a live, clickable Retry button for EVERY past
+ * (optionally followed by its mandatory turn-end). Without this, restoring a
+ * saved session would expose a live Retry action for EVERY past
  * stall/error it ever hit — even ones long since superseded by a successful
  * retry and further conversation.
  * A trailing turn-end does not supersede the error: it only releases the busy

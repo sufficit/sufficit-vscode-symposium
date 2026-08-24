@@ -1,36 +1,35 @@
-# Sufficit Relay Protocol — Public access to Symposium without Tailscale
+# Sufficit Relay Protocol — Public Symposium access
 
-Status: **specification** — the extension client (`src/net/relayClient.ts`) is
-implemented; the gateway server side (`ai.sufficit.com.br`) is the prerequisite
-described here.
+Status: **implemented for HTTP and AHP WebSocket traffic**. The implementation
+is split between this extension and the `sufficit-ai` public gateway; both must
+be deployed with multiplexing support for public PWA chat to work.
 
-## Goal
+## Goal and topology
 
-Let a user scan a QR code in the Symposium remote-access panel and open the PWA
-from **any device** (phone, tablet, another computer) — no Tailscale app, no port
-forwarding, no tunneling tool. The extension opens an **outbound** WebSocket to
-the gateway; the gateway publishes a public URL that reverse-proxies HTTP
-requests through that connection.
+The extension opens one outbound, authenticated WebSocket to the gateway. HTTP
+requests and browser WebSockets are multiplexed over that control connection,
+so the PWA can be opened from any device without Tailscale, port forwarding or
+an inbound host port.
 
+```text
+Browser ──HTTPS/WSS──► /symposium?machineId=<uuid>&path=/pwa/|/ahp
+                                  │
+                         Sufficit public gateway
+                                  │ JSON control messages
+                                  ▼
+                         Extension relay client
+                                  │ HTTP/WS loopback
+                                  ▼
+                          127.0.0.1:47600
 ```
-Browser/Phone ──HTTPS──► ai.sufficit.com.br/symposium/<machineId>/*
-                                 │ (reverse proxy over WS)
-                                 ▼ (outbound WS, opened by the extension)
-                           Extension host ──► 127.0.0.1:47600 (bridge)
-```
 
-No inbound port is opened on the host machine. The connection is authenticated
-with the user's Sufficit JWT (same OAuth identity used for the AI gateway).
+## Endpoints
 
----
+### `POST /api/symposium/relay/register`
 
-## Gateway endpoints to implement
+The authenticated extension registers its stable machine UUID before every
+connection or reconnection.
 
-### 1. `POST /api/symposium/relay/register`
-
-Validates the caller's JWT and returns the WebSocket URL + public URL prefix.
-
-**Request:**
 ```http
 POST /api/symposium/relay/register
 Authorization: Bearer <sufficit-jwt>
@@ -39,167 +38,123 @@ Content-Type: application/json
 { "machineId": "550e8400-e29b-41d4-a716-446655440000" }
 ```
 
-**Response (200):**
 ```json
 {
   "ok": true,
-  "relayWsUrl": "wss://ai.sufficit.com.br/symposium/relay",
-  "publicUrlPrefix": "https://ai.sufficit.com.br/symposium/550e8400-e29b-41d4-a716-446655440000"
+  "relayWsUrl": "wss://ai.sufficit.com.br/symposium?ws=relay",
+  "publicUrlPrefix": "https://ai.sufficit.com.br/symposium?machineId=<owner-scoped-id>"
 }
 ```
 
-The gateway should:
-- Validate the JWT (same validation as other `/api/symposium/*` endpoints).
-- Optionally persist the `machineId` → user mapping (for `/api/symposium/remote-url` parity).
-- Return 404 or `{ "ok": false }` if relay is not enabled on this gateway (the extension falls back to tailnet/local gracefully).
+The gateway accepts only a canonical UUID. It derives the public relay ID from
+that UUID and the authenticated Sufficit user, so the same local UUID under a
+different account cannot address or replace the owner's relay connection.
 
----
+### Extension control WebSocket
 
-### 2. WebSocket server at `/symposium/relay`
-
-Accepts outbound connections from extensions. Each connection is authenticated
-and bound to a `machineId`.
-
-**Connection URL (extension → gateway):**
-```
-wss://ai.sufficit.com.br/symposium/relay?machineId=<uuid>&token=<jwt>
+```text
+wss://ai.sufficit.com.br/symposium?ws=relay&machineId=<uuid>&token=<jwt>
 ```
 
-The gateway validates the `token` query param (JWT) on the WS upgrade. If
-invalid, reject the upgrade (HTTP 401).
+The JWT query parameter is consumed only for this control connection, validated
+by the normal gateway JWT handler and resolved to a Sufficit user ID. The
+gateway rejects unauthenticated upgrades with HTTP 401. Once connected, the
+extension sends `register`; the gateway verifies its prior user/machine binding.
 
-Once connected, the extension sends a `register` message; the gateway responds
-with `registered` and begins forwarding HTTP requests.
+### Public HTTP and WebSocket route
 
----
-
-### 3. Public reverse proxy at `/symposium/<machineId>/*`
-
-Any HTTP request to `https://ai.sufficit.com.br/symposium/<machineId>/*` is
-forwarded to the extension's WS connection bound to that `machineId`. The
-gateway translates the HTTP request into a relay `request` message, waits for
-the `response` (or `response-chunk` stream), and writes it back to the HTTP
-client.
-
-The `machineId` in the path determines which WS connection to route to. If no
-connection is registered for that `machineId`, return HTTP 503 (service
-unavailable).
-
-**Public URL** (what the QR encodes):
-```
-https://ai.sufficit.com.br/symposium/<machineId>/pwa?token=<bridge-token>
+```text
+https://ai.sufficit.com.br/symposium?machineId=<owner-scoped-id>&path=/pwa/
+wss://ai.sufficit.com.br/symposium?machineId=<owner-scoped-id>&path=/ahp
 ```
 
----
+HTTP is translated to `request`/`response` messages. A WebSocket upgrade is
+accepted only for `/ahp`, after the extension has opened the local socket and
+reported the negotiated AHP subprotocol. An offline machine or unavailable
+local AHP endpoint returns HTTP 503 before upgrade.
 
-## Relay message protocol (JSON over WebSocket text frames)
+## Control protocol
 
-### Extension → Gateway
+All control messages are JSON WebSocket text messages. Application WebSocket
+payloads are Base64 encoded inside them.
 
-#### `register`
-```json
-{ "type": "register", "machineId": "550e8400-..." }
-```
-Sent immediately after the WS opens. The gateway responds with `registered`.
+### Session and HTTP messages
 
-#### `response` (complete HTTP response)
-```json
-{
-  "type": "response",
-  "id": "<request-uuid>",
-  "status": 200,
-  "headers": { "content-type": "application/json" },
-  "body": "..."
-}
-```
-
-#### `response-chunk` (streaming HTTP response — SSE)
-```json
-{ "type": "response-chunk", "id": "<request-uuid>", "chunk": "data: hello\n\n" }
-{ "type": "response-chunk", "id": "<request-uuid>", "chunk": "", "done": true }
-```
-For streaming responses (SSE `/sessions/:id/follow`), the extension sends an
-initial `response` with `"stream": true`, then a series of `response-chunk`
-messages, and a final `response-chunk` with `"done": true`.
-
-#### `heartbeat`
-```json
+```jsonc
+// extension -> gateway
+{ "type": "register", "machineId": "550e8400-e29b-41d4-a716-446655440000" }
 { "type": "heartbeat" }
+{ "type": "response", "id": "<id>", "status": 200, "headers": {}, "body": "..." }
+{ "type": "response-chunk", "id": "<id>", "chunk": "...", "done": false }
+
+// gateway -> extension
+{ "type": "registered", "publicUrl": "https://ai.sufficit.com.br/symposium?machineId=<owner-scoped-id>" }
+{ "type": "request", "id": "<id>", "method": "GET", "path": "/pwa/", "headers": {}, "body": "" }
 ```
-Sent every 25s. The gateway should respond with its own `heartbeat` (or treat
-any message as alive). If no message is received for 60s, close the connection.
 
----
+The extension reconnects with exponential backoff (up to 60 seconds) and sends
+a heartbeat every 25 seconds. HTTP requests time out at the gateway after 120
+seconds.
 
-### Gateway → Extension
+### Multiplexed AHP WebSockets
 
-#### `registered`
-```json
-{ "type": "registered", "publicUrl": "https://ai.sufficit.com.br/symposium/<machineId>" }
-```
-Confirms the machine is registered and tells the extension its public URL. The
-extension uses this URL to build the QR code.
-
-#### `request` (HTTP request to proxy)
-```json
+```jsonc
+// gateway -> extension: open local ws://127.0.0.1:<bridgePort>/ahp
 {
-  "type": "request",
-  "id": "<request-uuid>",
-  "method": "GET",
-  "path": "/pwa/",
-  "headers": { "host": "ai.sufficit.com.br" },
-  "body": ""
+  "type": "socket-open",
+  "id": "<socket-id>",
+  "path": "/ahp",
+  "protocols": ["ahp.v0.6", "symposium-token.<base64url-token>"]
 }
+
+// extension -> gateway: local handshake succeeded
+{ "type": "socket-opened", "id": "<socket-id>", "protocol": "ahp.v0.6" }
+
+// either direction: one complete text or binary message
+{ "type": "socket-frame", "id": "<socket-id>", "data": "<base64>", "binary": false }
+
+// either direction
+{ "type": "socket-close", "id": "<socket-id>", "code": 1000, "reason": "done" }
 ```
-The `path` is relative to the bridge root (e.g. `/pwa/`, `/sessions/:id/send`).
-The extension proxies this to `http://127.0.0.1:<bridgePort><path>` and sends
-back a `response` (or `response-chunk` stream).
 
-#### `heartbeat`
-```json
-{ "type": "heartbeat" }
-```
+The browser's `Sec-WebSocket-Protocol` values are forwarded to local AHP. This
+preserves both version negotiation and the `symposium-token.*` authentication
+protocol. The negotiated protocol is returned to the browser upgrade.
 
----
+Limits and validation:
 
-## Security considerations
+- only local `/ahp` is accepted; arbitrary URLs and bridge paths are rejected;
+- at most 16 valid WebSocket subprotocols are forwarded;
+- each decoded application message is limited to 1 MiB;
+- the gateway buffers at most 32 extension frames per public socket;
+- close codes/reasons propagate in both directions, with invalid reserved codes
+  normalized;
+- dropping or replacing the control connection closes all of its child sockets.
 
-1. **JWT authentication**: every WS connection is authenticated with the user's
-   Sufficit JWT. A `machineId` is only reachable by the user who owns it.
-2. **Bridge token**: the QR encodes the bridge's bearer token (`?token=...`).
-   Anyone who scans the QR has the bridge token — but the bridge's policy
-   (`allowedRoots`, `sessionPermission`, `allowVaultResolve`, etc.) still
-   applies to every request. The relay does not bypass bridge policy.
-3. **machineId isolation**: each `machineId` maps to exactly one WS connection.
-   A request to `/symposium/<machineId>/*` only reaches that connection. There
-   is no cross-machine access.
-4. **No inbound ports**: the connection is entirely outbound (extension →
-   gateway). No port forwarding, no firewall rules on the host.
+## Security and deployment
 
----
+- The control connection requires a valid Sufficit JWT. Its public relay ID is
+  deterministically scoped to that user and local machine UUID; another user
+  cannot collide with or replace the connection even if the UUID is known.
+- The public URL remains a capability URL. The PWA additionally authenticates
+  to the bridge with its random bridge token; the relay does not bypass bridge
+  policy (`allowedRoots`, `sessionPermission`, tools or vault restrictions).
+- Tokens are never written to logs. Query tokens should still be kept out of
+  analytics and proxy access logs.
+- Relay registries are process-local. A multi-node gateway therefore needs
+  sticky routing for registration, control WebSocket and public requests, or a
+  shared relay/session implementation.
+- Deploy the matching `sufficit-ai` gateway before relying on public `/ahp`.
+  Older gateways can serve HTTP PWA assets but cannot carry the AHP socket.
 
-## Extension-side implementation
+## Implementation map
 
-- **Client**: `src/net/relayClient.ts` — `RelayClient` class with reconnect
-  (exponential backoff up to 60s), heartbeat (25s), and HTTP proxy via `fetch`
-  to the local bridge. SSE streams are relayed chunk-by-chunk.
-- **Registration**: `src/sync/hubClient.ts` — `registerRelay(machineId)` calls
-  `POST /api/symposium/relay/register`.
-- **Integration**: `src/api/bridge.ts` — `startRelay()` called after the bridge
-  listens; `getRelayPublicUrl()` exposed for the QR panel.
-- **QR**: `src/ui/remoteAccessPanel.ts` — prefers the relay URL over the
-  tailnet hostname when available.
-- **Config**: `symposium.bridge.relay` = `"auto"` (default) | `"off"`.
-- **machineId**: persisted to `~/.symposium/relay-machine-id` (stable across
-  reloads, 0600 perms).
-
----
-
-## What the gateway needs (checklist)
-
-- [ ] `POST /api/symposium/relay/register` — validates JWT, returns `{ ok, relayWsUrl, publicUrlPrefix }`
-- [ ] WebSocket server at `/symposium/relay` — validates JWT on upgrade, binds `machineId`
-- [ ] Reverse proxy at `/symposium/<machineId>/*` — translates HTTP → relay `request`, waits for `response`/`response-chunk`, writes back
-- [ ] Heartbeat: treat any message as alive; close after 60s silence
-- [ ] `machineId` isolation: one WS connection per machineId; route by path prefix
-- [ ] 503 when no connection registered for the requested `machineId`
+- Extension control/HTTP client: `src/net/relayClient.ts`
+- Extension child-socket multiplexer: `src/net/relaySocketTunnel.ts`
+- Registration API client: `src/sync/hubClient.ts`
+- Bridge lifecycle: `src/api/bridge.ts`
+- Gateway route: `sufficit-ai/api/Startup.cs`
+- Gateway relay registry/HTTP proxy:
+  `sufficit-ai/runtime/Integrations/Symposium/SymposiumRelayService.cs`
+- Gateway AHP multiplexer:
+  `sufficit-ai/runtime/Integrations/Symposium/SymposiumRelayWebSockets.cs`

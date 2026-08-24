@@ -1,4 +1,9 @@
-import type { AgentEvent, SessionStartOptions } from "../types";
+import type {
+    AgentEvent,
+    InjectedUserMessage,
+    InjectionDropReason,
+    SessionStartOptions,
+} from "../types";
 import type { ShellExecutionMode } from "../aiTools/types";
 import type { HubClient } from "../../sync/hubClient";
 import type { ChatMessage, OpenAIAdapterConfig } from "./types";
@@ -46,4 +51,16 @@ export interface TurnRunnerDeps {
     ) => Promise<boolean>;
     /** Marks a local pause whose continuation is initiated by the UI, not the model. */
     markPausedForContinuation?: () => void;
+    /**
+     * Mid-turn user-message injection ("steer"). Provided only by the OpenAI
+     * session; deps built elsewhere omit it and the runner never splices.
+     */
+    injections?: {
+        open(): (reason: InjectionDropReason) => void;
+        take(): InjectedUserMessage[];
+    };
+    /** Replaces the intent id carried into this turn's ledger rows (steer handoff). */
+    setIntentId?: (intentId: string | undefined) => void;
+    /** Re-aims the follow-up anchor's OBJECTIVE at a new user instruction. */
+    setObjective?: (text: string) => void;
 }

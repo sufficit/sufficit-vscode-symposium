@@ -87,9 +87,12 @@ export function parseCodexUsage(event: unknown): CodexUsage | undefined {
     const e = (event ?? {}) as Record<string, unknown>;
     // Shape 2: token_count carries the richest data (incl. context window).
     const info = e.info ?? (e.payload as { info?: unknown })?.info;
+    // `total_token_usage` is cumulative for the whole Codex thread. Feeding it
+    // to the context meter makes a long-lived session look thousands of times
+    // larger than the model window. Only a last-turn or explicitly turn-scoped
+    // usage object can represent the current request.
     const u =
-        (info as { last_token_usage?: unknown; total_token_usage?: unknown })?.last_token_usage ??
-        (info as { last_token_usage?: unknown; total_token_usage?: unknown })?.total_token_usage ??
+        (info as { last_token_usage?: unknown })?.last_token_usage ??
         e.usage ??
         (e.message as { usage?: unknown })?.usage;
     if (!u || typeof u !== "object") {

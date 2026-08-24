@@ -1,7 +1,7 @@
 /** Hub-backed application state for tasks and guardrails. */
 import { HubClient } from "../sync/hubClient";
 import { fetchPendingWorkItems, TaskItem } from "../sync/tasks";
-import { fetchSessionGuardrails } from "../sync/guardrails";
+import { fetchLocalSessionGuardrails, fetchSessionGuardrails } from "../sync/guardrails";
 
 /** Mutable hub-state caches owned by the controller. */
 export interface HubState {
@@ -34,18 +34,32 @@ export interface HubStateContext {
  */
 export async function reloadGuardrails(ctx: HubStateContext): Promise<void> {
     const id = ctx.sessionId();
-    if (!id || !ctx.hub().configured()) {
+    if (!id) {
         ctx.state.guardrails = [];
         ctx.state.guardrailsLoaded = true;
         return;
     }
     try {
-        ctx.state.guardrails = (await fetchSessionGuardrails(ctx.hub(), id))
-            .map((g) => g.text)
-            .filter(Boolean);
+        const items = ctx.hub().configured()
+            ? await fetchSessionGuardrails(ctx.hub(), id)
+            : await fetchLocalSessionGuardrails(id);
+        ctx.state.guardrails = items.map((g) => g.text).filter(Boolean);
         ctx.state.guardrailsLoaded = true;
     } catch {
-        /* keep the prior cache; flag stays as-is so the next dispatch retries */
+        // A Hub outage must not erase local guardrails or the last good cache.
+        // Keep loaded=false so the next dispatch retries the shared source.
+        try {
+            const local = (await fetchLocalSessionGuardrails(id))
+                .map((g) => g.text)
+                .filter(Boolean);
+            // An empty local fallback cannot prove that the shared list is
+            // empty; preserve a previously valid cache until Hub recovers.
+            if (local.length > 0 || ctx.state.guardrails.length === 0) {
+                ctx.state.guardrails = local;
+            }
+        } catch {
+            /* keep the prior cache */
+        }
     }
 }
 

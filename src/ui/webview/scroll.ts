@@ -2,6 +2,7 @@
 // (ResizeObserver, scroll/listToggle listeners, initial layout) run on import.
 import { root, log, logScroller, listToggle } from "./dom";
 import { sideMode } from "./state";
+import { postMessage } from "./vscode";
 
 // The sessions pane sits on the OUTER edge: docked right → sessions right;
 // docked left → sessions left. With no dock-side API, infer from screen position.
@@ -132,10 +133,58 @@ logScroller.addEventListener(
     () => {
         if (Date.now() - lastAutoScroll > 120) {
             pinned = nearBottom();
+            maybeLoadMoreHistory();
         }
     },
     { passive: true },
 );
+
+// --- Scroll-up lazy history pagination ---
+// When the user scrolls to the top and more history pages are available
+// (signaled by the host via the "history-prepended" message setting
+// hasMoreHistory), request the next older page. Debounced and guarded so only
+// one page is in flight at a time.
+let hasMoreHistory = false;
+let loadingMoreHistory = false;
+const HISTORY_TOP_THRESHOLD = 40;
+
+export function setHasMoreHistory(value: boolean): void {
+    hasMoreHistory = value;
+    if (!value) loadingMoreHistory = false;
+}
+
+export function setLoadingMoreHistory(value: boolean): void {
+    loadingMoreHistory = value;
+}
+
+function maybeLoadMoreHistory(): void {
+    if (!hasMoreHistory || loadingMoreHistory) return;
+    if (logScroller.scrollTop > HISTORY_TOP_THRESHOLD) return;
+    loadingMoreHistory = true;
+    postMessage({ type: "load-more-history" });
+}
+
+/**
+ * Preserves the user's reading position when older turns are prepended to the
+ * log. Call right before inserting the prepended nodes, then call again after;
+ * the delta in scrollHeight is added to scrollTop so the viewport stays put.
+ */
+export function preserveScrollOnPrepend(action: () => void): void {
+    const wasNearBottom = nearBottom();
+    const prevHeight = logScroller.scrollHeight;
+    const prevScrollTop = logScroller.scrollTop;
+    action();
+    if (wasNearBottom) {
+        // User was at the tail — snap back to the newest message after prepend.
+        snapToBottom();
+    } else {
+        // Keep the same content in view: compensate for the height added above.
+        const delta = logScroller.scrollHeight - prevHeight;
+        lastAutoScroll = Date.now();
+        logScroller.scrollTop = prevScrollTop + delta;
+    }
+    loadingMoreHistory = false;
+}
 // Content grew (history restore, streaming, images/fonts settling): keep the
 // view glued to the newest message while pinned.
 new ResizeObserver(() => {

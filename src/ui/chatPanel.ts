@@ -25,7 +25,7 @@ export class ChatPanel {
             ChatPanel.newChatPanel.panel.reveal();
             return ChatPanel.newChatPanel;
         }
-        const panel = new ChatPanel(context, deps);
+        const panel = new ChatPanel(context, deps, true);
         ChatPanel.newChatPanel = panel;
         return panel;
     }
@@ -36,7 +36,7 @@ export class ChatPanel {
         deps: ChatSurfaceDeps,
         agents: AgentPickerEntry[],
     ): ChatPanel {
-        const panel = new ChatPanel(context, deps);
+        const panel = new ChatPanel(context, deps, false);
         panel.showAgentPicker(agents);
         return panel;
     }
@@ -52,7 +52,7 @@ export class ChatPanel {
             existing.panel.reveal();
             return existing;
         }
-        const panel = new ChatPanel(context, deps);
+        const panel = new ChatPanel(context, deps, false);
         panel.openSession(info);
         return panel;
     }
@@ -77,7 +77,7 @@ export class ChatPanel {
             void existing.followSession(info);
             return existing;
         }
-        const panel = new ChatPanel(context, deps);
+        const panel = new ChatPanel(context, deps, false);
         void panel.followSession(info);
         return panel;
     }
@@ -105,7 +105,11 @@ export class ChatPanel {
         }
     }
 
-    private constructor(context: vscode.ExtensionContext, deps: ChatSurfaceDeps) {
+    private constructor(
+        context: vscode.ExtensionContext,
+        deps: ChatSurfaceDeps,
+        startInSessionsList: boolean,
+    ) {
         this.panel = vscode.window.createWebviewPanel(
             "symposium.chat",
             "Symposium",
@@ -123,6 +127,7 @@ export class ChatPanel {
             },
             () => this.panel.reveal(this.panel.viewColumn, true),
             /* chatOnly */ true,
+            startInSessionsList,
         );
         ChatPanel.panels.add(this);
         this.panel.onDidDispose(

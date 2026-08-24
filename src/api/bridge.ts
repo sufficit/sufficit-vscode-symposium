@@ -9,6 +9,9 @@ import { removeBridgeAdvertisement, writeBridgeAdvertisement } from "./bridgeAdv
 import { handleBridgeRequest } from "./bridgeRequest";
 import { loadBridgeTlsMaterial } from "./bridgeTls";
 import type { SymposiumApi } from "./symposiumApi";
+import { configuredBridgePolicy } from "./bridgeConfiguration";
+import { createSymposiumDiscovery, createSymposiumOpenApi } from "./discovery";
+import { AhpWebSocketServer, type AhpHostRuntime } from "../ahp";
 
 type HostRejection = {
     at: string;
@@ -17,18 +20,21 @@ type HostRejection = {
     allowedHosts: string[];
 };
 
-/** Opt-in authenticated HTTP/SSE bridge for remote Symposium control. */
+/** Opt-in authenticated HTTP/AHP bridge for remote Symposium control. */
 export class RemoteBridge {
     private server: http.Server | https.Server | undefined;
     private listening: { host: string; port: number } | undefined;
     private connection: { url: string; token: string; https: boolean } | undefined;
     private lastRejection: HostRejection | undefined;
     private relay: RelayClient | undefined;
+    private ahp: AhpWebSocketServer | undefined;
     private onRelayUrlChange?: (url: string | undefined) => void;
 
     constructor(
         private readonly api: SymposiumApi,
         private readonly log: (message: string) => void,
+        private readonly getAhpRuntime?: () => AhpHostRuntime | undefined,
+        private readonly syncAhpRuntime?: () => void,
     ) {}
 
     setRelayUrlCallback(callback: (url: string | undefined) => void): void {
@@ -59,6 +65,22 @@ export class RemoteBridge {
         const handler = (request: http.IncomingMessage, response: http.ServerResponse) =>
             void this.handle(request, response, token);
         this.server = tls ? https.createServer(tls, handler) : http.createServer(handler);
+        if (config.get<boolean>("ahp", false) || config.get<boolean>("pwa", false)) {
+            const runtime = this.getAhpRuntime?.();
+            if (runtime) {
+                this.ahp = new AhpWebSocketServer({
+                    server: this.server,
+                    token,
+                    runtime,
+                    api: this.api,
+                    policy: configuredBridgePolicy(),
+                    log: this.log,
+                    syncRuntime: this.syncAhpRuntime,
+                });
+            } else {
+                this.log("[ahp] endpoint requested but runtime is unavailable");
+            }
+        }
         if (!tls) {
             this.log("[bridge] no TLS cert available — serving plain HTTP.");
         }
@@ -71,6 +93,8 @@ export class RemoteBridge {
     }
 
     stop(): void {
+        this.ahp?.close();
+        this.ahp = undefined;
         this.relay?.stop();
         this.relay = undefined;
         this.server?.close();
@@ -128,6 +152,7 @@ export class RemoteBridge {
             relayUrl: registration.relayWsUrl,
             bridgePort: port,
             getToken: () => getHubLoginToken(),
+            authorize: async () => (await hub.registerRelay(machineId))?.ok === true,
             onPublicUrl: (url) => this.onRelayUrlChange?.(url),
             log: (message) => this.log(message),
         });
@@ -142,36 +167,30 @@ export class RemoteBridge {
         return handleBridgeRequest(request, response, token, {
             api: this.api,
             log: this.log,
+            discovery: {
+                manifest: () =>
+                    createSymposiumDiscovery(this.api.version, this.discoveryCapabilities()),
+                openapi: () => createSymposiumOpenApi(this.api.version),
+            },
             listening: this.listening,
             lastRejection: this.lastRejection,
             setLastRejection: (rejection) => {
                 this.lastRejection = rejection;
             },
-            follow: (id, target) => this.follow(id, target),
         });
     }
 
-    private follow(id: string, response: http.ServerResponse): void {
-        response.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            Connection: "keep-alive",
-        });
-        response.write(`event: open\ndata: ${JSON.stringify({ id })}\n\n`);
-        const unsubscribe = this.api.sessions.follow(id, (message) => {
-            response.write(`data: ${JSON.stringify(message)}\n\n`);
-        });
-        if (!unsubscribe) {
-            response.write(
-                `event: error\ndata: ${JSON.stringify({ error: "unknown session" })}\n\n`,
-            );
-            response.end();
-            return;
+    private discoveryCapabilities(): string[] {
+        try {
+            const state = this.getAhpRuntime?.()?.snapshot("ahp-root://").state as {
+                _meta?: { symposium?: { capabilities?: unknown } };
+            };
+            const capabilities = state._meta?.symposium?.capabilities;
+            return Array.isArray(capabilities)
+                ? capabilities.filter((value): value is string => typeof value === "string")
+                : [];
+        } catch {
+            return [];
         }
-        const keepAlive = setInterval(() => response.write(": ping\n\n"), 15000);
-        response.on("close", () => {
-            clearInterval(keepAlive);
-            unsubscribe();
-        });
     }
 }

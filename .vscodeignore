@@ -6,6 +6,7 @@ test/**
 out/_webview-check.js
 out/**/*.map
 node_modules/**
+!node_modules/ws/**
 .gitignore
 .gitattributes
 tsconfig.json
@@ -19,6 +20,7 @@ docs/**
 eslint.config.mjs
 .prettierrc.json
 .prettierignore
+knip.json
 *.tsbuildinfo
 package-lock.json
 yarn.lock

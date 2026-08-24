@@ -6,6 +6,7 @@ import { setLoading } from "./status";
 import { showCtx } from "./menus";
 import { svgIcon } from "./icons";
 import { relTime } from "./format";
+import { sessionMetadata } from "./sessionMetadata";
 import { t } from "./i18n";
 import { refreshSessionList, sessionBackendName } from "./sessionBridge";
 import type { SessionListItem } from "./types";
@@ -235,11 +236,20 @@ export function renderSessionItem(
                     : s.status === "warning"
                       ? t("sessions.status.warning") + " · "
                       : "";
-        sub.textContent =
-            statusText + s.backendName ||
-            sessionBackendName(s.backend) + (s.updatedAt ? " · " + relTime(s.updatedAt) : "");
+        const metadata = sessionMetadata({
+            backend: s.backend,
+            backendName: s.backendName || sessionBackendName(s.backend),
+            model: s.model,
+            reasoning: s.reasoning,
+            updatedAt: s.updatedAt,
+            relativeTime: s.updatedAt ? relTime(s.updatedAt) : "",
+        });
+        sub.textContent = statusText + metadata.visible;
+        sub.title = metadata.tooltip;
     }
-    sub.title = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : "";
+    if (s.deleting) {
+        sub.title = t("sessions.status.deleting");
+    }
     body.appendChild(ttl);
     body.appendChild(sub);
     // While a delete scrub is in flight the row is inert (no open / no menu).

@@ -11,6 +11,8 @@ import type { HubState } from "./controllerHubState";
 import type { PendingMessage } from "./controllerQueue";
 import type { OutboundPromptState, TrackingMode } from "./outboundPrompt";
 import type { ApplicationPorts } from "./ports";
+import { completeTurn, type TurnCompletionContext } from "./controllerTurnCompletion";
+import type { Turn } from "./turn";
 
 export interface ControllerDispatchContext {
     adapter: AgentAdapter;
@@ -33,26 +35,25 @@ export interface ControllerDispatchContext {
     setFirstTitle: (title: string) => void;
     hasFirstTitle: () => boolean;
     armWatchdog: () => void;
-    clearWatchdog: () => void;
-    setBusy: (busy: boolean) => void;
-    setAttentionError: () => void;
     statusChanged: () => void;
     emit: (message: unknown) => void;
+    /** The turn this dispatch is driving — created by the caller via
+     *  `turns.begin()` before dispatchControllerMessage runs. */
+    turn: Turn;
+    /** Ends `turn` through the single completion path if the adapter never
+     *  gets to run (setup failure) — see controllerTurnCompletion.ts. */
+    completion: TurnCompletionContext;
 }
 
 export async function dispatchControllerMessage(
     message: PendingMessage,
     context: ControllerDispatchContext,
 ): Promise<void> {
-    context.setBusy(true);
+    // Busy since `turns.begin()` in the caller; nothing to set here.
     context.statusChanged();
     try {
         await prepareAndSend(message, context);
     } catch (error) {
-        context.setBusy(false);
-        context.setAttentionError();
-        context.clearWatchdog();
-        context.statusChanged();
         context.emit({
             type: "event",
             event: {
@@ -60,6 +61,10 @@ export async function dispatchControllerMessage(
                 message: error instanceof Error ? error.message : String(error),
             },
         });
+        context.turn.recordError();
+        // The adapter never ran (setup failed before session.send), so
+        // nothing else will emit this turn's end — completeTurn must.
+        completeTurn(context.turn, context.completion, { emitTurnEnd: true });
     }
 }
 
@@ -120,4 +125,5 @@ async function prepareAndSend(
           ]
         : outbound.preamble;
     session.send(outbound.text, outbound.images, preamble, intentId, message.retryOf);
+    context.turn.markSent();
 }

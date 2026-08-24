@@ -1,4 +1,8 @@
-import { clearSessionGuardrails, saveGuardrail } from "../../sync/guardrails";
+import {
+    clearSessionGuardrails,
+    MAX_GUARDRAIL_TEXT_LENGTH,
+    saveGuardrail,
+} from "../../sync/guardrails";
 import { LocalMemory } from "./localMemory";
 import type { ToolContext } from "./types";
 
@@ -98,10 +102,27 @@ async function save(args: Record<string, unknown>, ctx: ToolContext): Promise<st
 async function addGuardrail(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const text = String(args.text ?? "").trim();
     if (!text) return JSON.stringify({ error: "text is required" });
+    if (text.length > MAX_GUARDRAIL_TEXT_LENGTH) {
+        return JSON.stringify({ error: `text exceeds ${MAX_GUARDRAIL_TEXT_LENGTH} characters` });
+    }
     if (!ctx.sessionId) return JSON.stringify({ error: "no current session" });
+    const origin =
+        args.origin === "user-approved" || args.origin === "agent-requested"
+            ? args.origin
+            : "agent-requested";
+    const expiresAtUtc =
+        typeof args.expiresAtUtc === "string" && args.expiresAtUtc.trim()
+            ? args.expiresAtUtc.trim()
+            : undefined;
+    if (expiresAtUtc) {
+        const expiry = Date.parse(expiresAtUtc);
+        if (!Number.isFinite(expiry) || expiry <= Date.now()) {
+            return JSON.stringify({ error: "expiresAtUtc must be a valid future timestamp" });
+        }
+    }
     try {
         if (!ctx.hub.configured()) throw new Error("memory hub not configured");
-        const id = await saveGuardrail(ctx.hub, ctx.sessionId, text);
+        const id = await saveGuardrail(ctx.hub, ctx.sessionId, text, { origin, expiresAtUtc });
         return id ? JSON.stringify({ id }) : JSON.stringify({ error: "save failed" });
     } catch (error) {
         warnFallback("saveGuardrail", error);
@@ -109,7 +130,8 @@ async function addGuardrail(args: Record<string, unknown>, ctx: ToolContext): Pr
             type: "guardrail",
             title: `Guardrail for session ${ctx.sessionId}`,
             summary: text,
-            tags: `symposium-session:${ctx.sessionId},guardrail`,
+            tags: `symposium-session:${ctx.sessionId},guardrail,origin:${origin}`,
+            expiresAtUtc,
         });
         return JSON.stringify({
             id: id.id,

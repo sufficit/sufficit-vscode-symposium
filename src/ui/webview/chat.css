@@ -69,6 +69,15 @@
        history has a real scrollHeight and the pin lands at the bottom BEFORE the
        log is revealed — no visible jump on open. */
     #root.loading #log { visibility: hidden; }
+    /* Long restored transcripts remain measurable for bottom-pinning while
+       Chromium skips paint/layout work for rows outside the viewport. */
+    #log > .msg,
+    #log > .toolGroup,
+    #log > .statusNotice,
+    #log > .branchBanner {
+        content-visibility: auto;
+        contain-intrinsic-size: auto 112px;
+    }
 
     /* In-chat agent picker (new session): replaces the native QuickPick. */
     #agentPicker {
@@ -155,6 +164,7 @@
         50% { box-shadow: 0 0 28px rgba(124, 58, 237, 0.65), 0 0 50px rgba(37, 99, 235, 0.25); }
     }
     #bootState .bootTitle { font-size: 1.1em; font-weight: 700; letter-spacing: 0.5px; background: linear-gradient(90deg, #7C3AED, #2563EB); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    #bootState .bootVersion { font-size: 0.72em; opacity: 0.45; margin-top: -8px; }
     #bootSteps { display: flex; flex-direction: column; gap: 6px; min-width: 220px; max-width: 80%; font-size: 0.85em; }
     .bootStep { display: flex; align-items: center; gap: 8px; opacity: 0.85; }
     .bootStep .bsIcon { width: 14px; height: 14px; flex: 0 0 14px; display: inline-flex; align-items: center; justify-content: center; }
@@ -238,6 +248,9 @@
     #root.narrow #sessionsPane { display: none; }
     #root.chat-only #sessionsPane { display: none; }
     #root.chat-only #listToggle { display: none; }
+    #sessionsBackBtn { display: none; }
+    #root.sessions-only #sessionsBackBtn,
+    #root.narrow.listOpen #sessionsBackBtn { display: inline-flex; }
     /* The anchored recent-session popover + new-session buttons are an
        editor-tab-only feature: in the sidebar their actions always target an
        editor tab (open/new-editor-session), which is surface-inappropriate.
@@ -401,8 +414,11 @@
         /* Menus live at layer 1000. Tooltips for controls inside those menus
            must remain above them instead of being clipped visually behind the
            menu surface. */
-        position: fixed; z-index: 1100; max-width: 320px; padding: 4px 9px;
-        border-radius: 5px; font-size: 0.8em; line-height: 1.35; white-space: normal;
+        position: fixed; z-index: 1100; box-sizing: border-box;
+        max-width: min(320px, calc(100vw - 16px)); max-height: min(40vh, 240px);
+        padding: 4px 9px; overflow: auto;
+        border-radius: 5px; font-size: 0.8em; line-height: 1.35;
+        white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
         background: var(--vscode-editorHoverWidget-background, var(--vscode-menu-background, #252526));
         color: var(--vscode-editorHoverWidget-foreground, var(--vscode-foreground, #ccc));
         border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border, rgba(128,128,128,0.35)));
@@ -453,11 +469,17 @@
     }
     @keyframes menuIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
     #ctxMenu .mi { padding: 6px 12px; cursor: pointer; font-size: 0.9em; transition: background 100ms ease; }
+    #ctxMenu button.mi {
+        width: 100%; border: 0; background: transparent; color: inherit;
+        font: inherit; text-align: start;
+    }
     #ctxMenu .mi:hover,
-    #ctxMenu .mi.active {
+    #ctxMenu .mi.active,
+    #ctxMenu .mi:focus-visible {
         background: var(--vscode-menu-selectionBackground, var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground)));
         color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, inherit));
     }
+    #ctxMenu .mi:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
     #ctxMenu .mi.danger { color: var(--vscode-errorForeground); }
     #ctxMenu .sep { height: 1px; margin: 4px 0; background: var(--vscode-menu-separatorBackground, rgba(128,128,128,0.3)); }
     #ctxMenu .menuSearch {
@@ -504,7 +526,10 @@
     #ctxMenu .mi .miico { flex-shrink: 0; opacity: 0.55; display: flex; align-items: center; }
     #ctxMenu .mi .milbl { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
     #ctxMenu .mi .milbl-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #ctxMenu .mi.active .milbl-text { color: var(--vscode-focusBorder); font-weight: 600; }
+    #ctxMenu .mi.active .milbl-text {
+        color: var(--vscode-menu-selectionForeground, var(--vscode-list-activeSelectionForeground, var(--vscode-foreground)));
+        font-weight: 600;
+    }
     #ctxMenu .mi .miDefaultMark { font-weight: 700; }
     #ctxMenu .mi .milbl-desc { font-size: 0.77em; opacity: 0.52; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
     #ctxMenu .mi .midetail { opacity: 0.5; font-size: 0.85em; flex-shrink: 0; }
@@ -654,6 +679,12 @@
         padding: 1px 6px; border-radius: 4px;
         background: color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
     }
+    .role .roleEffort {
+        font-weight: 400; font-size: 0.92em; opacity: 0.6;
+        color: var(--vscode-descriptionForeground);
+        padding: 1px 6px; border-radius: 4px;
+        background: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 10%, transparent);
+    }
     /* messages that an in-progress edit will replace on resend */
     .msg.willReplace { opacity: 0.4; }
     #composer.editing { box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); border-radius: 6px; }
@@ -716,6 +747,9 @@
     }
     .ubody.user-expandable {
         position: relative; cursor: pointer; transition: max-height 160ms ease;
+    }
+    .ubody.ubodyEmpty {
+        font-style: italic; opacity: 0.6;
     }
     .ubody.user-expandable.collapsed {
         max-height: calc(3.2em + 20px); overflow: hidden; padding-right: 42px;
@@ -1011,6 +1045,25 @@
     }
     .qitem .qbtn svg { width: 13px; height: 13px; }
     .qitem .qbtn:hover { opacity: 1; background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2)); }
+    /* Held queue: the turn ahead of it failed, so it will NOT auto-send —
+       distinct from an ordinary "waiting for the current turn" queue. */
+    .qheldBanner {
+        display: flex; align-items: center; justify-content: space-between; gap: 8px;
+        margin-bottom: 6px; padding: 6px 9px; border-radius: 8px; font-size: 0.85em;
+        background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 14%, transparent);
+        border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 35%, transparent);
+        color: var(--vscode-foreground);
+    }
+    .qheldDiscard {
+        flex-shrink: 0; background: none; cursor: pointer; padding: 3px 8px; border-radius: 5px;
+        font-size: 0.92em; color: var(--vscode-foreground);
+        border: 1px solid color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 45%, transparent);
+    }
+    .qheldDiscard:hover { background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 20%, transparent); }
+    #queued.qheld .qitem {
+        border-color: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 40%, transparent);
+        background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 8%, transparent);
+    }
     /* plan / todo — rounded card pinned above the textarea, matching the
        Copilot Chat todo-list widget (bordered, inset, collapsible). */
     /* Tasks panel: a local mirror of the Sufficit-memory task list (task-anchor
@@ -1508,6 +1561,8 @@
     .menubtn .lbl { max-width: 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
     .menubtn svg { width: 11px; height: 11px; opacity: 0.7; flex-shrink: 0; }
     #status { opacity: 0.55; font-size: 0.82em; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    #ahpConnectionStatus { color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap; }
+    #ahpConnectionStatus[data-state="failed"] { color: var(--vscode-errorForeground); }
     .iconBtn {
         background: none; border: none; cursor: pointer; padding: 3px 5px;
         color: var(--vscode-icon-foreground, var(--vscode-foreground));

@@ -67,6 +67,7 @@ export type WebviewToHost =
     | { type: "account-logout" }
     | { type: "remote-access" }
     | { type: "open-session"; sessionId: string; backend: string }
+    | { type: "open-active-session" }
     | { type: "open-session-editor"; sessionId: string; backend: string }
     | { type: "paste-image"; mime: string; data: string }
     | { type: "stt-transcribe"; data: string; mime: string }
@@ -96,7 +97,8 @@ export type WebviewToHost =
     | { type: "pick-agent"; backend: string }
     | { type: "install-agent"; backend: string }
     | { type: "restart-from-message"; index: number }
-    | { type: "retry-last-message"; index: number; errorMessage?: string }
+    | { type: "retry-last-message"; index: number; text: string; errorMessage?: string }
+    | { type: "load-more-history" }
     | { type: "open-settings" }
     | { type: "inspect"; target: "context" | "request" }
     | { type: "open-file"; path: string }
@@ -139,23 +141,15 @@ export type WebviewToHost =
     | { type: "cancel" }
     /** Releases a local tool-loop pause without creating a model-visible message. */
     | { type: "continue" }
-    | { type: "queue-remove"; id: number }
-    | { type: "queue-edit"; id: number }
-    | { type: "queue-promote"; id: number }
+    | { type: "queue-remove"; id: number | string }
+    | { type: "queue-edit"; id: number | string }
+    | { type: "queue-promote"; id: number | string }
+    /** Discards every held/queued message at once (the held-queue banner's
+     *  "Discard all" action after a turn failure). */
+    | { type: "queue-clear" }
     | { type: "pick-attachments" }
     /** Reply to an inline "approval-request" event (admin/manager/user modes). */
     | { type: "approval-response"; toolId: string; approved: boolean };
-
-/** `type` discriminants the ChatController consumes (the rest belong to the surface). */
-export type ControllerMessageType =
-    | "send"
-    | "cancel"
-    | "continue"
-    | "queue-remove"
-    | "queue-edit"
-    | "queue-promote"
-    | "pick-attachments"
-    | "approval-response";
 
 /** Closed set of messages the extension host may send to the chat webview. */
 export const HOST_MESSAGE_TYPES = [
@@ -176,8 +170,10 @@ export const HOST_MESSAGE_TYPES = [
     "event",
     "focus-input",
     "guardrails",
+    "ahp-frame",
     "history",
     "history-end",
+    "history-prepend",
     "history-start",
     "load-input",
     "markdown-image",

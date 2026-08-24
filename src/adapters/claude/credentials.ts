@@ -53,6 +53,7 @@ const TOKEN_ENDPOINTS = [
     "https://platform.claude.com/v1/oauth/token",
 ];
 const CLIENT_ID = "claude-public";
+let refreshInFlight: Promise<string | undefined> | undefined;
 
 /** Reads (and parses) the credentials file; returns undefined if absent/invalid. */
 function readCredentials(): StoredCredentials | undefined {
@@ -72,6 +73,15 @@ function readCredentials(): StoredCredentials | undefined {
 
 function isFresh(oauth: StoredOAuth): boolean {
     return typeof oauth.expiresAt === "number" && oauth.expiresAt - Date.now() > EXPIRY_SKEW_MS;
+}
+
+function normalizeExpiresAt(value: unknown, fallback: number | undefined): number | undefined {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+        return fallback;
+    }
+    // OAuth providers commonly return epoch seconds while the CLI stores
+    // milliseconds. Keep the on-disk representation consistent.
+    return value < 10_000_000_000 ? value * 1000 : value;
 }
 
 /**
@@ -112,9 +122,10 @@ async function refresh(oauth: StoredOAuth): Promise<string | undefined> {
                 ...oauth,
                 accessToken: json.access_token,
                 refreshToken: json.refresh_token || oauth.refreshToken,
-                expiresAt:
-                    json.expires_at ??
-                    (json.expires_in ? Date.now() + json.expires_in * 1000 : oauth.expiresAt),
+                expiresAt: normalizeExpiresAt(
+                    json.expires_at,
+                    json.expires_in ? Date.now() + json.expires_in * 1000 : oauth.expiresAt,
+                ),
             };
             // Persist the refreshed pair so the CLI (and the next refreshModels)
             // see the same token, mirroring what Claude Code itself does.
@@ -149,17 +160,31 @@ function persist(oauth: StoredOAuth): void {
  * Returns a bearer token for the Anthropic API when the user is logged in to
  * Claude Code, refreshing on demand. Empty string when no usable credential.
  */
-export async function claudeOAuthToken(): Promise<string> {
+export async function claudeOAuthToken(forceRefresh = false): Promise<string> {
     const creds = readCredentials();
     const oauth = creds?.claudeAiOauth;
     if (!oauth?.accessToken) {
         return "";
     }
-    if (isFresh(oauth)) {
+    if (!forceRefresh && isFresh(oauth)) {
         return oauth.accessToken;
     }
-    const refreshed = await refresh(oauth);
-    return refreshed ?? "";
+    // Multiple code-server windows can ask for the token at the same time.
+    // Share one refresh request in this extension host to avoid rotating the
+    // same refresh token concurrently.
+    refreshInFlight ??= refresh(oauth).finally(() => {
+        refreshInFlight = undefined;
+    });
+    const refreshed = await refreshInFlight;
+    if (refreshed) {
+        return refreshed;
+    }
+
+    // A transient refresh failure is not proof of logout. The CLI may still
+    // accept the current access token, and another code-server window may have
+    // persisted a newer token while this request was in flight.
+    const latest = readCredentials()?.claudeAiOauth;
+    return latest?.accessToken || oauth.accessToken;
 }
 
 /** Non-secret account labels stored alongside the Claude OAuth token. */

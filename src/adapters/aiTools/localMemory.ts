@@ -17,6 +17,8 @@ export interface CompactRecord {
     title: string;
     summary: string;
     tags?: string;
+    createdAtUtc?: string;
+    expiresAtUtc?: string;
 }
 
 export interface Observation {
@@ -26,6 +28,7 @@ export interface Observation {
     summary: string;
     payload?: string;
     tags?: string;
+    createdAtUtc?: string;
     expiresAtUtc?: string;
 }
 
@@ -41,7 +44,7 @@ function ensureMemoryDir(): void {
 
 /** Generate a unique ID */
 function generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
 /** Get path for an observation file */
@@ -84,6 +87,8 @@ function toCompactRecord(obs: Observation): CompactRecord {
         title: obs.title,
         summary: obs.summary,
         tags: obs.tags,
+        createdAtUtc: obs.createdAtUtc,
+        expiresAtUtc: obs.expiresAtUtc,
     };
 }
 
@@ -114,7 +119,9 @@ export class LocalMemory {
 
             // Apply limit
             const limit = options.limit || 20;
-            const results = matching.slice(0, limit);
+            const results = matching
+                .filter((obs) => !obs.expiresAtUtc || Date.parse(obs.expiresAtUtc) > Date.now())
+                .slice(0, limit);
 
             return results.map(toCompactRecord);
         });
@@ -149,7 +156,11 @@ export class LocalMemory {
 
             // Generate ID if not provided
             const id = obs.id || generateId();
-            const obsWithId = { ...obs, id };
+            const obsWithId = {
+                ...obs,
+                id,
+                createdAtUtc: obs.createdAtUtc ?? new Date().toISOString(),
+            };
 
             // Write to disk
             const filePath = getObservationPath(id);

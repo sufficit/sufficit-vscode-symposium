@@ -5,14 +5,19 @@ import * as path from "node:path";
 import { tmpdir } from "node:os";
 
 import {
+    SUFFICIT_IDENTITY_MCP_SERVER,
+    SUFFICIT_IDENTITY_MCP_URL,
     SUFFICIT_MCP_SERVER,
     SUFFICIT_MCP_URL,
     SUFFICIT_MCP_TOKEN_ENV,
     SUFFICIT_MCP_CONTEXT_ID,
     SUFFICIT_MCP_SOURCE_ID,
     buildSufficitMcpSection,
+    buildSufficitIdentityMcpSection,
     hasSufficitMcpSection,
+    hasSufficitIdentityMcpSection,
     upsertSufficitMcpSection,
+    upsertSufficitIdentityMcpSection,
     syncSufficitMcpConfig,
     setCodexSufficitTokenProvider,
     resolveCodexSufficitToken,
@@ -26,8 +31,17 @@ const createTempDir = (): string => {
 
 test("constants match expected values", () => {
     assert.equal(SUFFICIT_MCP_SERVER, "sufficit_ai");
+    assert.equal(SUFFICIT_IDENTITY_MCP_SERVER, "sufficit_identity");
+    assert.equal(SUFFICIT_IDENTITY_MCP_URL, "https://identity.sufficit.com.br/api/mcp");
     assert.equal(SUFFICIT_MCP_URL, "https://ai.sufficit.com.br/mcp");
     assert.equal(SUFFICIT_MCP_TOKEN_ENV, "SYMPOSIUM_SUFFICIT_MCP_TOKEN");
+});
+
+test("buildSufficitIdentityMcpSection uses the shared bearer environment", () => {
+    const section = buildSufficitIdentityMcpSection(true);
+    assert.ok(section.includes("[mcp_servers.sufficit_identity]"));
+    assert.ok(section.includes(SUFFICIT_IDENTITY_MCP_URL));
+    assert.ok(section.includes(`bearer_token_env_var = ${JSON.stringify(SUFFICIT_MCP_TOKEN_ENV)}`));
 });
 
 test("buildSufficitMcpSection returns TOML with enabled/disabled and URL/env", () => {
@@ -105,6 +119,15 @@ bearer_token_env_var = "${SUFFICIT_MCP_TOKEN_ENV}"
     assert.ok(result.includes(SUFFICIT_MCP_URL));
 });
 
+test("Identity and AI sections coexist and update independently", () => {
+    const withAi = upsertSufficitMcpSection("root = true", true, "native-session");
+    const result = upsertSufficitIdentityMcpSection(withAi, true);
+    assert.ok(hasSufficitMcpSection(result));
+    assert.ok(hasSufficitIdentityMcpSection(result));
+    assert.equal(result.split(`[mcp_servers.${SUFFICIT_MCP_SERVER}]`).length - 1, 1);
+    assert.equal(result.split(`[mcp_servers.${SUFFICIT_IDENTITY_MCP_SERVER}]`).length - 1, 1);
+});
+
 test("syncSufficitMcpConfig writes/upserts to ~/.codex/config.toml and reports change", () => {
     const tmp = createTempDir();
     const homeDir = tmp;
@@ -114,6 +137,7 @@ test("syncSufficitMcpConfig writes/upserts to ~/.codex/config.toml and reports c
     const r1 = syncSufficitMcpConfig(token, homeDir);
     assert.equal(r1.configPath, configPath);
     assert.equal(r1.enabled, true);
+    assert.equal(r1.identityEnabled, true);
     assert.ok(r1.changed);
     assert.ok(fs.existsSync(configPath));
     const content1 = fs.readFileSync(configPath, "utf8");
@@ -121,16 +145,30 @@ test("syncSufficitMcpConfig writes/upserts to ~/.codex/config.toml and reports c
     assert.ok(content1.includes("enabled = true"));
     assert.ok(content1.includes(SUFFICIT_MCP_URL));
     assert.ok(content1.includes(SUFFICIT_MCP_TOKEN_ENV));
+    assert.ok(hasSufficitIdentityMcpSection(content1));
+    assert.ok(content1.includes(SUFFICIT_IDENTITY_MCP_URL));
 
     const r2 = syncSufficitMcpConfig(token, homeDir);
     assert.equal(r2.changed, false);
 
     const r3 = syncSufficitMcpConfig(null, homeDir);
     assert.equal(r3.enabled, false);
+    assert.equal(r3.identityEnabled, false);
     assert.ok(r3.changed);
     const content2 = fs.readFileSync(configPath, "utf8");
     assert.ok(content2.includes("enabled = false"));
 
+    fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("Codex keeps Identity enabled while AI waits for a durable session", () => {
+    const tmp = createTempDir();
+    const result = syncSufficitMcpConfig("test-token", tmp, undefined, "agent-requested", true);
+    assert.equal(result.enabled, false);
+    assert.equal(result.identityEnabled, true);
+    const content = fs.readFileSync(result.configPath, "utf8");
+    assert.match(content, /\[mcp_servers\.sufficit_ai\]\nenabled = false/);
+    assert.match(content, /\[mcp_servers\.sufficit_identity\]\nenabled = true/);
     fs.rmSync(tmp, { recursive: true, force: true });
 });
 

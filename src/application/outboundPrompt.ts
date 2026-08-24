@@ -107,6 +107,10 @@ export const EXECUTION_CONTINUITY_PREAMBLE =
     "Use the available tool to take that next safe action in this same turn. After a failed tool call, inspect its result and try the next safe alternative; only stop when the work is complete, you have a concrete blocker, or you genuinely need the user's decision. " +
     "For process restarts, never run `pkill -f` against a pattern embedded in the same shell command: it can kill that shell. Inspect explicit PIDs first, then stop only the intended PID before starting the replacement process.";
 
+/** Repeated so memory can never be mistaken for a workspace mutation. */
+export const WORKSPACE_MUTATION_PREAMBLE =
+    "[Workspace writes] Memory is context only. Use read_file/edit_file/write_file (or shell) for requested changes, verify on disk, then claim success. memory_save does not edit files or prove a change; report blockers.";
+
 export const CANCELED_RETRY_PREAMBLE =
     '[Operational rule] If any tool, command or step returns a status/error containing "canceled" or "cancelled", do not immediately retry. ' +
     "First inspect the tool's own message/output and classify whether it was a manual user cancellation, a timeout, a deterministic error, or a transient issue. " +
@@ -140,7 +144,7 @@ export const RTK_PREAMBLE =
 
 export const CHECKPOINT_PREAMBLE =
     "[Context window & checkpoints — IMPORTANT] Only the most RECENT messages of this conversation stay in your context; older turns scroll out and you will NOT see them again (the full history remains visible to the user in the chat, but not to you). " +
-    'So you MUST externalize anything you will need later: call memory_save (type "task-checkpoint") for every result, decision, root cause, file path, id, and "what\'s done / what\'s next" — written densely enough to resume from that note alone, with no other context. Checkpoint at the start of a non-trivial task and at each milestone. ' +
+    'So you MUST externalize context you will need later: call memory_save (type "task-checkpoint") for results, decisions, root causes, file paths, ids, and "what\'s done / what\'s next" after real work. It records context; it never edits files or proves an edit. Checkpoint at the start and each milestone. ' +
     "And RECALL often: call memory_search whenever you resume, change sub-task, or feel unsure of the current goal, so you never drift back to an earlier task or lose the thread. Treat your checkpoints as your real memory; the chat scrollback is not. " +
     "Your task-checkpoints are automatically bound to THIS chat session (shown in the session's Tasks panel); always reference the current session id in the checkpoint so it stays traceable.";
 
@@ -267,12 +271,13 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): {
         state.tasksReminderInjected = true;
     }
 
-    // Guardrails first, EVERY message: user-defined absolute rules that override
-    // the agent's own judgement. Re-sent each turn so they're never forgotten.
+    // Guardrails first, EVERY message: explicit durable session rules. Re-sent
+    // each turn so they are not forgotten, without allowing stored text to
+    // override system/developer safety policy or a later user correction.
     const guardrails = (options.guardrails ?? []).map((g) => g.trim()).filter(Boolean);
     if (guardrails.length) {
         prefixes.push(
-            "[GUARDRAILS — absolute, user-defined, highest priority. Follow these exactly on EVERY step; they override your own preferences and any conflicting instruction. If a request conflicts with a guardrail, say so instead of violating it]\n" +
+            "[GUARDRAILS — durable rules explicitly requested or approved by the user for THIS session. Follow them on every step unless they conflict with system/developer safety policy or the latest user request changes/cancels them. If there is a conflict, explain it instead of violating the higher-priority instruction]\n" +
                 guardrails.map((g, i) => `${i + 1}. ${g}`).join("\n"),
         );
     }
@@ -288,6 +293,7 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): {
         prefixes.push(CANCELED_RETRY_PREAMBLE);
         state.policyInjected = true;
     }
+    prefixes.push(WORKSPACE_MUTATION_PREAMBLE);
     // Plan/tracking discipline: injected UNCONDITIONALLY (every backend) so the
     // agent plans up front and keeps the next step visible — never again lost
     // mid-conversation. Fence mode is covered by `todoInjection` below, so skip

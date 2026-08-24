@@ -6,6 +6,9 @@ import { LiveSessions } from "../sessions/runtime";
 import { ChatSurfaceDeps } from "../ui/chatSurface";
 import { SufficitAuth } from "../auth/identity";
 import { configuredModel, setConfiguredModel } from "./config";
+import { sessionListStatus } from "../sessions/status";
+import type { AhpHostRuntime } from "../ahp/hostRuntime";
+import type { SymposiumApi } from "../api/symposiumApi";
 
 export interface SurfaceDepsArgs {
     context: vscode.ExtensionContext;
@@ -17,6 +20,10 @@ export interface SurfaceDepsArgs {
     deleting: Set<string>;
     /** All persisted sessions across adapters, newest first. */
     rawSessions: () => Promise<SessionInfo[]>;
+    api: SymposiumApi;
+    ahpRuntime: () => AhpHostRuntime;
+    syncAhp: () => void;
+    rebuildAhp: (provider: string, sessionId: string) => void;
 }
 
 /** Assembles the ChatSurface dependency bundle shared by the sidebar + panel hosts. */
@@ -41,10 +48,23 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                     store.setLineage(l.sessionId, l.lineageId);
                 }
             }
-            const disk = store.decorate(await rawSessions(), true).map((s) => {
-                const status = runtime.statusFor(s.sessionId) ?? s.terminalStatus;
+            const stored = store.decorate(await rawSessions(), true);
+            runtime.trackSharedSessions(stored.map((session) => session.sessionId));
+            const liveById = new Map(liveInfos.map((live) => [live.sessionId, live]));
+            const disk = stored.map((s) => {
+                // `idle` means no turn is active, not that the last turn
+                // succeeded. Keep a persisted failure visible while the live
+                // controller remains attached to the session.
+                const status = sessionListStatus(runtime.statusFor(s.sessionId), s.terminalStatus);
                 const adapter = adapterByBackend.get(s.backend);
-                return { ...s, backendName: adapter?.displayName ?? s.backend, status };
+                const live = liveById.get(s.sessionId);
+                return {
+                    ...s,
+                    model: live?.model ?? s.model,
+                    reasoning: live?.reasoning ?? s.reasoning,
+                    backendName: adapter?.displayName ?? s.backend,
+                    status,
+                };
             });
             const known = new Set(disk.map((s) => s.sessionId));
             const live = liveInfos
@@ -67,6 +87,12 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                 ? info.cwd
                 : (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd()),
         runtime,
+        ahp: {
+            api: args.api,
+            runtime: args.ahpRuntime,
+            sync: args.syncAhp,
+            rebuild: args.rebuildAhp,
+        },
         lastActive: {
             // Per-workspace: reopening the window restores the session you were on.
             get: () => context.workspaceState.get("symposium.lastActive"),
@@ -97,6 +123,8 @@ export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
                 store.setParent(sessionId, parentId),
             setLineage: (sessionId: string, lineageId: string | undefined) =>
                 store.setLineage(sessionId, lineageId),
+            setDisplayMetadata: (sessionId: string, model?: string, reasoning?: string) =>
+                store.setDisplayMetadata(sessionId, model, reasoning),
         },
     };
 }

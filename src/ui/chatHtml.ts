@@ -9,10 +9,13 @@ import { chatClientJs } from "./chatClient";
  * element ids that `src/ui/webview/dom.ts` resolves at load. Only the outer
  * shell (CSP/nonce vs manifest/external script) differs between the two hosts.
  */
-export const chatBodyMarkup = /* html */ `<div id="root">
+/** @param version Extension version shown under the boot title (e.g. "2026.810.13"); omitted when unknown (PWA shell). */
+export function chatBodyMarkup(version?: string): string {
+    return /* html */ `<div id="root">
     <div id="bootState">
         <div class="bootLogo"><svg viewBox="0 0 24 24" fill="none"><rect x="1" y="1" width="15" height="10" rx="3" fill="white" fill-opacity="0.3"/><path d="M4 11 L2 15 L8 11 Z" fill="white" fill-opacity="0.3"/><rect x="8" y="11" width="15" height="10" rx="3" fill="white" fill-opacity="0.92"/><path d="M20 21 L22 24 L17 21 Z" fill="white" fill-opacity="0.92"/><circle cx="12" cy="16" r="1.3" fill="#7C3AED"/><circle cx="15.5" cy="16" r="1.3" fill="#4F46E5"/><circle cx="19" cy="16" r="1.3" fill="#3B82F6"/></svg></div>
         <div class="bootTitle">Symposium</div>
+        ${version ? '<div class="bootVersion">v' + version + "</div>" : ""}
         <div id="bootSteps"></div>
         <div id="bootHint">Starting…</div>
     </div>
@@ -21,6 +24,7 @@ export const chatBodyMarkup = /* html */ `<div id="root">
         <div id="sessionsHeader" data-zone="sessions-header">
             <span>Sessions</span>
             <span>
+                <button id="sessionsBackBtn" class="iconBtn" title="Return to active session" aria-label="Return to active session"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 3 8l5 5M3 8h10"/></svg></button>
                 <button id="sessionRefreshBtn" class="iconBtn" title="Refresh sessions" aria-label="Refresh sessions"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M13.6 2.7v3.2h-3.2l1.2-1.2A4 4 0 1 0 12 8h1.3A5.3 5.3 0 1 1 12.5 4l1.1-1.3Z"/></svg></button>
                 <button id="sessionFilterBtn" class="iconBtn" title="Filter sessions" aria-label="Filter sessions"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 3.75A.75.75 0 0 1 2.75 3h10.5a.75.75 0 0 1 .53 1.28L10 8.06v3.19a.75.75 0 0 1-.33.62l-2 1.33A.75.75 0 0 1 6.5 12.6V8.06L2.22 4.28A.75.75 0 0 1 2 3.75Z"/></svg></button>
                 <button id="newSessionBtn" class="iconBtn" title="New session" aria-label="New session"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 0 1 .5.5V7.5h6a.5.5 0 0 1 0 1h-6v6a.5.5 0 0 1-1 0v-6h-6a.5.5 0 0 1 0-1h6V1.5A.5.5 0 0 1 8 1Z"/></svg></button>
@@ -105,6 +109,7 @@ export const chatBodyMarkup = /* html */ `<div id="root">
                     <button id="presencePicker" class="ctl menubtn" title="Presence — can be changed any time" aria-label="Presence — can be changed any time"><span class="picon"></span><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                     <button id="execPicker" class="ctl menubtn" style="display:none" title="Shell execution display" aria-label="Shell execution display"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                     <span id="status"></span>
+                    <span id="ahpConnectionStatus" role="status" aria-live="polite" hidden></span>
                     <span class="grow"></span>
                 </div>
                 <button id="cancelEdit" class="editCancel" title="Cancel edit" aria-label="Cancel edit" style="display:none">
@@ -130,6 +135,7 @@ export const chatBodyMarkup = /* html */ `<div id="root">
 <div id="ctxMenu"></div>
 <div id="tip" role="tooltip"></div>
 <div id="toast" role="status" aria-live="polite"></div>`;
+}
 
 /**
  * Shared chat webview markup for the sidebar view and the editor panel.
@@ -139,7 +145,7 @@ export const chatBodyMarkup = /* html */ `<div id="root">
  * surface is wide enough and collapsible behind a toggle when narrow. The
  * pane side (left/right) comes from the `meta` message.
  */
-export function renderHtml(): string {
+export function renderHtml(version?: string): string {
     // Nonce required by VSCode 1.90+ webview CSP enforcement (unsafe-inline alone is blocked).
     const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
     const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';`;
@@ -153,7 +159,7 @@ ${chatStyles}
 </style>
 </head>
 <body>
-${chatBodyMarkup}
+${chatBodyMarkup(version)}
 <script nonce="${nonce}">
 ${chatClientJs}
 </script>

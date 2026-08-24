@@ -53,6 +53,18 @@ test("SessionStore persists a terminal warning across extension reloads", () => 
     assert.equal(restored[0].terminalStatus, "warning");
 });
 
+test("SessionStore persists the latest model and effort metadata", () => {
+    const memory = new MemoryMemento();
+    const info = session("metadata-session");
+    const store = new SessionStore(memory as unknown as vscode.Memento);
+    store.setDisplayMetadata(info.sessionId, "gpt-5.6-sol", "xhigh");
+
+    const restored = new SessionStore(memory as unknown as vscode.Memento).decorate([info], true);
+
+    assert.equal(restored[0].model, "gpt-5.6-sol");
+    assert.equal(restored[0].reasoning, "xhigh");
+});
+
 test("SessionStore tombstones a deleted session across extension reloads", async () => {
     const memory = new MemoryMemento();
     const info = session("deleted-session");

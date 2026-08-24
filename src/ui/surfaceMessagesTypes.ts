@@ -8,6 +8,7 @@ import type { SurfaceDialogues } from "./surfaceDialogues";
 import type { BackendHandoff } from "./backendHandoff";
 import type { ChangedFilesManager } from "./changedFiles";
 import type { HubClient } from "../sync/hubClient";
+import type { AhpMessagePortTransport } from "../ahp/messagePortTransport";
 
 export interface SurfaceMessagesDeps {
     webview: vscode.Webview;
@@ -17,6 +18,7 @@ export interface SurfaceMessagesDeps {
     refreshSessions: () => Promise<void>;
     refreshQuotas: (force?: boolean) => Promise<void>;
     chatOnly: boolean;
+    startInSessionsList: boolean;
     openSession: (info: SessionInfo) => void;
     restoreFocus: () => Promise<void>;
     getController: () => ChatController | undefined;
@@ -31,4 +33,5 @@ export interface SurfaceMessagesDeps {
     handoff: BackendHandoff;
     changedFiles: ChangedFilesManager;
     hub: HubClient;
+    ahp: AhpMessagePortTransport;
 }

@@ -1,144 +1,33 @@
 import { EventEmitter } from "events";
+import type { TodoItem } from "./events";
 import type { AgentBackend, SessionInfo } from "./sessionInfo";
-import type { AdapterQuotaSnapshot, AdapterUsageProvider } from "./quotaTypes";
+import type { AdapterUsageProvider } from "./quotaTypes";
 
 export type { AgentBackend, SessionInfo, SessionTerminalStatus } from "./sessionInfo";
 export type { AdapterQuotaSnapshot, AdapterUsageProvider, UsageQuotaWindow } from "./quotaTypes";
-
-/** One entry of an agent's plan/todo list. */
-export interface TodoItem {
-    content: string;
-    status: "pending" | "in_progress" | "completed";
-    /** Optional explicit execution order (1-based); absent = array order. */
-    order?: number;
-}
-
-/** Visual importance for a system-authored notice in the conversation. */
-export type SystemNoticeSeverity = "info" | "warning" | "error";
-
-/** A normalized event emitted by any adapter while a turn is running. */
-export type AgentEvent =
-    | { kind: "session"; sessionId: string; model?: string }
-    | { kind: "model"; model: string }
-    | { kind: "text"; text: string; model?: string; modelLabel?: string }
-    /** System-authored annotation, never assistant output.
-     *  anchorIndex: conversation-row index to scroll to/highlight when clicked. */
-    | {
-          kind: "status-notice";
-          text: string;
-          severity?: SystemNoticeSeverity;
-          anchorIndex?: number;
-          terminal?: boolean;
-          action?: "continue-tool-loop";
-      }
-    | { kind: "thinking"; text: string }
-    | {
-          kind: "tool-start";
-          toolName: string;
-          detail?: string;
-          toolId?: string;
-          input?: string;
-          added?: number;
-          removed?: number;
-          todos?: TodoItem[];
-          path?: string;
-          diff?: { old: string; new: string }[];
-          terminalName?: string;
-      }
-    | { kind: "tool-output"; toolName?: string; toolId?: string; text: string }
-    | {
-          kind: "tool-end";
-          toolName: string;
-          detail?: string;
-          toolId?: string;
-          result?: string;
-          todos?: TodoItem[];
-      }
-    /** Inline permission gate (admin/manager/user modes): the turn pauses on
-     *  this specific toolId until the webview posts an "approval-response". */
-    | {
-          kind: "approval-request";
-          toolId: string;
-          toolName: string;
-          detail?: string;
-          tier: "write" | "destructive";
-      }
-    | { kind: "approval-resolved"; toolId: string; approved: boolean }
-    /** Start of a logical turn; pairs with turn-end. Carries the stable
-     *  logicalTurnId (survives retries/reopen) and the controller-assigned
-     *  intentId so downstream render/retry logic can associate deltas correctly. */
-    | { kind: "turn-start"; logicalTurnId: string; intentId?: string }
-    | { kind: "turn-end"; costUsd?: number; durationMs?: number }
-    | ({ kind: "quota" } & AdapterQuotaSnapshot)
-    | {
-          kind: "usage";
-          /** Prompt/input tokens in the current live context. */
-          inputTokens?: number;
-          /** Completion/output tokens from the last model call. */
-          outputTokens?: number;
-          /** Provider-reported total tokens, when available. */
-          totalTokens?: number;
-          /** Reasoning tokens included in output token details, when available. */
-          reasoningTokens?: number;
-          /** Prompt-cache read tokens, when available. */
-          cacheRead?: number;
-          /** Model context window used by the UI meter. */
-          contextWindow?: number;
-          /** True when these numbers are a local preflight estimate, not provider-reported usage. */
-          estimated?: boolean;
-          /** Approximate serialized request body size sent to the gateway. */
-          requestChars?: number;
-          /** Number of chat/input messages included in the last request body. */
-          requestMessageCount?: number;
-          /** Number of function tools advertised in the last request body. */
-          requestToolCount?: number;
-          /** Effective model id after routing/fallback. */
-          model?: string;
-          /** Friendly label for the effective model id. */
-          modelLabel?: string;
-          /** Configured provider key selected by the gateway. */
-          providerKey?: string;
-          /** Provider connector family, such as claude, codex, openai, or deepseek. */
-          providerType?: string;
-          /** Requested model/preset id before gateway routing. */
-          requestedModel?: string;
-          /** Number of dispatch attempts made for the last model request. */
-          attempts?: number;
-          /** Number of failed attempts before a successful fallback target. */
-          fallbackAttempts?: number;
-          /** Server-side context compression diagnostics for the last request. */
-          compression?: {
-              savedChars?: number;
-              originalChars?: number;
-              compressedChars?: number;
-              truncatedMessages?: number;
-              removedMessages?: number;
-              prunedToolCalls?: number;
-              foldedToolResults?: number;
-          };
-          /** Duration of the last HTTP model call, measured locally. */
-          durationMs?: number;
-          /** Time to first byte/headers for the last model call, measured locally. */
-          ttfbMs?: number;
-          /** Time until first streamed text/tool delta, measured locally. */
-          firstDeltaMs?: number;
-      }
-    | {
-          kind: "error";
-          message: string;
-          retryable?: boolean;
-          fatal?: boolean;
-          historical?: boolean;
-      };
+export type { AgentEvent, SystemNoticeSeverity, TodoItem } from "./events";
+import type { SystemNoticeSeverity } from "./events";
 
 /** One past message reconstructed from a stored transcript. */
 export interface HistoryMessage {
-    role: "user" | "assistant" | "tool" | "error" | "thinking";
-    text: string;
+    role: "user" | "assistant" | "tool" | "error" | "thinking" | "status-notice";
+    /** Only meaningful for role "status-notice" — mirrors the live event's
+     *  severity so a replayed warning/error notice renders with the same
+     *  visual weight it had live. */
+    severity?: SystemNoticeSeverity;
+    /**
+     * Null means the adapter found a turn but produced no text for it (e.g. an
+     * image/attachment-only user message with no caption). Each adapter decides
+     * whether to emit null here or fill in its own placeholder text; the render
+     * layer shows a generic "no text" placeholder for null either way.
+     */
+    text: string | null;
     /** Model id and friendly label that produced this assistant message
      *  (preserved across backend/model handoff so each bubble keeps its origin). */
     model?: string;
     modelLabel?: string;
+    /** Effective reasoning/effort used for this assistant message, when known. */
+    reasoning?: string;
     // For tool rows: the backend tool name and a short human target, so stored
     // transcripts render the same icon+verb+target as live events. input/result
     // hold the full (pretty) payloads for the expandable panel.
@@ -153,6 +42,36 @@ export interface HistoryMessage {
     diff?: { old: string; new: string }[];
     /** Original transcript time (ms) for hover timestamps. */
     ts?: number;
+}
+
+/**
+ * One page of session history. Adapters that can paginate return an opaque
+ * {@link nextCursor} the host passes back to load the next older page; absence
+ * means the transcript is fully loaded. Adapters without pagination return all
+ * messages at once and omit the cursor.
+ */
+export interface HistoryPage {
+    messages: HistoryMessage[];
+    /** Opaque cursor to pass back to {@link AgentAdapter.history} for older turns. */
+    nextCursor?: string;
+}
+
+/** Why a mid-turn injection will never reach the model. */
+export type InjectionDropReason = "turn-ended" | "cancelled" | "superseded" | "disposed";
+
+/** One user message offered for splicing into a RUNNING turn ("steer"). */
+export interface InjectedUserMessage {
+    text: string;
+    /** Image paths inlined as vision parts (same semantics as send's `images`). */
+    images?: string[];
+    /** Controller-assigned intent id; the adapter carries it into ledger rows. */
+    intentId?: string;
+    /** Fired exactly once, the instant the message is spliced into the model
+     *  request. The caller renders and persists the user row from here. */
+    onCommitted?(logicalTurnId: string): void;
+    /** Fired exactly once when the message will never be spliced. Mutually
+     *  exclusive with onCommitted; the caller re-routes to the queue here. */
+    onDropped?(reason: InjectionDropReason): void;
 }
 
 /** Stops a live transcript follow. */
@@ -176,6 +95,10 @@ export interface SlashCommand {
 /** Options for starting or resuming a live session. */
 export interface SessionStartOptions {
     cwd: string;
+    /** Stable Symposium conversation id sent to session-scoped MCP tools. */
+    guardrailSessionId?: string;
+    /** Origin recorded by the remote guardrail contract. */
+    guardrailOrigin?: "user-approved" | "agent-requested";
     /**
      * Authorized write roots for this session: when set (non-empty), host-level
      * containment blocks write_file/edit_file and shell cwd outside these paths
@@ -286,7 +209,8 @@ export interface AgentSession extends EventEmitter {
         images?: string[],
         preamble?: string[],
         intentId?: string,
-        resumeTurnId?: string,
+        /** logicalTurnId of the failed attempt when this is an explicit retry. */
+        retryOf?: string,
     ): void;
     /**
      * Replaces the model for the next turn. The currently running CLI/API
@@ -316,6 +240,15 @@ export interface AgentSession extends EventEmitter {
      * in-process (currently openai); a no-op elsewhere.
      */
     resolveApproval?(toolId: string, approved: boolean): void;
+    /**
+     * Splices a user message into the RUNNING turn without cancelling it, so the
+     * agent adapts on its next model request instead of at the turn boundary.
+     * True means the adapter took ownership — the caller must NOT queue it, and
+     * exactly one of onCommitted/onDropped will fire. False means the backend
+     * cannot take it right now and the caller falls back to head-of-queue. Only
+     * implemented by adapters that own their tool loop in-process (openai).
+     */
+    injectUserMessage?(message: InjectedUserMessage): boolean;
 }
 
 /** Factory + discovery surface for one backend CLI. */
@@ -340,8 +273,14 @@ export interface AgentAdapter {
      * API backends return true; CLIs omit it (instructions are prepended).
      */
     roleAware?(): boolean;
-    /** Reconstruct past messages of a stored session, newest last. */
-    history?(info: SessionInfo): Promise<HistoryMessage[]>;
+    /**
+     * Reconstruct past messages of a stored session, newest last. When
+     * {@link cursor} is omitted, loads the most recent page; when present (a
+     * value previously returned as {@link HistoryPage.nextCursor}), loads the
+     * next older page. Adapters that don't paginate ignore the cursor and
+     * return everything at once.
+     */
+    history?(info: SessionInfo, cursor?: string): Promise<HistoryPage>;
     /**
      * Watch a stored transcript and stream messages appended after the
      * point `history()` already returned (read-only live mirror of a
@@ -386,6 +325,13 @@ export interface AgentAdapter {
     todoInjection?(): string | undefined;
     /** True if the backend accepts images inlined in the message (vision). */
     supportsImages?(): boolean;
+    /**
+     * True when a steer can be spliced into the RUNNING turn (see
+     * AgentSession.injectUserMessage). CLI backends spawn one process per turn
+     * with no channel for extra user input, so their steer can only go to the
+     * head of the queue — the composer says so instead of implying otherwise.
+     */
+    supportsInlineSteer?(): boolean;
     /**
      * Permanently scrubs a session's stored data from disk (transcript plus
      * any shared history/index files). Returns the names of stores that may

@@ -19,7 +19,7 @@ test("Codex metadata restores the most recently used model from turn context", a
             },
         },
         { type: "turn_context", payload: { model: "gpt-5.6-terra" } },
-        { type: "turn_context", payload: { model: "gpt-5.6-sol" } },
+        { type: "turn_context", payload: { model: "gpt-5.6-sol", effort: "high" } },
     ];
     fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join("\n"));
 
@@ -29,6 +29,7 @@ test("Codex metadata restores the most recently used model from turn context", a
         cwd: "/workspace",
         title: "Investigate model restore",
         model: "gpt-5.6-sol",
+        reasoning: "high",
     });
     fs.rmSync(dir, { recursive: true, force: true });
 });
@@ -41,7 +42,10 @@ test("Codex metadata reads the latest model from the tail of a large rollout", a
             type: "session_meta",
             payload: { id: "thread-large", cwd: "/workspace" },
         }),
-        JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-sol" } }),
+        JSON.stringify({
+            type: "turn_context",
+            payload: { model: "gpt-5.6-sol", effort: "medium" },
+        }),
         JSON.stringify({
             type: "response_item",
             payload: {
@@ -57,12 +61,16 @@ test("Codex metadata reads the latest model from the tail of a large rollout", a
                 summary: [{ type: "summary_text", text: "x".repeat(2_200_000) }],
             },
         }),
-        JSON.stringify({ type: "turn_context", payload: { model: "gpt-5.6-luna" } }),
+        JSON.stringify({
+            type: "turn_context",
+            payload: { model: "gpt-5.6-luna", effort: "xhigh" },
+        }),
     ];
     fs.writeFileSync(file, rows.join("\n"));
 
     const meta = await readCodexMeta(file);
     assert.equal(meta.model, "gpt-5.6-luna");
+    assert.equal(meta.reasoning, "xhigh");
     fs.rmSync(dir, { recursive: true, force: true });
 });
 

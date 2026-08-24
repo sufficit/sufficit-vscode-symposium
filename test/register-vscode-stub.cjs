@@ -42,6 +42,7 @@ const vscodeStub = {
     window: {
         activeTextEditor: undefined,
         terminals: [],
+        tabGroups: { all: [] },
         createOutputChannel() {
             return { append() {}, appendLine() {}, clear() {}, show() {}, dispose() {} };
         },

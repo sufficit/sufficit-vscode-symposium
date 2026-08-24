@@ -66,6 +66,9 @@ export default tseslint.config(
             "@typescript-eslint/require-await": "error",
             // Awaiting something that isn't thenable.
             "@typescript-eslint/await-thenable": "warn",
+            // Using a symbol tagged @deprecated — catches the "left the old path
+            // wired up after superseding it" class of bug at edit time.
+            "@typescript-eslint/no-deprecated": "error",
         },
     },
     {
@@ -78,7 +81,7 @@ export default tseslint.config(
         },
     },
     {
-        files: ["src/ui/webview/**/*.ts"],
+        files: ["src/ui/webview/**/*.ts", "src/ahp/client/**/*.ts"],
         languageOptions: {
             parserOptions: {
                 projectService: false,

@@ -22,6 +22,8 @@ export interface SessionListItem {
     gitBranch?: string;
     lineageId?: string;
     parentId?: string;
+    model?: string;
+    reasoning?: string;
     status?: "working" | "idle" | "error" | "warning" | "stored";
     archived?: boolean;
     pinned?: boolean;
@@ -71,6 +73,8 @@ export interface MetaMessageData {
     devMode?: boolean;
     openIn?: string;
     whenBusy?: string;
+    /** Backend can splice a steer into the running turn (openai only today). */
+    canSteerInline?: boolean;
     busy?: boolean;
     chatOnly?: boolean;
     agentLabels?: AgentLabels;
@@ -104,9 +108,11 @@ export interface GuardrailItem {
 }
 
 export interface QueueItem {
-    id: number;
+    id: number | string;
+    clientMessageId?: string;
     text: string;
     attachments?: string[];
+    mode?: string;
 }
 
 export interface TaskItem {

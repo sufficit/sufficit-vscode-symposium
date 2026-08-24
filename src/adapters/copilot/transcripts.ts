@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { HistoryMessage, SessionInfo } from "../types";
-
+import { copilotMessageMetadata } from "./messageMetadata";
 function candidateWorkspaceStorageRoots(): string[] {
     const h = os.homedir();
     return [
@@ -178,13 +178,14 @@ function transcriptSummary(file: string): SessionInfo | undefined {
     let title = "Copilot Chat";
     let firstUser = "";
     let updated = 0;
+    let model: string | undefined, reasoning: string | undefined;
     try {
         const lines = fs.readFileSync(file, "utf8").split(/\r?\n/);
         for (const line of lines) {
             if (!line.trim()) {
                 continue;
             }
-            let ev: { timestamp?: string; type: string; data?: unknown };
+            let ev: { timestamp?: string; type: string; data?: unknown } & Record<string, unknown>;
             try {
                 ev = JSON.parse(line);
             } catch {
@@ -193,6 +194,19 @@ function transcriptSummary(file: string): SessionInfo | undefined {
             const ts = parseTimestamp(ev.timestamp);
             if (ts && ts > updated) {
                 updated = ts;
+            }
+            const data: Record<string, unknown> =
+                typeof ev.data === "object" && ev.data !== null
+                    ? (ev.data as Record<string, unknown>)
+                    : {};
+            const candidateModel = ev.model ?? data.model;
+            const candidateReasoning =
+                ev.effort ?? ev.reasoning ?? data.effort ?? data.reasoning ?? data.reasoningEffort;
+            if (typeof candidateModel === "string" && candidateModel) {
+                model = candidateModel;
+            }
+            if (typeof candidateReasoning === "string" && candidateReasoning) {
+                reasoning = candidateReasoning;
             }
             if (!firstUser && ev.type === "user.message") {
                 const data =
@@ -244,6 +258,8 @@ function transcriptSummary(file: string): SessionInfo | undefined {
         title,
         updatedAt: updated ? new Date(updated) : undefined,
         transcriptPath: file,
+        ...(model ? { model } : {}),
+        ...(reasoning ? { reasoning } : {}),
     };
 }
 
@@ -280,56 +296,61 @@ function toolDetail(name: string, args: string | undefined): string {
 }
 
 export function transcriptHistory(file: string): HistoryMessage[] {
-    const out: HistoryMessage[] = [];
     try {
-        for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
-            if (!line.trim()) {
-                continue;
-            }
-            let ev: { timestamp?: string; type: string; data?: { content?: string } };
-            try {
-                ev = JSON.parse(line);
-            } catch {
-                continue;
-            }
-            const ts = parseTimestamp(ev.timestamp);
-            if (ev.type === "user.message") {
-                const content = ev.data?.content;
-                if (typeof content === "string" && content.trim()) {
-                    out.push({ role: "user", text: content, ts });
-                }
-                continue;
-            }
-            if (ev.type === "assistant.message") {
-                const data =
-                    typeof ev.data === "object" && ev.data !== null
-                        ? (ev.data as Record<string, unknown>)
-                        : {};
-                const content = data.content;
-                if (typeof content === "string" && content.trim()) {
-                    out.push({ role: "assistant", text: content, ts });
-                }
-                const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
-                for (const t of toolRequests) {
-                    if (typeof t === "object" && t !== null) {
-                        const tObj = t as Record<string, unknown>;
-                        const name = String(tObj.name ?? "tool");
-                        const input = parseToolArgs(tObj.arguments);
-                        out.push({
-                            role: "tool",
-                            text: name,
-                            toolName: name,
-                            detail: toolDetail(name, input),
-                            input,
-                            ts,
-                        });
-                    }
-                }
-                continue;
-            }
-        }
+        return transcriptHistoryFromText(fs.readFileSync(file, "utf8"));
     } catch {
-        /* ignore */
+        return [];
+    }
+}
+
+/** Parses Copilot transcript JSONL text into renderable HistoryMessages. */
+export function transcriptHistoryFromText(content: string): HistoryMessage[] {
+    const out: HistoryMessage[] = [];
+    for (const line of content.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        let ev: { timestamp?: string; type: string; data?: unknown } & Record<string, unknown>;
+        try {
+            ev = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        const ts = parseTimestamp(ev.timestamp);
+        const data = (ev.data ?? {}) as Record<string, unknown>;
+        if (ev.type === "user.message") {
+            const content = data.content;
+            if (typeof content === "string" && content.trim()) {
+                out.push({ role: "user", text: content, ts });
+            }
+            continue;
+        }
+        if (ev.type === "assistant.message") {
+            const content = data.content;
+            if (typeof content === "string" && content.trim()) {
+                out.push({
+                    role: "assistant",
+                    text: content,
+                    ts,
+                    ...copilotMessageMetadata(ev, data),
+                });
+            }
+            const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
+            for (const t of toolRequests) {
+                if (typeof t === "object" && t !== null) {
+                    const tObj = t as Record<string, unknown>;
+                    const name = String(tObj.name ?? "tool");
+                    const input = parseToolArgs(tObj.arguments);
+                    out.push({
+                        role: "tool",
+                        text: name,
+                        toolName: name,
+                        detail: toolDetail(name, input),
+                        input,
+                        ts,
+                    });
+                }
+            }
+            continue;
+        }
     }
     return out;
 }

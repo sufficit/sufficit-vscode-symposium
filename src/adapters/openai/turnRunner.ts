@@ -1,15 +1,12 @@
 import { ChatMessage } from "./types";
+import { isTransientErrorMessage } from "../transientError";
 import { filterTools } from "../aiTools/defs";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
 import { consumeStream } from "./streamConsume";
-import {
-    assessContextWindow,
-    windowMessages,
-    isWindowTruncated,
-    estimateRequest,
-    requestEstimateDiagnostic,
-} from "./requestWindow";
+import { windowMessages, isWindowTruncated } from "./requestWindow";
+import { httpFailureEvent, preflightRequest } from "./turnPreflight";
+import { applyInjectedMessages } from "./turnInjection";
 import { stripSourcePrefix } from "./toolMerge";
 import { findToolHistoryIssues, materializeToolSafeHistory } from "./toolHistory";
 import { makeAttemptId } from "./turnId";
@@ -21,42 +18,60 @@ import {
     REPEAT_TOOL_CALL_LIMIT,
     repeatedToolCallWithoutProgress,
     toolCallBatchFingerprint,
+    toolHistoryMaterializationNotice,
+    toolHistoryPairingNotice,
     toolHopLimitNotice,
+    transportInterruptionNotice,
 } from "./turnNotices";
 import { TurnRunnerDeps } from "./turnRunnerDeps";
 import { shouldRefreshNativeAuthorization } from "./httpAuth";
 import { executeToolCallBatch } from "./turnToolBatch";
 import { TurnCompression } from "./turnCompression";
 import { prepareTurnAccess } from "./turnAccess";
+import { RunSequence } from "./runSequence";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
 export class TurnRunner {
     private abort: AbortController | undefined;
+    // Abort each hop and latch cancellation so the surrounding tool loop also stops.
+    private cancelled = false;
     private pendingTasksCompact = false;
+    private readonly runSequence = new RunSequence();
 
     constructor(private readonly d: TurnRunnerDeps) {}
 
     cancel(): void {
+        this.cancelled = true;
         this.abort?.abort();
     }
 
     async run(): Promise<void> {
+        // Release an unused injection so it returns to the queue; close() is generation-guarded.
+        const close = this.d.injections?.open();
+        try {
+            await this.runTurn();
+        } finally {
+            close?.(this.cancelled ? "cancelled" : "turn-ended");
+        }
+    }
+
+    private async runTurn(): Promise<void> {
+        const isCurrentRun = this.runSequence.start();
+        this.cancelled = false;
         const messages = this.d.getMessages();
         const progress = this.d.getProgress();
         this.abort = new AbortController();
-        // Assign a stable logicalTurnId for this turn (survives retries/reopen).
-        // A Retry passes resumeTurnId so the adapter REUSES the original turn's id
-        // instead of allocating a new one (delivery 1C).
         const logicalTurnId = this.d.resumeTurn(this.d.getResumeTurnId?.());
         const intentId = this.d.getIntentId();
         const turnStartedAt = Date.now();
-        // turn-start pairs with turn-end below; carries the stable ids so the
-        // render pipeline (renderStream/controllerTranscript) and any future
-        // retry/redirect logic can associate deltas with the right turn.
         this.d.emit({ kind: "turn-start", logicalTurnId, ...(intentId ? { intentId } : {}) });
         const emitTurnEnd = () =>
-            this.d.emit({ kind: "turn-end", durationMs: Date.now() - turnStartedAt });
+            this.d.emit({
+                kind: "turn-end",
+                durationMs: Date.now() - turnStartedAt,
+                logicalTurnId,
+            });
         const responses = this.d.cfg.api === "responses";
         const base = this.d.cfg.baseUrl.replace(/\/+$/, "");
         const url = base + (responses ? "/responses" : "/chat/completions");
@@ -65,7 +80,9 @@ export class TurnRunner {
         const requestMessages = (): ChatMessage[] => compression.apply(messages);
         const access = await prepareTurnAccess(this.d, responses);
         if (!access) {
-            emitTurnEnd();
+            if (isCurrentRun()) {
+                emitTurnEnd();
+            }
             return;
         }
         let { loginToken } = access;
@@ -83,6 +100,11 @@ export class TurnRunner {
         let noTextHops = 0;
         try {
             for (let hop = 0; hop < maxHops; hop++) {
+                if (this.cancelled || !isCurrentRun()) {
+                    hitCap = false;
+                    break;
+                }
+                applyInjectedMessages(this.d, messages, logicalTurnId);
                 this.abort = new AbortController();
                 const currentMessages = requestMessages();
                 const windowed = windowMessages(
@@ -98,28 +120,14 @@ export class TurnRunner {
                     this.d.cfg.supportsDeveloperRole !== false ? "developer" : "system",
                 );
                 const outMessages = materialized.messages;
-                if (
-                    !toolHistoryMaterializationNoticeEmitted &&
-                    (materialized.foldedOrphanTools > 0 ||
-                        materialized.foldedMissingToolCalls > 0 ||
-                        materialized.repairedMissingToolCalls > 0)
-                ) {
-                    this.d.emit({
-                        kind: "status-notice",
-                        text: `OpenAI request history materialized from saved session; persisted transcript unchanged. folded_orphan_tools=${materialized.foldedOrphanTools} folded_missing_tool_calls=${materialized.foldedMissingToolCalls} repaired_missing_tool_calls=${materialized.repairedMissingToolCalls}`,
-                    });
+                const materializationNotice = toolHistoryMaterializationNotice(materialized);
+                if (materializationNotice && !toolHistoryMaterializationNoticeEmitted) {
+                    this.d.emit(materializationNotice);
                     toolHistoryMaterializationNoticeEmitted = true;
                 }
-                const toolHistoryIssues = findToolHistoryIssues(outMessages);
-                if (toolHistoryIssues.length > 0) {
-                    const orphanCount = toolHistoryIssues.filter(
-                        (issue) => issue.type === "orphan_tool_message",
-                    ).length;
-                    const missingCount = toolHistoryIssues.length - orphanCount;
-                    this.d.emit({
-                        kind: "status-notice",
-                        text: `OpenAI dispatch history has invalid tool pairing; request sent unchanged. orphan_tools=${orphanCount} missing_tool_results=${missingCount}`,
-                    });
+                const pairingNotice = toolHistoryPairingNotice(findToolHistoryIssues(outMessages));
+                if (pairingNotice) {
+                    this.d.emit(pairingNotice);
                 }
                 const body: Record<string, unknown> = responses
                     ? { model: this.d.model(), input: toResponsesInput(outMessages), stream: true }
@@ -145,43 +153,24 @@ export class TurnRunner {
                         body.reasoning_effort = effort;
                     }
                 }
-                const bodyJson = JSON.stringify(body);
-                const estimate = estimateRequest(bodyJson, outMessages.length, toolList.length);
-                this.d.emitRequestEstimate(estimate);
-                const contextAssessment = assessContextWindow(
-                    estimate.inputTokens,
-                    this.d.contextWindow(),
-                    this.d.cfg.autoCompactAt,
+                const pre = await preflightRequest(
+                    this.d,
+                    body,
+                    outMessages.length,
+                    toolList.length,
                 );
-                if (
-                    contextAssessment.shouldCompact &&
-                    (await this.d.maybeAutoCompact(estimate.inputTokens))
-                ) {
-                    // The compactor rewrote the live history. Rebuild this same
-                    // hop from that smaller state before recording or sending
-                    // anything; compaction must not consume a tool-hop budget.
+                if (pre.kind === "retry-hop") {
                     hop--;
                     continue;
                 }
-                if (contextAssessment.exceedsWindow) {
-                    const diagnostic = requestEstimateDiagnostic(estimate, this.d.contextWindow());
-                    const autoState =
-                        (this.d.cfg.autoCompactAt ?? 0) > 0
-                            ? "Automatic compaction could not reduce it enough."
-                            : "Automatic compaction is disabled.";
-                    this.d.emit({
-                        kind: "error",
-                        message: `Request not sent: the local input estimate reaches or exceeds this model's context window. ${autoState} Reduce the current message or attachments, lower symposium.openai.maxHistoryMessages, choose a compression preset, or select a model with a larger context window.\n${diagnostic}`,
-                        retryable: false,
-                    });
+                if (pre.kind === "stop") {
                     hitCap = false;
                     break;
                 }
+                const { bodyJson, estimate } = pre;
                 this.d.cfg.log?.(
                     `[${this.d.backend}] POST ${url} api=${this.d.cfg.api} model=${this.d.model()} tools=${toolList.length} hop=${hop}`,
                 );
-                // One attemptId per model POST (hop) within this logical turn, so a
-                // multi-hop turn and a retried turn are distinguishable downstream.
                 const attemptId = makeAttemptId(logicalTurnId, hop + 1);
                 ledger.recordRequest(this.d.sessionId, body, attemptId);
                 const requestStartedAt = Date.now();
@@ -212,45 +201,51 @@ export class TurnRunner {
                 }
                 const responseStartedAt = Date.now();
                 if (!res.ok || !res.body) {
-                    const detail = await res.text().catch(() => "");
-                    const requiredDirective = res.headers.get("x-sufficit-required-directive");
-                    const permissionDetail = requiredDirective
-                        ? `\nX-Sufficit-Required-Directive: ${requiredDirective}`
-                        : "";
-                    const diagnostic = requestEstimateDiagnostic(estimate, this.d.contextWindow());
-                    const retryable = res.status >= 500 || res.status === 429 || res.status === 408;
-                    this.d.emit({
-                        kind: "error",
-                        message:
-                            `HTTP ${res.status} ${res.statusText} ${detail}${permissionDetail}\n${diagnostic}`.trim(),
-                        retryable,
-                    });
+                    this.d.emit(await httpFailureEvent(this.d, res, estimate));
                     hitCap = false;
                     break;
                 }
                 const m = this.d.model();
-                const { text, reasoning, toolCalls, aborted, usage } = await consumeStream(
-                    res.body,
-                    m,
-                    { requestStartedAt, responseStartedAt },
-                    responses,
-                    {
-                        onText: (delta) =>
-                            this.d.emit({
-                                kind: "text",
-                                text: delta,
-                                model: m,
-                                modelLabel: this.d.label(m),
-                            }),
-                        onReasoning: (delta) => this.d.emit({ kind: "thinking", text: delta }),
-                        onError: (message) => this.d.emit({ kind: "error", message }),
-                        onStatusNotice: (notice) =>
-                            this.d.emit({ kind: "status-notice", text: notice }),
-                    },
-                );
+                const { text, reasoning, toolCalls, aborted, interruption, usage } =
+                    await consumeStream(
+                        res.body,
+                        m,
+                        { requestStartedAt, responseStartedAt },
+                        responses,
+                        {
+                            onText: (delta) =>
+                                this.d.emit({
+                                    kind: "text",
+                                    text: delta,
+                                    model: m,
+                                    modelLabel: this.d.label(m),
+                                    reasoning: effort,
+                                    ts: responseStartedAt,
+                                }),
+                            onReasoning: (delta) => this.d.emit({ kind: "thinking", text: delta }),
+                            // Classify: a mid-stream provider failure (the gateway
+                            // already sent 200 + SSE headers, so the status can no
+                            // longer carry 429/503) was emitted with no retryable
+                            // flag at all, which reads as "Retry is unavailable" —
+                            // even for "model is at capacity", which is precisely
+                            // the case worth retrying.
+                            onError: (message) =>
+                                this.d.emit({
+                                    kind: "error",
+                                    message,
+                                    retryable: isTransientErrorMessage(message),
+                                }),
+                            onStatusNotice: (notice) =>
+                                this.d.emit({ kind: "status-notice", text: notice }),
+                        },
+                    );
 
                 if (usage) {
                     emitTurnUsage(this.d, usage);
+                }
+
+                if (interruption?.kind === "transport" && !this.cancelled) {
+                    this.d.emit(transportInterruptionNotice(interruption.message));
                 }
 
                 await this.d.maybeAutoCompact();
@@ -371,21 +366,23 @@ export class TurnRunner {
                 this.d.markPausedForContinuation?.();
             }
         } catch (error) {
+            if (!isCurrentRun()) {
+                return;
+            }
             if ((error as { name?: string })?.name !== "AbortError") {
                 const msg = error instanceof Error ? error.message : String(error);
-                // Network/transport failures (DNS, connection reset, timeout,
-                // "fetch failed", "terminated") are transient and safe to retry
-                // with the exact same request — unlike a 4xx or a logic error.
-                const retryable =
-                    /fetch failed|network error|network request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ECONNABORTED|EPROTO|EPIPE|socket hang up|terminated|aborted|timeout|request timed out|connection refused|connection reset|getaddrinfo/i.test(
-                        msg,
-                    );
-                this.d.emit({ kind: "error", message: msg, retryable });
+                this.d.emit({
+                    kind: "error",
+                    message: msg,
+                    retryable: isTransientErrorMessage(msg),
+                });
             }
         }
+        if (!isCurrentRun()) {
+            return;
+        }
         this.d.safePersist();
-        // Include the stable logicalTurnId in the commit subject so `git log`
-        // (and the timeline view) shows a durable, reopen-stable id per turn.
+        // Include the stable logicalTurnId in git history for reopen-stable turn identity.
         void ledger.commitTurn(
             this.d.sessionId,
             `turn ${this.d.getTurnNo()} (${logicalTurnId}) — user→assistant (model=${this.d.model()})`,

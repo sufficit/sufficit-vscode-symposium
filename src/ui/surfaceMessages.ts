@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { WebviewToHost } from "../protocol/chat";
 import { setTaskDone } from "../sync/tasks";
-import { removeGuardrail, clearSessionGuardrails } from "../sync/guardrails";
+import { clearSurfaceGuardrails, removeSurfaceGuardrail } from "./surfaceGuardrails";
 import { handleVoiceMessage } from "./surfaceMessageVoice";
 import { handleFileMessage } from "./surfaceMessageFiles";
 import { handleChangedFilesMessage } from "./surfaceMessageChangedFiles";
@@ -34,20 +34,47 @@ export class SurfaceMessages {
             switch (message?.type) {
                 case "ready": {
                     this.d.markReady();
-                    if (!this.d.chatOnly) {
+                    if (!this.d.chatOnly || this.d.startInSessionsList) {
                         void this.d.refreshSessions();
                     }
                     void this.d.sync.pushAccount();
                     void this.d.sync.refreshTasks();
                     void this.d.sync.refreshGuardrails();
-                    // Nothing bound yet (view just opened): restore the last
-                    // active session if we have one, else start a fresh dialogue.
+                    // The sidebar restores its last session only when it is the
+                    // configured chat destination. In editor mode the sidebar is
+                    // deliberately a sessions navigator, so restoring here would
+                    // replace the navigator with the active conversation.
+                    const openIn = vscode.workspace
+                        .getConfiguration("symposium.chat")
+                        .get<string>("openIn", "editor");
                     if (
+                        !this.d.chatOnly &&
+                        openIn !== "editor" &&
                         !this.d.getController() &&
                         !this.d.getFollowHandle() &&
                         !this.d.getTerminalSession()
                     ) {
                         void this.d.dialogues.restoreOrStart();
+                    }
+                    return;
+                }
+                case "open-active-session": {
+                    const last = this.d.deps.lastActive.get();
+                    if (!last) {
+                        this.d.post({ type: "toast", text: "No active session to return to." });
+                        return;
+                    }
+                    const sessions = await this.d.deps.listSessions();
+                    const info = sessions.find(
+                        (s) => s.sessionId === last.sessionId && s.backend === last.backend,
+                    );
+                    if (info) {
+                        this.d.openSession(info);
+                    } else {
+                        this.d.post({
+                            type: "toast",
+                            text: "The active session is no longer available.",
+                        });
                     }
                     return;
                 }
@@ -60,6 +87,13 @@ export class SurfaceMessages {
                         this.d
                             .getController()
                             ?.setAiTools(message.tools.map((t: unknown) => String(t)));
+                    }
+                    return;
+                }
+                case "pick-attachments": {
+                    const picked = await this.d.getController()?.pickAttachments();
+                    if (picked?.length) {
+                        this.d.post({ type: "attachments-picked", files: picked });
                     }
                     return;
                 }
@@ -141,8 +175,8 @@ export class SurfaceMessages {
                     return;
                 }
                 case "remove-guardrail": {
-                    if (typeof message.id === "string" && this.d.hub.configured()) {
-                        await removeGuardrail(this.d.hub, message.id);
+                    if (typeof message.id === "string") {
+                        await removeSurfaceGuardrail(this.d.hub, message.id);
                         await this.d.getController()?.reloadGuardrails();
                         void this.d.sync.refreshGuardrails();
                     }
@@ -150,14 +184,14 @@ export class SurfaceMessages {
                 }
                 case "clear-guardrails": {
                     const sid = this.d.getController()?.sessionId;
-                    if (sid && this.d.hub.configured()) {
+                    if (sid) {
                         const ok = await vscode.window.showWarningMessage(
                             "Clear all guardrails for this session?",
                             { modal: true },
                             "Clear",
                         );
                         if (ok === "Clear") {
-                            await clearSessionGuardrails(this.d.hub, sid);
+                            await clearSurfaceGuardrails(this.d.hub, sid);
                             await this.d.getController()?.reloadGuardrails();
                             void this.d.sync.refreshGuardrails();
                         }
@@ -172,8 +206,20 @@ export class SurfaceMessages {
                 }
                 case "retry-last-message": {
                     if (typeof message.index === "number") {
-                        this.d.dialogues.retryLastMessage(message.index, message.errorMessage);
+                        this.d.dialogues.retryLastMessage(
+                            message.index,
+                            message.errorMessage,
+                            message.text,
+                        );
                     }
+                    return;
+                }
+                case "load-more-history": {
+                    // Scroll-up pagination: load the next older history page from
+                    // the backend transcript. The controller stores the cursor
+                    // returned by the previous page; loadMoreHistory is a no-op
+                    // when no cursor remains (transcript fully loaded).
+                    await this.d.getController()?.loadMoreHistory();
                     return;
                 }
                 case "open-settings": {
@@ -302,7 +348,13 @@ export class SurfaceMessages {
                         // then deliver this message to it.
                         this.d.dialogues.startDefaultDialogue();
                     }
-                    await this.d.getController()?.handleMessage(message);
+                    if (this.d.ahp.handleMessage(message)) {
+                        return;
+                    }
+                    if (isAhpControllerMessage(message)) {
+                        throw new Error("AHP session is unavailable");
+                    }
+                    return;
                 }
             }
         } catch (error) {
@@ -324,4 +376,17 @@ export class SurfaceMessages {
             });
         }
     }
+}
+
+function isAhpControllerMessage(message: WebviewToHost): boolean {
+    return (
+        message.type === "send" ||
+        message.type === "cancel" ||
+        message.type === "continue" ||
+        message.type === "queue-remove" ||
+        message.type === "queue-edit" ||
+        message.type === "queue-promote" ||
+        message.type === "queue-clear" ||
+        message.type === "approval-response"
+    );
 }
