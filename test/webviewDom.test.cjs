@@ -214,6 +214,11 @@ test("webview DOM announces AHP reconciliation and renders a chat snapshot once"
     await new Promise((resolve) => setTimeout(resolve, 120));
     assert.match(harness.document.querySelector("#log").textContent, /AHP question/);
     assert.match(harness.document.querySelector("#log").textContent, /AHP answer/);
+    assert.equal(
+        harness.document.querySelector(".msg.user .msgTime"),
+        null,
+        "an unknown legacy timestamp must not render as the Unix epoch",
+    );
     assert.equal(harness.document.querySelector("#root").classList.contains("loading"), false);
     harness.dom.window.close();
 });

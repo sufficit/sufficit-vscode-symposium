@@ -53,6 +53,7 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             continue;
         }
         const turn = (current ??= historyTurn(index, "", message.ts));
+        inheritTurnTimestamp(turn, message.ts);
         if (message.role === "assistant") {
             turn.responseParts.push({
                 kind: PART_MARKDOWN,
@@ -117,4 +118,19 @@ function historyTurn(
         responseParts: [],
         usage: undefined,
     };
+}
+
+function inheritTurnTimestamp(
+    turn: ChatState["turns"][number],
+    timestamp: number | undefined,
+): void {
+    if (
+        typeof timestamp !== "number" ||
+        !Number.isFinite(timestamp) ||
+        timestamp <= 0 ||
+        (typeof turn.startedAt === "string" && Date.parse(turn.startedAt) > 0)
+    ) {
+        return;
+    }
+    turn.startedAt = new Date(timestamp).toISOString();
 }

@@ -115,6 +115,7 @@ async function prepareAndSend(
             text: message.text,
             attachments: message.attachments,
             clientMessageId: message.clientMessageId,
+            ts: message.createdAt ?? Date.now(),
         });
     }
     const intentId = message.intentId ?? context.ports.ids.create();

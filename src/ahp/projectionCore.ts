@@ -10,7 +10,13 @@ export interface AhpProjectionState {
     startedAt?: number;
     /** Effective provider model announced by the adapter for this stream. */
     model?: string;
-    pendingUser?: { text: string; model?: string; attachments?: string[]; id?: string };
+    pendingUser?: {
+        text: string;
+        model?: string;
+        attachments?: string[];
+        id?: string;
+        ts?: number;
+    };
     textPartId?: string;
     reasoningPartId?: string;
     failed?: boolean;

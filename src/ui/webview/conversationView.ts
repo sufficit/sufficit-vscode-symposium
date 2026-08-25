@@ -50,7 +50,7 @@ export function renderUserTurn(
     text: string,
     attachmentPaths: readonly string[] = [],
     clientMessageId?: string,
-    timestamp: string | number = Date.now(),
+    timestamp?: string | number,
 ): HTMLElement {
     endStream();
     markMessageDispatched(clientMessageId);

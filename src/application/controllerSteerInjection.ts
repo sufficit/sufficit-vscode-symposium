@@ -38,6 +38,7 @@ export function tryInjectSteer(message: PendingMessage, ctx: SteerInjectionConte
                 text: message.text,
                 attachments: message.attachments,
                 clientMessageId: message.clientMessageId,
+                ts: message.createdAt ?? Date.now(),
             });
             ctx.log?.(`[steer] injected into the running turn (intent ${intentId})`);
         },

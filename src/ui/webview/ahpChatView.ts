@@ -114,7 +114,7 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
                     String(turnMessage.text ?? ""),
                     attachmentValues(turnMessage.attachments),
                     optionalString(action.queuedMessageId),
-                    optionalString(action.startedAt) ?? Date.now(),
+                    optionalString(action.startedAt),
                 );
             } else {
                 setBusy(true);
@@ -228,7 +228,7 @@ function renderTurn(
             turn.message.text,
             attachmentValues(turn.message.attachments),
             optionalString(meta.queuedMessageId),
-            turn.startedAt ?? Date.now(),
+            turn.startedAt,
         );
     }
     const usageModel = optionalString(asRecord(turn.usage).model);

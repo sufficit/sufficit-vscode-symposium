@@ -17,6 +17,11 @@ export function optionalString(value: unknown): string | undefined {
     return typeof value === "string" ? value : undefined;
 }
 
+export function optionalTimestamp(value: unknown): number | undefined {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return undefined;
+    return value;
+}
+
 export function stringArray(value: unknown): string[] {
     return Array.isArray(value)
         ? value.filter((item): item is string => typeof item === "string")

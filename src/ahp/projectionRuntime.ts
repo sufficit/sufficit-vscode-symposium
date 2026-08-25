@@ -8,6 +8,7 @@ import {
     asRecord,
     isAgentEvent,
     optionalString,
+    optionalTimestamp,
     positive,
     redact,
     sessionKey,
@@ -29,14 +30,12 @@ import {
     sessionChatSummaryChanges,
     type QueueProjectionState,
 } from "./projectControllerState";
-
 export interface AhpProjectionSessionInfo {
     backend: string;
     sessionId: string;
     title: string;
     cwd: string;
 }
-
 export interface AhpProjectionSource {
     list(): AhpProjectionSessionInfo[];
     follow(id: string, observer: (message: unknown) => void): (() => void) | undefined;
@@ -225,6 +224,7 @@ export class AhpProjectionRuntime {
                     optionalString(message.model),
                     stringArray(message.attachments),
                     clientMessageId,
+                    optionalTimestamp(message.ts),
                 );
                 // A mid-turn steer has no turn-start to consume the slot
                 // above, so echo it into the running turn directly (E1).
@@ -358,7 +358,6 @@ export class AhpProjectionRuntime {
             record.currentText = undefined;
         }
     }
-
     private compare(key: string, record: ProjectionRecord): void {
         const chat = this.runtime.snapshot(record.handle.chatResource).state as ChatState;
         const session = this.runtime.snapshot(record.handle.sessionResource).state as SessionState;

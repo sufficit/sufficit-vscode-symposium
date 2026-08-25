@@ -9,7 +9,6 @@ import {
     type AhpProjectionAction,
     type AhpProjectionState,
 } from "./projectionCore";
-
 export {
     createProjectionState,
     type AhpProjectionAction,
@@ -22,8 +21,9 @@ export function rememberProjectedUser(
     model?: string,
     attachments?: string[],
     id?: string,
+    ts?: number,
 ): void {
-    state.pendingUser = { text, model, attachments, id };
+    state.pendingUser = { text, model, attachments, id, ts };
 }
 
 export function projectAgentEvent(
@@ -95,7 +95,7 @@ function startTurn(state: AhpProjectionState, logicalTurnId: string): AhpProject
             type: "chat/turnStarted",
             turnId: logicalTurnId,
             queuedMessageId: pending?.id,
-            startedAt: new Date(state.startedAt).toISOString(),
+            startedAt: new Date(pending?.ts ?? state.startedAt).toISOString(),
             message: {
                 text: pending?.text ?? "",
                 origin: { kind: "user" },

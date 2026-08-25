@@ -20,6 +20,9 @@ export interface QueueHold {
 export interface PendingMessage {
     id?: number;
     clientMessageId?: string;
+    /** User submission time in Unix milliseconds. Captured before queueing so
+     *  delayed dispatch/replay never makes an older message look newly sent. */
+    createdAt?: number;
     /**
      * Controller-assigned intent id for this user request. Stable across the
      * turn it drives; the adapter carries it into ledger rows without deciding

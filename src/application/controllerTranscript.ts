@@ -160,6 +160,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
         const text = assistantBuf.trim();
         const thinking = thinkingBuf.trim();
         if (text) {
+            inferPreviousUserTimestamp(rows, assistantTs);
             rows.push({
                 role: "assistant",
                 text,
@@ -187,7 +188,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
             reasoning?: string;
             terminal?: boolean;
             severity?: "info" | "warning" | "error";
-            ts?: number;
+            ts?: unknown;
         };
     }>) {
         if (message?.type === "history" && Array.isArray(message.messages)) {
@@ -198,13 +199,17 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                 thinking?: unknown;
                 model?: unknown;
                 reasoning?: unknown;
+                ts?: unknown;
             }>) {
                 const text = typeof h?.text === "string" ? h.text : "";
                 const thinking = typeof h?.thinking === "string" ? h.thinking : undefined;
                 if (h?.role === "user" && typeof h.text === "string") {
-                    rows.push({ role: "user", text: h.text });
+                    const ts = timestamp(h.ts);
+                    rows.push({ role: "user", text: h.text, ...(ts !== undefined ? { ts } : {}) });
                 } else if (h?.role === "assistant") {
                     if (text) {
+                        const ts = timestamp(h.ts);
+                        inferPreviousUserTimestamp(rows, ts);
                         rows.push({
                             role: "assistant",
                             text,
@@ -213,6 +218,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                             ...(typeof h.reasoning === "string" && h.reasoning
                                 ? { reasoning: h.reasoning }
                                 : {}),
+                            ...(ts !== undefined ? { ts } : {}),
                         });
                     }
                 }
@@ -220,7 +226,12 @@ export function replayRows(log: unknown[]): ReplayRow[] {
         } else if (message?.type === "user") {
             flushAssistant();
             if (typeof message.text === "string") {
-                rows.push({ role: "user", text: message.text });
+                const ts = timestamp(message.ts);
+                rows.push({
+                    role: "user",
+                    text: message.text,
+                    ...(ts !== undefined ? { ts } : {}),
+                });
             }
         } else if (message?.type === "event" && message.event?.kind === "text") {
             if (legacyGuardrailStopNotice(message.event.text || "")) {
@@ -232,7 +243,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                 if (typeof message.event.reasoning === "string" && message.event.reasoning) {
                     assistantReasoning ??= message.event.reasoning;
                 }
-                assistantTs ??= message.event.ts;
+                assistantTs ??= timestamp(message.event.ts);
                 assistantBuf += message.event.text || "";
             }
         } else if (message?.type === "event" && message.event?.kind === "thinking") {
@@ -267,4 +278,22 @@ export function replayRows(log: unknown[]): ReplayRow[] {
 export function transcriptText(log: unknown[]): string {
     const rows = transcriptMessages(log);
     return rows.map((r) => `${r.role === "user" ? "user" : "assistant"}: ${r.text}`).join("\n\n");
+}
+
+function timestamp(value: unknown): number | undefined {
+    if (typeof value === "number") {
+        return Number.isFinite(value) && value > 0 ? value : undefined;
+    }
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function inferPreviousUserTimestamp(
+    rows: Array<{ role: string; ts?: number }>,
+    assistantTs: number | undefined,
+): void {
+    if (assistantTs === undefined) return;
+    const previous = rows.at(-1);
+    if (previous?.role === "user" && previous.ts === undefined) previous.ts = assistantTs;
 }

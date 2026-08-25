@@ -86,8 +86,9 @@ export function message(
         label.appendChild(name);
     }
     // Hover-only timestamp next to the role (only when we have a real time).
-    if (ts) {
-        const d = new Date(ts),
+    const timestamp = messageTimestamp(ts);
+    if (timestamp) {
+        const d = timestamp,
             now = new Date();
         const sameDay = d.toDateString() === now.toDateString();
         const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -176,6 +177,14 @@ export function message(
     refreshEmpty();
     autoScroll(stick);
     return wrap;
+}
+
+/** Rejects missing/invalid/sentinel dates instead of displaying 1969/1970 or
+ *  substituting the current clock time for historical messages. */
+function messageTimestamp(value: string | number | undefined): Date | undefined {
+    if (value === undefined || value === "") return undefined;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) && date.getTime() > 0 ? date : undefined;
 }
 
 /** Adds model metadata discovered after the assistant bubble was created. */

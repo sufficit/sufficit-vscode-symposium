@@ -192,6 +192,18 @@ test("assistant timestamp, model and effort survive live and history AHP project
         _meta?: { symposium?: Record<string, unknown> };
     };
     assert.deepEqual(historyPart._meta?.symposium, livePart._meta?.symposium);
+    assert.equal(
+        history.startedAt,
+        new Date(timestamp).toISOString(),
+        "legacy user rows inherit the first real timestamp in their turn",
+    );
+
+    const submittedAt = Date.parse("2026-08-19T22:52:50.000Z");
+    const [timestampedHistory] = historyTurns([
+        { role: "user", text: "question", ts: submittedAt },
+        { role: "assistant", text: "answer", ts: timestamp },
+    ]);
+    assert.equal(timestampedHistory.startedAt, new Date(submittedAt).toISOString());
 
     assert.deepEqual(
         readAssistantMetadata({

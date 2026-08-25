@@ -90,6 +90,36 @@ test("render-log transcript preserves the model and effort for assistant rows", 
     );
 });
 
+test("render-log transcript preserves user timestamps and repairs legacy Claude turns", () => {
+    const submittedAt = Date.parse("2026-08-25T15:46:28.513Z");
+    const answeredAt = Date.parse("2026-08-25T15:46:29.021Z");
+
+    assert.deepEqual(
+        replayRows([
+            { type: "user", text: "Timestamped question", ts: submittedAt },
+            { type: "event", event: { kind: "text", text: "Answer", ts: answeredAt } },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [
+            { role: "user", text: "Timestamped question", ts: submittedAt },
+            { role: "assistant", text: "Answer", thinking: undefined, ts: answeredAt },
+        ],
+    );
+
+    assert.deepEqual(
+        replayRows([
+            { type: "user", text: "Legacy question" },
+            { type: "event", event: { kind: "text", text: "Legacy answer", ts: answeredAt } },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [
+            { role: "user", text: "Legacy question", ts: answeredAt },
+            { role: "assistant", text: "Legacy answer", thinking: undefined, ts: answeredAt },
+        ],
+        "a legacy user row inherits the first real timestamp instead of becoming 1969 or now",
+    );
+});
+
 test("render-log history preserves the provider timestamp for assistant rows", async () => {
     const originalHome = process.env.HOME;
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-render-timestamp-"));
@@ -99,6 +129,10 @@ test("render-log history preserves the provider timestamp for assistant rows", a
     const emitted: unknown[] = [];
     const ts = Date.parse("2026-08-18T12:00:00.000Z");
     try {
+        appendRender(sessionId, {
+            type: "user",
+            text: "Historical question",
+        });
         appendRender(sessionId, {
             type: "event",
             event: {
@@ -119,6 +153,11 @@ test("render-log history preserves the provider timestamp for assistant rows", a
             {
                 type: "history",
                 messages: [
+                    {
+                        role: "user",
+                        text: "Historical question",
+                        ts,
+                    },
                     {
                         role: "assistant",
                         text: "Historical reply",

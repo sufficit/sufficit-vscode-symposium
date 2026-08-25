@@ -69,6 +69,7 @@ function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
                 messages.push({
                     role: "user",
                     text: row.text,
+                    ...(row.ts !== undefined ? { ts: row.ts } : {}),
                 });
             } else if (row.role === "assistant") {
                 // Older render logs have no per-message metadata. Use the
