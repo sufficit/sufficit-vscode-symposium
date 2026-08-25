@@ -90,6 +90,12 @@ function route(message: Msg): void {
         void connect();
         return;
     }
+    if (message.type === "open-link") {
+        if (/^(?:https?|mailto|vscode):/i.test(message.url)) {
+            window.open(message.url, "_blank", "noopener,noreferrer");
+        }
+        return;
+    }
     routePwaAhp(message);
 }
 

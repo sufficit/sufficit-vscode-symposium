@@ -36,6 +36,10 @@ test("webview and host wire local Markdown image resolution end to end", () => {
         path.resolve(__dirname, "../../src/ui/webview/markdown.ts"),
         "utf8",
     );
+    const markdownLinks = readFileSync(
+        path.resolve(__dirname, "../../src/ui/webview/markdownLinks.ts"),
+        "utf8",
+    );
     const dispatch = readFileSync(
         path.resolve(__dirname, "../../src/ui/webview/dispatch.ts"),
         "utf8",
@@ -45,7 +49,7 @@ test("webview and host wire local Markdown image resolution end to end", () => {
         "utf8",
     );
     assert.match(markdown, /type: "resolve-markdown-image", id, path: href/);
-    assert.match(markdown, /type: "open-file", path: href/);
+    assert.match(markdownLinks, /type: "open-file", path: href/);
     assert.match(dispatch, /case "markdown-image"/);
     assert.match(surface, /case "resolve-markdown-image"/);
 });

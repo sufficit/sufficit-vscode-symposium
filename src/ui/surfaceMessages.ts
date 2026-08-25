@@ -11,6 +11,7 @@ import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 import { handleMarkdownImageMessage } from "./surfaceMessageMarkdown";
 import { resolveLocalFileTarget } from "./markdownImages";
 import { handleSurfaceCommandMessage } from "./surfaceMessageCommands";
+import { openExternalSurfaceLink } from "./surfaceMessageLinks";
 
 /**
  * Webview → host message router for a chat surface: the big switch that turns
@@ -261,6 +262,10 @@ export class SurfaceMessages {
                             { preview: true, selection },
                         );
                     }
+                    return;
+                }
+                case "open-link": {
+                    await openExternalSurfaceLink(message.url);
                     return;
                 }
                 case "resolve-markdown-image": {

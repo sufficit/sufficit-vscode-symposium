@@ -134,6 +134,41 @@ test("webview DOM renders the effective model and removes sessions absent from h
     harness.dom.window.close();
 });
 
+test("Markdown links open outside the host without navigating the conversation webview", () => {
+    const harness = createHarness();
+    const url = "https://localhost:26508/service";
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({
+        type: "history",
+        carried: true,
+        messages: [{ role: "assistant", text: `[Open service](${url})` }],
+    });
+    const anchor = harness.document.querySelector(`#log a[href="${url}"]`);
+    assert.ok(anchor);
+    const webviewUrl = harness.dom.window.location.href;
+
+    anchor.click();
+    assert.equal(harness.sent.at(-1).type, "open-link");
+    assert.equal(harness.sent.at(-1).url, url);
+    assert.equal(harness.dom.window.location.href, webviewUrl);
+
+    anchor.dispatchEvent(
+        new harness.dom.window.MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: 24,
+            clientY: 24,
+        }),
+    );
+    const openLink = harness.document.querySelector("#ctxMenu button.mi");
+    assert.ok(openLink);
+    openLink.click();
+    assert.equal(harness.sent.at(-1).type, "open-link");
+    assert.equal(harness.sent.at(-1).url, url);
+    assert.equal(harness.dom.window.location.href, webviewUrl);
+    harness.dom.window.close();
+});
+
 test("webview DOM distinguishes live usage, non-fatal errors and actionable system notices", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna", { busy: true }));

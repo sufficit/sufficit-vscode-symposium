@@ -1,7 +1,7 @@
 // Extracted from the chat webview client. Pure DOM/string helpers (no shared state).
 import { postMessage } from "./vscode";
 import { codeBlock, tagBlock, codexTagStart } from "./markdownCode";
-import { showLinkMenu } from "./menus";
+import { bindMarkdownTarget } from "./markdownLinks";
 export { copyText } from "./markdownCode";
 import {
     inlineTokenRegex,
@@ -236,16 +236,13 @@ function markdownImage(label: string, href: string): HTMLElement {
         action.setAttribute("type", "button");
         action.setAttribute("title", `Open ${href}`);
         action.setAttribute("aria-label", `Open image: ${accessibleLabel}`);
-        action.addEventListener("click", () => postMessage({ type: "open-file", path: href }));
     } else if (remote) {
         action.setAttribute("href", href);
         action.setAttribute("title", href);
         action.setAttribute("rel", "noopener noreferrer");
     }
     if (local || remote) {
-        action.addEventListener("contextmenu", (event) =>
-            showLinkMenu(event as MouseEvent, href, () => action.click(), local ? "file" : "link"),
-        );
+        bindMarkdownTarget(action, href, local ? "file" : "link");
     }
     const image = document.createElement("img");
     image.alt = accessibleLabel;
@@ -309,23 +306,12 @@ function appendMarkdownLink(parent: HTMLElement, label: string, href: string): v
         anchor.href = "#";
         anchor.className = "mdLocalLink";
         anchor.title = `Open ${href}`;
-        anchor.addEventListener("click", (event) => {
-            event.preventDefault();
-            postMessage({ type: "open-file", path: href });
-        });
     } else {
         anchor.href = href;
         anchor.title = href;
         anchor.rel = "noopener noreferrer";
     }
-    anchor.addEventListener("contextmenu", (event) =>
-        showLinkMenu(
-            event,
-            href,
-            () => anchor.click(),
-            isLocalMarkdownTarget(href) ? "file" : "link",
-        ),
-    );
+    bindMarkdownTarget(anchor, href, isLocalMarkdownTarget(href) ? "file" : "link");
     parent.appendChild(anchor);
 }
 
