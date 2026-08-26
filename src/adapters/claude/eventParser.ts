@@ -31,6 +31,8 @@ export class ClaudeEventParser {
     private waitingForBackgroundFollowup = false;
     private observedModel: string | undefined;
     private latestTimestamp: number | undefined;
+    private streamStopReason: string | undefined;
+    private turnFinished = false;
     private readonly tasks = new ClaudeTaskTracker();
 
     constructor(private readonly deps: ParserDeps) {}
@@ -41,11 +43,15 @@ export class ClaudeEventParser {
         this.deferredTurnEnd = undefined;
         this.waitingForBackgroundFollowup = false;
         this.latestTimestamp = undefined;
+        this.streamStopReason = undefined;
+        this.turnFinished = false;
     }
 
     /** Starts a fresh normalized turn without losing the session-level model. */
     beginTurn(): void {
         this.latestTimestamp = undefined;
+        this.streamStopReason = undefined;
+        this.turnFinished = false;
     }
 
     handleLine(line: string, sourceCancelled = false): void {
@@ -70,6 +76,23 @@ export class ClaudeEventParser {
 
     private handleStream(event: Record<string, unknown>): void {
         const stream = record(event.event);
+        if (stream?.type === "message_start") {
+            this.streamStopReason = undefined;
+            return;
+        }
+        if (stream?.type === "message_delta") {
+            const stopReason = record(stream.delta)?.stop_reason;
+            if (typeof stopReason === "string") this.streamStopReason = stopReason;
+            return;
+        }
+        if (stream?.type === "message_stop") {
+            const finished = this.streamStopReason === "end_turn";
+            this.streamStopReason = undefined;
+            if (finished && this.pendingToolIds.size === 0 && this.backgroundTaskIds.size === 0) {
+                this.finishTurn(this.deferredTurnEnd ?? {});
+            }
+            return;
+        }
         if (stream?.type !== "content_block_delta") return;
         const delta = record(stream.delta);
         if (delta?.type === "text_delta" && typeof delta.text === "string") {
@@ -237,11 +260,14 @@ export class ClaudeEventParser {
     }
 
     private finishTurn(end: { costUsd?: number; durationMs?: number }): void {
+        if (this.turnFinished) return;
+        this.turnFinished = true;
         this.deps.setTurnActive(false);
         this.deps.emit({ kind: "turn-end", ...end });
         this.deferredTurnEnd = undefined;
         this.waitingForBackgroundFollowup = false;
         this.latestTimestamp = undefined;
+        this.streamStopReason = undefined;
     }
 
     private emitUsage(usage: Record<string, unknown>): void {

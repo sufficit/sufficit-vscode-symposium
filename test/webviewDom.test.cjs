@@ -134,6 +134,24 @@ test("webview DOM renders the effective model and removes sessions absent from h
     harness.dom.window.close();
 });
 
+test("session rows replace the working indicator immediately after a terminal update", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({
+        type: "sessions",
+        items: [{ sessionId: "alpha", backend: "claude", title: "Alpha", status: "working" }],
+    });
+    assert.ok(harness.document.querySelector(".sessionItem .statusDot .work"));
+
+    harness.deliver({
+        type: "sessions",
+        items: [{ sessionId: "alpha", backend: "claude", title: "Alpha", status: "idle" }],
+    });
+    assert.equal(harness.document.querySelector(".sessionItem .statusDot .work"), null);
+    assert.ok(harness.document.querySelector(".sessionItem .statusDot .idle"));
+    harness.dom.window.close();
+});
+
 test("Markdown links open outside the host without navigating the conversation webview", () => {
     const harness = createHarness();
     const url = "https://localhost:26508/service";

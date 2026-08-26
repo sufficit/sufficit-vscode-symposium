@@ -112,6 +112,47 @@ test("Claude starts a new timestamp window for each turn", () => {
     );
 });
 
+test("Claude ends a turn at the provider message_stop boundary without waiting for result", () => {
+    const events: AgentEvent[] = [];
+    const activeStates: boolean[] = [];
+    const instance = parser(events, "high", activeStates);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "stream_event",
+            event: { type: "message_delta", delta: { stop_reason: "end_turn" } },
+        }),
+    );
+    assert.equal(
+        events.some((event) => event.kind === "turn-end"),
+        false,
+    );
+
+    instance.handleLine(JSON.stringify({ type: "stream_event", event: { type: "message_stop" } }));
+    instance.handleLine(JSON.stringify({ type: "result", duration_ms: 25 }));
+
+    assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    assert.deepEqual(activeStates, [false]);
+});
+
+test("Claude does not end the top-level turn when an intermediate tool message stops", () => {
+    const events: AgentEvent[] = [];
+    const instance = parser(events);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "stream_event",
+            event: { type: "message_delta", delta: { stop_reason: "tool_use" } },
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "stream_event", event: { type: "message_stop" } }));
+
+    assert.equal(
+        events.some((event) => event.kind === "turn-end"),
+        false,
+    );
+});
+
 test("Claude timestamps each response block from its own provider event", () => {
     const events: AgentEvent[] = [];
     const instance = parser(events);
@@ -217,6 +258,47 @@ test("Claude keeps a parent turn active until its background agent follow-up fin
         reasoning: "xhigh",
         ts: Date.parse("2026-08-19T10:06:00.000Z"),
     });
+    assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    assert.deepEqual(activeStates, [false]);
+});
+
+test("Claude closes a completed background follow-up at message_stop without a final result", () => {
+    const events: AgentEvent[] = [];
+    const activeStates: boolean[] = [];
+    const instance = parser(events, "high", activeStates);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "system",
+            subtype: "background_tasks_changed",
+            tasks: [{ task_id: "agent-1", task_type: "local_agent" }],
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "result", duration_ms: 100 }));
+    instance.handleLine(
+        JSON.stringify({ type: "system", subtype: "background_tasks_changed", tasks: [] }),
+    );
+    instance.handleLine(
+        JSON.stringify({
+            type: "system",
+            subtype: "task_notification",
+            task_id: "agent-1",
+            status: "completed",
+        }),
+    );
+    assert.equal(
+        events.some((event) => event.kind === "turn-end"),
+        false,
+    );
+
+    instance.handleLine(
+        JSON.stringify({
+            type: "stream_event",
+            event: { type: "message_delta", delta: { stop_reason: "end_turn" } },
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "stream_event", event: { type: "message_stop" } }));
+
     assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
     assert.deepEqual(activeStates, [false]);
 });
