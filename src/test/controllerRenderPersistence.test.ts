@@ -129,6 +129,148 @@ test("peer controllers share live render state, project AHP once and hand owners
     });
 });
 
+test("a follower persists an actionable terminal error when the owner dies mid-turn", async () => {
+    await withIsolatedState(async ({ ownerRoot }) => {
+        const sessionId = "abandoned-native-session";
+        const alive = new Set([501, 502]);
+        const ownership = {
+            root: ownerRoot,
+            isPidAlive: (candidate: number) => alive.has(candidate),
+        };
+        const leader = new ControllerRenderPersistence(() => sessionId, {
+            writer: { id: "leader", pid: 501 },
+            ownership,
+            follow: { intervalMs: 25 },
+        });
+        const follower = new ControllerRenderPersistence(() => sessionId, {
+            writer: { id: "follower", pid: 502 },
+            ownership,
+            follow: { intervalMs: 25 },
+        });
+        try {
+            leader.restore(sessionId);
+            follower.restore(sessionId);
+            leader.stream.emit({
+                type: "event",
+                event: { kind: "turn-start", logicalTurnId: "turn-abandoned" },
+            });
+            await waitFor(() => follower.peerBusy);
+
+            alive.delete(501);
+            await waitFor(
+                () =>
+                    follower.isOwner &&
+                    follower.stream.messages.some(
+                        (message) =>
+                            (message as { event?: { kind?: string; retryable?: boolean } }).event
+                                ?.kind === "error",
+                    ),
+            );
+
+            const snapshot = readRenderSnapshot(sessionId).messages;
+            const error = snapshot.find(
+                (message) => (message as { event?: { kind?: string } }).event?.kind === "error",
+            ) as { event?: { message?: string; retryable?: boolean } } | undefined;
+            assert.match(error?.event?.message ?? "", /host disconnected/);
+            assert.equal(error?.event?.retryable, true);
+            assert.equal(
+                snapshot.some(
+                    (message) =>
+                        (message as { event?: { kind?: string; logicalTurnId?: string } }).event
+                            ?.kind === "turn-end" &&
+                        (message as { event?: { logicalTurnId?: string } }).event?.logicalTurnId ===
+                            "turn-abandoned",
+                ),
+                true,
+            );
+        } finally {
+            leader.dispose();
+            follower.dispose();
+        }
+    });
+});
+
+test("a follower closes an orphaned turn when its live host released ownership", async () => {
+    await withIsolatedState(async ({ ownerRoot }) => {
+        const sessionId = "orphaned-live-host-session";
+        const ownership = { root: ownerRoot, isPidAlive: () => true };
+        const leader = new ControllerRenderPersistence(() => sessionId, {
+            writer: { id: "leader", pid: 601 },
+            ownership,
+            follow: { intervalMs: 25 },
+        });
+        const follower = new ControllerRenderPersistence(() => sessionId, {
+            writer: { id: "follower", pid: 602 },
+            ownership,
+            follow: { intervalMs: 25 },
+        });
+        try {
+            leader.restore(sessionId);
+            follower.restore(sessionId);
+            leader.stream.emit({
+                type: "event",
+                event: { kind: "turn-start", logicalTurnId: "turn-orphaned" },
+            });
+            await waitFor(() => follower.peerBusy);
+
+            // The Extension Host remains alive, but the controller vanished
+            // without its terminal row and released the session lease.
+            leader.releaseOwnership();
+            await waitFor(() => follower.isOwner && follower.peerAttention === "error");
+
+            const events = readRenderSnapshot(sessionId).messages.map(
+                (message) => (message as { event?: { kind?: string } }).event?.kind,
+            );
+            assert.deepEqual(events.slice(-2), ["error", "turn-end"]);
+        } finally {
+            leader.dispose();
+            follower.dispose();
+        }
+    });
+});
+
+test("normal turn-end followed by immediate ownership release is not abandoned", async () => {
+    await withIsolatedState(async ({ ownerRoot }) => {
+        const sessionId = "clean-live-host-handoff";
+        const ownership = { root: ownerRoot, isPidAlive: () => true };
+        const leader = new ControllerRenderPersistence(() => sessionId, {
+            writer: { id: "leader", pid: 701 },
+            ownership,
+            follow: { intervalMs: 25 },
+        });
+        const follower = new ControllerRenderPersistence(() => sessionId, {
+            writer: { id: "follower", pid: 702 },
+            ownership,
+            follow: { intervalMs: 25 },
+        });
+        try {
+            leader.restore(sessionId);
+            follower.restore(sessionId);
+            leader.stream.emit({
+                type: "event",
+                event: { kind: "turn-start", logicalTurnId: "turn-clean" },
+            });
+            await waitFor(() => follower.peerBusy);
+
+            leader.stream.emit({
+                type: "event",
+                event: { kind: "turn-end", logicalTurnId: "turn-clean" },
+            });
+            leader.releaseOwnership();
+            await waitFor(() => follower.isOwner && !follower.peerBusy);
+
+            const errorCount = readRenderSnapshot(sessionId).messages.filter(
+                (message) => (message as { event?: { kind?: string } }).event?.kind === "error",
+            ).length;
+            assert.equal(errorCount, 0);
+            assert.equal(follower.peerAttention, undefined);
+        } finally {
+            leader.dispose();
+            follower.dispose();
+        }
+    });
+});
+
 function projectionSource(
     sessionId: string,
     persistence: ControllerRenderPersistence,

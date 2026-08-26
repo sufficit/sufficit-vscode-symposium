@@ -47,7 +47,7 @@ export class ControllerRenderPersistence {
             ...options.ownership,
             log: options.log ?? options.ownership?.log,
         });
-        this.peer = new PeerRenderState((writer) => this.ownership.alive(writer));
+        this.peer = new PeerRenderState((writer) => this.peerWriterOwnsSession(writer));
         this.stream = new RenderStream((message) => this.persist(message));
     }
 
@@ -73,6 +73,7 @@ export class ControllerRenderPersistence {
         // deliberately transient), so a later local emit must not flush them.
         this.state.count = this.stream.messages.length;
         this.follow(resumeSessionId, restored.cursor);
+        this.recoverAbandonedPeerTurn();
         return restored;
     }
 
@@ -176,6 +177,19 @@ export class ControllerRenderPersistence {
         if (!this.owned && !this.yielded && this.ownership.ensure(sessionId)) {
             this.becomeOwner(false);
         }
+        this.recoverAbandonedPeerTurn();
+    }
+
+    /**
+     * A live Extension Host is not sufficient proof that its old turn is still
+     * running: the controller can disappear or yield its lease while the host
+     * process remains alive for days. The writer must still own this session.
+     */
+    private peerWriterOwnsSession(writer: RenderWriter | undefined): boolean {
+        const sessionId = this.followedSessionId ?? this.sessionId();
+        if (!sessionId || !writer || !this.ownership.alive(writer)) return false;
+        const owner = this.ownership.owner(sessionId);
+        return owner?.id === writer.id && owner.pid === writer.pid;
     }
 
     private becomeOwner(fromDispatch: boolean): void {
@@ -183,6 +197,32 @@ export class ControllerRenderPersistence {
         this.owned = true;
         this.yielded = false;
         if (changed && !fromDispatch) this.options.onOwnershipAcquired?.();
+    }
+
+    /**
+     * A dead Extension Host cannot write its own error/turn-end. The first
+     * follower that acquires the stale lease closes that durable gap so every
+     * window sees an actionable explanation instead of a conversation that
+     * merely stops animating.
+     */
+    private recoverAbandonedPeerTurn(): void {
+        if (!this.isOwner) return;
+        const abandoned = this.peer.takeAbandonedTurn();
+        if (!abandoned) return;
+        this.stream.emit({
+            type: "event",
+            event: {
+                kind: "error",
+                message:
+                    "The agent host disconnected before reporting a result. The turn was stopped and can be retried.",
+                retryable: true,
+            },
+        });
+        this.stream.emit({
+            type: "event",
+            event: { kind: "turn-end", ...abandoned },
+        });
+        this.options.onStatusChanged?.();
     }
 }
 

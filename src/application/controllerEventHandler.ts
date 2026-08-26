@@ -64,6 +64,20 @@ export class ControllerEventHandler {
             !event.logicalTurnId && decision.turn.backendId
                 ? { ...event, logicalTurnId: decision.turn.backendId }
                 : event;
+        if (
+            decision.turn.awaitingFinalResponse &&
+            !decision.turn.cancelRequested &&
+            !decision.turn.attention
+        ) {
+            const notice: AgentEvent = {
+                kind: "status-notice",
+                severity: "warning",
+                terminal: true,
+                text: "The agent stopped without returning a final response. Retry the turn or send Continue to resume from the current conversation state.",
+            };
+            b.emit({ type: "event", event: notice });
+            decision.turn.recordWarning();
+        }
         b.emit({ type: "event", event: enriched });
         // false: this event IS the adapter's own turn-end; completeTurn must
         // not synthesize a second one.
@@ -72,6 +86,12 @@ export class ControllerEventHandler {
 
     private applyEventSideEffects(event: AgentEvent): void {
         const b = this.b;
+        if (event.kind === "text" && event.text.trim()) {
+            b.turns.current?.recordAssistantText();
+        }
+        if (event.kind === "tool-start" || event.kind === "tool-end") {
+            b.turns.current?.recordToolActivity();
+        }
         if (event.kind === "session") {
             b.statusChanged();
         }

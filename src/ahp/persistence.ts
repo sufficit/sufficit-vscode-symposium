@@ -1,7 +1,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import type { Snapshot, URI } from "@microsoft/agent-host-protocol";
+import { withFileLockSync } from "../fileLock";
 import type { AhpHostRuntime, AhpRuntimeExport } from "./hostRuntime";
+import { mergeRuntimeExports } from "./persistenceMerge";
 import {
     type AhpCompactionLimits,
     compactHistoricalSnapshots,
@@ -178,31 +180,20 @@ export class AhpPersistence {
         if (this.writeInFlight) return;
         this.writeInFlight = true;
         const directory = this.directory;
-        const file = this.file;
-        const temporary = path.join(directory, `state.${process.pid}.tmp`);
         setImmediate(() => {
             const payload = this.writePending ?? serialized;
             this.writePending = undefined;
-            fs.promises
-                .mkdir(directory, { recursive: true, mode: 0o700 })
-                .then(() =>
-                    fs.promises.writeFile(temporary, payload, { encoding: "utf8", mode: 0o600 }),
-                )
-                .then(() => fs.promises.rename(temporary, file))
-                .then(() => fs.promises.chmod(file, 0o600).catch(() => undefined))
-                .catch(() => undefined)
-                .finally(() => {
-                    this.writeInFlight = false;
-                    if (this.writePending !== undefined) {
-                        this.scheduleWrite(this.writePending);
-                    } else {
-                        try {
-                            fs.rmSync(temporary, { force: true });
-                        } catch {
-                            /* already removed by rename */
-                        }
-                    }
-                });
+            try {
+                fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
+                this.writePayload(payload);
+            } catch (error) {
+                this.options.onDiagnostic?.(
+                    `[ahp] write failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+            } finally {
+                this.writeInFlight = false;
+                if (this.writePending !== undefined) this.scheduleWrite(this.writePending);
+            }
         });
     }
 
@@ -228,21 +219,75 @@ export class AhpPersistence {
         const payload = this.writePending;
         this.writePending = undefined;
         this.writeInFlight = false;
-        const temporary = path.join(this.directory, `state.${process.pid}.tmp`);
         if (payload !== undefined) {
             fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-            fs.writeFileSync(temporary, payload, { encoding: "utf8", mode: 0o600 });
-            fs.renameSync(temporary, this.file);
-            try {
-                fs.chmodSync(this.file, 0o600);
-            } catch {
-                // Some remote filesystems do not expose POSIX mode changes.
-            }
+            this.writePayload(payload);
         }
+    }
+
+    /** Serializes the cross-process read/merge/write transaction. */
+    private writePayload(localPayload: string): void {
+        withFileLockSync(this.file, () => {
+            const payload = this.mergePersisted(localPayload);
+            const temporary = path.join(this.directory, `state.${process.pid}.${Date.now()}.tmp`);
+            try {
+                fs.writeFileSync(temporary, payload, { encoding: "utf8", mode: 0o600 });
+                fs.renameSync(temporary, this.file);
+                try {
+                    fs.chmodSync(this.file, 0o600);
+                } catch {
+                    // Some remote filesystems do not expose POSIX mode changes.
+                }
+            } finally {
+                try {
+                    fs.rmSync(temporary, { force: true });
+                } catch {
+                    /* already renamed */
+                }
+            }
+        });
+    }
+
+    /**
+     * Preserves sessions projected by sibling code-server Extension Hosts.
+     * Each browser owns an independent runtime, so replacing state.json with
+     * only the local runtime loses ephemeral AHP ids and their chat snapshots.
+     */
+    private mergePersisted(localPayload: string): string {
+        if (!fs.existsSync(this.file)) return localPayload;
         try {
-            fs.rmSync(temporary, { force: true });
-        } catch {
-            /* already removed */
+            const local = validateEnvelope(JSON.parse(localPayload), this.maxSessionBytes);
+            const persisted = validateEnvelope(
+                JSON.parse(fs.readFileSync(this.file, "utf8")),
+                this.maxSessionBytes,
+            );
+            const merged = mergeRuntimeExports(local.runtime, persisted.runtime);
+            if (!merged.changed) return localPayload;
+            let runtime = compactHistoricalSnapshots(merged.runtime, this.compactionLimits());
+            validateRuntime(runtime, this.maxSessionBytes);
+            let envelope: PersistenceEnvelope = {
+                ...local,
+                savedAt: new Date().toISOString(),
+                runtime,
+            };
+            let serialized = JSON.stringify(envelope);
+            if (Buffer.byteLength(serialized) > this.maxBytes) {
+                runtime = trimRetained(runtime, this.compactionLimits());
+                envelope = { ...envelope, runtime };
+                serialized = JSON.stringify(envelope);
+            }
+            if (Buffer.byteLength(serialized) > this.maxBytes) {
+                throw new Error("AHP merged persistence exceeds total byte limit");
+            }
+            this.options.onDiagnostic?.(
+                `[ahp] merged ${merged.foreignSessions} session(s) from sibling Extension Host state`,
+            );
+            return serialized;
+        } catch (error) {
+            this.options.onDiagnostic?.(
+                `[ahp] shared-state merge skipped: ${error instanceof Error ? error.message : String(error)}`,
+            );
+            return localPayload;
         }
     }
 

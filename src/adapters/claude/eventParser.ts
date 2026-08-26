@@ -49,6 +49,15 @@ export class ClaudeEventParser {
 
     /** Starts a fresh normalized turn without losing the session-level model. */
     beginTurn(): void {
+        // All tool/background bookkeeping is scoped to one prompt. A missing
+        // native tool_result in an older turn must never keep every later turn
+        // marked as active.
+        this.pendingToolIds.clear();
+        this.backgroundTaskIds.clear();
+        this.deferredTurnEnd = undefined;
+        this.waitingForBackgroundFollowup = false;
+        this.streamedText = false;
+        this.streamedThinking = false;
         this.latestTimestamp = undefined;
         this.streamStopReason = undefined;
         this.turnFinished = false;
@@ -88,7 +97,10 @@ export class ClaudeEventParser {
         if (stream?.type === "message_stop") {
             const finished = this.streamStopReason === "end_turn";
             this.streamStopReason = undefined;
-            if (finished && this.pendingToolIds.size === 0 && this.backgroundTaskIds.size === 0) {
+            // end_turn is Claude's authoritative assistant boundary. A stale
+            // unmatched foreground tool id must not override it; only a
+            // genuinely-running background task may keep the parent open.
+            if (finished && this.backgroundTaskIds.size === 0) {
                 this.finishTurn(this.deferredTurnEnd ?? {});
             }
             return;
@@ -227,9 +239,13 @@ export class ClaudeEventParser {
             costUsd: optionalNumber(event.total_cost_usd),
             durationMs: optionalNumber(event.duration_ms),
         };
-        if (this.pendingToolIds.size > 0 || this.backgroundTaskIds.size > 0) {
+        // A result is authoritative for all foreground tools. Claude versions
+        // differ in whether every tool_result is mirrored to stream-json, so
+        // pendingToolIds is diagnostic only at this boundary. Background tasks
+        // are the sole reason a result can be intermediate.
+        if (this.backgroundTaskIds.size > 0) {
             this.deferredTurnEnd = end;
-            if (this.backgroundTaskIds.size > 0) this.waitingForBackgroundFollowup = true;
+            this.waitingForBackgroundFollowup = true;
         } else if (this.waitingForBackgroundFollowup && !this.deferredTurnEnd) {
             // A background task may complete immediately before the parent's
             // intermediate result. Keep the turn open for the task-notification
@@ -250,7 +266,6 @@ export class ClaudeEventParser {
     private finishDeferredToolResult(): void {
         if (
             !this.deferredTurnEnd ||
-            this.pendingToolIds.size > 0 ||
             this.backgroundTaskIds.size > 0 ||
             this.waitingForBackgroundFollowup
         ) {

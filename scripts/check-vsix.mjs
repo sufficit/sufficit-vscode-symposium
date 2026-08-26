@@ -72,17 +72,14 @@ for (const entry of missing) failures.push(`required packaged path is missing: $
 for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`);
 
 const budgets = new Map([
-    // Bumped from 788KB after exact user-submission timestamps, legacy replay
-    // repair and AHP propagation added real runtime behavior, not packaged bloat.
-    // The 790KB ceiling keeps the host-bundle guardrail with measured headroom.
-    // Earlier it was bumped from 787KB after provider-origin message metadata
-    // (timestamp, model and effort replay) added real runtime behavior.
-    // Earlier it was bumped from 750KB after the turn-lifecycle refactor (turn.ts,
-    // controllerTurnRunner.ts, codex/eventParser.ts, ahp persistence split,
-    // etc.) added real functionality, not bloat. Headroom above the current
-    // ~755KB actual for near-term growth. The 788KB ceiling includes the
-    // machine-readable Symposium/AHP discovery contract.
-    ["extension/out/extension.js", 790 * 1024],
+    // Raised from 790KB after cross-process session/AHP locking, orphan-turn
+    // recovery and explicit silent-stop diagnostics added 5.5KB of measured
+    // runtime behavior. 800KB preserves a narrow ~5KB regression margin while
+    // the separate 1MB archive ceiling still constrains the complete package.
+    // Prior measured increases covered exact message metadata, AHP discovery
+    // and the turn-lifecycle refactor; each retained a deliberately small
+    // regression allowance instead of weakening the complete-package ceiling.
+    ["extension/out/extension.js", 800 * 1024],
     ["extension/out/ui/webview.bundle.js", 320 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

@@ -153,6 +153,50 @@ test("Claude does not end the top-level turn when an intermediate tool message s
     );
 });
 
+test("Claude result closes a turn even when the CLI omits a foreground tool_result", () => {
+    const events: AgentEvent[] = [];
+    const activeStates: boolean[] = [];
+    const instance = parser(events, "high", activeStates);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "assistant",
+            message: {
+                content: [{ type: "tool_use", id: "tool-without-result", name: "Read" }],
+            },
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "result", duration_ms: 15 }));
+
+    assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    assert.deepEqual(activeStates, [false]);
+});
+
+test("Claude starts each turn with clean foreground tool bookkeeping", () => {
+    const events: AgentEvent[] = [];
+    const activeStates: boolean[] = [];
+    const instance = parser(events, "high", activeStates);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "assistant",
+            message: { content: [{ type: "tool_use", id: "stale", name: "Read" }] },
+        }),
+    );
+
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "stream_event",
+            event: { type: "message_delta", delta: { stop_reason: "end_turn" } },
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "stream_event", event: { type: "message_stop" } }));
+
+    assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    assert.deepEqual(activeStates, [false]);
+});
+
 test("Claude timestamps each response block from its own provider event", () => {
     const events: AgentEvent[] = [];
     const instance = parser(events);

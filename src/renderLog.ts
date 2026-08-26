@@ -150,7 +150,6 @@ export function followRender(
     let rerun = false;
 
     const sync = async (): Promise<void> => {
-        options.onPoll?.();
         if (disposed) return;
         if (running) {
             rerun = true;
@@ -197,6 +196,11 @@ export function followRender(
         } finally {
             await handle?.close().catch(() => undefined);
             running = false;
+            // Reconcile ownership only after newly appended turn-end rows have
+            // been projected. Owners append synchronously before releasing the
+            // lease; polling first could falsely classify that normal handoff
+            // as an abandoned turn.
+            if (!disposed) options.onPoll?.();
             if (rerun && !disposed) {
                 rerun = false;
                 queueMicrotask(() => void sync());

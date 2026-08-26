@@ -49,6 +49,10 @@ export class Turn {
     private _attention: SessionTerminalStatus | undefined;
     private _cancelRequested = false;
     private _endedAt: number | undefined;
+    // A completed turn needs a final assistant response after its last tool.
+    // Without this bit, a provider that simply closes after a tool/result is
+    // indistinguishable from a healthy answer and the UI goes idle silently.
+    private _awaitingFinalResponse = true;
 
     constructor(init: TurnInit) {
         this.id = init.id;
@@ -80,6 +84,10 @@ export class Turn {
 
     get cancelRequested(): boolean {
         return this._cancelRequested;
+    }
+
+    get awaitingFinalResponse(): boolean {
+        return this._awaitingFinalResponse;
     }
 
     get durationMs(): number | undefined {
@@ -124,6 +132,14 @@ export class Turn {
         if (this._attention !== "error") {
             this._attention = "warning";
         }
+    }
+
+    recordAssistantText(): void {
+        this._awaitingFinalResponse = false;
+    }
+
+    recordToolActivity(): void {
+        this._awaitingFinalResponse = true;
     }
 
     requestCancel(): void {
