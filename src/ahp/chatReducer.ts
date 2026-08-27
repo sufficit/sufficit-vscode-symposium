@@ -11,6 +11,7 @@ import { AHP_STATUS, replaceActivityStatus } from "./status";
 import { asArray, asRecord, nonNegative, optionalString, stringArray } from "./chatReducerValues";
 import { mergeToolMetadata } from "./toolMetadata";
 import { mergeAssistantMetadata } from "./assistantMetadata";
+import { reconcileLoadedTurns, withoutSubmissionDuplicate } from "./turnReconciliation";
 
 type ActionRecord = { type: string } & Record<string, unknown>;
 type PartRecord = Record<string, unknown> & {
@@ -102,17 +103,13 @@ export function chatReducer(state: ChatState, raw: StateAction): ChatState {
         case "chat/truncated":
             return truncate(state, optionalString(action.turnId));
         case "chat/turnsLoaded": {
-            // Prepend newly loaded (older) turns, skipping any whose id already
-            // exists in state.turns. This prevents duplication when a session is
-            // reopened and its history is reloaded while the AHP snapshot still
-            // carries the previously loaded turns.
-            const incoming = asArray<Turn>(action.turns);
-            const existing = action.replace === true ? [] : state.turns;
-            const existingIds = new Set(existing.map((turn) => turn.id));
-            const deduped = incoming.filter((turn) => !existingIds.has(turn.id));
             return {
                 ...state,
-                turns: [...deduped, ...existing],
+                turns: reconcileLoadedTurns(
+                    state,
+                    asArray<Turn>(action.turns),
+                    action.replace === true,
+                ),
                 turnsNextCursor: optionalString(action.turnsNextCursor),
             };
         }
@@ -142,22 +139,26 @@ function startTurn(state: ChatState, action: ActionRecord): ChatState {
     // row while the user bubble still renders. Supersede: finalize the stuck
     // turn as cancelled (no duration, it never actually finished) and start
     // the new one.
-    const turns = state.activeTurn
-        ? [...state.turns, finalizeTurn(state.activeTurn, "cancelled", undefined, undefined)]
-        : state.turns;
+    const activeTurn: NonNullable<ChatState["activeTurn"]> = {
+        id: turnId,
+        startedAt: String(action.startedAt ?? new Date().toISOString()),
+        message,
+        responseParts: [],
+        usage: undefined,
+        // Remembered so a late optimistic pendingMessageSet for the same
+        // message can be recognised and refused (see setPending).
+        ...(queuedId ? { _meta: { queuedMessageId: queuedId } } : {}),
+    };
+    const turns = withoutSubmissionDuplicate(
+        state.activeTurn
+            ? [...state.turns, finalizeTurn(state.activeTurn, "cancelled", undefined, undefined)]
+            : state.turns,
+        activeTurn,
+    );
     return {
         ...state,
         turns,
-        activeTurn: {
-            id: turnId,
-            startedAt: String(action.startedAt ?? new Date().toISOString()),
-            message,
-            responseParts: [],
-            usage: undefined,
-            // Remembered so a late optimistic pendingMessageSet for the same
-            // message can be recognised and refused (see setPending).
-            ...(queuedId ? { _meta: { queuedMessageId: queuedId } } : {}),
-        },
+        activeTurn,
         draft: undefined,
         queuedMessages: queuedMessages?.length ? queuedMessages : undefined,
         steeringMessage: clearSteering(state.steeringMessage, queuedId, message),

@@ -149,3 +149,84 @@ test("a message the host really queued stays in the panel", () => {
 
     assert.deepEqual(rendered(h.state()).queued, [TEXT], "real pending work is still shown");
 });
+
+test("history reload after queued dispatch does not duplicate the active user bubble", () => {
+    const h = harness();
+    const ts = Date.parse("2026-08-27T12:44:07.391Z");
+    h.emit({
+        type: "queue",
+        items: [
+            {
+                id: 1,
+                clientMessageId: CLIENT_ID,
+                text: TEXT,
+                attachments: [],
+                createdAt: ts,
+            },
+        ],
+        held: false,
+        busy: true,
+    });
+    h.emit({ type: "queue", items: [], held: false, busy: false });
+    h.emit({
+        type: "user",
+        text: TEXT,
+        attachments: [],
+        clientMessageId: CLIENT_ID,
+        ts,
+    });
+    h.emit({ type: "event", event: { kind: "turn-start", logicalTurnId: TURN_ID } });
+    h.emit({
+        type: "history",
+        replace: true,
+        messages: [{ role: "user", text: TEXT, ts }],
+    });
+
+    assert.equal(rendered(h.state()).bubbles, 1);
+});
+
+test("turn start removes the same history row when reload wins the race", () => {
+    const h = harness();
+    const ts = Date.parse("2026-08-27T12:44:07.391Z");
+    h.emit({
+        type: "user",
+        text: TEXT,
+        attachments: [],
+        clientMessageId: CLIENT_ID,
+        ts,
+    });
+    h.emit({
+        type: "history",
+        replace: true,
+        messages: [{ role: "user", text: TEXT, ts }],
+    });
+    h.emit({ type: "event", event: { kind: "turn-start", logicalTurnId: TURN_ID } });
+
+    assert.equal(rendered(h.state()).bubbles, 1);
+});
+
+test("identical messages sent at different times remain separate turns", () => {
+    const h = harness();
+    const currentTs = Date.parse("2026-08-27T12:44:07.391Z");
+    h.emit({
+        type: "user",
+        text: TEXT,
+        attachments: [],
+        clientMessageId: CLIENT_ID,
+        ts: currentTs,
+    });
+    h.emit({ type: "event", event: { kind: "turn-start", logicalTurnId: TURN_ID } });
+    h.emit({
+        type: "history",
+        replace: true,
+        messages: [
+            {
+                role: "user",
+                text: TEXT,
+                ts: Date.parse("2026-08-27T11:44:07.391Z"),
+            },
+        ],
+    });
+
+    assert.equal(rendered(h.state()).bubbles, 2);
+});
