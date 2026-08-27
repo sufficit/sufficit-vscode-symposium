@@ -3,6 +3,7 @@ import type { AgentEvent, TodoItem } from "../adapters/types";
 import { parseTodoFence } from "../adapters/todos";
 import type { TrackingMode } from "./outboundPrompt";
 import { completeTurn, type TurnCompletionContext } from "./controllerTurnCompletion";
+import { isResponseBlockingToolEvent, MISSING_FINAL_RESPONSE_NOTICE } from "./finalResponseState";
 
 export interface ControllerEventBindings extends TurnCompletionContext {
     armWatchdog(): void;
@@ -73,7 +74,7 @@ export class ControllerEventHandler {
                 kind: "status-notice",
                 severity: "warning",
                 terminal: true,
-                text: "The agent stopped without returning a final response. Retry the turn or send Continue to resume from the current conversation state.",
+                text: MISSING_FINAL_RESPONSE_NOTICE,
             };
             b.emit({ type: "event", event: notice });
             decision.turn.recordWarning();
@@ -89,7 +90,7 @@ export class ControllerEventHandler {
         if (event.kind === "text" && event.text.trim()) {
             b.turns.current?.recordAssistantText();
         }
-        if (event.kind === "tool-start" || event.kind === "tool-end") {
+        if (isResponseBlockingToolEvent(event)) {
             b.turns.current?.recordToolActivity();
         }
         if (event.kind === "session") {

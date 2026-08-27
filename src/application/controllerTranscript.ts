@@ -1,5 +1,6 @@
 /** Transcript projection from application render events. */
 import { legacyGuardrailStopNotice } from "../adapters/openai/turnNotices";
+import { withoutContradictoryFinalResponseWarnings } from "./finalResponseState";
 
 /**
  * Reconstructs the visible conversation (user prompts + assistant replies) from
@@ -43,7 +44,7 @@ export function transcriptMessages(log: unknown[]): TranscriptRow[] {
         assistantModel = undefined;
         assistantReasoning = undefined;
     };
-    for (const message of log as Array<{
+    for (const message of withoutContradictoryFinalResponseWarnings(log) as Array<{
         type?: string;
         messages?: unknown[];
         text?: unknown;
@@ -176,7 +177,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
         assistantReasoning = undefined;
         assistantTs = undefined;
     };
-    for (const message of log as Array<{
+    for (const message of withoutContradictoryFinalResponseWarnings(log) as Array<{
         type?: string;
         messages?: unknown[];
         text?: unknown;

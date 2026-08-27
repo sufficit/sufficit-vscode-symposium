@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { RenderStream } from "../application/renderStream";
+import { MISSING_FINAL_RESPONSE_NOTICE } from "../application/finalResponseState";
 
 test("RenderStream keeps replay and live observers synchronized", () => {
     const stream = new RenderStream();
@@ -79,4 +80,32 @@ test("a later conversation turn neutralizes an earlier retry action on replay", 
     const error = replayed[0] as { event: { historical?: boolean; retryable?: boolean } };
     assert.equal(error.event.retryable, true);
     assert.equal(error.event.historical, true);
+});
+
+test("replay removes a false missing-response warning caused by terminal TodoWrite", () => {
+    const stream = new RenderStream();
+    stream.seed([
+        { type: "event", event: { kind: "turn-start" } },
+        { type: "event", event: { kind: "text", text: "Completed successfully." } },
+        { type: "event", event: { kind: "tool-start", toolName: "TodoWrite" } },
+        {
+            type: "event",
+            event: {
+                kind: "status-notice",
+                severity: "warning",
+                terminal: true,
+                text: MISSING_FINAL_RESPONSE_NOTICE,
+            },
+        },
+        { type: "event", event: { kind: "turn-end" } },
+    ]);
+
+    assert.equal(
+        stream.messages.some(
+            (message) =>
+                (message as { event?: { text?: string } }).event?.text ===
+                MISSING_FINAL_RESPONSE_NOTICE,
+        ),
+        false,
+    );
 });

@@ -13,6 +13,7 @@ import { replayRows, transcriptMessages } from "../application/controllerTranscr
 import { loadControllerHistory } from "../application/controllerHistory";
 import { appendRender } from "../renderLog";
 import type { AgentAdapter } from "../adapters/types";
+import { MISSING_FINAL_RESPONSE_NOTICE } from "../application/finalResponseState";
 
 test("OpenAI guardrail stops are system warnings, not assistant text", () => {
     const event = guardrailStopNotice("Stopped after repeated tool calls.");
@@ -36,6 +37,28 @@ test("system warnings are excluded from the assistant transcript", () => {
     assert.deepEqual(rows, [
         { role: "user", text: "Run the task" },
         { role: "assistant", text: "Working", thinking: undefined },
+    ]);
+});
+
+test("history hides a contradictory missing-response warning after terminal TodoWrite", () => {
+    const rows = replayRows([
+        { type: "event", event: { kind: "turn-start" } },
+        { type: "event", event: { kind: "text", text: "Completed successfully." } },
+        { type: "event", event: { kind: "tool-start", toolName: "TodoWrite" } },
+        {
+            type: "event",
+            event: {
+                kind: "status-notice",
+                severity: "warning",
+                terminal: true,
+                text: MISSING_FINAL_RESPONSE_NOTICE,
+            },
+        },
+        { type: "event", event: { kind: "turn-end" } },
+    ]);
+
+    assert.deepEqual(rows, [
+        { role: "assistant", text: "Completed successfully.", thinking: undefined },
     ]);
 });
 

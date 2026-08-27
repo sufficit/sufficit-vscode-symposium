@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ControllerEventHandler } from "../application/controllerEventHandler";
+import { MISSING_FINAL_RESPONSE_NOTICE } from "../application/finalResponseState";
 import { TurnTracker } from "../application/turn";
 
 function handlerState() {
@@ -64,6 +65,41 @@ test("assistant text after the last tool completes normally without a warning", 
         ),
         false,
     );
+});
+
+test("a terminal TodoWrite snapshot does not invalidate the final assistant response", () => {
+    const { turns, handler, emitted } = handlerState();
+    handler.handle({ kind: "text", text: "Implemented and validated." });
+    handler.handle({ kind: "tool-start", toolName: "TodoWrite", detail: "", todos: [] });
+    handler.handle({ kind: "turn-end" });
+
+    assert.equal(
+        emitted.some(
+            (message) =>
+                (message as { event?: { text?: string } }).event?.text ===
+                MISSING_FINAL_RESPONSE_NOTICE,
+        ),
+        false,
+    );
+    assert.equal(turns.attention, undefined);
+});
+
+test("a substantive tool after assistant text still requires a final response", () => {
+    const { turns, handler, emitted } = handlerState();
+    handler.handle({ kind: "text", text: "I will inspect it." });
+    handler.handle({ kind: "tool-start", toolName: "exec", detail: "check" });
+    handler.handle({ kind: "tool-end", toolName: "exec", detail: "check" });
+    handler.handle({ kind: "turn-end" });
+
+    assert.equal(
+        emitted.some(
+            (message) =>
+                (message as { event?: { text?: string } }).event?.text ===
+                MISSING_FINAL_RESPONSE_NOTICE,
+        ),
+        true,
+    );
+    assert.equal(turns.attention, "warning");
 });
 
 test("non-terminal warnings do not mark the session as stopped", () => {
