@@ -344,6 +344,15 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         void this.runner.run();
     }
 
+    setModel(model: string): void {
+        this.runtime.setModel(model);
+        this.safePersist();
+    }
+
+    getModel(): string {
+        return this.runtime.model();
+    }
+
     /** See AgentSession.injectUserMessage. The TurnRunner opens the window for
      *  the duration of each run; outside one this returns false and the caller
      *  falls back to the queue. */

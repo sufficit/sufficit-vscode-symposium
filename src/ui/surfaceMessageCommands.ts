@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { probeRtk } from "../adapters/rtk";
+import { symposiumLog } from "../extension/log";
 import type { WebviewToHost } from "../protocol/chat";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
@@ -33,6 +34,9 @@ export async function handleSurfaceCommandMessage(
                 controller.setModel(message.model);
                 controller.getSession()?.safePersist?.();
                 deps.post({ type: "session-model-updated", model: message.model });
+                symposiumLog(
+                    `[surface] model changed requested=${message.model} effective=${controller.getModel() || "default"}`,
+                );
                 await deps.refreshQuotas(true);
             }
             return true;

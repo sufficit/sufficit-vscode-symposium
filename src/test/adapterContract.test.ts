@@ -137,3 +137,56 @@ test("OpenAI adapter satisfies the shared lifecycle contract with a fake server"
         );
     }
 });
+
+test("OpenAI applies a model picker change when normalized reasoning cloned the start options", async () => {
+    const receivedModels: string[] = [];
+    const server = createServer((request, response) => {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+            const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { model?: string };
+            receivedModels.push(body.model ?? "");
+            response.setHeader("content-type", "text/event-stream");
+            response.end(
+                [
+                    'data: {"id":"fake-response","model":"preset-development","choices":[{"delta":{"content":"ok"}}]}',
+                    'data: {"model":"preset-development","choices":[{"delta":{},"finish_reason":"stop"}]}',
+                    "data: [DONE]",
+                    "",
+                ].join("\n\n"),
+            );
+        });
+    });
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const adapter = new OpenAIAdapter("model-switch-openai", "Model Switch OpenAI", () => ({
+        api: "chat",
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        model: "glm-5.3",
+        models: ["glm-5.3", "preset-development"],
+        headers: {},
+        apiKey: "fake-token",
+    }));
+    const session = adapter.start({
+        cwd: process.cwd(),
+        model: "glm-5.3",
+        reasoning: "high",
+    });
+
+    try {
+        assert.equal(session.getModel?.(), "glm-5.3");
+        session.setModel?.("preset-development");
+        assert.equal(session.getModel?.(), "preset-development");
+        await collectTurn(session, "use selected preset");
+        assert.deepEqual(receivedModels, ["preset-development"]);
+
+        session.setModel?.("default");
+        assert.equal(session.getModel?.(), "glm-5.3");
+    } finally {
+        session.dispose();
+        await new Promise<void>((resolveClose, reject) =>
+            server.close((error) => (error ? reject(error) : resolveClose())),
+        );
+    }
+});
