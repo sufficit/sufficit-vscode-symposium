@@ -20,7 +20,7 @@ import {
     sessionCostUsd,
 } from "./statusbar";
 import { setStatus } from "./status";
-import { modelLabel, setModelLabel, setModelValue } from "./models";
+import { modelLabel } from "./models";
 import { sendBtn } from "./dom";
 import {
     activeModel,
@@ -151,12 +151,10 @@ function applyEffectiveModel(model: unknown): void {
     if (typeof model !== "string" || !model) {
         return;
     }
+    // The provider model that actually answered and the preset/model requested
+    // for the next turn are separate pieces of state. Gateway routing may turn
+    // a selected preset into a concrete provider model; reflecting that in the
+    // status and reply metadata must never rewrite the user's picker selection.
     setActiveModel(model);
     updateLastAssistantModel(model);
-    // A queued message already captured its own model. Keep that picker value
-    // until the queued turn starts; otherwise show the model actually used.
-    if (!queued) {
-        setModelValue(model);
-        setModelLabel();
-    }
 }

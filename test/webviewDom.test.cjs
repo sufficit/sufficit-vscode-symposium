@@ -134,6 +134,40 @@ test("webview DOM renders the effective model and removes sessions absent from h
     harness.dom.window.close();
 });
 
+test("routed effective model does not replace the preset selected for the next request", () => {
+    const harness = createHarness();
+    harness.deliver(
+        meta("alpha", "preset-development", {
+            backend: "openai",
+            backendName: "Sufficit AI",
+            models: ["preset-development", "glm-5.3"],
+            modelLabels: {
+                "preset-development": "Acesso Point - Development",
+                "glm-5.3": "Sufficit - Z.AI Reasoner",
+            },
+        }),
+    );
+    assert.equal(
+        harness.document.querySelector("#modelPicker .lbl").textContent,
+        "Acesso Point - Development",
+    );
+
+    harness.deliver({ type: "event", event: { kind: "model", model: "glm-5.3" } });
+
+    assert.equal(
+        harness.document.querySelector("#modelPicker .lbl").textContent,
+        "Acesso Point - Development",
+    );
+
+    const input = harness.document.querySelector("#input");
+    input.value = "continue with the selected preset";
+    input.dispatchEvent(new harness.dom.window.Event("input"));
+    harness.document.querySelector("#send").click();
+    const sent = harness.sent.findLast((message) => message.type === "send");
+    assert.equal(sent.model, "preset-development");
+    harness.dom.window.close();
+});
+
 test("session rows replace the working indicator immediately after a terminal update", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));

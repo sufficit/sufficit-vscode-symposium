@@ -201,9 +201,15 @@ test("a fresh central panel opens the sessions navigator and can return to the a
     assert.match(css, /#root\.sessions-only #sessionsBackBtn/);
 });
 
-test("effective model changes do not get hidden behind the next queued model", () => {
+test("effective model updates status without replacing the requested picker preset", () => {
     assert.match(events, /ev\.kind === "model"/);
-    assert.match(events, /if \(!queued\) \{\s*setModelValue\(model\);\s*setModelLabel\(\);\s*\}/);
+    const effectiveModelBody = events
+        .split("function applyEffectiveModel(model: unknown): void {")[1]
+        ?.split("\n}")[0];
+    assert.ok(effectiveModelBody, "effective-model handler must remain present");
+    assert.match(effectiveModelBody, /setActiveModel\(model\)/);
+    assert.match(effectiveModelBody, /updateLastAssistantModel\(model\)/);
+    assert.doesNotMatch(effectiveModelBody, /setModelValue|setModelLabel/);
     assert.match(
         status,
         /\["thinking\.\.\.", activeModel \? modelLabel\(activeModel\) : "", queueLabel\]/,
