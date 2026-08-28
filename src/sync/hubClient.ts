@@ -275,11 +275,16 @@ export class HubClient {
 
     /** Upserts an observation (id present → update, absent → create). Returns new id. */
     async save(observation: Observation): Promise<string> {
+        const title = observation.title.trim();
+        const summary = observation.summary.trim();
+        if (!title || !summary) {
+            throw new Error("memory title and summary are required and must contain text");
+        }
         const res = await this.request(
             `${this.base()}/api/memory/save`,
             {
                 method: "POST",
-                body: JSON.stringify(observation),
+                body: JSON.stringify({ ...observation, title, summary }),
             },
             observation.sessionId,
         );

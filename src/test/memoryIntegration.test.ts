@@ -71,3 +71,24 @@ test("canonical memory_save failure does not create an alternate local record", 
     assert.equal(parsed._memory_source, "remote_unavailable");
     assert.ok(!("id" in parsed));
 });
+
+test("memory_save rejects blank searchable text before calling the hub", async () => {
+    let saveCalls = 0;
+    const hub = {
+        save() {
+            saveCalls += 1;
+            return Promise.resolve("should-not-be-created");
+        },
+    };
+
+    const output = await runMemoryTool(
+        "memory_save",
+        { type: "note", title: "  ", summary: "\n\t" },
+        context(hub),
+    );
+    const parsed = JSON.parse(output ?? "{}") as Record<string, unknown>;
+
+    assert.equal(saveCalls, 0);
+    assert.equal(parsed.retryable, false);
+    assert.match(String(parsed.error), /title and summary are required/);
+});
