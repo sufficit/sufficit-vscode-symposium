@@ -24,6 +24,8 @@ const BACKEND_LABELS: Record<string, string> = {
     claude: "Claude",
     codex: "Codex",
     copilot: "Copilot",
+    gemini: "Gemini",
+    antigravity: "Antigravity",
 };
 
 export function backendLabel(backend: string): string {

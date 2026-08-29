@@ -131,6 +131,7 @@ function fromCliTranscript(id: string): SessionDump | undefined {
     const roots = [
         { backend: "claude", dir: path.join(os.homedir(), ".claude", "projects") },
         { backend: "codex", dir: path.join(os.homedir(), ".codex", "sessions") },
+        { backend: "gemini", dir: path.join(os.homedir(), ".gemini") },
     ];
     for (const { backend, dir } of roots) {
         const file = findFile(dir, id);
@@ -146,10 +147,22 @@ function fromCliTranscript(id: string): SessionDump | undefined {
                     continue;
                 }
                 // Claude jsonl: { type:"user"|"assistant", message:{ role, content } }
+                // Antigravity jsonl: { type:"USER_INPUT"|"PLANNER_RESPONSE", source:"USER_EXPLICIT"|"MODEL", content }
                 const msg = (row.message ?? row) as Record<string, unknown>;
-                const role = String(msg.role ?? row.role ?? row.type ?? "");
+                let role = String(msg.role ?? row.role ?? row.type ?? "").toLowerCase();
+                if (role === "user_input" || row.source === "USER_EXPLICIT") {
+                    role = "user";
+                } else if (role === "planner_response" || row.source === "MODEL") {
+                    role = "assistant";
+                }
                 if (role !== "user" && role !== "assistant") continue;
-                const text = contentToText(msg.content ?? row.content);
+                let text = contentToText(msg.content ?? row.content);
+                if (role === "user") {
+                    const reqMatch = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i.exec(text);
+                    if (reqMatch) {
+                        text = reqMatch[1].trim();
+                    }
+                }
                 if (text) messages.push({ role, text });
             }
             if (messages.length)

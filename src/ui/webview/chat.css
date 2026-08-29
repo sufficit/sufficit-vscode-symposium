@@ -544,6 +544,8 @@
     .agentBadge[data-backend="openai"]  { border-left-color: #10A37F; }
     .agentBadge[data-backend="codex"]   { border-left-color: #10A37F; }
     .agentBadge[data-backend="copilot"] { border-left-color: #6E40C9; }
+    .agentBadge[data-backend="gemini"]  { border-left-color: #1A73E8; }
+    .agentBadge[data-backend="antigravity"] { border-left-color: #4285F4; }
     .agentBadge[data-backend="sufficit"]{ border-left-color: #7C3AED; }
     #listToggle { display: none; }
     #root.narrow #listToggle { display: inline-flex; }

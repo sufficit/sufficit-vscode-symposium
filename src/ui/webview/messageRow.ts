@@ -13,6 +13,8 @@ const BACKEND_NAMES: Record<string, string> = {
     claude: "Claude",
     codex: "Codex",
     copilot: "Copilot",
+    gemini: "Gemini",
+    antigravity: "Antigravity",
     openai: "Sufficit AI",
 };
 // Track last rendered assistant context to show role label only on change
