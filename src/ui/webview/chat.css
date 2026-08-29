@@ -1561,6 +1561,33 @@
     .menubtn .lbl { max-width: 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
     .menubtn svg { width: 11px; height: 11px; opacity: 0.7; flex-shrink: 0; }
     #status { opacity: 0.55; font-size: 0.82em; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    #voiceActivity {
+        display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+        color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap;
+    }
+    #voiceActivity[hidden] { display: none; }
+    #voiceActivityLabel { overflow: hidden; text-overflow: ellipsis; }
+    #voiceMeter {
+        position: relative; width: 30px; height: 4px; flex: 0 0 30px; overflow: hidden;
+        border-radius: 2px; background: var(--vscode-progressBar-background, rgba(128,128,128,0.25));
+    }
+    #voiceLevel {
+        position: absolute; inset: 0; transform: scaleX(var(--voice-level, 0)); transform-origin: left center;
+        border-radius: inherit; background: var(--vscode-charts-green, var(--vscode-testing-iconPassed));
+        transition: transform 90ms linear, background-color 150ms ease;
+    }
+    #voiceActivity[data-state="speech"] #voiceLevel { background: var(--vscode-charts-blue, var(--vscode-focusBorder)); }
+    #voiceActivity[data-state="finalizing"] #voiceLevel {
+        transform: scaleX(1); transform-origin: center;
+        animation: voiceFinalize 900ms ease-in-out infinite alternate;
+    }
+    #voiceActivity[data-state="error"] { color: var(--vscode-errorForeground); }
+    @keyframes voiceFinalize { from { transform: scaleX(0.25); } to { transform: scaleX(1); } }
+    @media (max-width: 520px) { #voiceActivityLabel { display: none; } }
+    @media (prefers-reduced-motion: reduce) {
+        #voiceLevel { transition: none; }
+        #voiceActivity[data-state="finalizing"] #voiceLevel { animation: none; transform: scaleX(1); }
+    }
     #ahpConnectionStatus { color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap; }
     #ahpConnectionStatus[data-state="failed"] { color: var(--vscode-errorForeground); }
     .iconBtn {

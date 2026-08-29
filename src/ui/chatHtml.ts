@@ -108,6 +108,10 @@ export function chatBodyMarkup(version?: string): string {
                     <button id="reasoningPicker" class="ctl menubtn" style="display:none" title="Reasoning effort — change anytime; applies to the next message" aria-label="Reasoning effort"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                     <button id="presencePicker" class="ctl menubtn" title="Presence — can be changed any time" aria-label="Presence — can be changed any time"><span class="picon"></span><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
                     <button id="execPicker" class="ctl menubtn" style="display:none" title="Shell execution display" aria-label="Shell execution display"><span class="lbl"></span><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 6l4 4 4-4H4Z"/></svg></button>
+                    <span id="voiceActivity" role="status" aria-live="polite" hidden>
+                        <span id="voiceMeter"><span id="voiceLevel"></span></span>
+                        <span id="voiceActivityLabel"></span>
+                    </span>
                     <span id="status"></span>
                     <span id="ahpConnectionStatus" role="status" aria-live="polite" hidden></span>
                     <span class="grow"></span>

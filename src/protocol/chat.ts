@@ -70,10 +70,17 @@ export type WebviewToHost =
     | { type: "open-active-session" }
     | { type: "open-session-editor"; sessionId: string; backend: string }
     | { type: "paste-image"; mime: string; data: string }
-    | { type: "stt-transcribe"; data: string; mime: string }
-    | { type: "voice-start"; vad?: boolean }
-    | { type: "voice-stop" }
-    | { type: "voice-cancel" }
+    | {
+          type: "stt-transcribe";
+          data: string;
+          mime: string;
+          captureId?: string;
+          purpose?: "preview" | "final";
+      }
+    | { type: "voice-start"; captureId: string; vad?: boolean }
+    | { type: "voice-preview"; captureId: string }
+    | { type: "voice-stop"; captureId: string }
+    | { type: "voice-cancel"; captureId?: string }
     | { type: "drop-file"; name?: string; mime?: string; data?: string }
     | { type: "drop-files"; files: DroppedFilePayload[] }
     | { type: "drop-uris"; uris: string[] }
@@ -197,8 +204,10 @@ export const HOST_MESSAGE_TYPES = [
     "toast",
     "user",
     "voice-recording",
+    "voice-preview-result",
     "voice-silence",
     "voice-speech",
+    "voice-status",
 ] as const;
 
 export type HostMessageType = (typeof HOST_MESSAGE_TYPES)[number];

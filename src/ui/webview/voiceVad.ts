@@ -1,4 +1,5 @@
 let stream: MediaStream | null = null;
+let ownsStream = false;
 let audioContext: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 let animationFrame: number | null = null;
@@ -6,10 +7,14 @@ let animationFrame: number | null = null;
 const SILENCE_RMS = 0.02;
 const SILENCE_MS = 900;
 
-export async function startVadMonitor(onSilence: () => void): Promise<void> {
+export async function startVadMonitor(
+    onSilence: () => void,
+    captureStream?: MediaStream,
+): Promise<void> {
     stopVadMonitor();
+    ownsStream = !captureStream;
     try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = captureStream ?? (await navigator.mediaDevices.getUserMedia({ audio: true }));
     } catch {
         return;
     }
@@ -49,8 +54,11 @@ export async function startVadMonitor(onSilence: () => void): Promise<void> {
 export function stopVadMonitor(): void {
     if (animationFrame) cancelAnimationFrame(animationFrame);
     animationFrame = null;
-    for (const track of stream?.getTracks() ?? []) track.stop();
+    if (ownsStream) {
+        for (const track of stream?.getTracks() ?? []) track.stop();
+    }
     stream = null;
+    ownsStream = false;
     if (audioContext) void audioContext.close().catch(() => undefined);
     audioContext = null;
     analyser = null;

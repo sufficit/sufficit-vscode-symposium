@@ -147,6 +147,7 @@ export class SurfaceMessages {
                     return;
                 }
                 case "voice-start":
+                case "voice-preview":
                 case "voice-stop":
                 case "voice-cancel":
                 case "stt-transcribe": {

@@ -2,7 +2,6 @@ import { postMessage } from "./vscode";
 import { input, micBtn } from "./dom";
 import { setStatus } from "./status";
 import { showToast } from "./menus";
-import { resizeInput } from "./inputSizing";
 import { playStartSound, playStopSound } from "./voiceSounds";
 import {
     applyRecognitionPreferences,
@@ -11,9 +10,20 @@ import {
     updateMicVisibility,
 } from "./voicePrefs";
 import { shouldDiscardUntouchedContinuation } from "./voiceContinuation";
-import { markComposerSpeechInput } from "./composerBridge";
-import { startVadMonitor, stopVadMonitor } from "./voiceVad";
-import { startLocalCapture, stopLocalCapture, type LocalCaptureHooks } from "./voiceLocalCapture";
+import { stopVadMonitor } from "./voiceVad";
+import { startLocalCapture, stopLocalCapture } from "./voiceLocalCapture";
+import { createLocalCaptureHooks } from "./voiceLocalLifecycle";
+import { dispatchVoiceEnded, setVoiceInputValue } from "./voiceComposer";
+import {
+    armHostVoicePreviews,
+    beginHostVoiceSession,
+    currentHostCaptureId,
+    endHostVoiceSession,
+    handleHostVoiceTelemetry,
+    isCurrentHostCapture,
+    markHostVoiceFinalizing,
+} from "./voiceHostSession";
+import { setVoiceUiState } from "./voiceUi";
 import { VoiceDraft } from "./voiceDraft";
 import type {
     SpeechRecognitionErrorEventLike,
@@ -31,18 +41,7 @@ let dictationUseHost = false;
 // Capture has stopped, but its transcript has not arrived yet.
 let transcriptionInFlight = false;
 
-function setInputValue(value: string) {
-    if (input.value === value) {
-        return;
-    }
-    input.value = value;
-    // Mark that this text came from speech (so the send payload carries speech: true).
-    markComposerSpeechInput(true);
-    resizeInput();
-    setStatus();
-}
-
-const draft = new VoiceDraft(() => input.value, setInputValue);
+const draft = new VoiceDraft(() => input.value, setVoiceInputValue);
 
 window.addEventListener("message", (e) => {
     if (e.data && e.data.type === "setVoicePreferences") {
@@ -72,6 +71,7 @@ if (SpeechRecognition) {
         activeVoicePath = "webspeech";
         micBtn.classList.add("recording");
         setStatus("Listening...");
+        setVoiceUiState("listening");
         if (prefs.soundFeedback) playStartSound();
         draft.reset();
         if (prefs.dotsAnimation) draft.startDots();
@@ -88,6 +88,7 @@ if (SpeechRecognition) {
         setStatus("Ready");
         draft.stopDots();
         draft.render();
+        setVoiceUiState("idle");
         dispatchVoiceEnded();
     };
 
@@ -108,10 +109,12 @@ if (SpeechRecognition) {
             draft.interim = "";
             draft.render();
             setStatus("Listening...");
+            setVoiceUiState("speech");
         } else if (interimTranscript) {
             draft.interim = interimTranscript;
             draft.render();
             setStatus("Listening...");
+            setVoiceUiState("speech");
         }
     };
 
@@ -127,6 +130,7 @@ if (SpeechRecognition) {
         setStatus("Error: " + event.error);
         draft.stopDots();
         draft.render();
+        setVoiceUiState("error", "Speech recognition failed");
         if (prefs.soundFeedback) playStopSound();
         console.error("Speech recognition error:", event.error);
         dispatchVoiceEnded();
@@ -140,7 +144,8 @@ let hadSpeechThisSegment = false;
 
 function startHostCapture(isContinuation = false) {
     const prefs = getVoicePreferences();
-    postMessage({ type: "voice-start", vad: dictationActive });
+    const captureId = beginHostVoiceSession();
+    postMessage({ type: "voice-start", captureId, vad: dictationActive });
     hostRecording = true;
     isRecording = true;
     activeVoicePath = prefs.vscodeSpeechBridge ? "vscode-speech" : "host";
@@ -172,48 +177,31 @@ function stopHostCapture(discardUntouchedContinuation = false) {
     if (phantom) {
         // No result will arrive, so release any deferred send immediately.
         setStatus("Ready");
-        postMessage({ type: "voice-cancel" });
+        postMessage({ type: "voice-cancel", captureId: currentHostCaptureId() });
+        endHostVoiceSession();
         dispatchVoiceEnded();
         return;
     }
     if (prefs.soundFeedback && !dictationActive) playStopSound();
-    setInputValue(draft.base); // drop the dots animation text
+    setVoiceInputValue(draft.base); // drop the dots animation text
     setStatus("Transcribing...");
     transcriptionInFlight = true;
-    postMessage({ type: "voice-stop" });
+    const captureId = markHostVoiceFinalizing();
+    if (captureId) postMessage({ type: "voice-stop", captureId });
 }
 
-const localCaptureHooks: LocalCaptureHooks = {
-    onStarted(isContinuation) {
-        const prefs = getVoicePreferences();
-        isRecording = true;
-        activeVoicePath = "local";
-        micBtn.classList.add("recording");
-        setStatus("Listening...");
-        if (prefs.soundFeedback && !isContinuation) playStartSound();
-        draft.reset();
-        if (prefs.dotsAnimation) draft.startDots();
+const localCaptureHooks = createLocalCaptureHooks({
+    draft,
+    isDictationActive: () => dictationActive,
+    setRecording(recording) {
+        isRecording = recording;
+        activeVoicePath = recording ? "local" : null;
     },
-    onStopping() {
-        const prefs = getVoicePreferences();
-        if (prefs.soundFeedback && !dictationActive) playStopSound();
-        isRecording = false;
-        activeVoicePath = null;
-        if (!dictationActive) micBtn.classList.remove("recording");
-        draft.stopDots();
-        transcriptionInFlight = true;
+    setTranscribing(transcribing) {
+        transcriptionInFlight = transcribing;
     },
-    onEmpty() {
-        transcriptionInFlight = false;
-        setStatus("Ready");
-    },
-    onTranscribing() {
-        setStatus("Transcribing...");
-    },
-    onStopFailed() {
-        transcriptionInFlight = false;
-    },
-};
+    onSilence: onSilenceDetected,
+});
 
 function onSilenceDetected(): void {
     if (!dictationActive || !isRecording) {
@@ -242,26 +230,42 @@ window.addEventListener("message", (e) => {
     if (!e.data) {
         return;
     }
+    if (
+        handleHostVoiceTelemetry(e.data, (text) => {
+            draft.interim = previewSuffix(draft.base, text);
+            draft.render();
+            setStatus("Listening...");
+        })
+    ) {
+        return;
+    }
     if (e.data.type === "stt-result") {
+        if (!isCurrentHostCapture(e.data.captureId)) return;
         transcriptionInFlight = false;
         const text = (e.data.text || "").trim();
         draft.stopDots();
         draft.interim = "";
-        setInputValue((draft.base ? draft.base.replace(/[.\s]*$/, " ") : "") + text);
+        setVoiceInputValue((draft.base ? draft.base.replace(/[.\s]*$/, " ") : "") + text);
         input.focus();
         setStatus("Ready");
+        endHostVoiceSession(e.data.captureId);
+        setVoiceUiState("idle");
         maybeContinueDictation();
     } else if (e.data.type === "stt-error") {
+        if (!isCurrentHostCapture(e.data.captureId)) return;
         transcriptionInFlight = false;
         draft.stopDots();
         draft.interim = "";
         if (draft.base) {
-            setInputValue(draft.base);
+            setVoiceInputValue(draft.base);
         }
         setStatus("Ready");
+        endHostVoiceSession(e.data.captureId);
+        setVoiceUiState("error", "Transcription failed");
         showToast("Transcription failed: " + (e.data.error || "unknown error"), "error");
         maybeContinueDictation();
     } else if (e.data.type === "voice-recording") {
+        if (!isCurrentHostCapture(e.data.captureId)) return;
         if (!e.data.ok && hostRecording) {
             hostRecording = false;
             isRecording = false;
@@ -270,7 +274,7 @@ window.addEventListener("message", (e) => {
             micBtn.classList.remove("recording");
             draft.stopDots();
             draft.interim = "";
-            setInputValue(draft.base);
+            setVoiceInputValue(draft.base);
             // Preserve the native-capture error instead of reporting a webview permission error.
             setStatus("Ready");
             showToast(
@@ -279,11 +283,17 @@ window.addEventListener("message", (e) => {
             );
             // Release deferred sends when a continuous-mode restart fails.
             dictationActive = false;
+            endHostVoiceSession(e.data.captureId);
+            setVoiceUiState("error", "Microphone capture failed");
             dispatchVoiceEnded();
+        } else if (e.data.ok && activeVoicePath === "host") {
+            armHostVoicePreviews();
         }
     } else if (e.data.type === "voice-silence") {
+        if (!isCurrentHostCapture(e.data.captureId)) return;
         onSilenceDetected();
     } else if (e.data.type === "voice-speech") {
+        if (!isCurrentHostCapture(e.data.captureId)) return;
         hadSpeechThisSegment = true;
     }
 });
@@ -308,6 +318,7 @@ if (micBtn) {
                 stopVoiceRecording();
             } else {
                 try {
+                    setVoiceUiState("opening");
                     recognition.start();
                     if (webSpeechStartWatchdog) {
                         clearTimeout(webSpeechStartWatchdog);
@@ -325,6 +336,7 @@ if (micBtn) {
                         );
                     }, 3000);
                 } catch (err) {
+                    setVoiceUiState("error", "Could not start speech recognition");
                     showToast(
                         "Could not start Web Speech API: " + ((err as Error)?.message || err),
                         "error",
@@ -344,18 +356,11 @@ if (micBtn) {
             dictationActive = prefs.continuous;
             dictationUseHost = false;
             void startLocalCapture(false, localCaptureHooks);
-            if (dictationActive) {
-                void startVadMonitor(onSilenceDetected);
-            }
         }
     });
 }
 
 updateMicVisibility(webSpeechSupported);
-
-function dispatchVoiceEnded(): void {
-    window.dispatchEvent(new Event("symposium-voice-ended"));
-}
 
 export function isVoiceRecording(): boolean {
     return isRecording;
@@ -383,4 +388,9 @@ export function stopVoiceRecording(): void {
     } else if (activeVoicePath === "local") {
         stopLocalCapture(localCaptureHooks);
     }
+}
+
+function previewSuffix(base: string, preview: string): string {
+    const clean = preview.trim();
+    return base.trim() && clean ? ` ${clean}` : clean;
 }

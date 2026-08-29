@@ -72,15 +72,12 @@ for (const entry of missing) failures.push(`required packaged path is missing: $
 for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`);
 
 const budgets = new Map([
-    // Raised from 790KB after cross-process session/AHP locking, orphan-turn
-    // recovery and explicit silent-stop diagnostics added 5.5KB of measured
-    // runtime behavior. 800KB preserves a narrow ~5KB regression margin while
-    // the separate 1MB archive ceiling still constrains the complete package.
-    // Prior measured increases covered exact message metadata, AHP discovery
-    // and the turn-lifecycle refactor; each retained a deliberately small
-    // regression allowance instead of weakening the complete-package ceiling.
-    ["extension/out/extension.js", 800 * 1024],
-    ["extension/out/ui/webview.bundle.js", 320 * 1024],
+    // Linux provider fallback, bounded PCM telemetry and serialized previews
+    // added 4.2KB to the measured host bundle and 5.3KB to the webview. Keep
+    // roughly 5KB of regression margin on each artifact; the independent 1MB
+    // archive ceiling continues to constrain the complete package.
+    ["extension/out/extension.js", 810 * 1024],
+    ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
 for (const [entry, budget] of budgets) {
