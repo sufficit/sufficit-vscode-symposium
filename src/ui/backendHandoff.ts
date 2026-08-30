@@ -53,7 +53,7 @@ export class BackendHandoff {
         parentId?: string,
     ): void {
         const adapter = this.d.getAdapter(backend);
-        if (!adapter) {
+        if (!adapter || adapter.canStartSessions === false) {
             return;
         }
         const options: SessionStartOptions = {
@@ -80,7 +80,8 @@ export class BackendHandoff {
         if (!from || from.backend === backend) {
             return;
         }
-        if (!this.d.getAdapter(backend)) {
+        const target = this.d.getAdapter(backend);
+        if (!target || target.canStartSessions === false) {
             return;
         }
         const fromName = this.displayName(from.backend);
@@ -94,7 +95,8 @@ export class BackendHandoff {
         if (!term) {
             return;
         }
-        if (!this.d.getAdapter(backend)) {
+        const target = this.d.getAdapter(backend);
+        if (!target || target.canStartSessions === false) {
             return;
         }
         const fromName = this.displayName(term.backend);
@@ -150,7 +152,7 @@ export class BackendHandoff {
         }
         const fromName = this.displayName(info.backend);
         const targetAdapter = this.d.getAdapter(targetBackend);
-        if (!targetAdapter) {
+        if (!targetAdapter || targetAdapter.canStartSessions === false) {
             return;
         }
         const parentId = sessionId; // new session links to the stored one

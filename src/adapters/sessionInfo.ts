@@ -39,7 +39,7 @@ export interface SessionInfo {
     /** True while a permanent delete / scrub is in progress in the background. */
     deleting?: boolean;
     parentId?: string;
-    continuationBlockedReason?: "codex-subagent";
+    continuationBlockedReason?: "codex-subagent" | "external-readonly";
     /** ID do preset de compressão configurado para esta seção (vazio usa padrão global). */
     compressionPresetId?: string;
 }

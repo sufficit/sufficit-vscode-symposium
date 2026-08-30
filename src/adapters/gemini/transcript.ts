@@ -1,12 +1,28 @@
-import * as fs from "fs";
-import * as readline from "readline";
+import * as path from "node:path";
+import { JsonlMetadataCache, readJsonlPrefix, readJsonlTail } from "../jsonlPrefix";
+import { HistoryMessage } from "../types";
 
 export interface GeminiSessionMeta {
-    id?: string;
     title?: string;
     cwd?: string;
     model?: string;
 }
+
+interface GeminiTranscriptRow {
+    type?: unknown;
+    source?: unknown;
+    content?: unknown;
+    model?: unknown;
+    model_name?: unknown;
+    timestamp?: unknown;
+    created_at?: unknown;
+    createdAt?: unknown;
+    metadata?: { model?: unknown };
+}
+
+const metadataCache = new JsonlMetadataCache<GeminiSessionMeta>();
+const METADATA_PREFIX_BYTES = 512 * 1024;
+const HISTORY_TAIL_BYTES = 4 * 1024 * 1024;
 
 /** Extracts the clean user request from prompt content containing XML tags. */
 export function extractUserPromptText(content: string): string {
@@ -14,8 +30,7 @@ export function extractUserPromptText(content: string): string {
         return "";
     }
     const match = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i.exec(content);
-    const raw = match ? match[1] : content;
-    return raw.trim();
+    return (match ? match[1] : content).trim();
 }
 
 /** Extracts the workspace/cwd from additional metadata blocks if present. */
@@ -27,68 +42,133 @@ export function extractWorkspaceCwd(content: string): string | undefined {
     if (workspaceMatch) {
         return workspaceMatch[1].trim();
     }
-    const activeDocMatch = /Active Document:\s*([^\r\n]+)/.exec(content);
-    if (activeDocMatch) {
-        const docPath = activeDocMatch[1].trim();
-        const lastSlash = docPath.lastIndexOf("/");
-        return lastSlash > 0 ? docPath.slice(0, lastSlash) : docPath;
+    const activeDocument = /Active Document:\s*([^\r\n]+)/.exec(content)?.[1]?.trim();
+    if (!activeDocument) {
+        return undefined;
+    }
+    const withoutLanguage = activeDocument.replace(/\s+\([^)]*\)\s*$/, "");
+    const separator = Math.max(withoutLanguage.lastIndexOf("/"), withoutLanguage.lastIndexOf("\\"));
+    return separator > 0 ? withoutLanguage.slice(0, separator) : path.dirname(withoutLanguage);
+}
+
+/** Parses one Gemini/Antigravity transcript row into a visible message. */
+export function parseGeminiTranscriptLine(line: string): HistoryMessage[] {
+    const row = parseRow(line);
+    if (!row) {
+        return [];
+    }
+    const type = stringValue(row.type).toUpperCase();
+    const source = stringValue(row.source).toUpperCase();
+    const role =
+        type === "USER_INPUT" || source === "USER_EXPLICIT"
+            ? "user"
+            : type === "PLANNER_RESPONSE" || type === "MODEL_RESPONSE" || source === "MODEL"
+              ? "assistant"
+              : undefined;
+    if (!role) {
+        return [];
+    }
+    const rawText = contentText(row.content);
+    const text = role === "user" ? extractUserPromptText(rawText) : rawText.trim();
+    if (!text) {
+        return [];
+    }
+    const timestamp = row.timestamp ?? row.created_at ?? row.createdAt;
+    const parsedTime =
+        typeof timestamp === "number" ? timestamp : Date.parse(stringValue(timestamp));
+    const model = role === "assistant" ? modelValue(row) : undefined;
+    return [
+        {
+            role,
+            text,
+            ...(model ? { model, modelLabel: model } : {}),
+            ...(Number.isFinite(parsedTime) ? { ts: parsedTime } : {}),
+        },
+    ];
+}
+
+/** Reads basic session metadata using bounded prefix I/O. */
+export function readGeminiMeta(filePath: string): Promise<GeminiSessionMeta> {
+    return metadataCache.get(filePath, async () =>
+        parseGeminiMeta(await readJsonlPrefix(filePath, METADATA_PREFIX_BYTES)),
+    );
+}
+
+/** Reconstructs the recent visible conversation without loading huge logs in full. */
+export async function readGeminiHistory(filePath: string): Promise<HistoryMessage[]> {
+    const content = await readJsonlTail(filePath, HISTORY_TAIL_BYTES);
+    return content.split("\n").flatMap(parseGeminiTranscriptLine);
+}
+
+function parseGeminiMeta(content: string): GeminiSessionMeta {
+    const meta: GeminiSessionMeta = {};
+    for (const line of content.split("\n")) {
+        const row = parseRow(line);
+        if (!row) {
+            continue;
+        }
+        meta.model ??= modelValue(row);
+        const type = stringValue(row.type).toUpperCase();
+        const source = stringValue(row.source).toUpperCase();
+        if (type !== "USER_INPUT" && source !== "USER_EXPLICIT") {
+            continue;
+        }
+        const text = contentText(row.content);
+        meta.cwd ??= extractWorkspaceCwd(text);
+        if (!meta.title) {
+            const prompt = extractUserPromptText(text);
+            const firstLine = prompt.split("\n").find((candidate) => candidate.trim());
+            meta.title = (firstLine || prompt).slice(0, 100).trim() || undefined;
+        }
+        if (meta.title && meta.cwd && meta.model) {
+            break;
+        }
+    }
+    return meta;
+}
+
+function parseRow(line: string): GeminiTranscriptRow | undefined {
+    if (!line.trim()) {
+        return undefined;
+    }
+    try {
+        const parsed = JSON.parse(line) as unknown;
+        return parsed && typeof parsed === "object" ? (parsed as GeminiTranscriptRow) : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function modelValue(row: GeminiTranscriptRow): string | undefined {
+    for (const value of [row.model, row.model_name, row.metadata?.model]) {
+        if (typeof value === "string" && value.trim()) {
+            return value.trim();
+        }
     }
     return undefined;
 }
 
-/** Reads basic session metadata from a Gemini/Antigravity transcript.jsonl file. */
-export async function readGeminiMeta(filePath: string): Promise<GeminiSessionMeta> {
-    const meta: GeminiSessionMeta = {};
-    if (!fs.existsSync(filePath)) {
-        return meta;
+function contentText(content: unknown): string {
+    if (typeof content === "string") {
+        return content;
     }
-    let fileStream: fs.ReadStream;
-    try {
-        fileStream = fs.createReadStream(filePath, { encoding: "utf8" });
-    } catch {
-        return meta;
+    if (!Array.isArray(content)) {
+        return "";
     }
-
-    const rl = readline.createInterface({
-        input: fileStream,
-        crlfDelay: Infinity,
-    });
-
-    let linesRead = 0;
-    for await (const line of rl) {
-        linesRead++;
-        if (linesRead > 50 && meta.title && meta.cwd) {
-            break;
-        }
-        if (!line.trim()) {
-            continue;
-        }
-        try {
-            const row = JSON.parse(line) as {
-                type?: string;
-                source?: string;
-                content?: string;
-                model?: string;
-            };
-            if (!meta.model && typeof row.model === "string" && row.model) {
-                meta.model = row.model;
+    return content
+        .map((block) => {
+            if (typeof block === "string") {
+                return block;
             }
-            if (row.type === "USER_INPUT" || row.source === "USER_EXPLICIT") {
-                const text = typeof row.content === "string" ? row.content : "";
-                if (!meta.cwd) {
-                    meta.cwd = extractWorkspaceCwd(text);
-                }
-                if (!meta.title) {
-                    const prompt = extractUserPromptText(text);
-                    if (prompt) {
-                        const firstLine = prompt.split("\n").find((l) => l.trim());
-                        meta.title = (firstLine || prompt).slice(0, 100).trim();
-                    }
-                }
+            if (block && typeof block === "object" && "text" in block) {
+                return stringValue((block as { text?: unknown }).text);
             }
-        } catch {
-            /* ignore unparseable line */
-        }
-    }
-    return meta;
+            return "";
+        })
+        .filter(Boolean)
+        .join("\n");
+}
+
+function stringValue(value: unknown): string {
+    return typeof value === "string" ? value : "";
 }

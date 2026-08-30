@@ -5,28 +5,41 @@ Date: 2026-08-29
 
 ## Activity
 
-Added first-class support for discovering, viewing, and filtering Gemini and Antigravity sessions in Sufficit Symposium.
+Added first-class, read-only discovery and viewing for locally stored Gemini and
+Antigravity sessions in Sufficit Symposium.
 
 ## Delivered
 
-- **Gemini Adapter & Session Discovery (`src/adapters/gemini/`)**:
-  - Incremental scanning of Gemini / Antigravity transcripts stored in `~/.gemini/antigravity-ide/brain/` and `~/.gemini/history/`.
-  - Structured extraction of title, workspace/cwd, and model metadata from JSONL transcripts.
-  - Integration with usage provider and account quota tracking.
+- **Gemini and Antigravity discovery adapters (`src/adapters/gemini/`)**:
+  - Scans `~/.gemini/history/` and
+    `~/.gemini/antigravity-ide/brain/` as separate backends, so each source
+    can be filtered independently.
+  - Reuses unchanged catalog entries and reads only bounded JSONL prefixes/tails,
+    avoiding full-file startup reads.
+  - Extracts titles, workspace paths, models and original message timestamps.
+  - Marks imported sessions as read-only and excludes both adapters from
+    creation, handoff-target and public API creation flows.
+  - Reports usage as unavailable because these transcript formats do not expose
+    trustworthy account quota data.
 - **Cross-Adapter Transcript Reader (`src/sessionReader.ts`)**:
-  - Added support for reading and parsing Antigravity transcript logs (`transcript.jsonl`) for conversation history replaying and cross-adapter handoffs.
+  - Resolves the exact Gemini and Antigravity transcript paths by session id,
+    including Antigravity's fixed `transcript.jsonl` filename.
+  - Reconstructs user/assistant roles and timestamps for cross-adapter tools.
 - **UI & Webview Filtering (`src/ui/webview/`)**:
   - Registered `Gemini` and `Antigravity` labels in backend label mappings.
   - Added visual agent badge accent styling (`#1A73E8` / `#4285F4`).
-  - Integrated into the dynamic session filter and grouping menus.
+  - Shows a truthful imported-history read-only state instead of an active
+    composer.
 - **Automated Tests (`src/test/geminiSession.test.ts`)**:
-  - Added unit test suite covering prompt extraction, workspace parsing, metadata reading, session discovery caching, and adapter contract.
-- **Development Process Documentation (`docs/DEVELOPMENT-PROCESS.md`)**:
-  - Established standardized multi-agent development and PR workflow for the repository.
+  - Uses isolated temporary fixtures for both storage layouts.
+  - Covers prompt/workspace parsing, metadata, history, timestamps, source
+    filters, ordering, limits, incremental caching, adapter capability and the
+    cross-adapter reader.
 
 ## Validation
 
-- Typecheck: passed strict extension-host (`npm run typecheck`) and webview (`npm run typecheck:webview`).
-- Lint & Prettier: passed (`npm run lint`, `npm run format:check`).
-- Engineering guardrails: passed for 336 production TypeScript modules with zero cycles and zero unreachable modules (`node scripts/check-architecture.mjs`).
-- Bundle: extension bundle build and validation passed (`npm run compile`).
+- Full repository test contract passed (`npm test`).
+- Changed-line coverage: **94.87%** (259/273; required 85%).
+- Typecheck, webview typecheck, ESLint and Prettier passed.
+- Engineering guardrails passed for 416 production TypeScript modules with zero
+  dependency cycles and zero unreachable modules.

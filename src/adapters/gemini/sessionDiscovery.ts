@@ -1,106 +1,120 @@
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { SessionInfo } from "../types";
 import { readGeminiMeta } from "./transcript";
 
-/** Discovers Gemini / Antigravity transcripts and reuses unchanged metadata. */
-export async function listGeminiSessions(cached: readonly SessionInfo[]): Promise<SessionInfo[]> {
+export type GeminiSessionSource = "gemini" | "antigravity";
+
+export interface GeminiDiscoveryOptions {
+    roots?: Record<GeminiSessionSource, string>;
+    sources?: readonly GeminiSessionSource[];
+    limit?: number;
+}
+
+export function defaultGeminiRoots(): Record<GeminiSessionSource, string> {
+    const geminiRoot = path.join(os.homedir(), ".gemini");
+    return {
+        gemini: path.join(geminiRoot, "history"),
+        antigravity: path.join(geminiRoot, "antigravity-ide", "brain"),
+    };
+}
+
+/** Discovers Gemini and Antigravity transcripts and reuses unchanged metadata. */
+export async function listGeminiSessions(
+    cached: readonly SessionInfo[],
+    options: GeminiDiscoveryOptions = {},
+): Promise<SessionInfo[]> {
     const cachedByPath = new Map(
         cached.filter((item) => item.transcriptPath).map((item) => [item.transcriptPath!, item]),
     );
-
-    const brainRoot = path.join(os.homedir(), ".gemini", "antigravity-ide", "brain");
-    const sessions: SessionInfo[] = [];
-
-    await scanBrainDir(brainRoot, cachedByPath, sessions);
-
-    const historyRoot = path.join(os.homedir(), ".gemini", "history");
-    await scanHistoryDir(historyRoot, cachedByPath, sessions);
-
-    sessions.sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
-    return sessions.slice(0, 50);
+    const roots = options.roots ?? defaultGeminiRoots();
+    const sources = options.sources ?? (["gemini", "antigravity"] as const);
+    const discovered = await Promise.all(
+        sources.map((source) => scanSource(source, roots[source], cachedByPath)),
+    );
+    return discovered
+        .flat()
+        .sort((left, right) => updatedAt(right) - updatedAt(left))
+        .slice(0, options.limit ?? 50);
 }
 
-async function scanBrainDir(
-    brainRoot: string,
+async function scanSource(
+    source: GeminiSessionSource,
+    root: string,
     cachedByPath: ReadonlyMap<string, SessionInfo>,
-    out: SessionInfo[],
-): Promise<void> {
-    let convDirs: string[];
+): Promise<SessionInfo[]> {
+    let entries: fs.Dirent[];
     try {
-        convDirs = await fs.promises.readdir(brainRoot);
+        entries = await fs.promises.readdir(root, { withFileTypes: true });
     } catch {
-        return;
+        return [];
     }
-
-    for (const convId of convDirs) {
-        const transcriptPath = path.join(
-            brainRoot,
-            convId,
-            ".system_generated",
-            "logs",
-            "transcript.jsonl",
-        );
-        try {
-            const stat = await fs.promises.stat(transcriptPath);
-            const cachedInfo = cachedByPath.get(transcriptPath);
-            if (cachedInfo?.updatedAt?.getTime() === stat.mtime.getTime()) {
-                out.push(cachedInfo);
-                continue;
-            }
-            const meta = await readGeminiMeta(transcriptPath);
-            out.push({
-                backend: "gemini",
-                sessionId: convId,
-                title: meta.title ?? `Gemini Session ${convId.slice(0, 8)}`,
-                cwd: meta.cwd,
-                model: meta.model,
-                updatedAt: stat.mtime,
-                transcriptPath,
-            });
-        } catch {
-            /* skip missing or unreadable transcripts */
+    const candidates = entries.flatMap((entry) => {
+        if (source === "antigravity" && entry.isDirectory()) {
+            return [
+                {
+                    sessionId: entry.name,
+                    transcriptPath: path.join(
+                        root,
+                        entry.name,
+                        ".system_generated",
+                        "logs",
+                        "transcript.jsonl",
+                    ),
+                },
+            ];
         }
+        if (source === "gemini" && entry.isFile() && entry.name.endsWith(".jsonl")) {
+            return [
+                {
+                    sessionId: path.basename(entry.name, ".jsonl"),
+                    transcriptPath: path.join(root, entry.name),
+                },
+            ];
+        }
+        return [];
+    });
+    const sessions = await Promise.all(
+        candidates.map(({ sessionId, transcriptPath }) =>
+            readCandidate(source, sessionId, transcriptPath, cachedByPath),
+        ),
+    );
+    return sessions.filter((session): session is SessionInfo => session !== undefined);
+}
+
+async function readCandidate(
+    source: GeminiSessionSource,
+    sessionId: string,
+    transcriptPath: string,
+    cachedByPath: ReadonlyMap<string, SessionInfo>,
+): Promise<SessionInfo | undefined> {
+    try {
+        const stat = await fs.promises.stat(transcriptPath);
+        if (!stat.isFile()) {
+            return undefined;
+        }
+        const cached = cachedByPath.get(transcriptPath);
+        if (cached?.updatedAt?.getTime() === stat.mtimeMs) {
+            return cached;
+        }
+        const meta = await readGeminiMeta(transcriptPath);
+        const fallback = source === "antigravity" ? "Antigravity" : "Gemini";
+        return {
+            backend: source,
+            sessionId,
+            title: meta.title ?? fallback + " " + sessionId.slice(0, 8),
+            cwd: meta.cwd,
+            model: meta.model,
+            updatedAt: stat.mtime,
+            transcriptPath,
+            continuationBlockedReason: "external-readonly",
+        };
+    } catch {
+        return undefined;
     }
 }
 
-async function scanHistoryDir(
-    historyRoot: string,
-    cachedByPath: ReadonlyMap<string, SessionInfo>,
-    out: SessionInfo[],
-): Promise<void> {
-    let entries: string[];
-    try {
-        entries = await fs.promises.readdir(historyRoot);
-    } catch {
-        return;
-    }
-
-    for (const entry of entries) {
-        const fullPath = path.join(historyRoot, entry);
-        try {
-            const stat = await fs.promises.stat(fullPath);
-            if (stat.isFile() && entry.endsWith(".jsonl")) {
-                const cachedInfo = cachedByPath.get(fullPath);
-                if (cachedInfo?.updatedAt?.getTime() === stat.mtime.getTime()) {
-                    out.push(cachedInfo);
-                    continue;
-                }
-                const meta = await readGeminiMeta(fullPath);
-                const sessionId = path.basename(entry, ".jsonl");
-                out.push({
-                    backend: "gemini",
-                    sessionId,
-                    title: meta.title ?? `Gemini ${sessionId.slice(0, 8)}`,
-                    cwd: meta.cwd,
-                    model: meta.model,
-                    updatedAt: stat.mtime,
-                    transcriptPath: fullPath,
-                });
-            }
-        } catch {
-            /* ignore unreadable entries */
-        }
-    }
+function updatedAt(session: SessionInfo): number {
+    return session.updatedAt?.getTime() ?? 0;
 }

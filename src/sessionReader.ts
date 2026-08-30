@@ -127,15 +127,35 @@ function findFile(root: string, idFragment: string, depth = 4): string | undefin
     return undefined;
 }
 
-function fromCliTranscript(id: string): SessionDump | undefined {
+function fromCliTranscript(id: string, homeDir = os.homedir()): SessionDump | undefined {
+    const geminiRoot = path.join(homeDir, ".gemini");
+    const candidates = [
+        {
+            backend: "antigravity",
+            file: path.join(
+                geminiRoot,
+                "antigravity-ide",
+                "brain",
+                id,
+                ".system_generated",
+                "logs",
+                "transcript.jsonl",
+            ),
+        },
+        { backend: "gemini", file: path.join(geminiRoot, "history", id + ".jsonl") },
+    ];
     const roots = [
-        { backend: "claude", dir: path.join(os.homedir(), ".claude", "projects") },
-        { backend: "codex", dir: path.join(os.homedir(), ".codex", "sessions") },
-        { backend: "gemini", dir: path.join(os.homedir(), ".gemini") },
+        { backend: "claude", dir: path.join(homeDir, ".claude", "projects") },
+        { backend: "codex", dir: path.join(homeDir, ".codex", "sessions") },
     ];
     for (const { backend, dir } of roots) {
         const file = findFile(dir, id);
-        if (!file) continue;
+        if (file) {
+            candidates.push({ backend, file });
+        }
+    }
+    for (const { backend, file } of candidates) {
+        if (!fs.existsSync(file)) continue;
         try {
             const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
             const messages: ReadMsg[] = [];
@@ -163,7 +183,14 @@ function fromCliTranscript(id: string): SessionDump | undefined {
                         text = reqMatch[1].trim();
                     }
                 }
-                if (text) messages.push({ role, text });
+                const rawTimestamp = row.timestamp ?? row.created_at ?? row.createdAt;
+                const at =
+                    typeof rawTimestamp === "string"
+                        ? rawTimestamp
+                        : typeof rawTimestamp === "number"
+                          ? new Date(rawTimestamp).toISOString()
+                          : undefined;
+                if (text) messages.push({ role, text, at });
             }
             if (messages.length)
                 return { id, source: "cli", backend, count: messages.length, messages };
@@ -175,11 +202,16 @@ function fromCliTranscript(id: string): SessionDump | undefined {
 }
 
 /** Reads a session's full conversation by GUID across all known sources. */
-export function readSession(id: string): SessionDump {
+export function readSession(id: string, options: { homeDir?: string } = {}): SessionDump {
     return (
         fromLedger(id) ??
         fromStore(id) ??
-        fromCliTranscript(id) ?? { id, source: "none", count: 0, messages: [] }
+        fromCliTranscript(id, options.homeDir) ?? {
+            id,
+            source: "none",
+            count: 0,
+            messages: [],
+        }
     );
 }
 

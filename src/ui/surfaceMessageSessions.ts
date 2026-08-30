@@ -143,11 +143,13 @@ export async function handleSessionMessage(
         case "session-list-backends": {
             // "Continue with another agent" from a session's right-click
             // menu: offer every configured backend except the session's own.
-            const items = [...d.deps.adapterByBackend.values()].map((adapter) => ({
-                backend: adapter.backend,
-                name: adapter.displayName ?? adapter.backend,
-                current: adapter.backend === message.backend,
-            }));
+            const items = [...d.deps.adapterByBackend.values()]
+                .filter((adapter) => adapter.canStartSessions !== false)
+                .map((adapter) => ({
+                    backend: adapter.backend,
+                    name: adapter.displayName ?? adapter.backend,
+                    current: adapter.backend === message.backend,
+                }));
             d.post({ type: "session-backends", items });
             return true;
         }

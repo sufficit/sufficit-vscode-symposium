@@ -126,7 +126,7 @@ export interface CustomAdapterDef {
     supportsDeveloperRole?: boolean;
 }
 
-const BUILTIN_MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "gemini", "openai"]);
+const BUILTIN_MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
 
 /** Reads the user's extra OpenAI-compatible adapters (symposium.adapters). */
 export function customAdapterDefs(): CustomAdapterDef[] {

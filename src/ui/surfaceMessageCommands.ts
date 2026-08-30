@@ -80,11 +80,13 @@ export async function handleSurfaceCommandMessage(
         }
         case "list-backends": {
             const current = deps.getController()?.backend ?? deps.getTerminalSession()?.backend;
-            const items = [...deps.deps.adapterByBackend.values()].map((adapter) => ({
-                backend: adapter.backend,
-                name: adapter.displayName ?? adapter.backend,
-                current: adapter.backend === current,
-            }));
+            const items = [...deps.deps.adapterByBackend.values()]
+                .filter((adapter) => adapter.canStartSessions !== false)
+                .map((adapter) => ({
+                    backend: adapter.backend,
+                    name: adapter.displayName ?? adapter.backend,
+                    current: adapter.backend === current,
+                }));
             deps.post({ type: "backends", items });
             return true;
         }
@@ -100,7 +102,14 @@ export async function handleSurfaceCommandMessage(
         case "pick-agent":
             if (typeof message.backend === "string") {
                 const { defaultCwd } = await import("../extension/config");
-                deps.dialogues.openDialogue(message.backend, { cwd: defaultCwd() }, "New dialogue");
+                const adapter = deps.deps.adapterByBackend.get(message.backend);
+                if (adapter && adapter.canStartSessions !== false) {
+                    deps.dialogues.openDialogue(
+                        message.backend,
+                        { cwd: defaultCwd() },
+                        "New dialogue",
+                    );
+                }
             }
             return true;
         case "install-agent":

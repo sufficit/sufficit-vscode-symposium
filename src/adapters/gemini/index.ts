@@ -1,3 +1,14 @@
-export { GeminiAdapter, GeminiSession } from "./adapter";
-export { listGeminiSessions } from "./sessionDiscovery";
-export { readGeminiMeta, extractUserPromptText, extractWorkspaceCwd } from "./transcript";
+export { GeminiAdapter } from "./adapter";
+export {
+    defaultGeminiRoots,
+    listGeminiSessions,
+    type GeminiDiscoveryOptions,
+    type GeminiSessionSource,
+} from "./sessionDiscovery";
+export {
+    extractUserPromptText,
+    extractWorkspaceCwd,
+    parseGeminiTranscriptLine,
+    readGeminiHistory,
+    readGeminiMeta,
+} from "./transcript";
