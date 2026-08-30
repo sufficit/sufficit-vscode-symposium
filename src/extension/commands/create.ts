@@ -29,13 +29,15 @@ export function registerCreateCommands(ctx: CommandContext): void {
         tmuxAlive,
         infoOf,
     } = ctx;
+    const startableAdapters = () =>
+        adapters.filter((adapter) => adapter.canStartSessions !== false);
 
     // Opening a tab must not wait for four CLI/API availability probes. Render
     // configured adapters immediately, then replace the picker as probes finish.
     // This matches Claude/Codex: create the surface first; discover capabilities
     // asynchronously rather than putting process/network work on the click path.
     const initialAgentPickerEntries = (): import("../../protocol/chat").AgentPickerEntry[] =>
-        adapters.map((adapter) => ({
+        startableAdapters().map((adapter) => ({
             backend: adapter.backend,
             name: adapter.displayName ?? adapter.backend,
             version: "checking availability…",
@@ -43,7 +45,7 @@ export function registerCreateCommands(ctx: CommandContext): void {
         }));
     const collectAgentPickerEntries = () =>
         Promise.all(
-            adapters.map(async (adapter) => {
+            startableAdapters().map(async (adapter) => {
                 const probe = await adapter.available();
                 const isEnoent = !probe.ok && /ENOENT|not found/i.test(probe.error ?? "");
                 const hasInstall = isEnoent && !!CLI_INSTALL[adapter.backend];
@@ -104,7 +106,7 @@ export function registerCreateCommands(ctx: CommandContext): void {
                 return;
             }
             const picks = await Promise.all(
-                adapters.map(async (adapter) => {
+                startableAdapters().map(async (adapter) => {
                     const probe = await adapter.available();
                     return {
                         label: adapter.displayName ?? adapter.backend,

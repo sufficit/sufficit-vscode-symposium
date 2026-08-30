@@ -72,15 +72,10 @@ for (const entry of missing) failures.push(`required packaged path is missing: $
 for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`);
 
 const budgets = new Map([
-    // Bumped from 787KB after provider-origin message metadata (timestamp,
-    // model and effort replay) added real runtime behavior, not packaged bloat.
-    // The 788KB ceiling keeps the host-bundle guardrail with measured headroom.
-    // Earlier it was bumped from 750KB after the turn-lifecycle refactor (turn.ts,
-    // controllerTurnRunner.ts, codex/eventParser.ts, ahp persistence split,
-    // etc.) added real functionality, not bloat. Headroom above the current
-    // ~755KB actual for near-term growth. The 788KB ceiling includes the
-    // machine-readable Symposium/AHP discovery contract.
-    ["extension/out/extension.js", 788 * 1024],
+    // Gemini/Antigravity discovery adds two bounded transcript readers and
+    // source-specific catalog adapters. The measured host bundle is ~793 KiB;
+    // 800 KiB leaves less than 1% headroom while keeping growth explicit.
+    ["extension/out/extension.js", 800 * 1024],
     ["extension/out/ui/webview.bundle.js", 320 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

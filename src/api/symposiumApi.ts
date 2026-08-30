@@ -222,7 +222,7 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
             status: (id) => deps.live.statusFor(id),
             create: async (backend, options) => {
                 const adapter = adapterByBackend.get(backend);
-                if (!adapter) {
+                if (!adapter || adapter.canStartSessions === false) {
                     return undefined;
                 }
                 const opts: SessionStartOptions = { cwd: options.cwd, model: options.model };

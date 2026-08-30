@@ -255,6 +255,8 @@ export interface AgentSession extends EventEmitter {
 export interface AgentAdapter {
     readonly backend: AgentBackend;
     readonly usage: AdapterUsageProvider;
+    /** False for discovery-only adapters that can read sessions but cannot execute turns. */
+    readonly canStartSessions?: boolean;
     /**
      * Friendly name shown in pickers and the chat header. Optional: CLI
      * adapters fall back to `backend`; the HTTP adapters set a display name

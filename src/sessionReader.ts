@@ -127,14 +127,35 @@ function findFile(root: string, idFragment: string, depth = 4): string | undefin
     return undefined;
 }
 
-function fromCliTranscript(id: string): SessionDump | undefined {
+function fromCliTranscript(id: string, homeDir = os.homedir()): SessionDump | undefined {
+    const geminiRoot = path.join(homeDir, ".gemini");
+    const candidates = [
+        {
+            backend: "antigravity",
+            file: path.join(
+                geminiRoot,
+                "antigravity-ide",
+                "brain",
+                id,
+                ".system_generated",
+                "logs",
+                "transcript.jsonl",
+            ),
+        },
+        { backend: "gemini", file: path.join(geminiRoot, "history", id + ".jsonl") },
+    ];
     const roots = [
-        { backend: "claude", dir: path.join(os.homedir(), ".claude", "projects") },
-        { backend: "codex", dir: path.join(os.homedir(), ".codex", "sessions") },
+        { backend: "claude", dir: path.join(homeDir, ".claude", "projects") },
+        { backend: "codex", dir: path.join(homeDir, ".codex", "sessions") },
     ];
     for (const { backend, dir } of roots) {
         const file = findFile(dir, id);
-        if (!file) continue;
+        if (file) {
+            candidates.push({ backend, file });
+        }
+    }
+    for (const { backend, file } of candidates) {
+        if (!fs.existsSync(file)) continue;
         try {
             const lines = fs.readFileSync(file, "utf8").split("\n").filter(Boolean);
             const messages: ReadMsg[] = [];
@@ -146,11 +167,30 @@ function fromCliTranscript(id: string): SessionDump | undefined {
                     continue;
                 }
                 // Claude jsonl: { type:"user"|"assistant", message:{ role, content } }
+                // Antigravity jsonl: { type:"USER_INPUT"|"PLANNER_RESPONSE", source:"USER_EXPLICIT"|"MODEL", content }
                 const msg = (row.message ?? row) as Record<string, unknown>;
-                const role = String(msg.role ?? row.role ?? row.type ?? "");
+                let role = String(msg.role ?? row.role ?? row.type ?? "").toLowerCase();
+                if (role === "user_input" || row.source === "USER_EXPLICIT") {
+                    role = "user";
+                } else if (role === "planner_response" || row.source === "MODEL") {
+                    role = "assistant";
+                }
                 if (role !== "user" && role !== "assistant") continue;
-                const text = contentToText(msg.content ?? row.content);
-                if (text) messages.push({ role, text });
+                let text = contentToText(msg.content ?? row.content);
+                if (role === "user") {
+                    const reqMatch = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/i.exec(text);
+                    if (reqMatch) {
+                        text = reqMatch[1].trim();
+                    }
+                }
+                const rawTimestamp = row.timestamp ?? row.created_at ?? row.createdAt;
+                const at =
+                    typeof rawTimestamp === "string"
+                        ? rawTimestamp
+                        : typeof rawTimestamp === "number"
+                          ? new Date(rawTimestamp).toISOString()
+                          : undefined;
+                if (text) messages.push({ role, text, at });
             }
             if (messages.length)
                 return { id, source: "cli", backend, count: messages.length, messages };
@@ -162,11 +202,16 @@ function fromCliTranscript(id: string): SessionDump | undefined {
 }
 
 /** Reads a session's full conversation by GUID across all known sources. */
-export function readSession(id: string): SessionDump {
+export function readSession(id: string, options: { homeDir?: string } = {}): SessionDump {
     return (
         fromLedger(id) ??
         fromStore(id) ??
-        fromCliTranscript(id) ?? { id, source: "none", count: 0, messages: [] }
+        fromCliTranscript(id, options.homeDir) ?? {
+            id,
+            source: "none",
+            count: 0,
+            messages: [],
+        }
     );
 }
 

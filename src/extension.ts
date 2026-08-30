@@ -3,6 +3,7 @@ import { createVscodeApplicationPorts } from "./infrastructure/vscode/applicatio
 import { ClaudeAdapter } from "./adapters/claude";
 import { CodexAdapter } from "./adapters/codex";
 import { CopilotAdapter } from "./adapters/copilot";
+import { GeminiAdapter } from "./adapters/gemini";
 import { OpenAIAdapter, setOpenAITokenProvider } from "./adapters/openai";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
@@ -59,6 +60,8 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         new ClaudeAdapter(claudeConfig),
         new CodexAdapter(codexConfig),
         new CopilotAdapter(copilotConfig),
+        new GeminiAdapter("gemini"),
+        new GeminiAdapter("antigravity"),
         sufficitAdapter,
         ...buildCustomAdapters(context, normalizeAdapterDefs()),
     ];
@@ -68,8 +71,15 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
 
     // Live backend registry: when the user adds/imports/removes a custom backend
     // (symposium.adapters), rebuild the custom adapters IN PLACE so they're usable
-    // immediately — no window reload. Built-ins (claude/codex/copilot/openai) stay.
-    const BUILTIN_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
+    // immediately — no window reload. Built-ins stay registered.
+    const BUILTIN_BACKENDS = new Set([
+        "claude",
+        "codex",
+        "copilot",
+        "gemini",
+        "antigravity",
+        "openai",
+    ]);
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (!e.affectsConfiguration("symposium.adapters")) {

@@ -170,6 +170,7 @@ export function applyMeta(data: MetaMessageData): void {
     // read-only live mirrors can't be handed off.
     switchAgentBtn.style.display = data.readOnly ? "none" : "";
     const codexSubagentBlocked = data.readOnlyReason === "codex-subagent";
+    const externalReadOnly = data.readOnlyReason === "external-readonly";
     const blockedNotice = codexSubagentBlocked ? t("chat.composer.codexSubagent.notice") : "";
     setComposerBlocked(
         blockedNotice,
@@ -185,6 +186,8 @@ export function applyMeta(data: MetaMessageData): void {
     }
     if (codexSubagentBlocked) {
         append("meta", blockedNotice);
+    } else if (externalReadOnly) {
+        append("meta", "Imported agent history — read only");
     } else if (data.readOnly) {
         append("meta", "👁 watching live — read only (this session runs elsewhere)");
     } else if (data.terminal) {
