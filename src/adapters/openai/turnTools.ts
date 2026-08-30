@@ -1,5 +1,10 @@
 import { HubClient } from "../../sync/hubClient";
-import { AI_TOOLS, AI_TOOLS_RESPONSES } from "../aiTools/defs";
+import {
+    AI_TOOLS,
+    AI_TOOLS_RESPONSES,
+    UNIVERSAL_MEMORY_TOOLS,
+    UNIVERSAL_MEMORY_TOOLS_RESPONSES,
+} from "../aiTools/defs";
 import { LOCAL_TOOLS, LOCAL_TOOLS_RESPONSES } from "../aiTools/localDefs";
 import { SUBAGENT_TOOLS, SUBAGENT_TOOLS_RESPONSES } from "../aiTools/subagentDefs";
 import { getSubagentHost } from "../aiTools/types";
@@ -10,7 +15,16 @@ import { classifyLmTool } from "../aiTools/permissionTiers";
 import { mergeToolDefinitions } from "./toolMerge";
 
 export function buildTurnTools(hubConfigured: boolean, responses: boolean) {
-    const memoryTools = hubConfigured ? (responses ? AI_TOOLS_RESPONSES : AI_TOOLS) : [];
+    // Canonical memory is remote-only. Offline mode keeps only session
+    // guardrails, whose local path is explicitly a compatibility mechanism.
+    const memoryTools = hubConfigured
+        ? responses
+            ? AI_TOOLS_RESPONSES
+            : AI_TOOLS
+        : (responses ? UNIVERSAL_MEMORY_TOOLS_RESPONSES : UNIVERSAL_MEMORY_TOOLS).filter((tool) => {
+              const name = "name" in tool ? tool.name : tool.function.name;
+              return name === "add_guardrail" || name === "clear_guardrails";
+          });
     const localTools = responses ? LOCAL_TOOLS_RESPONSES : LOCAL_TOOLS;
     const subagentTools = getSubagentHost()
         ? responses

@@ -6,7 +6,7 @@ import { AgentAdapter, SlashCommand } from "../adapters/types";
 import { HubClient, Observation } from "../sync/hubClient";
 import { fetchSessionTasks, TaskItem } from "../sync/tasks";
 import { applyTaskState, reconcileTaskStateOverrides, TaskStateOverride } from "../sync/taskUi";
-import { fetchSessionGuardrails } from "../sync/guardrails";
+import { loadSurfaceGuardrails } from "./surfaceGuardrails";
 import { ledgerDir } from "../ledger";
 import { attachBrowserPage } from "./surfaceBrowserAttachment";
 
@@ -249,17 +249,7 @@ export class SurfaceSync {
     /** Pushes the session's user guardrails to the panel. */
     async refreshGuardrails(): Promise<void> {
         const sessionId = this.d.getController()?.sessionId ?? "";
-        let items: { id: string; text: string }[] = [];
-        try {
-            if (this.hub.configured() && sessionId) {
-                items = (await fetchSessionGuardrails(this.hub, sessionId)).map((g) => ({
-                    id: g.id,
-                    text: g.text,
-                }));
-            }
-        } catch {
-            items = [];
-        }
+        const items = await loadSurfaceGuardrails(this.hub, sessionId, this.lastGuardrails);
         this.lastGuardrails = items;
         this.d.post({ type: "guardrails", items });
     }

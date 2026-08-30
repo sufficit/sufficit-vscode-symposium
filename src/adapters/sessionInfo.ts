@@ -24,6 +24,8 @@ export interface SessionInfo {
     transcriptPath?: string;
     /** Last model used in this session, when the backend records one (resume hint). */
     model?: string;
+    /** Last reasoning/effort level used in this session, when available. */
+    reasoning?: string;
     /** Set by the session store; true when the user archived it. */
     archived?: boolean;
     /** Set by the session store; true when pinned to the top. */

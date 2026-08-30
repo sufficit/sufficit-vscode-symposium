@@ -2,9 +2,10 @@
 import { postMessage } from "./vscode";
 import { ctxMenu, tipEl } from "./dom";
 import { svgIcon } from "./icons";
+import { t } from "./i18n";
 import { lastAutoScroll } from "./scroll";
 import { setPendingSessionSwitch } from "./state";
-import { copyText } from "./markdown";
+import { copyText } from "./markdownCode";
 import type { SessionActionKind } from "../../protocol/chat";
 import type { SessionListItem } from "./types";
 
@@ -99,10 +100,11 @@ export function showToast(message: string, kind: "info" | "error" = "info"): voi
 // it after. Works on hover AND keyboard focus (a11y).
 let tipTarget: HTMLElement | null = null;
 export function placeTip(target: HTMLElement): void {
+    const padding = 8;
     const r = target.getBoundingClientRect();
     const tr = tipEl.getBoundingClientRect();
     let left = r.left + r.width / 2 - tr.width / 2;
-    left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
+    left = Math.max(padding, Math.min(left, window.innerWidth - tr.width - padding));
     let top = r.top - tr.height - 8;
     if (top < 8) {
         top = r.bottom + 8;
@@ -110,6 +112,7 @@ export function placeTip(target: HTMLElement): void {
     } else {
         tipEl.classList.remove("below");
     }
+    top = Math.max(padding, Math.min(top, window.innerHeight - tr.height - padding));
     tipEl.style.left = left + "px";
     tipEl.style.top = top + "px";
 }
@@ -340,4 +343,49 @@ export function showToolMenu(ev: MouseEvent, toolName: string, toolPath?: string
         h = ctxMenu.offsetHeight;
     ctxMenu.style.left = Math.min(ev.clientX, window.innerWidth - w - 4) + "px";
     ctxMenu.style.top = Math.min(ev.clientY, window.innerHeight - h - 4) + "px";
+}
+
+export function showLinkMenu(
+    ev: MouseEvent,
+    address: string,
+    open: () => void,
+    kind: "link" | "file",
+): void {
+    ev.preventDefault();
+    ev.stopPropagation();
+    hideTip();
+    ctxMenu.textContent = "";
+    ctxMenu.classList.remove("sessionFiltersMenu");
+    ctxMenu.setAttribute("role", "menu");
+    ctxMenu.setAttribute("aria-label", t("chat.link.menu"));
+    const add = (icon: string, label: string, action: () => void): HTMLButtonElement => {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "mi";
+        item.setAttribute("role", "menuitem");
+        const graphic = svgIcon(icon);
+        graphic.classList.add("miIcon");
+        item.appendChild(graphic);
+        item.appendChild(document.createTextNode(label));
+        item.addEventListener("click", () => {
+            hideCtx();
+            action();
+        });
+        ctxMenu.appendChild(item);
+        return item;
+    };
+    const first = add(kind === "file" ? "file" : "globe", t(`chat.link.open.${kind}`), open);
+    add("copy", t("chat.link.copyAddress"), () =>
+        copyText(address, () => showToast(t("chat.link.copied"))),
+    );
+    ctxMenu.style.display = "block";
+    const rect =
+        ev.currentTarget instanceof HTMLElement ? ev.currentTarget.getBoundingClientRect() : null;
+    const x = ev.clientX || rect?.left || 4;
+    const y = ev.clientY || rect?.bottom || 4;
+    const width = ctxMenu.offsetWidth;
+    const height = ctxMenu.offsetHeight;
+    ctxMenu.style.left = Math.max(4, Math.min(x, window.innerWidth - width - 4)) + "px";
+    ctxMenu.style.top = Math.max(4, Math.min(y, window.innerHeight - height - 4)) + "px";
+    first.focus({ preventScroll: true });
 }

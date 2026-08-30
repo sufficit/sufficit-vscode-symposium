@@ -52,8 +52,8 @@ function clearToken(): void {
 export function authHeaders(): Record<string, string> {
     // The bridge token goes in a dedicated header, not Authorization, so a
     // fronting reverse proxy can use HTTP Basic Auth (Authorization: Basic) as a
-    // second gate without colliding. (SSE still uses ?token= — EventSource can't
-    // set headers.)
+    // second gate without colliding. AHP WebSocket authentication uses its own
+    // negotiated subprotocol; supporting HTTP calls use this header.
     return { "Content-Type": "application/json", "X-Symposium-Token": token() };
 }
 

@@ -113,8 +113,12 @@ export const CONFIG_EN_MESSAGES: Dict = {
     "config.prefs.turnSilenceMinutes.name": "Stalled-turn timeout",
     "config.prefs.turnSilenceMinutes.desc":
         'Force-end a turn after this many minutes with no activity from the agent (stalled tool or dropped connection), so the session never gets stuck "working" forever. Raise it for scenarios with long silent tool calls (e.g. slow test suites); disable to never auto-stop.',
+    "config.prefs.turnRetrySilenceMinutes.name": "Retry timeout",
+    "config.prefs.turnRetrySilenceMinutes.desc":
+        "Separate silence window for an explicit retry after a stalled turn. It prevents Retry from failing again at the normal stalled-turn timeout.",
     "config.steps.2min": "2 minutes",
     "config.steps.5min": "5 minutes",
+    "config.steps.15min": "15 minutes",
     "config.steps.10min": "10 minutes",
     "config.steps.20min": "20 minutes",
     "config.steps.30min": "30 minutes",
@@ -146,6 +150,11 @@ export const CONFIG_EN_MESSAGES: Dict = {
         "Show zone identifier badges on every UI section of the chat. Hover any section to see its name (e.g. 'header', 'compose', 'chat', 'sessions', 'footer').",
     "config.prefs.devMode.on": "On",
     "config.prefs.devMode.off": "Off",
+    "config.prefs.ahpDiagnostics.name": "AHP Projection Diagnostics",
+    "config.prefs.ahpDiagnostics.desc":
+        "Log projection mismatches to the Symposium output channel. Use when the queue or transcript disagrees with what the agent actually did — it reports which side drifted.",
+    "config.prefs.ahpDiagnostics.on": "On",
+    "config.prefs.ahpDiagnostics.off": "Off",
     "config.prefs.section.memoryInstruction": "Memory search hint",
     "config.prefs.memoryInstruction.desc":
         "Hint injected into the system prompt for logged-in users, guiding them to search Sufficit shared memory before asking you for context. Leave empty to use the built-in default. Only injected when logged in to Sufficit.",

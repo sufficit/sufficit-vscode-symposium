@@ -1,12 +1,27 @@
-import type { ChatQueue, MessageDedup, PendingMessage, SendMode } from "./controllerQueue";
+import type { AgentSession } from "../adapters/types";
+import type {
+    ChatQueue,
+    MessageDedup,
+    PendingMessage,
+    QueueDispatchOptions,
+    SendMode,
+} from "./controllerQueue";
+import { tryInjectSteer } from "./controllerSteerInjection";
+import type { TurnTracker } from "./turn";
 
 interface SendRouterContext {
     queue: ChatQueue;
     dedup: MessageDedup;
     busy: () => boolean;
     cancel: () => void;
-    dispatch: (message: PendingMessage) => void;
+    dispatch: (message: PendingMessage, options?: QueueDispatchOptions) => void;
     emitQueue: () => void;
+    log?: (message: string) => void;
+    /** Mid-turn steer injection; absent in tests and on backends without it. */
+    getSession?: () => AgentSession | undefined;
+    turns?: TurnTracker;
+    createIntentId?: () => string;
+    emit?: (message: unknown) => void;
 }
 
 export function routeControllerSend(
@@ -15,7 +30,11 @@ export function routeControllerSend(
     context: SendRouterContext,
 ): void {
     message.mode = mode;
-    if (!context.dedup.accept(message.clientMessageId)) return;
+    const preview = message.text.length > 40 ? `${message.text.slice(0, 40)}…` : message.text;
+    if (!context.dedup.accept(message.clientMessageId)) {
+        context.log?.(`[send] "${preview}" dropped — duplicate clientMessageId (already accepted)`);
+        return;
+    }
     if (mode === "redirect" && context.busy()) {
         if (/\b(stop|cancel|don'?t|never|pare|cancela|n[ãa]o)\b/i.test(message.text)) {
             context.queue.clear();
@@ -23,18 +42,68 @@ export function routeControllerSend(
         context.queue.unshift(message);
         context.cancel();
         context.emitQueue();
+        context.log?.(`[send] "${preview}" — redirect while busy: queued at head, cancelling turn`);
         return;
     }
     if (mode === "steer" && context.busy()) {
-        context.queue.clear();
-        context.queue.push(message);
-        context.cancel();
+        // Steer never interrupts. Backends that own their tool loop in-process
+        // can splice it into the RUNNING turn at the next tool-safe boundary, so
+        // the agent adapts immediately; it is then not a pending item at all.
+        // Everything else — and a turn with no hop left — falls through to the
+        // head of the queue and goes out at the turn boundary instead.
+        if (tryInjectSteer(message, context)) {
+            context.log?.(`[send] "${preview}" — steer while busy: injected into the running turn`);
+            return;
+        }
+        context.queue.unshift(message);
+        context.emitQueue();
+        context.log?.(
+            `[send] "${preview}" — steer while busy: queued at head (${context.queue.length} pending)`,
+        );
         return;
     }
     if (context.busy()) {
+        // Plain "queue": back of the line, after everything already pending.
         context.queue.enqueue(message);
         context.emitQueue();
+        context.log?.(`[send] "${preview}" — busy: queued (${context.queue.length} pending)`);
         return;
     }
+    if (!context.queue.isEmpty) {
+        if (context.queue.isHeld) {
+            // A new request is not consent to replay work interrupted by the
+            // previous failure. A Retry is the exception: it explicitly
+            // continues that failed turn and releases normal draining after
+            // it succeeds. Neither path may substitute the old queue head for
+            // the message the user just submitted.
+            const retrying = message.retryOf !== undefined || message.interruptedBy !== undefined;
+            context.emitQueue();
+            context.log?.(
+                `[send] "${preview}" — idle with ${context.queue.length} held: dispatching ${retrying ? "retry" : "new message"}, held queue ${retrying ? "released" : "preserved"}`,
+            );
+            context.dispatch(message, retrying ? undefined : { preserveQueueHold: true });
+            return;
+        }
+        // Idle, but something is already waiting (typically a held queue left
+        // over from a transport race). Preserve FIFO instead of letting this
+        // fresh send jump ahead: append it, then dispatch the head.
+        context.queue.enqueue(message);
+        const head = context.queue.shift();
+        if (head) {
+            context.emitQueue();
+            context.log?.(
+                `[send] "${preview}" — idle but ${context.queue.length + 1} already queued: appended, dispatching head instead`,
+            );
+            context.dispatch(head);
+        }
+        return;
+    }
+    // Emit even though nothing changed: this is the only send path that never
+    // touches the queue, so it was also the only one that could never correct a
+    // client showing a stale Queued row. A message dispatched straight through
+    // then appeared in the transcript AND in the panel at the same time, with
+    // nothing to clear it until the queue happened to change again.
+    context.emitQueue();
+    context.log?.(`[send] "${preview}" — idle, queue empty: dispatching directly`);
     context.dispatch(message);
 }

@@ -60,6 +60,74 @@ export async function readJsonlTail(file: string, maxBytes: number): Promise<str
     }
 }
 
+/**
+ * Reads a bounded window of JSONL rows ending at byte {@link endByte} (exclusive),
+ * paginating older history backwards. Returns the complete rows in that window
+ * plus the byte offset where the next older page would end (undefined when the
+ * start of the file has been reached). The cursor is the base10 string of the
+ * byte offset that begins the window just read — pass it back as {@link endByte}
+ * (via {@link decodeHistoryCursor}) for the previous page.
+ */
+export async function readJsonlRange(
+    file: string,
+    endByte: number,
+    maxBytes: number,
+): Promise<{ content: string; nextEndByte: number | undefined }> {
+    let handle: fs.promises.FileHandle | undefined;
+    try {
+        handle = await fs.promises.open(file, "r");
+        const stat = await handle.stat();
+        const end = Math.min(Math.max(0, Math.floor(endByte)), stat.size);
+        if (end === 0) {
+            return { content: "", nextEndByte: undefined };
+        }
+        const length = Math.min(Math.max(0, maxBytes), end);
+        if (length === 0) {
+            return { content: "", nextEndByte: undefined };
+        }
+        const position = end - length;
+        const buffer = Buffer.allocUnsafe(length);
+        const { bytesRead } = await handle.read(buffer, 0, length, position);
+        let text = buffer.subarray(0, bytesRead).toString("utf8");
+        // Trim a leading partial row so callers never parse a half JSON object;
+        // the dropped bytes belong to the row that continues above this window.
+        let nextEndByte: number | undefined = position;
+        if (position > 0) {
+            const firstNewline = text.indexOf("\n");
+            if (firstNewline >= 0) {
+                nextEndByte = position + firstNewline + 1;
+                text = text.slice(firstNewline + 1);
+            } else {
+                // No newline in the window — the single row is larger than the
+                // page. Return nothing and signal that the next page should
+                // start above this window's beginning.
+                text = "";
+                nextEndByte = position;
+            }
+        } else {
+            // Read from the very start of the file — no older pages remain.
+            nextEndByte = undefined;
+        }
+        return { content: text, nextEndByte };
+    } catch {
+        return { content: "", nextEndByte: undefined };
+    } finally {
+        await handle?.close().catch(() => undefined);
+    }
+}
+
+/** Encodes a byte offset as an opaque pagination cursor string. */
+export function encodeHistoryCursor(byteOffset: number): string {
+    return String(byteOffset);
+}
+
+/** Decodes a pagination cursor back to a byte offset, or undefined if absent/invalid. */
+export function decodeHistoryCursor(cursor: string | undefined): number | undefined {
+    if (!cursor) return undefined;
+    const value = Number(cursor);
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
 interface CachedPrefix<T> {
     size: number;
     mtimeMs: number;

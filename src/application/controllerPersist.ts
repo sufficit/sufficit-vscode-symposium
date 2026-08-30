@@ -1,5 +1,6 @@
 /** Persistence adapter for application render events. */
 import * as renderLog from "../renderLog";
+import type { RenderLogRecord, RenderWriter } from "../renderLog";
 import { RenderStream } from "./renderStream";
 import { PendingMessage, recoverPersistedQueue } from "./controllerQueue";
 
@@ -18,6 +19,15 @@ export interface PersistContext {
     sessionId(): string | undefined;
     stream: RenderStream;
     state: PersistState;
+    writer?: RenderWriter;
+    authoritative?: () => boolean;
+}
+
+export interface RestoredRenderLog {
+    seeded: boolean;
+    pending: PendingMessage[];
+    records: RenderLogRecord[];
+    cursor: number;
 }
 
 /**
@@ -39,12 +49,12 @@ export function persistEmit(ctx: PersistContext, message: unknown): void {
     const log = ctx.stream.messages;
     if (ctx.state.count >= log.length) {
         // Already caught up (or seeded from disk) — append the new one.
-        renderLog.appendRender(id, message);
+        renderLog.appendRender(id, message, ctx.writer, ctx.authoritative?.());
     } else {
         // Deferred flush: sessionId just arrived, persist buffered messages
         // that were emitted before we had an id.
         for (let i = ctx.state.count; i < log.length; i++) {
-            renderLog.appendRender(id, log[i]);
+            renderLog.appendRender(id, log[i], ctx.writer, ctx.authoritative?.());
         }
     }
     ctx.state.count = log.length;
@@ -59,14 +69,27 @@ export function persistEmit(ctx: PersistContext, message: unknown): void {
 export function seedRenderLog(
     ctx: PersistContext,
     resumeSessionId: string | undefined,
-): { seeded: boolean; pending: PendingMessage[] } {
+): RestoredRenderLog {
     if (!resumeSessionId || !renderLog.hasRender(resumeSessionId)) {
-        return { seeded: false, pending: [] };
+        return { seeded: false, pending: [], records: [], cursor: 0 };
     }
-    const persisted = renderLog.readRender(resumeSessionId);
+    const snapshot = renderLog.readRenderSnapshot(resumeSessionId);
+    const persisted = snapshot.messages;
     const pending = recoverPersistedQueue(persisted);
     // A final canonical snapshot overwrites stale queue cards during replay.
     // It is intentionally not appended to disk; it is re-derived on each seed.
-    ctx.state.count = ctx.stream.seed([...persisted, { type: "queue", items: pending }]);
-    return { seeded: true, pending };
+    // Whether it was "waiting for a turn" or "held after a failure" isn't
+    // durably recorded — a non-empty queue surviving a full restart is always
+    // some kind of interrupted state, so it replays as held (see
+    // ChatController.seedRenderLog, which sets the live hold flag to match).
+    ctx.state.count = ctx.stream.seed([
+        ...persisted,
+        { type: "queue", items: pending, held: pending.length > 0, busy: false },
+    ]);
+    return {
+        seeded: true,
+        pending,
+        records: snapshot.records,
+        cursor: snapshot.cursor,
+    };
 }

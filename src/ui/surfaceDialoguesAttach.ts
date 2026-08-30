@@ -2,25 +2,26 @@ import { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import { completedTaskIds } from "../sync/taskUi";
 
 /**
- * The controller-attach callback for a live dialogue: filters the raw
+ * The controller observer callback for a live dialogue: filters the raw
  * edited-files set against git status, captures a freshly-assigned session id
  * as "last active", repaints guardrails/tasks the moment a session-mutating
  * tool finishes, and re-mirrors the working tree at turn-end. Extracted out of
  * `SurfaceDialogues.openDialogue` (check:size) — same closure semantics via an
  * explicit `d`/`backend` pair instead of captured `this`.
  */
-export function handleControllerEvent(
+/** Applies surface-only effects without forwarding chat render output. */
+export function handleControllerSideEffect(
     d: SurfaceDialoguesDeps,
     backend: string,
     message: unknown,
-): void {
+): boolean {
     // The controller emits the RAW edited-files set; the surface filters
     // it against live git status (so staged files drop, unstaging them
     // brings them back) before showing it.
     const msg = message as Record<string, unknown> | null;
     if (msg?.type === "changed-files" && "items" in msg && Array.isArray(msg.items)) {
         void d.changedFiles.refresh(msg.items);
-        return;
+        return true;
     }
     // Capture a freshly-assigned session id so a brand-new dialogue
     // also becomes the restorable "last active" one.
@@ -123,5 +124,5 @@ export function handleControllerEvent(
         // changed-files signal and the .git/index watcher both miss.
         d.changedFiles.refreshNow();
     }
-    d.post(message);
+    return false;
 }

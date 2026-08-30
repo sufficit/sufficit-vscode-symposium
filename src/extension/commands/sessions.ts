@@ -7,6 +7,7 @@ import { HubClient } from "../../sync/hubClient";
 import { symposiumLog } from "../log";
 import { errorDetails, showErrorWithCopy } from "../errors";
 import { CommandContext } from "./helpers";
+import { removeLocalSessionArtifacts } from "../../sessions/localArtifacts";
 
 /** Open / follow / rename / archive / pin / delete session commands. */
 export function registerSessionCommands(ctx: CommandContext): void {
@@ -234,6 +235,11 @@ export function registerSessionCommands(ctx: CommandContext): void {
                 try {
                     snapshots.clearSession(info.sessionId); // drop in-memory baselines
                     const residual = await adapter.deleteSession(info);
+                    // Provider storage is gone, so it is now safe to remove the
+                    // shared Symposium ledger. Keeping this after provider scrub
+                    // means a provider failure never reports a partial deletion
+                    // as success and the local evidence remains retryable.
+                    removeLocalSessionArtifacts(info.sessionId);
                     // The adapter removed the canonical transcript. Evict the stale
                     // catalog row before dropping its custom title; otherwise the
                     // cached row flashes back with a generic title until reconcile,

@@ -4,6 +4,7 @@
 import { t } from "./i18n";
 import {
     sessionRefreshBtn,
+    sessionsBackBtn,
     sessionFilterBtn,
     sessionSearch,
     listToggle,
@@ -35,6 +36,7 @@ export function applyStaticI18n(): void {
     };
 
     setT(sessionRefreshBtn, "chat.icon.refreshSessions");
+    setT(sessionsBackBtn, "chat.icon.returnToActiveSession");
     if (sessionFilterBtn) {
         sessionFilterBtn.title = t("sessions.filter.tooltip");
         sessionFilterBtn.setAttribute("aria-label", t("sessions.filter.tooltip"));

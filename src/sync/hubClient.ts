@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { HUB_REQUEST_TIMEOUT_MS, withAbortableDeadline } from "./requestDeadline";
 
 /**
  * HTTP client for the sufficit-ai memory + vault REST API (the sync hub).
@@ -22,6 +23,28 @@ export interface CompactRecord {
     tags?: string;
     /** Caller session id (when the observation was scoped to a session). */
     sessionId?: string;
+    textScore?: number;
+    vectorScore?: number;
+    freshnessScore?: number;
+    popularityScore?: number;
+    diversityScore?: number;
+    relevanceScore?: number;
+    estimatedTokens?: number;
+    selectionReason?: string;
+    retrievalStrategy?: string;
+    source?: string;
+}
+
+export type MemorySearchStrategy = "Exact" | "Semantic" | "Hybrid";
+
+export interface MemorySearchRequest {
+    query?: string;
+    type?: string;
+    limit?: number;
+    sessionId?: string;
+    strategy?: MemorySearchStrategy;
+    maxTokens?: number;
+    diversityLambda?: number;
 }
 
 export interface Observation {
@@ -60,9 +83,9 @@ export interface SymposiumRemoteUrlResult {
 
 export interface RelayRegisterResult {
     ok: boolean;
-    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium/relay). */
+    /** WebSocket URL of the relay gateway (e.g. wss://ai.sufficit.com.br/symposium?ws=relay). */
     relayWsUrl?: string;
-    /** Public URL prefix for this machine (e.g. https://ai.sufficit.com.br/symposium/<machineId>). */
+    /** Public URL prefix containing the gateway's owner-scoped relay machine ID. */
     publicUrlPrefix?: string;
 }
 
@@ -142,7 +165,7 @@ export class HubClient {
         return this.base().length > 0;
     }
 
-    private async headers(): Promise<Record<string, string>> {
+    private async headers(sessionId?: string): Promise<Record<string, string>> {
         const h: Record<string, string> = {
             "Content-Type": "application/json",
             Accept: "application/json",
@@ -164,7 +187,22 @@ export class HubClient {
             h["X-MEMORY-CONTEXT-ID"] = ctx;
         }
         h["X-MEMORY-SOURCE-ID"] = this.source() || "symposium";
+        if (sessionId) {
+            h["X-Symposium-Session-Id"] = sessionId;
+        }
         return h;
+    }
+
+    private request(url: string, init: RequestInit = {}, sessionId?: string): Promise<Response> {
+        return withAbortableDeadline(
+            "Sufficit Hub request",
+            HUB_REQUEST_TIMEOUT_MS,
+            async (signal) => {
+                const headers = new Headers(await this.headers(sessionId));
+                new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+                return fetch(url, { ...init, headers, signal });
+            },
+        );
     }
 
     /** Liveness probe for the health-gate. Returns false on any failure. */
@@ -173,9 +211,7 @@ export class HubClient {
             return false;
         }
         try {
-            const res = await fetch(`${this.base()}/api/memory/health`, {
-                headers: await this.headers(),
-            });
+            const res = await this.request(`${this.base()}/api/memory/health`);
             return res.ok;
         } catch {
             return false;
@@ -187,18 +223,19 @@ export class HubClient {
         return this.searchMemory({ type, limit });
     }
 
-    /** Free-form memory search (query/type/limit). Returns compact records. */
-    async searchMemory(params: {
-        query?: string;
-        type?: string;
-        limit?: number;
-        sessionId?: string;
-    }): Promise<CompactRecord[]> {
-        const res = await fetch(`${this.base()}/api/memory/search`, {
-            method: "POST",
-            headers: await this.headers(),
-            body: JSON.stringify({ limit: 20, ...params }),
-        });
+    /** Free-form memory search with optional hybrid ranking controls. */
+    async searchMemory(
+        params: MemorySearchRequest,
+        trustedSessionId = params.sessionId,
+    ): Promise<CompactRecord[]> {
+        const res = await this.request(
+            `${this.base()}/api/memory/search`,
+            {
+                method: "POST",
+                body: JSON.stringify({ limit: 20, ...params }),
+            },
+            trustedSessionId,
+        );
         if (!res.ok) {
             throw new Error(`memory search failed: ${res.status}`);
         }
@@ -207,9 +244,8 @@ export class HubClient {
 
     /** Web search via the sufficit-ai gateway (SearXNG-backed). Returns raw JSON. */
     async webSearch(query: string, limit = 8): Promise<unknown> {
-        const res = await fetch(`${this.base()}/api/ai/websearch`, {
+        const res = await this.request(`${this.base()}/api/ai/websearch`, {
             method: "POST",
-            headers: await this.headers(),
             body: JSON.stringify({ query, limit }),
         });
         if (!res.ok) {
@@ -219,15 +255,18 @@ export class HubClient {
     }
 
     /** Fetches full observations (with payload) by id. */
-    async getByIds(ids: string[]): Promise<Observation[]> {
+    async getByIds(ids: string[], trustedSessionId?: string): Promise<Observation[]> {
         if (ids.length === 0) {
             return [];
         }
-        const res = await fetch(`${this.base()}/api/memory/observations`, {
-            method: "POST",
-            headers: await this.headers(),
-            body: JSON.stringify({ ids }),
-        });
+        const res = await this.request(
+            `${this.base()}/api/memory/observations`,
+            {
+                method: "POST",
+                body: JSON.stringify({ ids }),
+            },
+            trustedSessionId,
+        );
         if (!res.ok) {
             throw new Error(`getByIds failed: ${res.status}`);
         }
@@ -236,11 +275,14 @@ export class HubClient {
 
     /** Upserts an observation (id present → update, absent → create). Returns new id. */
     async save(observation: Observation): Promise<string> {
-        const res = await fetch(`${this.base()}/api/memory/save`, {
-            method: "POST",
-            headers: await this.headers(),
-            body: JSON.stringify(observation),
-        });
+        const res = await this.request(
+            `${this.base()}/api/memory/save`,
+            {
+                method: "POST",
+                body: JSON.stringify(observation),
+            },
+            observation.sessionId,
+        );
         if (!res.ok) {
             throw new Error(`save failed: ${res.status}`);
         }
@@ -258,7 +300,7 @@ export class HubClient {
         }
         try {
             const url = `${this.base()}/api/vault/secrets/resolve?reference=${encodeURIComponent(reference)}`;
-            const res = await fetch(url, { headers: await this.headers() });
+            const res = await this.request(url);
             if (!res.ok) {
                 return null; // 404 unknown / 410 expired / 401 etc.
             }
@@ -275,9 +317,8 @@ export class HubClient {
             return null;
         }
         try {
-            const res = await fetch(`${this.base()}/api/symposium/join`, {
+            const res = await this.request(`${this.base()}/api/symposium/join`, {
                 method: "POST",
-                headers: await this.headers(),
             });
             if (!res.ok) {
                 return null;
@@ -294,9 +335,7 @@ export class HubClient {
             return null;
         }
         try {
-            const res = await fetch(`${this.base()}/api/symposium/remote-url`, {
-                headers: await this.headers(),
-            });
+            const res = await this.request(`${this.base()}/api/symposium/remote-url`);
             if (!res.ok) {
                 return null;
             }
@@ -316,9 +355,8 @@ export class HubClient {
             return null;
         }
         try {
-            const res = await fetch(`${this.base()}/api/symposium/relay/register`, {
+            const res = await this.request(`${this.base()}/api/symposium/relay/register`, {
                 method: "POST",
-                headers: { ...(await this.headers()), "content-type": "application/json" },
                 body: JSON.stringify({ machineId }),
             });
             if (!res.ok) {

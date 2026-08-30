@@ -1,34 +1,19 @@
 // Inbound message dispatch from the extension host. Registers the listener on import.
-import { postMessage } from "./vscode";
 import { bootComplete, bootStep, bootTimer } from "./boot";
 import { clearComposer, renderChips, saveCurrentComposerDraft, setBrowserOpen } from "./composer";
 import { resizeInput } from "./inputSizing";
 import { applyMeta } from "./meta";
 import { applyEvent } from "./events";
-import { confirmOptimisticMessage, endStream, message, renderThinkBlock } from "./messages";
-import { renderTool, resetToolRows } from "./tools";
-import {
-    renderChangedFiles,
-    renderGuardrails,
-    renderQueued,
-    renderTasks,
-    resetWorkingState,
-    setChangedItems,
-} from "./panels";
-import { setLang, t } from "./i18n";
+import { message, renderThinkBlock } from "./messages";
+import { renderTool } from "./tools";
+import { renderChangedFiles, renderGuardrails, renderTasks, setChangedItems } from "./panels";
+import { setLang } from "./i18n";
 import { applyStaticI18n } from "./staticI18n";
-import {
-    renderStatusbar,
-    setLastUsage,
-    setLastTurn,
-    setQuotaLoading,
-    setSessionCostUsd,
-} from "./statusbar";
-import { setComposerBlocked, setLoading, setStatus } from "./status";
-import { armStickyUserMessage, layout, refreshEmpty, settleAtBottom } from "./scroll";
-import { svgIcon } from "./icons";
+import { renderStatusbar, setQuotaLoading } from "./statusbar";
+import { setLoading, setStatus } from "./status";
+import { layout, settleAtBottom } from "./scroll";
 import { renderAgentPicker, refreshAgentPicker, hideAgentPicker } from "./agentPicker";
-import { root, log, copySessionBtn, sendBtn, input, agentBadge, chatTitle } from "./dom";
+import { root, copySessionBtn, input, agentBadge, chatTitle } from "./dom";
 import {
     attachments,
     activeFile,
@@ -39,18 +24,60 @@ import {
     setActiveFileRange,
     setActiveModel,
     setBusy,
-    setConversationRows,
-    setQueued,
     setSideMode,
     setOpenInPref,
 } from "./state";
 import { resolveMarkdownImage } from "./markdown";
 
-import { handleCatalogMessage } from "./dispatchCatalog";
+import {
+    beginCatalogHistoryCycle,
+    handleCatalogMessage,
+    whenCatalogHistoryIdle,
+} from "./dispatchCatalog";
+import { applyLocalAhpFrame, whenAhpChatRenderIdle } from "./localAhp";
+import { resetAhpChatRendering } from "./ahpChatView";
+import type { AgentEvent, HistoryMessage } from "../../adapters/types";
+import type { HostToWebview } from "../../protocol/chat";
+import type { MetaMessageData, QueueItem, WebviewAttachment } from "./types";
+import { renderQueueView, renderUserTurn, resetConversationView } from "./conversationView";
 
 let historyCycle = 0;
 
-window.addEventListener("message", ({ data }) => {
+type DispatchMessage = HostToWebview &
+    Omit<MetaMessageData, "type"> & {
+        type: string;
+        complete: boolean;
+        id: string;
+        label: string | null;
+        status: "pending" | "ok" | "fail" | "warn";
+        detail: string;
+        lang: string;
+        dataUrl?: string;
+        error?: string;
+        agents: Parameters<typeof renderAgentPicker>[0];
+        open: boolean;
+        loading: boolean;
+        path: string;
+        start: number;
+        end: number;
+        preview: boolean;
+        sessionsOnly: boolean;
+        items?: never[];
+        held?: boolean;
+        busy?: boolean;
+        stale?: string[];
+        attachments?: string[];
+        message: HistoryMessage;
+        clientMessageId?: string;
+        text: string;
+        files: WebviewAttachment[];
+        project: string;
+        event: AgentEvent;
+    };
+
+export function handleHostMessage(payload: unknown): void {
+    if (applyLocalAhpFrame(payload)) return;
+    const data = payload as DispatchMessage;
     if (handleCatalogMessage(data)) return;
     switch (data.type) {
         case "boot": {
@@ -88,11 +115,11 @@ window.addEventListener("message", ({ data }) => {
             break;
         }
         case "meta": {
-            applyMeta(data);
+            applyMeta(data as MetaMessageData);
             break;
         }
         case "title-update": {
-            chatTitle.textContent = data.title || "";
+            chatTitle.textContent = typeof data.title === "string" ? data.title : "";
             break;
         }
         case "browser-state": {
@@ -125,6 +152,9 @@ window.addEventListener("message", ({ data }) => {
                 setSideMode(data.sessionsSide);
                 layout();
             }
+            if (typeof data.chatOnly === "boolean") {
+                root.classList.toggle("chat-only", data.chatOnly);
+            }
             if (typeof data.devMode === "boolean") {
                 root.classList.toggle("dev-mode", data.devMode);
             }
@@ -141,32 +171,15 @@ window.addEventListener("message", ({ data }) => {
         }
         case "clear": {
             historyCycle++; // invalidate a reveal already queued for the prior session
+            beginCatalogHistoryCycle();
+            resetAhpChatRendering();
             hideAgentPicker(); // a session/dialogue is taking over the surface
             saveCurrentComposerDraft();
             clearComposer();
-            setConversationRows([]);
-            log.textContent = "";
             copySessionBtn.style.display = "none";
             agentBadge.style.display = "none";
             setActiveModel("");
-            setBusy(false);
-            setQueued(0);
-            // A new/switched dialogue has no usage yet — without this, the
-            // context meter/popover keeps showing the PREVIOUS session's last
-            // usage snapshot and accumulated cost until this session's own
-            // first "usage" event arrives (looks like a fresh session already
-            // has a full context window).
-            setLastUsage(null);
-            setLastTurn({});
-            setSessionCostUsd(0);
-            resetWorkingState();
-            resetToolRows();
-            refreshEmpty();
-            setComposerBlocked("", t("chat.composer.placeholder"), t("chat.composer.placeholder"));
-            sendBtn.disabled = false;
-            const composer = document.getElementById("composer");
-            if (composer) composer.style.display = "flex";
-            setStatus();
+            resetConversationView();
             break;
         }
         case "history-start": {
@@ -174,6 +187,7 @@ window.addEventListener("message", ({ data }) => {
             // is rebuilt. The host sends history-end only after the replay (or
             // async adapter history load) has completed.
             historyCycle++;
+            beginCatalogHistoryCycle();
             setLoading(true, "Loading session…");
             break;
         }
@@ -182,14 +196,22 @@ window.addEventListener("message", ({ data }) => {
             // A second snap on the next frame covers markdown/font layout that
             // settles between DOM insertion and paint.
             const cycle = historyCycle;
-            settleAtBottom(
-                () => cycle === historyCycle,
-                () => setLoading(false),
-            );
+            void Promise.all([whenCatalogHistoryIdle(), whenAhpChatRenderIdle()]).then(() => {
+                if (cycle !== historyCycle) return;
+                settleAtBottom(
+                    () => cycle === historyCycle,
+                    () => setLoading(false),
+                );
+            });
             break;
         }
         case "queue": {
-            renderQueued(data.items || []);
+            renderQueueView(
+                (data.items || []) as unknown as QueueItem[],
+                !!data.held,
+                data.busy,
+                data.stale,
+            );
             break;
         }
         case "load-input": {
@@ -210,9 +232,10 @@ window.addEventListener("message", ({ data }) => {
         case "append": {
             const m = data.message;
             if (m.role === "user") message("user", m.text, m.ts);
-            else if (m.role === "thinking" && String(m.text || "").trim()) renderThinkBlock(m.text);
+            else if (m.role === "thinking" && String(m.text || "").trim())
+                renderThinkBlock(m.text ?? "");
             else if (m.role === "tool")
-                renderTool(m.toolName || m.text, m.detail || "", {
+                renderTool(m.toolName || m.text || "", m.detail || "", {
                     input: m.input,
                     result: m.result,
                     added: m.added,
@@ -221,42 +244,11 @@ window.addEventListener("message", ({ data }) => {
                     path: m.path,
                     diff: m.diff,
                 });
-            else message("assistant", m.text, m.ts, m.model);
+            else message("assistant", m.text, m.ts, m.model, m.reasoning);
             break;
         }
         case "user": {
-            endStream();
-            const el =
-                confirmOptimisticMessage(data.clientMessageId) ||
-                message("user", data.text, Date.now());
-            armStickyUserMessage(el);
-            if (data.attachments?.length) {
-                const list = document.createElement("div");
-                list.className = "msgAtts";
-                for (const p of data.attachments) {
-                    const a = document.createElement("span");
-                    a.className = "msgAtt";
-                    a.title = "Abrir " + p;
-                    const ic = svgIcon("file");
-                    ic.classList.add("chipIcon");
-                    a.appendChild(ic);
-                    // strip any " (selected lines …)" suffix for the path to open
-                    // NOTE: use [(] instead of \( — this string is emitted inside a
-                    // template literal, where \( collapses to ( and breaks the regex.
-                    const cleanPath = String(p).replace(/ [(]selected lines.*$/, "");
-                    const lbl = document.createElement("span");
-                    lbl.textContent = String(p).split("/").pop() ?? "";
-                    a.appendChild(lbl);
-                    a.addEventListener("click", () =>
-                        postMessage({ type: "open-file", path: cleanPath }),
-                    );
-                    list.appendChild(a);
-                }
-                el.appendChild(list);
-            }
-            setBusy(true);
-            setStatus(); // a turn just started (covers queued flush)
-            resizeInput();
+            renderUserTurn(data.text, data.attachments, data.clientMessageId);
             break;
         }
         case "attachments-picked": {
@@ -292,4 +284,6 @@ window.addEventListener("message", ({ data }) => {
             break;
         }
     }
-});
+}
+
+window.addEventListener("message", ({ data }: MessageEvent<unknown>) => handleHostMessage(data));

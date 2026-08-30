@@ -5,6 +5,7 @@ import type { TerminalSession } from "./terminalSession";
 import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 import type { SurfaceSync } from "./surfaceSync";
 import type { ChangedFilesManager } from "./changedFiles";
+import type { WebviewToHost } from "../protocol/chat";
 
 export interface SurfaceDialoguesDeps {
     deps: ChatSurfaceDeps;
@@ -14,6 +15,8 @@ export interface SurfaceDialoguesDeps {
     getController: () => ChatController | undefined;
     setController: (controller: ChatController | undefined) => void;
     setControllerDetach: (detach: (() => void) | undefined) => void;
+    bindAhp: (backend: string, controller: ChatController) => (() => void) | undefined;
+    dispatchAhp: (message: WebviewToHost) => boolean;
     onSessionCreated?: (sessionId: string) => void;
     setTerminalSession: (terminal: TerminalSession | undefined) => void;
     setFollowHandle: (handle: FollowHandle | undefined) => void;

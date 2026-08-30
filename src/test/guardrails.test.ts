@@ -14,6 +14,9 @@ import {
 } from "../sync/guardrails";
 import { reloadGuardrails } from "../application/controllerHubState";
 import type { HubStateContext } from "../application/controllerHubState";
+import { buildTurnTools } from "../adapters/openai/turnTools";
+import { classifyTool } from "../adapters/aiTools/permissionTiers";
+import { prepareDispatch } from "../application/controllerDispatchPrep";
 
 /** Minimal hub stub: records saves (with sessionId/privacyLevel) and serves them back. */
 function hubStub(opts: { records?: any[]; configured?: boolean; searchThrows?: boolean } = {}) {
@@ -99,6 +102,36 @@ test("fetchSessionGuardrails: empty when hub not configured or no session", asyn
     assert.deepEqual(await fetchSessionGuardrails(hubStub(), ""), []);
 });
 
+test("fetchSessionGuardrails: ignores expired and empty guardrails", async () => {
+    const hub = hubStub({
+        records: [
+            {
+                id: "expired",
+                type: "guardrail",
+                sessionId: "sess-filter",
+                summary: "old",
+                expiresAtUtc: "2020-01-01T00:00:00Z",
+            },
+            {
+                id: "empty",
+                type: "guardrail",
+                sessionId: "sess-filter",
+                summary: "",
+            },
+            {
+                id: "live",
+                type: "guardrail",
+                sessionId: "sess-filter",
+                summary: "keep this",
+            },
+        ],
+    });
+    assert.deepEqual(
+        (await fetchSessionGuardrails(hub, "sess-filter")).map((item) => item.text),
+        ["keep this"],
+    );
+});
+
 test("saveGuardrail: stores with sessionId + privacyLevel internal", async () => {
     const hub = hubStub();
     const sid = "sess-R";
@@ -116,6 +149,80 @@ test("saveGuardrail: stores with sessionId + privacyLevel internal", async () =>
         !saved.tags || !saved.tags.includes("symposium-session"),
         "no legacy symposium-session tag",
     );
+});
+
+test("saveGuardrail: rejects empty and oversized policy text", async () => {
+    const hub = hubStub();
+    await assert.rejects(() => saveGuardrail(hub, "sess-limit", "   "), /text is required/);
+    await assert.rejects(
+        () => saveGuardrail(hub, "sess-limit", "x".repeat(1001)),
+        /exceeds 1000 characters/,
+    );
+});
+
+test("guardrail tools remain available without Hub and are approval-gated", () => {
+    const names = buildTurnTools(false, false).map((item: any) => item.function?.name ?? item.name);
+    assert.ok(names.includes("add_guardrail"));
+    assert.ok(names.includes("clear_guardrails"));
+    assert.ok(!names.includes("web_search"));
+    assert.ok(!names.includes("memory_search"));
+    assert.ok(!names.includes("memory_get_observations"));
+    assert.ok(!names.includes("memory_save"));
+    assert.equal(classifyTool("add_guardrail"), "destructive");
+});
+
+test("prepareDispatch reloads guardrails for non-role-aware adapters", async () => {
+    let reloads = 0;
+    const hub = hubStub({ configured: false });
+    await prepareDispatch(
+        {
+            adapter: { roleAware: () => false } as any,
+            sessionId: "sess-cli",
+            hub,
+            options: { cwd: "/tmp" },
+            reloadGuardrails: () => {
+                reloads++;
+                return Promise.resolve();
+            },
+            reloadTasks: () => Promise.resolve(),
+            getInjectedCheckpointId: () => undefined,
+            setInjectedCheckpointId: () => undefined,
+        },
+        { text: "continue", attachments: [], mode: "send" },
+    );
+    assert.equal(reloads, 1);
+});
+
+test("prepareDispatch refreshes independent guardrail and task context concurrently", async () => {
+    const started: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const preparing = prepareDispatch(
+        {
+            adapter: { roleAware: () => false } as any,
+            sessionId: "sess-parallel",
+            hub: hubStub(),
+            options: { cwd: "/tmp" },
+            reloadGuardrails: async () => {
+                started.push("guardrails");
+                await gate;
+            },
+            reloadTasks: async () => {
+                started.push("tasks");
+                await gate;
+            },
+            getInjectedCheckpointId: () => undefined,
+            setInjectedCheckpointId: () => undefined,
+        },
+        { text: "continue", attachments: [], mode: "send" },
+    );
+
+    await Promise.resolve();
+    assert.deepEqual(started, ["guardrails", "tasks"]);
+    release();
+    await preparing;
 });
 
 test("removeGuardrail: soft-deletes (past expiry) so the item drops from the list", async () => {

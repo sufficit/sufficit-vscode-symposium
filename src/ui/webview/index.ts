@@ -26,6 +26,7 @@ import {
     chatTitle,
     sessionFilterBtn,
     sessionRefreshBtn,
+    sessionsBackBtn,
     sessionSearch,
     switchAgentBtn,
     copySessionBtn,
@@ -133,6 +134,16 @@ if (sessionRefreshBtn) {
     sessionRefreshBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         postMessage({ type: "refresh-sessions" });
+    });
+}
+if (sessionsBackBtn) {
+    sessionsBackBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        if (document.getElementById("root")?.classList.contains("listOpen")) {
+            document.getElementById("root")?.classList.remove("listOpen");
+            return;
+        }
+        postMessage({ type: "open-active-session" });
     });
 }
 if (sessionSearch) {

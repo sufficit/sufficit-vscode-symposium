@@ -7,6 +7,7 @@ import {
     branchBanner,
     confirmOptimisticMessage,
     message,
+    renderStatusNotice,
     renderThinkBlock,
     resetLastMsg,
 } from "./messages";
@@ -25,9 +26,9 @@ import {
     setModelValue,
     setPinnedModels,
 } from "./models";
-import { scrollToBottom } from "./scroll";
+import { scrollToBottom, preserveScrollOnPrepend, setHasMoreHistory } from "./scroll";
 import { svgIcon } from "./icons";
-import { switchAgentBtn, input, ctxMenu, modelPicker } from "./dom";
+import { switchAgentBtn, input, ctxMenu, modelPicker, log } from "./dom";
 import {
     setCommands,
     setPendingSessionSwitch,
@@ -36,6 +37,7 @@ import {
     pendingSwitchAnchor,
 } from "./state";
 import { preserveSelectedModel } from "./modelCatalog";
+import { renderInSlices } from "./renderScheduler";
 
 import type { HostToWebview } from "../../protocol/chat";
 
@@ -48,18 +50,33 @@ interface BackendChoice {
 type HistoryToolOptions = NonNullable<Parameters<typeof renderTool>[2]>;
 type HistoryMessage = HistoryToolOptions & {
     role: string;
-    text: string;
+    text: string | null;
     ts?: string | number;
     model?: string;
+    reasoning?: string;
     clientMessageId?: string;
     toolName?: string;
     detail?: string;
+    severity?: "info" | "warning" | "error";
 };
 type HistoryPayload = {
     carried?: boolean;
     branchLabel?: { title: string; detail: string };
     messages: HistoryMessage[];
+    nextCursor?: string;
 };
+
+let historyRenderGeneration = 0;
+let pendingHistoryRender: Promise<void> = Promise.resolve();
+
+export function beginCatalogHistoryCycle(): void {
+    historyRenderGeneration++;
+    pendingHistoryRender = Promise.resolve();
+}
+
+export function whenCatalogHistoryIdle(): Promise<void> {
+    return pendingHistoryRender;
+}
 
 export function handleCatalogMessage(data: HostToWebview): boolean {
     switch (data.type) {
@@ -157,39 +174,39 @@ export function handleCatalogMessage(data: HostToWebview): boolean {
         }
         case "history": {
             const history = data as typeof data & HistoryPayload;
-            resetLastMsg(); // reset so first message in loaded session always shows label
-            if (history.carried && history.branchLabel) {
-                branchBanner(history.branchLabel.title, history.branchLabel.detail);
+            if (history.carried) {
+                renderHistorySynchronously(history);
+                break;
             }
-            for (const m of history.messages) {
-                if (m.role === "user") {
-                    if (!confirmOptimisticMessage(m.clientMessageId)) {
-                        message("user", m.text, m.ts);
-                    }
-                } else if (m.role === "thinking" && String(m.text || "").trim())
-                    renderThinkBlock(m.text);
-                else if (m.role === "tool")
-                    renderTool(m.toolName || m.text, m.detail || "", {
-                        input: m.input,
-                        result: m.result,
-                        added: m.added,
-                        removed: m.removed,
-                        todos: m.todos,
-                        path: m.path,
-                        diff: m.diff,
-                    });
-                else if (m.role === "error") append("error", "✖ " + m.text);
-                else message("assistant", m.text, m.ts, m.model);
+            const generation = historyRenderGeneration;
+            pendingHistoryRender = renderHistory(history, generation).catch((error) => {
+                console.error("Failed to render stored history", error);
+            });
+            break;
+        }
+        case "history-prepend": {
+            // Scroll-up pagination: older turns arrived. Render the legacy
+            // messages normally (each appends to the log), then move the newly
+            // added block to the top while preserving the user's scroll position.
+            const payload = data as typeof data & { messages?: HostToWebview[] };
+            const prependMessages = Array.isArray(payload.messages) ? payload.messages : [];
+            if (prependMessages.length === 0) break;
+            const beforeCount = log.childElementCount;
+            for (const m of prependMessages) {
+                handleCatalogMessage(m);
             }
-            // carried history is a handoff replay shown inline as a
-            // continuous conversation — no "stored transcript" framing.
-            if (!history.carried) {
-                append(
-                    "meta",
-                    history.messages.length ? "— end of stored transcript —" : "(empty transcript)",
-                );
-            }
-            scrollToBottom();
+            const afterCount = log.childElementCount;
+            const addedCount = afterCount - beforeCount;
+            if (addedCount <= 0) break;
+            preserveScrollOnPrepend(() => {
+                // Move the last `addedCount` children to the top of the log.
+                const children = Array.from(log.children);
+                const added = children.slice(children.length - addedCount);
+                const fragment = document.createDocumentFragment();
+                for (const el of added) fragment.appendChild(el);
+                log.insertBefore(fragment, log.firstChild);
+            });
+            setHasMoreHistory(true);
             break;
         }
         case "backends": {
@@ -255,4 +272,66 @@ export function handleCatalogMessage(data: HostToWebview): boolean {
             return false;
     }
     return true;
+}
+
+async function renderHistory(history: HistoryPayload, generation: number): Promise<void> {
+    const stillCurrent = () => generation === historyRenderGeneration;
+    resetLastMsg(); // first message in a loaded session always shows its label
+    if (history.carried && history.branchLabel) {
+        branchBanner(history.branchLabel.title, history.branchLabel.detail);
+    }
+    const completed = await renderInSlices(history.messages, renderHistoryMessage, {
+        stillCurrent,
+    });
+    if (!completed) return;
+    finishHistory(history);
+}
+
+function renderHistorySynchronously(history: HistoryPayload): void {
+    resetLastMsg();
+    if (history.branchLabel) {
+        branchBanner(history.branchLabel.title, history.branchLabel.detail);
+    }
+    for (const message of history.messages) renderHistoryMessage(message);
+    finishHistory(history);
+}
+
+function finishHistory(history: HistoryPayload): void {
+    // Carried history is a handoff replay shown inline as a continuous
+    // conversation — no "stored transcript" framing.
+    if (!history.carried) {
+        append(
+            "meta",
+            history.messages.length ? "— end of stored transcript —" : "(empty transcript)",
+        );
+    }
+    setHasMoreHistory(!!history.nextCursor);
+    scrollToBottom();
+}
+
+function renderHistoryMessage(m: HistoryMessage): void {
+    if (m.role === "user") {
+        if (!confirmOptimisticMessage(m.clientMessageId)) {
+            message("user", m.text, m.ts);
+        }
+    } else if (m.role === "thinking" && String(m.text || "").trim()) {
+        renderThinkBlock(m.text ?? "");
+    } else if (m.role === "tool") {
+        renderTool(m.toolName || m.text || "", m.detail || "", {
+            input: m.input,
+            result: m.result,
+            added: m.added,
+            removed: m.removed,
+            todos: m.todos,
+            path: m.path,
+            diff: m.diff,
+        });
+    } else if (m.role === "error") {
+        append("error", "✖ " + m.text);
+    } else if (m.role === "status-notice" && m.text) {
+        // A replayed tool-loop Continue action would be stale.
+        renderStatusNotice(m.text, undefined, m.severity);
+    } else {
+        message("assistant", m.text, m.ts, m.model, m.reasoning);
+    }
 }

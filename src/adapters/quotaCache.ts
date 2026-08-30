@@ -173,21 +173,55 @@ export class JsonlAdapterUsage implements AdapterUsageProvider {
         private readonly parser: AdapterQuotaParser = parseAdapterQuota,
     ) {}
 
+    /** Keep live CLI quota events available even before their JSONL is flushed. */
+    observe(snapshot: AdapterQuotaSnapshot): void {
+        if (snapshot.backend !== this.backend || !snapshot.windows.length) {
+            return;
+        }
+        const previous = this.cached?.value;
+        const windows = new Map<string, UsageQuotaWindow>();
+        for (const window of previous?.windows ?? []) {
+            windows.set(window.id, window);
+        }
+        for (const window of snapshot.windows) {
+            windows.set(window.id, window);
+        }
+        this.cached = {
+            readAt: Date.now(),
+            value: {
+                ...previous,
+                ...snapshot,
+                displayName: this.displayName,
+                windows: [...windows.values()],
+                updatedAt: Math.max(previous?.updatedAt ?? 0, snapshot.updatedAt),
+                state: "ready",
+            },
+        };
+    }
+
     async read(force = false): Promise<AdapterQuotaSnapshot> {
         if (!force && this.cached && Date.now() - this.cached.readAt < CACHE_TTL_MS) {
             return this.cached.value;
         }
+        const lastKnown = this.cached?.value;
         const found = await loadBackend(this.backend, this.roots(), this.parser);
         const value: AdapterQuotaSnapshot = found
             ? { ...found, displayName: this.displayName, state: "ready" }
-            : {
-                  backend: this.backend,
-                  displayName: this.displayName,
-                  windows: [],
-                  updatedAt: Date.now(),
-                  state: "unavailable",
-                  message: "This adapter has not reported usage limits yet.",
-              };
+            : lastKnown?.windows.length
+              ? {
+                    ...lastKnown,
+                    state: "stale",
+                    message:
+                        "Live usage refresh found no recent limits. Showing the last reported values.",
+                }
+              : {
+                    backend: this.backend,
+                    displayName: this.displayName,
+                    windows: [],
+                    updatedAt: Date.now(),
+                    state: "unavailable",
+                    message: "This adapter has not reported usage limits yet.",
+                };
         this.cached = { readAt: Date.now(), value };
         return value;
     }

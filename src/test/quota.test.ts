@@ -5,6 +5,7 @@ import { CodexSession } from "../adapters/codex/session";
 import { ClaudeSession } from "../adapters/claude/session";
 import {
     canonicalClaudeWindowId,
+    claudeUsageAuthMessage,
     parseClaudeApiUsage,
     parseClaudeQuota,
     staleClaudeUsage,
@@ -246,6 +247,13 @@ test("marks Claude fallback windows stale when live OAuth usage cannot refresh",
         stale.windows.map((window) => window.id),
         ["seven_day", "weekly_scoped:Fable"],
     );
+});
+
+test("does not misreport unavailable Claude usage as a signed-out CLI", () => {
+    assert.doesNotMatch(claudeUsageAuthMessage("missing-token"), /signed out/i);
+    assert.doesNotMatch(claudeUsageAuthMessage("missing-token"), /auth login/i);
+    assert.match(claudeUsageAuthMessage("missing-token"), /only affects account-usage display/i);
+    assert.doesNotMatch(claudeUsageAuthMessage("rejected-token"), /auth login/i);
 });
 
 test("Claude limit parser accepts live result errors but not quoted user text", () => {

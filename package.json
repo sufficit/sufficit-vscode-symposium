@@ -2,9 +2,9 @@
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
     "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.807.1",
+    "version": "2026.824.2",
     "publisher": "sufficit",
-    "license": "MIT",
+    "license": "MIT-0",
     "icon": "media/symposium-icon.png",
     "homepage": "https://github.com/sufficit/sufficit-vscode-symposium#readme",
     "bugs": {
@@ -254,6 +254,12 @@
                     "minimum": 0,
                     "description": "Minutes of no activity from the agent (no streamed text/tool events) before a turn is force-ended with a retryable error, so a stalled tool or dropped connection can't pin the session as \"working\" forever. Applies to all backends (Claude, Codex, Copilot, Sufficit AI/custom). Raise it for scenarios with long silent tool calls (e.g. slow test suites); set to 0 to disable the watchdog entirely."
                 },
+                "symposium.turnRetrySilenceMinutes": {
+                    "type": "number",
+                    "default": 15,
+                    "minimum": 0,
+                    "description": "Minutes of silence allowed for an explicit retry after a stalled turn. This separate recovery window prevents the Retry action from deterministically failing again at the normal stalled-turn timeout; set to 0 to disable the retry watchdog."
+                },
                 "symposium.hub.url": {
                     "type": "string",
                     "default": "",
@@ -262,7 +268,7 @@
                 "symposium.identity.url": {
                     "type": "string",
                     "default": "https://identity.sufficit.com.br",
-                    "description": "Sufficit Identity (Duende) issuer URL for login."
+                    "description": "Sufficit Identity issuer URL used for login and automatic MCP discovery (/api/mcp)."
                 },
                 "symposium.identity.clientId": {
                     "type": "string",
@@ -554,7 +560,40 @@
                 "symposium.bridge.enabled": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Enable the remote control bridge (HTTP + SSE) that re-publishes the Symposium public API for remote commands and chat following. Off by default."
+                    "description": "Enable the authenticated remote control bridge. Chat state and commands use the AHP WebSocket; supporting HTTP endpoints remain token-gated. Off by default."
+                },
+                "symposium.bridge.ahp": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Expose the authenticated Agent Host Protocol WebSocket endpoint at /ahp. The Bridge must also be enabled; enabling the AHP-only PWA exposes this endpoint automatically."
+                },
+                "symposium.ahp.diagnostics": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Write bounded, redacted AHP projection diagnostics to the Symposium output channel."
+                },
+                "symposium.ahp.maxBytes": {
+                    "type": "number",
+                    "default": 33554432,
+                    "minimum": 1,
+                    "markdownDescription": "Hard ceiling, in bytes, for the persisted AHP `state.json` snapshot. Sessions whose total persisted size exceeds this are auto-compacted (oldest retained actions trimmed) before saving; a payload that still exceeds it after compaction throws. Default `33554432` (32 MiB). Lower it on constrained hosts, raise it for very long-running sessions. Changes require a window reload to re-create the projection runtime."
+                },
+                "symposium.ahp.maxSessionBytes": {
+                    "type": "number",
+                    "default": 8388608,
+                    "minimum": 1,
+                    "markdownDescription": "Per-session byte cap measured over the snapshots a session owns (session + chat + child channels). Auto-compaction re-snapshots an oversized session before saving; if a single fresh snapshot still exceeds this cap the session throws `AHP session <id> exceeds byte limit` as a hard ceiling. Default `8388608` (8 MiB — up from the previous 4 MiB implicit default, which silently broke large chats). Changes require a window reload to re-create the projection runtime."
+                },
+                "symposium.ahp.compactEveryActions": {
+                    "type": "number",
+                    "default": 250,
+                    "minimum": 1,
+                    "markdownDescription": "How many accepted AHP actions must accumulate between persistence writes. Lower values save more often (safer crash recovery, more disk I/O); higher values defer the write. Does not control auto-compaction; see `symposium.ahp.autoCompact`."
+                },
+                "symposium.ahp.autoCompact": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "When enabled (default), the projection runtime re-snapshots oversized sessions and trims the oldest retained actions before enforcing the byte caps, so a long-running session keeps persisting instead of throwing. Disable only for debugging — sessions will then hit the hard byte ceiling and fail to save. Changes require a window reload."
                 },
                 "symposium.bridge.host": {
                     "type": "string",
@@ -583,7 +622,7 @@
                 "symposium.bridge.pwa": {
                     "type": "boolean",
                     "default": false,
-                    "description": "Serve the installable remote PWA at /pwa. Every data endpoint remains token-gated."
+                    "description": "Serve the installable AHP remote PWA at /pwa and expose its authenticated /ahp WebSocket. Supporting HTTP endpoints remain token-gated."
                 },
                 "symposium.bridge.allowedRoots": {
                     "type": "array",
@@ -992,7 +1031,8 @@
         }
     },
     "scripts": {
-        "verify": "npm run format:check && npm run lint && npm run typecheck && npm run typecheck:webview && npm test && npm run compile",
+        "verify": "npm run check:release && npm run format:check && npm run lint && npm run typecheck && npm run typecheck:webview && npm test && npm run compile",
+        "check:release": "node scripts/check-release-guardrail.mjs",
         "verify:package": "npm run verify && npm run package:vsix && npm run check:vsix",
         "test": "npm run compile:test && npm run coverage:run && npm run check:webview && npm run check:configscript && npm run check:size && npm run check:complexity && npm run check:engineering && npm run check:architecture",
         "test:unit": "node --require ./test/register-vscode-stub.cjs --test out/test/*.test.js test/*.test.cjs",
@@ -1022,7 +1062,8 @@
         "check:engineering": "node scripts/check-engineering.mjs",
         "check:architecture": "node scripts/check-architecture.mjs",
         "check:vsix": "node scripts/check-vsix.mjs",
-        "package:vsix": "vsce package --no-dependencies --allow-missing-repository",
+        "check:unused": "knip",
+        "package:vsix": "vsce package --allow-missing-repository",
         "vscode:prepublish": "npm run compile && npm run check:webview"
     },
     "devDependencies": {
@@ -1030,6 +1071,7 @@
         "@types/jsdom": "28.0.3",
         "@types/node": "^22.10.2",
         "@types/vscode": "^1.100.0",
+        "@types/ws": "8.18.1",
         "@typescript-eslint/eslint-plugin": "^8.18.2",
         "@typescript-eslint/parser": "^8.18.2",
         "@vscode/test-electron": "3.1.0",
@@ -1038,10 +1080,14 @@
         "esbuild": "^0.28.1",
         "eslint": "^9.17.0",
         "jsdom": "29.1.1",
+        "knip": "^6.32.1",
         "ovsx": "^1.1.0",
         "prettier": "^3.4.2",
         "qrcode-generator": "2.0.4",
         "typescript": "^5.8.3",
         "typescript-eslint": "^8.62.0"
+    },
+    "dependencies": {
+        "ws": "8.18.3"
     }
 }

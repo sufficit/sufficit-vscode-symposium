@@ -1,9 +1,9 @@
 # Activity — persistent render log and exact visual reload
 
 **Date:** 2026-06-23
-**Status:** persistence and replay implemented; remaining deletion cleanup and
-regression coverage extracted on 2026-08-01 to
-[`PLAN-session-local-artifact-cleanup.md`](../PLAN-session-local-artifact-cleanup.md).
+**Status:** completed. Persistence and replay shipped first; deletion cleanup
+and regression coverage were completed in
+[`20260809210807-session-local-artifact-cleanup.md`](20260809210807-session-local-artifact-cleanup.md).
 
 ## Problem
 
@@ -72,11 +72,10 @@ Stored next to the ledger: `~/.symposium/ledger/<id>/render.jsonl`.
   falls back to adapter history when no render log exists.
 - The implementation originally shipped in commit `1493a35`.
 
-## Gap found by the audit
+## Gap found by the audit — resolved 2026-08-09
 
-`removeRender(sessionId)` exists but has no caller. OpenAI happens to remove the
-whole Symposium ledger from inside its adapter, while Claude, Codex and Copilot
-delete only provider-owned artifacts. That leaves a backend-dependent privacy
-and storage gap in the common permanent-delete operation. Focused persistence,
-reopen and delete regression tests are also absent. The remaining plan linked
-above centralizes that work instead of leaving it in this completed activity.
+The audit found that `removeRender(sessionId)` had no caller and that OpenAI,
+unlike the other adapters, removed shared persistence itself. The follow-up
+activity linked above replaced that split ownership with one common,
+idempotent complete-ledger cleanup after provider deletion and added focused
+recovery/deletion tests.

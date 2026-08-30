@@ -8,6 +8,7 @@ import {
     resolvePendingRetry,
     streamDelta,
     streamThinkingDelta,
+    updateLastAssistantModel,
 } from "./messages";
 import { bindWorkingSet } from "./panels";
 import {
@@ -19,7 +20,7 @@ import {
     sessionCostUsd,
 } from "./statusbar";
 import { setStatus } from "./status";
-import { modelLabel, modelList, setModelLabel, setModelValue } from "./models";
+import { modelLabel, setModelLabel, setModelValue } from "./models";
 import { sendBtn } from "./dom";
 import {
     activeModel,
@@ -63,7 +64,7 @@ export function applyEvent(ev: AgentEvent): void {
                 legacyNotice.action,
             );
         } else {
-            streamDelta(ev.text, ev.model);
+            streamDelta(ev.text, ev.model, ev.reasoning, ev.ts);
         }
     } else if (ev.kind === "status-notice")
         renderStatusNotice(ev.text, ev.anchorIndex, ev.severity, ev.action);
@@ -97,25 +98,16 @@ export function applyEvent(ev: AgentEvent): void {
         renderStatusbar({});
     } else if (ev.kind === "error") {
         // The composer's send/stop button reflects ONLY the agent's
-        // turn lifecycle. A non-fatal error (ev.fatal === false) is a
-        // local UI failure (e.g. failing to open a file/image) and
-        // must NOT touch busy, or it would flip the button as if the
-        // agent had stopped while it is still working.
-        // Legacy events without fatal are treated as fatal (default),
-        // preserving the old defensive behaviour for real turn errors.
-        if (ev.fatal !== false) {
-            setBusy(false);
-            sendBtn.disabled = false;
-            setStatus();
-        }
+        // turn lifecycle. Errors are observations, not lifecycle boundaries:
+        // an adapter can report a transient/provider error and still emit its
+        // authoritative turn-end afterwards (or continue a tool loop). Clearing
+        // busy here made the next composer send look immediate and rendered its
+        // optimistic bubble outside the host queue. Only turn-end may release
+        // the composer; the host controller already follows that same rule.
         renderError(ev.message, ev.historical, ev.retryable);
     } else if (ev.kind === "session") {
         if (ev.model) {
-            setActiveModel(ev.model);
-            if (modelList.includes(ev.model)) {
-                setModelValue(ev.model);
-                setModelLabel();
-            }
+            applyEffectiveModel(ev.model);
         }
         setActiveSessionId(ev.sessionId || activeSessionId);
         bindWorkingSet(ev.sessionId);
@@ -160,6 +152,7 @@ function applyEffectiveModel(model: unknown): void {
         return;
     }
     setActiveModel(model);
+    updateLastAssistantModel(model);
     // A queued message already captured its own model. Keep that picker value
     // until the queued turn starts; otherwise show the model actually used.
     if (!queued) {

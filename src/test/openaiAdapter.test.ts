@@ -21,6 +21,15 @@ function sseStream(body: string): ReadableStream<Uint8Array> {
     });
 }
 
+function interruptedStream(): ReadableStream<Uint8Array> {
+    return {
+        getReader: () => ({
+            read: () => Promise.reject(new Error("socket closed")),
+            cancel: () => Promise.resolve(),
+        }),
+    } as unknown as ReadableStream<Uint8Array>;
+}
+
 const timing = { requestStartedAt: 0, responseStartedAt: 0 };
 
 test("consumeStream surfaces chat-completions reasoning_content as thinking", async () => {
@@ -61,6 +70,15 @@ test("consumeStream surfaces responses-API reasoning_text delta as thinking", as
     });
     assert.equal(out.reasoning, "think");
     assert.equal(out.text, "answer");
+});
+
+test("consumeStream reports an unexpected transport interruption", async () => {
+    const out = await consumeStream(interruptedStream(), "m", timing, false, {
+        onText: () => {},
+        onError: () => {},
+    });
+    assert.equal(out.aborted, true);
+    assert.deepEqual(out.interruption, { kind: "transport", message: "socket closed" });
 });
 
 test("consumeStream hides gateway think blocks split across content deltas", async () => {
@@ -221,13 +239,19 @@ test("request preflight compacts before an estimated context overflow", () => {
     assert.equal(disabled.exceedsWindow, true);
 
     const source = readFileSync(
+        resolve(__dirname, "../../src/adapters/openai/turnPreflight.ts"),
+        "utf8",
+    );
+    const runner = readFileSync(
         resolve(__dirname, "../../src/adapters/openai/turnRunner.ts"),
         "utf8",
     );
     const compactAt = source.indexOf("maybeAutoCompact(estimate.inputTokens)");
-    const dispatchAt = source.indexOf("let res = await post(loginToken)");
+    const preflightAt = runner.indexOf("await preflightRequest(");
+    const dispatchAt = runner.indexOf("let res = await post(loginToken)");
     assert.ok(compactAt >= 0, "preflight estimate must feed the compactor");
-    assert.ok(dispatchAt > compactAt, "compaction guard must run before the HTTP request");
+    assert.ok(preflightAt >= 0, "the turn loop must run the preflight");
+    assert.ok(dispatchAt > preflightAt, "compaction guard must run before the HTTP request");
     assert.match(source, /Request not sent: the local input estimate reaches or exceeds/);
 });
 

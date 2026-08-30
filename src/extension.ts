@@ -34,7 +34,9 @@ import { registerCommands } from "./extension/commands";
 import { initSttStorage } from "./voice/sttService";
 import { initVscodeSpeechBridge } from "./voice/vscodeSpeechBridge";
 import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/codex/sufficitMcp";
+import { setSufficitIdentityMcpUrl } from "./adapters/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
+import { registerExtensionAhpRuntime } from "./extension/ahpRuntime";
 
 /** SessionIndex singleton initialized during activation and shared with command wiring. */
 export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
@@ -112,6 +114,8 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         onSessionsChanged: sessionsChanged.event,
     });
 
+    const ahp = registerExtensionAhpRuntime(context, api, symposiumLog);
+
     // Subagent host: lets the native Sufficit AI backend delegate to other
     // agent-defs as real sessions (spawn_agent / agent_* tools). Late-bound so
     // the low-level tool layer never imports the runtime directly.
@@ -148,14 +152,22 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     context.subscriptions.push(auth.onDidChange(() => ConfigPanel.refresh()));
     context.subscriptions.push({ dispose: () => auth.dispose() });
     void auth.startAutoRefresh(); // silent token refresh so the session never lapses
-    // Plug the Sufficit token into the Codex MCP sufficit_ai server automatically.
+    // Both native Sufficit MCPs reuse the Identity login token automatically.
     setCodexSufficitTokenProvider((forceRefresh) => auth.getAccessToken(forceRefresh));
+    const syncAuthenticatedMcps = () => {
+        const issuer = vscode.workspace
+            .getConfiguration("symposium.identity")
+            .get<string>("url", "https://identity.sufficit.com.br");
+        setSufficitIdentityMcpUrl(`${issuer.replace(/\/+$/, "")}/api/mcp`);
+        void syncCodexSufficitMcp().catch((error) => symposiumLog(`[mcp] sync failed: ${error}`));
+    };
+    context.subscriptions.push(auth.onDidChange(syncAuthenticatedMcps));
     context.subscriptions.push(
-        auth.onDidChange(async () => {
-            await syncCodexSufficitMcp();
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration("symposium.identity.url")) syncAuthenticatedMcps();
         }),
     );
-    void syncCodexSufficitMcp();
+    syncAuthenticatedMcps();
     // Native Accounts-menu integration (avatar/login at the bottom of the activity bar).
     SufficitAuthProvider.register(context, auth);
     // Hub/MCP requests use the logged-in identity token when available.
@@ -306,6 +318,10 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         auth,
         deleting,
         rawSessions,
+        api,
+        ahpRuntime: ahp.runtime,
+        syncAhp: ahp.sync,
+        rebuildAhp: ahp.rebuild,
     });
     const chatView = new ChatViewProvider(surfaceDeps);
 
@@ -322,6 +338,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     notifyStatus = () => {
         for (const live of runtime.liveInfos()) {
             store.setTerminalStatus(live.sessionId, live.terminalStatus);
+            store.setDisplayMetadata(live.sessionId, live.model, live.reasoning);
         }
         if (statusTimer) {
             clearTimeout(statusTimer);
@@ -331,7 +348,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     };
 
     // Opt-in remote control bridge (off unless symposium.bridge.enabled).
-    const bridge = new RemoteBridge(api, (msg) => output.appendLine(msg));
+    const bridge = new RemoteBridge(api, (msg) => output.appendLine(msg), ahp.runtime, ahp.sync);
     void bridge.start();
     context.subscriptions.push({ dispose: () => bridge.stop() });
     context.subscriptions.push(

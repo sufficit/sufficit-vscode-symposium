@@ -2,7 +2,9 @@ import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { ChatController } from "../application/chatController";
 import type { SessionStatus, SessionTerminalStatus } from "../adapters/sessionInfo";
 import { FollowStatusRegistry, liveSessionStatus } from "./status";
+import { SharedRenderStatusRegistry } from "./sharedRenderStatus";
 import type { ApplicationPorts } from "../application/ports";
+import { symposiumLog } from "../extension/log";
 
 /**
  * Registry of live ChatControllers, owned at the extension level so an agent
@@ -18,13 +20,21 @@ export class LiveSessions {
     // keep running after its chat view is switched away. It is cleared only
     // when the session is explicitly deleted or the follow is truly stopped.
     private readonly followStatus = new FollowStatusRegistry();
+    private readonly sharedStatus: SharedRenderStatusRegistry;
     private seq = 0;
 
     /** `onChange` fires when any controller starts/stops working. */
     constructor(
         private readonly ports: ApplicationPorts,
         private readonly onChange?: () => void,
-    ) {}
+    ) {
+        this.sharedStatus = new SharedRenderStatusRegistry(onChange, { log: symposiumLog });
+    }
+
+    /** Watches machine-wide render ownership for sessions listed in this host. */
+    trackSharedSessions(sessionIds: Iterable<string>): void {
+        this.sharedStatus.track(sessionIds);
+    }
 
     /**
      * Records the inferred working/idle status of a followed session (one with
@@ -70,7 +80,7 @@ export class LiveSessions {
         if (controller) {
             return liveSessionStatus(controller.isBusy, controller.attentionStatus);
         }
-        return this.followStatus.get(sessionId);
+        return this.followStatus.get(sessionId) ?? this.sharedStatus.get(sessionId);
     }
 
     /** Live sessions for the list (incl. brand-new ones not yet on disk). */
@@ -83,6 +93,8 @@ export class LiveSessions {
         terminalStatus?: SessionTerminalStatus;
         parentId?: string;
         lineageId?: string;
+        model?: string;
+        reasoning?: string;
     }[] {
         const out = [];
         for (const [key, c] of this.controllers) {
@@ -95,6 +107,8 @@ export class LiveSessions {
                 terminalStatus: c.attentionStatus,
                 parentId: c.parentId,
                 lineageId: c.lineageId,
+                model: c.getModel() || undefined,
+                reasoning: c.getReasoning() || undefined,
             });
         }
         return out;
@@ -135,10 +149,21 @@ export class LiveSessions {
         adapter: AgentAdapter,
         options: SessionStartOptions,
     ): { key: string; controller: ChatController } {
-        const controller = new ChatController(adapter, options, this.ports, () =>
-            this.onChange?.(),
-        );
         const key = options.resumeSessionId ?? `new-${++this.seq}`;
+        // The backend id may not exist until the first turn. Give MCP a
+        // conversation-scoped identity immediately, then each CLI replaces it
+        // with the native id when that id is announced by the backend.
+        if (!options.guardrailSessionId) {
+            options.guardrailSessionId = key;
+        }
+        const controller = new ChatController(
+            adapter,
+            options,
+            this.ports,
+            () => this.onChange?.(),
+            symposiumLog,
+        );
+        controller.setRuntimeKey(key);
         this.controllers.set(key, controller);
         // A resumed session may have a persisted terminal error in the store.
         // Registering its live controller acknowledges that historical state;
@@ -174,5 +199,6 @@ export class LiveSessions {
         }
         this.controllers.clear();
         this.followStatus.clear();
+        this.sharedStatus.dispose();
     }
 }

@@ -6,9 +6,6 @@
  * This is the bridge that gives the native "Sufficit AI" backend the same
  * memory/search capability the CLI backends get from the MCP server.
  *
- * IMPORTANT: Tools are split into two categories:
- * - UNIVERSAL_TOOLS: Work with ANY backend (have local fallbacks when hub unavailable)
- * - HUB_TOOLS: Require the sufficit-ai hub to function correctly
  */
 
 // Subagent tool defs live in their own file (keeps defs.ts under the line cap);
@@ -20,27 +17,37 @@ import { SUBAGENT_TOOLS, SUBAGENT_TOOL_NAMES } from "./subagentDefs";
 import { LOCAL_TOOLS, LOCAL_TOOL_NAMES, toResponsesShape } from "./localDefs";
 import type { OpenAITool } from "./types";
 
-// Universal tools: work with any backend via local fallbacks
-const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
+export const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
     {
         type: "function",
         function: {
             name: "memory_search",
-            description:
-                "Search the shared Sufficit AI memory (cross-agent knowledge: facts, guidelines, task history, agent defs). Returns compact records (id, title, summary). Use before non-trivial tasks and to recall prior context.",
+            description: "Search canonical memory with exact, semantic, or hybrid ranking.",
             parameters: {
                 type: "object",
                 properties: {
                     query: {
                         type: "string",
-                        description: "Free-text query matched against title and summary.",
+                        description: "Text matched against title and summary.",
                     },
                     type: {
                         type: "string",
-                        description:
-                            "Optional type filter, e.g. guideline, fact, task-checkpoint, agent-def.",
+                        description: "Optional memory type.",
                     },
-                    limit: { type: "integer", description: "Max records (1-50). Default 20." },
+                    limit: { type: "integer", description: "Maximum records; default 20." },
+                    strategy: {
+                        type: "string",
+                        enum: ["Exact", "Semantic", "Hybrid"],
+                        description: "Ranking strategy; default Hybrid.",
+                    },
+                    maxTokens: {
+                        type: "integer",
+                        description: "Selection token budget; default 1600.",
+                    },
+                    diversityLambda: {
+                        type: "number",
+                        description: "MMR relevance balance (0-1); default 0.65.",
+                    },
                 },
                 required: ["query"],
             },
@@ -50,8 +57,7 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "memory_get_observations",
-            description:
-                "Fetch full memory observations (including payload) by their ids, after a memory_search returned promising ids.",
+            description: "Fetch full memory records by ids returned from search.",
             parameters: {
                 type: "object",
                 properties: {
@@ -70,7 +76,7 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         function: {
             name: "memory_save",
             description:
-                "Persist a memory observation to shared Sufficit memory (e.g. a durable fact, decision, or task-checkpoint). Never store secrets.",
+                "Persist context to shared Sufficit memory (fact, decision, or checkpoint). It never edits files or proves a change. Never store secrets.",
             parameters: {
                 type: "object",
                 properties: {
@@ -104,6 +110,15 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
                         type: "string",
                         description: "The rule, short and imperative (one sentence).",
                     },
+                    expiresAtUtc: {
+                        type: "string",
+                        description: "Optional ISO-8601 expiration timestamp.",
+                    },
+                    origin: {
+                        type: "string",
+                        enum: ["user-approved", "agent-requested"],
+                        description: "Why this durable rule is being created.",
+                    },
                 },
                 required: ["text"],
             },
@@ -119,6 +134,18 @@ const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         },
     },
 ];
+
+// Keep the policy text explicit even for older callers that import this
+// catalog directly: guardrail persistence is user-directed, not model-directed.
+for (const tool of UNIVERSAL_MEMORY_TOOLS) {
+    if (tool.function.name === "add_guardrail") {
+        tool.function.description =
+            "Add a durable guardrail for THIS chat session only when the user explicitly asks to establish or preserve that rule. Do not invent guardrails for temporary plans, internal preferences, or model commitments. The rule is injected into later messages; keep it short, specific, and imperative.";
+    } else if (tool.function.name === "clear_guardrails") {
+        tool.function.description =
+            "Remove ALL guardrails for THIS chat session only when the user explicitly asks to clear or remove them. Returns how many were removed. After this, no guardrails are injected until new ones are added.";
+    }
+}
 
 /**
  * Hub-only tools: require the sufficit-ai hub to function correctly (no local
@@ -262,16 +289,17 @@ const HUB_TOOLS: OpenAITool[] = [
 ];
 
 /**
- * All memory/web tools exposed to OpenAI-compatible models: the universal set
- * (works with any backend via local fallback) plus the hub-only set. This is
- * the canonical contract consumed by the OpenAI adapter (turnRunner/session);
- * when the hub is not configured, the adapter still offers the universal subset
- * and silently degrades for the hub-only ones at execution time.
+ * All memory/web tools exposed to OpenAI-compatible models. Canonical memory
+ * is remote-only; turnTools keeps only the two guardrail compatibility tools
+ * when the hub is not configured.
  */
 export const AI_TOOLS: OpenAITool[] = [...UNIVERSAL_MEMORY_TOOLS, ...HUB_TOOLS];
 
 /** Responses-API (flat) shape for the memory/web tools. */
 export const AI_TOOLS_RESPONSES = AI_TOOLS.map(toResponsesShape);
+
+/** Responses-API shape for tools that do not require the memory hub. */
+export const UNIVERSAL_MEMORY_TOOLS_RESPONSES = UNIVERSAL_MEMORY_TOOLS.map(toResponsesShape);
 
 /** All AI tool names this bridge can expose. */
 export const ALL_AI_TOOL_NAMES = [...AI_TOOLS, ...LOCAL_TOOLS, ...SUBAGENT_TOOLS].map(

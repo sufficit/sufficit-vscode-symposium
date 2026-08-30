@@ -6,6 +6,14 @@
 // place (push/splice) without a setter. This lets the feature modules share
 // state without a single giant scope.
 import { saved, saveState } from "./vscode";
+
+// Whether THIS session's backend can splice a steer into the running turn.
+// CLI backends cannot, so their steer is head-of-queue and the composer says
+// so rather than implying an interruption that never happens.
+export let canSteerInline = false;
+export function setCanSteerInline(value: boolean): void {
+    canSteerInline = value;
+}
 import type {
     AgentLabels,
     ComposerDraft,
@@ -39,6 +47,7 @@ export function getOpenInPref(): string {
 export let activeSessionId = "";
 export let busy = false;
 export let queued = 0;
+export let queueHeld = false;
 export let loading = false;
 export let sessions: SessionListItem[] = [];
 export let sessionsLoaded = false;
@@ -150,6 +159,9 @@ export function setBusy(v: boolean) {
 }
 export function setQueued(v: number) {
     queued = v;
+}
+export function setQueueHeld(v: boolean) {
+    queueHeld = v;
 }
 export function setLoadingFlag(v: boolean) {
     loading = v;

@@ -6,6 +6,7 @@ import { mergeToolDefinitions } from "../adapters/openai/toolMerge";
 import {
     activeRepeatedToolCallFingerprint,
     appendRepeatedToolCallFeedback,
+    appendToolFailureRecoveryFeedback,
     REPEAT_TOOL_CALL_LIMIT,
     repeatedToolCallWithoutProgress,
     toolCallBatchFingerprint,
@@ -143,6 +144,16 @@ test("repeated tool-call carryover expires after assistant progress", () => {
         toolCallBatchFingerprint(signature),
         toolCallBatchFingerprint('read_file:{"path":"other"}'),
     );
+});
+
+test("tool failure recovery feedback forbids retrying identical arguments", () => {
+    const messages: ChatMessage[] = [{ role: "user", content: "inspect the dashboard" }];
+    const feedback = appendToolFailureRecoveryFeedback(messages, ["read_file", "read_file"], true);
+
+    assert.equal(feedback.role, "developer");
+    assert.match(String(feedback.content), /read_file failed/);
+    assert.match(String(feedback.content), /do not repeat the same arguments/i);
+    assert.deepEqual(messages.at(-1), feedback);
 });
 
 test("mergeToolDefinitions prefixes collisions without mutating shared tool defs", () => {

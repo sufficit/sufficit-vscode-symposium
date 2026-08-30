@@ -5,6 +5,7 @@ import { snapshots } from "../../snapshots";
 import { stripSourcePrefix } from "./toolMerge";
 import { friendlyToolDetail, toolPath } from "./toolDetail";
 import { executeTurnTool } from "./turnTools";
+import { appendToolFailureRecoveryFeedback } from "./turnNotices";
 import type { TurnRunnerDeps } from "./turnRunnerDeps";
 import type { ChatMessage, ToolCall } from "./types";
 
@@ -24,11 +25,13 @@ export async function executeToolCallBatch(context: BatchContext): Promise<boole
     if (text) deps.led("assistant", text);
     deps.safePersist();
     let compactAfterTurn = false;
+    const failedTools: string[] = [];
     for (const call of toolCalls) {
         const args = parseArguments(call.function.arguments);
         const name = stripSourcePrefix(call.function.name);
         emitToolStart(deps, call, name, args);
         const result = await executeOneTool(deps, call, name, args, context.abortSignal);
+        if (isStructuredToolFailure(result)) failedTools.push(name);
         deps.emit({ kind: "tool-end", toolName: name, toolId: call.id, result });
         messages.push({
             role: "tool",
@@ -44,6 +47,15 @@ export async function executeToolCallBatch(context: BatchContext): Promise<boole
         if (isCompletedTaskTool(name, result)) {
             compactAfterTurn = (await handleCompletedTasks(deps)) || compactAfterTurn;
         }
+    }
+    if (failedTools.length > 0) {
+        const feedback = appendToolFailureRecoveryFeedback(
+            messages,
+            failedTools,
+            deps.cfg.supportsDeveloperRole !== false,
+        );
+        deps.led(feedback.role, feedback.content, { kind: "tool-failure-recovery" });
+        deps.safePersist();
     }
     return compactAfterTurn;
 }
@@ -136,5 +148,14 @@ function parseArguments(value: string): Record<string, unknown> {
         return JSON.parse(value || "{}");
     } catch {
         return {};
+    }
+}
+
+function isStructuredToolFailure(value: string): boolean {
+    try {
+        const parsed = JSON.parse(value) as { error?: unknown };
+        return !!parsed && typeof parsed === "object" && typeof parsed.error === "string";
+    } catch {
+        return false;
     }
 }

@@ -10,6 +10,12 @@ const LINEAGES_KEY = "symposium.sessionLineages";
 const COMPRESSION_KEY = "symposium.sessionCompression";
 const TERMINAL_STATUS_KEY = "symposium.sessionTerminalStatus";
 const DELETED_KEY = "symposium.deletedSessions";
+const DISPLAY_META_KEY = "symposium.sessionDisplayMeta";
+
+interface SessionDisplayMeta {
+    model?: string;
+    reasoning?: string;
+}
 
 /** Old keys were `backend:guid`; strip the backend prefix to the bare GUID. */
 function toGuid(key: string): string {
@@ -53,6 +59,7 @@ export class SessionStore {
     private compressionPresets: Record<string, string>;
     private terminalStatuses: Record<string, SessionTerminalStatus>;
     private deleted: Set<string>;
+    private displayMeta: Record<string, SessionDisplayMeta>;
 
     constructor(private readonly memento: vscode.Memento) {
         const rawTitles = memento.get<Record<string, string>>(TITLES_KEY, {});
@@ -66,6 +73,8 @@ export class SessionStore {
         this.terminalStatuses =
             memento.get<Record<string, SessionTerminalStatus>>(TERMINAL_STATUS_KEY, {}) || {};
         this.deleted = new Set(migrateList(memento.get<string[]>(DELETED_KEY, [])));
+        this.displayMeta =
+            memento.get<Record<string, SessionDisplayMeta>>(DISPLAY_META_KEY, {}) || {};
         // Consolidate legacy `backend:guid` keys to the bare GUID on disk.
         if (Object.keys(rawTitles).some((k) => k.includes(":"))) {
             void memento.update(TITLES_KEY, this.titles);
@@ -184,6 +193,7 @@ export class SessionStore {
         delete this.lineages[this.key(info)];
         delete this.compressionPresets[this.key(info)];
         delete this.terminalStatuses[this.key(info)];
+        delete this.displayMeta[this.key(info)];
         await this.memento.update(TITLES_KEY, this.titles);
         await this.memento.update(ARCHIVED_KEY, [...this.archived]);
         await this.memento.update(PINNED_KEY, this.pinned);
@@ -191,6 +201,7 @@ export class SessionStore {
         await this.memento.update(LINEAGES_KEY, this.lineages);
         await this.memento.update(COMPRESSION_KEY, this.compressionPresets);
         await this.memento.update(TERMINAL_STATUS_KEY, this.terminalStatuses);
+        await this.memento.update(DISPLAY_META_KEY, this.displayMeta);
         await this.memento.update(DELETED_KEY, [...this.deleted]);
     }
 
@@ -210,6 +221,8 @@ export class SessionStore {
                     // sessions stay nested (live sessions already carry parentId).
                     parentId: this.parents[this.key(s)] ?? s.parentId,
                     lineageId: this.lineages[this.key(s)] ?? s.lineageId,
+                    model: this.displayMeta[this.key(s)]?.model ?? s.model,
+                    reasoning: this.displayMeta[this.key(s)]?.reasoning ?? s.reasoning,
                     compressionPresetId: this.compressionPresets[this.key(s)],
                     terminalStatus: this.terminalStatuses[this.key(s)] ?? s.terminalStatus,
                 };
@@ -243,5 +256,23 @@ export class SessionStore {
             delete this.terminalStatuses[sessionId];
         }
         void this.memento.update(TERMINAL_STATUS_KEY, this.terminalStatuses);
+    }
+
+    /** Persists the latest model/effort observed from a live controller. */
+    setDisplayMetadata(sessionId: string, model?: string, reasoning?: string): void {
+        if (!model && !reasoning) {
+            return;
+        }
+        const current = this.displayMeta[sessionId] ?? {};
+        const next = {
+            ...current,
+            ...(model ? { model } : {}),
+            ...(reasoning ? { reasoning } : {}),
+        };
+        if (next.model === current.model && next.reasoning === current.reasoning) {
+            return;
+        }
+        this.displayMeta[sessionId] = next;
+        void this.memento.update(DISPLAY_META_KEY, this.displayMeta);
     }
 }

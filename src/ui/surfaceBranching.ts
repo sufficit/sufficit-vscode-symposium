@@ -7,7 +7,7 @@ import type { WebviewToHost } from "../protocol/chat";
  * Each starts a fresh session on the same backend, seeded with the visible
  * conversation up to (but excluding) the chosen message, then re-delivers the
  * message text. Extracted from SurfaceDialogues as free functions following the
- * collaborator + deps-bag pattern (see controllerMessageHandler.ts); the surface
+ * collaborator + deps-bag pattern; the surface
  * stays the owner of session state and is reached here via the deps bag plus an
  * openDialogue callback.
  */
@@ -78,20 +78,18 @@ export function retryLastMessage(
     d: SurfaceDialoguesDeps,
     index: number,
     errorMessage?: string,
+    expectedText?: string,
 ): void {
     const from = d.getController();
     if (!from || !Number.isInteger(index) || index < 0) {
         return;
     }
     const transcriptMessages = from.transcriptMessages();
-    const adjustedIndex = Math.min(index, transcriptMessages.length - 1);
-    if (adjustedIndex < 0) {
+    const target = resolveRetryTarget(transcriptMessages, index, expectedText);
+    if (!target) {
         return;
     }
-    const original = transcriptMessages[adjustedIndex];
-    if (!original || original.role !== "user") {
-        return;
-    }
+    const { message: original, index: adjustedIndex } = target;
     // Tell the model WHY it's being nudged to continue — otherwise a bare
     // resend looks like the user just said "continue" for no reason. Passed
     // in from the webview's click (not captured host-side): an in-memory
@@ -100,15 +98,15 @@ export function retryLastMessage(
     const interruptedBy = errorMessage;
     if (interruptedBy) {
         // Visible confirmation (same status-notice channel as compaction/
-        // gap notices) — the note itself is a developer-role message the
-        // model sees but never renders as a chat bubble, so without this the
-        // user has no way to tell it was actually sent. anchorIndex links back
-        // to the original message instead of rendering a duplicate bubble.
+        // gap notices). This notice is UI-only; the adapter separately sends
+        // the original request and interruption reason to the model. Keeping
+        // that distinction explicit avoids implying that Retry created a new
+        // user message. anchorIndex links back to the original request.
         d.post({
             type: "event",
             event: {
                 kind: "status-notice",
-                text: `Continuing — told the model why: ${interruptedBy}`,
+                text: `Retrying the previous request — no new user message was added. The model received the interruption reason: ${interruptedBy}`,
                 anchorIndex: adjustedIndex,
             },
         });
@@ -117,14 +115,49 @@ export function retryLastMessage(
     // (when available) so the retry is attributable to the original turn — not a
     // new logical turn with a duplicate user message. Falls back to a fresh turn
     // when the id is unknown (e.g. after a reload).
-    const retryOf = from.lastTurnId;
-    void from.handleMessage({
+    // Keep a marker even after reload, when the host no longer knows the old
+    // backend id. The adapter uses presence to preserve the dangling user row;
+    // it still allocates a fresh backend turn id for every attempt.
+    const retryOf = from.lastTurnId ?? "retry";
+    dispatchAhp(d, {
         type: "send",
         text: original.text,
         mode: "send",
         interruptedBy,
         retryOf,
     } as WebviewToHost);
+}
+
+/** Resolves a Retry against stable message content first. AHP snapshot replay
+ * can change the webview row index while the error card remains visible; an
+ * exact text match keeps that card attached to the message the user saw. */
+function resolveRetryTarget(
+    messages: Array<{ role: string; text: string }>,
+    requestedIndex: number,
+    expectedText?: string,
+): { message: { role: string; text: string }; index: number } | undefined {
+    const bounded = Math.min(requestedIndex, messages.length - 1);
+    const exact = messages[bounded];
+    if (exact?.role === "user" && (expectedText === undefined || exact.text === expectedText)) {
+        return { message: exact, index: bounded };
+    }
+    if (expectedText !== undefined) {
+        for (let candidate = messages.length - 1; candidate >= 0; candidate--) {
+            const message = messages[candidate];
+            if (message.role === "user" && message.text === expectedText) {
+                return { message, index: candidate };
+            }
+        }
+        return undefined;
+    }
+    // Backward compatibility for a button rendered by an older webview bundle.
+    for (let candidate = bounded; candidate >= 0; candidate--) {
+        const message = messages[candidate];
+        if (message?.role === "user") {
+            return { message, index: candidate };
+        }
+    }
+    return undefined;
 }
 
 /**
@@ -185,7 +218,7 @@ export function restartFromMessage(
         });
     }
     // Resend the user message to start the agent
-    void d.getController()?.handleMessage({
+    dispatchAhp(d, {
         type: "send",
         text: lastUserMsg.text,
         mode: "send",
@@ -206,7 +239,7 @@ export function editResend(
     const from = d.getController();
     if (!from || !Number.isInteger(anchorIndex) || anchorIndex < 0) {
         // Nothing to rewind to — treat as a normal send.
-        void d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
+        dispatchAhp(d, { ...sendMsg, editFrom: undefined } as WebviewToHost);
         return;
     }
     // Same conversation-row index space as restartFromMessage. anchorIndex 0
@@ -216,7 +249,7 @@ export function editResend(
     const adjustedIndex = Math.min(anchorIndex, transcriptMessages.length - 1);
     if (adjustedIndex < 0) {
         // No valid index, treat as normal send.
-        void d.getController()?.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
+        dispatchAhp(d, { ...sendMsg, editFrom: undefined } as WebviewToHost);
         return;
     }
     if (!("text" in sendMsg) || typeof sendMsg.text !== "string") {
@@ -224,7 +257,7 @@ export function editResend(
     }
     const original = transcriptMessages[adjustedIndex];
     if (original?.role === "user" && sameTextRetry(from.backend, original.text, sendMsg.text)) {
-        void from.handleMessage({ ...sendMsg, editFrom: undefined } as WebviewToHost);
+        dispatchAhp(d, { ...sendMsg, editFrom: undefined } as WebviewToHost);
         return;
     }
     const keepTo = adjustedIndex - 1; // exclude the message being edited
@@ -236,7 +269,7 @@ export function editResend(
     if (messages.length) {
         d.post({ type: "history", messages, carried: true });
     }
-    void d.getController()?.handleMessage({
+    dispatchAhp(d, {
         type: "send",
         text: sendMsg.text,
         attachments:
@@ -258,4 +291,10 @@ export function editResend(
                 : undefined,
         mode: "send",
     });
+}
+
+function dispatchAhp(d: SurfaceDialoguesDeps, message: WebviewToHost): void {
+    if (!d.dispatchAhp(message)) {
+        throw new Error("AHP session is unavailable");
+    }
 }

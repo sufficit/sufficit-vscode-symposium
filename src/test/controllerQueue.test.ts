@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { ChatQueue, MessageDedup, recoverPersistedQueue } from "../application/controllerQueue";
+import { routeControllerSend } from "../application/controllerSendRouter";
 
 test("ChatQueue restores persisted messages and keeps ids monotonic", () => {
     const queue = new ChatQueue();
@@ -11,6 +12,30 @@ test("ChatQueue restores persisted messages and keeps ids monotonic", () => {
         { id: 7, text: "restored", attachments: ["/tmp/a.txt"], model: "model-a" },
         { id: 8, text: "new", attachments: [] },
     ]);
+});
+
+test("ChatQueue merges concurrent peer proposals without id collisions or duplicate replay", () => {
+    const queue = new ChatQueue();
+    const first = { id: 1, clientMessageId: "client-a", text: "first", attachments: [] };
+    const second = { id: 1, clientMessageId: "client-b", text: "second", attachments: [] };
+
+    assert.equal(queue.merge([first], "writer-a"), true);
+    assert.equal(queue.merge([second], "writer-b"), true);
+    assert.equal(queue.merge([first], "writer-a"), false);
+    assert.deepEqual(
+        queue.items().map((message) => message.text),
+        ["first", "second"],
+    );
+    assert.equal(new Set(queue.items().map((message) => message.id)).size, 2);
+});
+
+test("ChatQueue gives headless peer proposals a durable identity", () => {
+    const queue = new ChatQueue();
+    const message = { id: 7, text: "headless", attachments: [] };
+
+    assert.equal(queue.merge([message], "writer-a"), true);
+    assert.equal(queue.merge([message], "writer-a"), false);
+    assert.equal(queue.items()[0].intentId, "render-peer:writer-a:7");
 });
 
 test("persisted queue recovery keeps a genuinely pending message", () => {
@@ -84,9 +109,9 @@ test("MessageDedup treats an empty-string clientMessageId as no id", () => {
     assert.equal(dedup.accept(""), true);
 });
 
-// --- Regressão 1D: redirect preserva a queue (diferente do steer que limpa) ---
-// O redirect faz queue.unshift (front-insert) SEM clear, ao contrario do steer
-// que faz queue.clear() + push. A queue existente deve sobreviver ao redirect.
+// --- Regressão 1D: redirect preserva a queue ---
+// O redirect faz queue.unshift (front-insert) SEM clear. A queue existente deve
+// sobreviver ao redirect.
 
 test("redirect uses unshift (front-insert) without clearing the queue", () => {
     const queue = new ChatQueue();
@@ -103,16 +128,159 @@ test("redirect uses unshift (front-insert) without clearing the queue", () => {
     assert.equal(items[2].text, "queued-2");
 });
 
-test("steer would clear the queue, but redirect does not", () => {
-    // Contrast: steer clears first, so the queue is lost. Redirect keeps it.
-    const steerQueue = new ChatQueue();
-    steerQueue.enqueue({ text: "queued", attachments: [] });
-    steerQueue.clear();
-    steerQueue.push({ text: "steer-msg", attachments: [] });
-    assert.equal(steerQueue.items().length, 1); // original queue gone
+// The three busy modes differ only in WHERE the message lands and whether the
+// running turn is cancelled: redirect cancels + goes first, steer goes first
+// without cancelling, queue goes last. None of them discards existing work.
+// The steer test below passes no session, i.e. the CLI-backend shape with no
+// injectUserMessage — mid-turn injection is covered in steerInjection.test.ts.
+test("steer goes to the head of the queue without cancelling the turn", () => {
+    const queue = new ChatQueue();
+    queue.enqueue({ text: "queued-1", attachments: [] });
+    let cancelled = false;
+    const dispatched: string[] = [];
 
-    const redirectQueue = new ChatQueue();
-    redirectQueue.enqueue({ text: "queued", attachments: [] });
-    redirectQueue.unshift({ text: "redirect-msg", attachments: [] }); // no clear
-    assert.equal(redirectQueue.items().length, 2); // original queue kept
+    routeControllerSend({ text: "steer-msg", attachments: [], clientMessageId: "steer" }, "steer", {
+        queue,
+        dedup: new MessageDedup(),
+        busy: () => true,
+        cancel: () => {
+            cancelled = true;
+        },
+        dispatch: (m) => dispatched.push(m.text),
+        emitQueue: () => {},
+    });
+
+    assert.equal(cancelled, false);
+    assert.deepEqual(dispatched, []);
+    const items = queue.items();
+    assert.deepEqual(
+        items.map((i) => i.text),
+        ["steer-msg", "queued-1"],
+    );
+});
+
+test("queue mode goes to the tail, behind everything already pending", () => {
+    const queue = new ChatQueue();
+    queue.enqueue({ text: "queued-1", attachments: [] });
+
+    routeControllerSend({ text: "later", attachments: [], clientMessageId: "later" }, "queue", {
+        queue,
+        dedup: new MessageDedup(),
+        busy: () => true,
+        cancel: () => assert.fail("queue mode must not cancel"),
+        dispatch: () => assert.fail("queue mode must not dispatch while busy"),
+        emitQueue: () => {},
+    });
+
+    assert.deepEqual(
+        queue.items().map((i) => i.text),
+        ["queued-1", "later"],
+    );
+});
+
+// Every send path must broadcast a queue snapshot, including the one that never
+// touches the queue: it is the client's only chance to drop a stale Queued row,
+// which otherwise sits next to the same message in the transcript.
+test("an idle send broadcasts an (empty) queue snapshot even though it dispatches", () => {
+    const queue = new ChatQueue();
+    const dispatched: string[] = [];
+    const snapshots: number[] = [];
+
+    routeControllerSend({ text: "go", attachments: [], clientMessageId: "go" }, "queue", {
+        queue,
+        dedup: new MessageDedup(),
+        busy: () => false,
+        cancel: () => assert.fail("an idle send must not cancel"),
+        dispatch: (message) => dispatched.push(message.text),
+        emitQueue: () => snapshots.push(queue.length),
+    });
+
+    assert.deepEqual(dispatched, ["go"]);
+    assert.deepEqual(snapshots, [0], "one snapshot, emitted before the dispatch");
+});
+
+test("a busy controller queues an AHP send until the running turn completes", () => {
+    const queue = new ChatQueue();
+    const dispatched: string[] = [];
+    let emitted = 0;
+
+    routeControllerSend(
+        { text: "second turn", attachments: [], clientMessageId: "second" },
+        "send",
+        {
+            queue,
+            dedup: new MessageDedup(),
+            busy: () => true,
+            cancel: () => undefined,
+            dispatch: (message) => dispatched.push(message.text),
+            emitQueue: () => {
+                emitted++;
+            },
+        },
+    );
+
+    assert.deepEqual(dispatched, []);
+    assert.equal(emitted, 1);
+    assert.deepEqual(
+        queue.items().map((message) => message.text),
+        ["second turn"],
+    );
+});
+
+test("a fresh idle send preserves a queue held after failure and runs directly", () => {
+    const queue = new ChatQueue();
+    queue.enqueue({ text: "interrupted work", attachments: [], clientMessageId: "held" });
+    queue.hold({ reason: "turn-failed", turnId: "failed-turn", at: 1 });
+    const dispatched: string[] = [];
+    const snapshots: Array<{ length: number; held: boolean }> = [];
+
+    routeControllerSend({ text: "new request", attachments: [], clientMessageId: "new" }, "send", {
+        queue,
+        dedup: new MessageDedup(),
+        busy: () => false,
+        cancel: () => assert.fail("an idle send must not cancel"),
+        dispatch: (message, options) => {
+            if (!options?.preserveQueueHold) queue.release();
+            dispatched.push(message.text);
+        },
+        emitQueue: () => snapshots.push({ length: queue.length, held: queue.isHeld }),
+    });
+
+    assert.deepEqual(dispatched, ["new request"]);
+    assert.deepEqual(
+        queue.items().map((message) => message.text),
+        ["interrupted work"],
+    );
+    assert.equal(queue.isHeld, true);
+    assert.deepEqual(snapshots, [{ length: 1, held: true }]);
+});
+
+test("Retry dispatches the failed request instead of substituting the held queue head", () => {
+    const queue = new ChatQueue();
+    queue.enqueue({ text: "work behind failed turn", attachments: [] });
+    queue.hold({ reason: "turn-failed", turnId: "failed-turn", at: 1 });
+    const dispatched: string[] = [];
+
+    routeControllerSend(
+        { text: "failed request", attachments: [], retryOf: "failed-turn" },
+        "send",
+        {
+            queue,
+            dedup: new MessageDedup(),
+            busy: () => false,
+            cancel: () => assert.fail("Retry must not cancel while idle"),
+            dispatch: (message, options) => {
+                if (!options?.preserveQueueHold) queue.release();
+                dispatched.push(message.text);
+            },
+            emitQueue: () => undefined,
+        },
+    );
+
+    assert.deepEqual(dispatched, ["failed request"]);
+    assert.deepEqual(
+        queue.items().map((message) => message.text),
+        ["work behind failed turn"],
+    );
+    assert.equal(queue.isHeld, false, "successful Retry may resume FIFO draining");
 });

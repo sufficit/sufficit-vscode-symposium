@@ -2,17 +2,18 @@ import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import * as readline from "readline";
 import { resolveExecutable } from "../exec";
-import { contextWindowFor, parseCodexUsage } from "../parse";
-import { parseAdapterQuota } from "../quota";
-import { parseNativeTodos } from "../todos";
+import { contextWindowFor } from "../parse";
 import { AgentSession, SessionStartOptions } from "../types";
+import { isTransientErrorMessage } from "../transientError";
 import {
     CodexAdapterConfig,
     codexWorkspaceArgs,
     loadVscodeMcpServers,
     mapUnifiedToCodexFlags,
 } from "./codexMcpConfig";
+import { CodexEventParser } from "./eventParser";
 import { syncCodexSufficitMcp } from "./sufficitMcp";
+import { isAutomaticSufficitMcpName } from "../sufficitMcp";
 
 /** Resolve a picker value into the explicit model argument for one Codex turn. */
 export function codexModelArgs(selected: string | undefined, configured: string): string[] {
@@ -40,8 +41,20 @@ export class CodexSession extends EventEmitter implements AgentSession {
     private reportedError = false;
     private warnedUnenforcedMode = false; // emitted the manager/user "not yet enforced" notice once
     private turnSequence = 0;
+    /** Guards against a duplicate turn-end for the current turn — `codex exec
+     *  --json` has been observed emitting more than one completion-shaped
+     *  line (protocol `turn.completed` plus a process-exit path) for a single
+     *  logical turn. A double turn-end used to re-run the controller's
+     *  queue-drain logic a second time, which could dispatch the next queued
+     *  message outside of any real busy turn. Reset once per spawnTurn(). */
+    private turnEndEmitted = false;
+    /** This turn's id, threaded onto both turn-start and turn-end so the
+     *  controller's TurnTracker can correlate them (and reject a stale
+     *  straggler from a superseded turn by id, not just by busy-state). */
+    private currentTurnId: string | undefined;
     private effectiveModel: string;
     private vscodeMcpServers: Record<string, { command: string; args: string[] }>;
+    private readonly parser: CodexEventParser;
 
     constructor(
         private readonly config: CodexAdapterConfig,
@@ -51,6 +64,29 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.vscodeMcpServers = loadVscodeMcpServers();
         this.sessionId = options.resumeSessionId;
         this.effectiveModel = options.model || config.model;
+        this.parser = new CodexEventParser({
+            model: () => this.effectiveModel,
+            reasoning: () =>
+                this.options.reasoning && this.options.reasoning !== "default"
+                    ? this.options.reasoning
+                    : undefined,
+            setModel: (model) => {
+                this.effectiveModel = model;
+            },
+            getSessionId: () => this.sessionId,
+            setSessionId: (id) => {
+                this.sessionId = id;
+                this.options.guardrailSessionId = id;
+            },
+            isCancelled: () => this.cancelled,
+            setReportedError: () => {
+                this.reportedError = true;
+            },
+            configuredContextWindow: () =>
+                contextWindowFor(this.options.model || this.config.model),
+            emit: (event) => this.emit("event", event),
+            emitTurnEnd: () => this.emitTurnEnd(),
+        });
     }
 
     setModel(model: string): void {
@@ -64,6 +100,18 @@ export class CodexSession extends EventEmitter implements AgentSession {
         return this.effectiveModel || this.options.model || this.config.model;
     }
 
+    /** Emits turn-end at most once per turn — see `turnEndEmitted`. */
+    private emitTurnEnd(): void {
+        if (this.turnEndEmitted) {
+            this.config.log?.(
+                "[codex] duplicate turn-end suppressed (already emitted for this turn)",
+            );
+            return;
+        }
+        this.turnEndEmitted = true;
+        this.emit("event", { kind: "turn-end", logicalTurnId: this.currentTurnId });
+    }
+
     send(text: string): void {
         // A mid-turn send must not leave two `codex exec` processes writing
         // the same rollout. Cancel the in-flight child before starting another.
@@ -75,11 +123,13 @@ export class CodexSession extends EventEmitter implements AgentSession {
         const sequence = ++this.turnSequence;
         void this.spawnTurn(text, sequence).catch((error) => {
             if (!this.disposed && sequence === this.turnSequence) {
+                const message = `Codex turn failed: ${error instanceof Error ? error.message : String(error)}`;
                 this.emit("event", {
                     kind: "error",
-                    message: `Codex turn failed: ${error instanceof Error ? error.message : String(error)}`,
+                    message,
+                    retryable: isTransientErrorMessage(message),
                 });
-                this.emit("event", { kind: "turn-end" });
+                this.emitTurnEnd();
             }
         });
     }
@@ -89,7 +139,20 @@ export class CodexSession extends EventEmitter implements AgentSession {
         // Extension activation performs the same sync eagerly, but awaiting it
         // here closes the race where a user starts Codex before activation or a
         // login/token-refresh callback has finished.
-        await syncCodexSufficitMcp();
+        const mcpSessionId =
+            this.options.guardrailSessionId && !/^new-\d+$/.test(this.options.guardrailSessionId)
+                ? this.options.guardrailSessionId
+                : this.sessionId && !/^new-\d+$/.test(this.sessionId)
+                  ? this.sessionId
+                  : undefined;
+        await syncCodexSufficitMcp(
+            false,
+            undefined,
+            mcpSessionId,
+            this.options.guardrailOrigin,
+            true,
+            this.options.permission,
+        );
         if (this.disposed || sequence !== this.turnSequence) {
             return;
         }
@@ -127,12 +190,17 @@ export class CodexSession extends EventEmitter implements AgentSession {
         const servers: Record<string, { command?: string; args?: string[] }> = {
             ...(this.config.mcpServers ?? {}),
         };
+        for (const name of Object.keys(servers)) {
+            if (isAutomaticSufficitMcpName(name)) {
+                delete servers[name];
+            }
+        }
         if (this.config.playwright && !servers.playwright) {
             servers.playwright = { command: "npx", args: ["-y", "@playwright/mcp@latest"] };
         }
         // Merge VSCode MCP servers (from mcp.json), letting explicit config override
         for (const [name, server] of Object.entries(this.vscodeMcpServers)) {
-            if (!servers[name]) {
+            if (!isAutomaticSufficitMcpName(name) && !servers[name]) {
                 servers[name] = server;
             }
         }
@@ -157,6 +225,9 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.current = child;
         this.cancelled = false;
         this.reportedError = false;
+        this.turnEndEmitted = false;
+        this.currentTurnId = `${this.sessionId ?? "codex"}/turn-${sequence}`;
+        this.emit("event", { kind: "turn-start", logicalTurnId: this.currentTurnId });
 
         const rl = readline.createInterface({ input: child.stdout! });
         rl.on("line", (line) => {
@@ -178,10 +249,11 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 this.emit("event", {
                     kind: "error",
                     message: `codex spawn failed: ${error.message}`,
+                    retryable: false,
                 });
             }
             this.cancelled = false;
-            this.emit("event", { kind: "turn-end" });
+            this.emitTurnEnd();
         });
         child.on("exit", (code) => {
             if (this.current !== child) {
@@ -196,180 +268,16 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 this.emit("event", {
                     kind: "error",
                     message: `codex exited with code ${code}: ${detail}`,
+                    retryable: true,
                 });
             }
             this.cancelled = false;
-            this.emit("event", { kind: "turn-end" });
+            this.emitTurnEnd();
         });
     }
 
     private handleLine(line: string): void {
-        if (!line.trim()) {
-            return;
-        }
-        let event: { type: string; [key: string]: unknown };
-        try {
-            event = JSON.parse(line);
-        } catch {
-            return; // non-JSON log lines (codex prints some ERROR lines plainly)
-        }
-        const quota = parseAdapterQuota(event, this.backend);
-        if (quota) {
-            this.emit("event", { kind: "quota", ...quota });
-        }
-        switch (event.type) {
-            case "thread.started":
-                if (typeof event.thread_id === "string" && !this.sessionId) {
-                    this.sessionId = event.thread_id;
-                    this.emit("event", {
-                        kind: "session",
-                        sessionId: event.thread_id,
-                        model: this.effectiveModel || undefined,
-                    });
-                }
-                break;
-            case "item.started":
-            case "item.completed": {
-                const item =
-                    typeof event.item === "object" && event.item !== null
-                        ? (event.item as Record<string, unknown>)
-                        : {};
-                const itemType =
-                    typeof item.type === "string"
-                        ? item.type
-                        : typeof item.item_type === "string"
-                          ? item.item_type
-                          : undefined;
-                // Codex's plan/todo updates (e.g. update_plan / todo_list).
-                const todos = parseNativeTodos(itemType ?? "", item);
-                if (todos) {
-                    this.emit("event", {
-                        kind: "tool-start",
-                        toolName: "TodoWrite",
-                        detail: "",
-                        todos,
-                    });
-                    break;
-                }
-                if (event.type !== "item.completed") {
-                    if (itemType === "command_execution" && typeof item.command === "string") {
-                        this.emit("event", {
-                            kind: "tool-start",
-                            toolName: "exec",
-                            detail: item.command,
-                        });
-                    }
-                    break;
-                }
-                if (itemType === "agent_message" && typeof item.text === "string") {
-                    this.emit("event", {
-                        kind: "text",
-                        text: item.text,
-                        model: this.effectiveModel || undefined,
-                    });
-                } else if (itemType === "reasoning" && typeof item.text === "string") {
-                    this.emit("event", {
-                        kind: "text",
-                        text: item.text,
-                        model: this.effectiveModel || undefined,
-                    });
-                } else if (itemType === "command_execution" && typeof item.command === "string") {
-                    this.emit("event", {
-                        kind: "tool-end",
-                        toolName: "exec",
-                        detail: item.command,
-                    });
-                } else if (
-                    itemType === "file_change" ||
-                    itemType === "mcp_tool_call" ||
-                    itemType === "web_search"
-                ) {
-                    this.emit("event", { kind: "tool-end", toolName: itemType });
-                }
-                break;
-            }
-            case "token_count":
-                // Streamed during a turn (event_msg/token_count). Carries the
-                // richest usage incl. model_context_window — surface it live so
-                // the Context Window meter fills before the turn even ends.
-                this.emitUsage(event);
-                break;
-            case "turn_context": {
-                const payload =
-                    typeof event.payload === "object" && event.payload !== null
-                        ? (event.payload as Record<string, unknown>)
-                        : {};
-                if (
-                    typeof payload.model === "string" &&
-                    payload.model &&
-                    payload.model !== this.effectiveModel
-                ) {
-                    this.effectiveModel = payload.model;
-                    this.emit("event", { kind: "model", model: this.effectiveModel });
-                }
-                break;
-            }
-            case "turn.completed":
-                // turn.completed may carry { usage: {...} }. Emit usage (if any)
-                // BEFORE turn-end so the meter reflects the final totals.
-                this.emitUsage(event);
-                this.emit("event", { kind: "turn-end" });
-                break;
-            case "turn.failed": {
-                if (this.cancelled) {
-                    break;
-                }
-                this.reportedError = true;
-                const error =
-                    typeof event.error === "object" && event.error !== null
-                        ? (event.error as Record<string, unknown>)
-                        : {};
-                this.emit("event", {
-                    kind: "error",
-                    message:
-                        "message" in error && typeof error.message === "string"
-                            ? error.message
-                            : "codex turn failed",
-                });
-                this.emit("event", { kind: "turn-end" });
-                break;
-            }
-            case "error": {
-                const message = typeof event.message === "string" ? event.message : "codex error";
-                // "Reconnecting... N/5" are transient retry notices, not failures;
-                // the terminal error (or turn.failed) is surfaced separately.
-                if (/^Reconnecting\.\.\./.test(message)) {
-                    break;
-                }
-                if (this.cancelled) {
-                    break;
-                }
-                this.reportedError = true;
-                this.emit("event", { kind: "error", message });
-                break;
-            }
-        }
-    }
-
-    /**
-     * Normalize a Codex usage-bearing event and emit a `usage` UI event. Falls
-     * back to the configured model's context window when Codex doesn't report
-     * one (older exec streams omit model_context_window).
-     */
-    private emitUsage(event: unknown): void {
-        const u = parseCodexUsage(event);
-        if (!u) {
-            return;
-        }
-        this.emit("event", {
-            kind: "usage",
-            inputTokens: u.inputTokens,
-            outputTokens: u.outputTokens,
-            cacheRead: u.cacheRead,
-            contextWindow:
-                u.contextWindow ?? contextWindowFor(this.options.model || this.config.model),
-            model: this.effectiveModel || undefined,
-        });
+        this.parser.handleLine(line);
     }
 
     cancel(): void {

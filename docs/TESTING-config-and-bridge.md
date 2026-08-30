@@ -37,12 +37,14 @@ const off = sym.sessions.follow(id, (m) => console.log(m)); // stream do chat
 // off() para parar de seguir
 ```
 
-## 4. Remote bridge (HTTP + SSE)
+## 4. Remote bridge (HTTP + AHP WebSocket)
 
 Ligar nas settings:
 
 ```jsonc
 "symposium.bridge.enabled": true,
+"symposium.bridge.pwa": true,
+"symposium.bridge.ahp": true,
 "symposium.bridge.token": "meu-token",   // vazio gera token efêmero (vai no Output: Symposium)
 "symposium.bridge.port": 47600
 ```
@@ -60,27 +62,17 @@ curl -s -X POST $BASE/resources/seed -H "Authorization: Bearer $TOKEN"
 curl -s $BASE/backends -H "Authorization: Bearer $TOKEN"
 curl -s $BASE/bridge/diagnostics -H "Authorization: Bearer $TOKEN"
 
-# criar sessão e enviar comando remoto
-ID=$(curl -s -X POST $BASE/sessions -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d '{"backend":"claude","cwd":"/algum/projeto"}' | jq -r .id)
-curl -s -X POST $BASE/sessions/$ID/send -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d '{"text":"olá","mode":"send"}'
-
-# acompanhar o chat remotamente (SSE; token via query pois EventSource não manda header)
-curl -N "$BASE/sessions/$ID/follow?token=$TOKEN"
+# abra a PWA e informe o mesmo token no login
+xdg-open "$BASE/pwa/"
 ```
 
-Endpoints: `GET /health` · `GET/POST /sessions` · `POST /sessions/:id/send` ·
-`POST /sessions/:id/interrupt` · `GET /sessions/:id/follow` (SSE) ·
-`GET/POST /resources` · `POST /resources/seed` · `DELETE /resources/:kind/:name` ·
-`GET /backends` · `GET /sync` · `GET /bridge/diagnostics`.
-
-`GET /sessions` lista somente sessões vivas e endereçáveis. Para responder em
-uma conversa existente, sempre atualize a lista e use exatamente o `sessionId`
-retornado. IDs de subagentes que contêm `/` devem ser codificados como um único
-segmento URL (`encodeURIComponent` / `jq @uri`). Um id obtido apenas de ledger,
-memória ou arquivo histórico pode ser lido offline, mas não representa um
-controlador vivo e o envio retorna `404 session is not live`.
+Chat remoto usa o WebSocket autenticado `GET /ahp` e os métodos AHP
+`initialize`, `reconnect`, `listSessions`, `createSession`, `subscribe` e
+`dispatchAction`. Endpoints HTTP auxiliares: `GET /health` ·
+`GET/POST /resources` · `POST /resources/seed` ·
+`DELETE /resources/:kind/:name` · `GET /backends` · `GET /sync` ·
+`GET /bridge/diagnostics`. As antigas rotas HTTP/SSE de sessão devem responder
+`404`; token em query string deve responder `401`.
 
 ## Segurança
 

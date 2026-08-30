@@ -23,6 +23,24 @@ export function mergeQuotaSnapshot(
     previous: AdapterQuotaSnapshot | undefined,
     incoming: AdapterQuotaSnapshot,
 ): AdapterQuotaSnapshot {
+    // A filesystem/API refresh may briefly fail while the active CLI has
+    // already reported valid limits. Keep those values visible as stale rather
+    // than replacing truthful live data with an empty "unavailable" card.
+    if (
+        incoming.state === "unavailable" &&
+        incoming.windows.length === 0 &&
+        previous?.windows.length
+    ) {
+        return {
+            ...previous,
+            ...incoming,
+            windows: previous.windows,
+            updatedAt: previous.updatedAt,
+            state: "stale",
+            message:
+                incoming.message || "Live usage refresh failed. Showing the last reported values.",
+        };
+    }
     const authoritative = incoming.state != null;
     const windows = new Map<string, UsageQuotaWindow>();
     if (!authoritative) {

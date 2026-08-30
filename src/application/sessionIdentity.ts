@@ -2,6 +2,7 @@
 export function stableSessionKey(
     resumeSessionId: string | undefined,
     nativeSessionId: string | undefined,
+    runtimeKey?: string,
 ): string | undefined {
-    return resumeSessionId ?? nativeSessionId;
+    return resumeSessionId ?? nativeSessionId ?? runtimeKey;
 }

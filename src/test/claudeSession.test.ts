@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import { ClaudeSession } from "../adapters/claude/session";
+import { ClaudeSessionCoordination } from "../adapters/claude/sessionCoordination";
 import { claudeResumeSessionId } from "../adapters/claude/resume";
 import type { AgentEvent } from "../adapters/types";
 
@@ -37,14 +41,19 @@ test("Claude retries spawn after ENOENT instead of reusing the dead child", asyn
 
     try {
         const first = waitForTurnEnd(session);
-        session.send("first attempt");
+        session.send("first attempt", undefined, undefined, "intent-1");
         const firstEvents = await first;
 
         const second = waitForTurnEnd(session);
-        session.send("second attempt");
+        session.send("second attempt", undefined, undefined, "intent-2");
         const secondEvents = await second;
 
-        for (const events of [firstEvents, secondEvents]) {
+        for (const [index, events] of [firstEvents, secondEvents].entries()) {
+            assert.deepEqual(events[0], {
+                kind: "turn-start",
+                logicalTurnId: `claude/turn-${index + 1}`,
+                intentId: `intent-${index + 1}`,
+            });
             assert.ok(
                 events.some((event) => event.kind === "error" && /ENOENT/.test(event.message)),
             );
@@ -52,6 +61,151 @@ test("Claude retries spawn after ENOENT instead of reusing the dead child", asyn
         }
     } finally {
         session.dispose();
+    }
+});
+
+test("Claude applies a model picker change to the next turn in the same conversation", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-claude-model-"));
+    const executable = path.join(dir, "fake-claude.cjs");
+    const argsLog = path.join(dir, "args.jsonl");
+    await fs.writeFile(
+        executable,
+        `#!/usr/bin/env node
+const fs = require("node:fs");
+const readline = require("node:readline");
+const args = process.argv.slice(2);
+const log = process.env.SYMPOSIUM_CLAUDE_ARGS;
+if (log) fs.appendFileSync(log, JSON.stringify(args) + "\\n");
+const modelIndex = args.indexOf("--model");
+const model = modelIndex >= 0 ? args[modelIndex + 1] : "default";
+const sessionId = "fake-claude-model-session";
+process.stdout.write(JSON.stringify({ type: "system", subtype: "init", session_id: sessionId, model }) + "\\n");
+readline.createInterface({ input: process.stdin }).on("line", () => {
+    process.stdout.write(JSON.stringify({ type: "assistant", message: { model, content: [{ type: "text", text: "ok" }] } }) + "\\n");
+    process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok" }) + "\\n");
+});
+`,
+        { mode: 0o755 },
+    );
+
+    const session = new ClaudeSession(
+        {
+            executable,
+            model: "model-a",
+            permissionMode: "plan",
+            env: { SYMPOSIUM_CLAUDE_ARGS: argsLog },
+        },
+        { cwd: process.cwd(), model: "model-a" },
+    );
+
+    try {
+        const first = waitForTurnEnd(session);
+        session.send("first turn");
+        await first;
+
+        session.setModel("model-b");
+        assert.equal(session.getModel(), "model-b");
+
+        const second = waitForTurnEnd(session);
+        session.send("second turn");
+        await second;
+
+        const launches = (await fs.readFile(argsLog, "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as string[]);
+        assert.equal(launches.length, 2);
+        assert.deepEqual(
+            launches[0].slice(launches[0].indexOf("--model"), launches[0].indexOf("--model") + 2),
+            ["--model", "model-a"],
+        );
+        assert.deepEqual(
+            launches[1].slice(launches[1].indexOf("--model"), launches[1].indexOf("--model") + 2),
+            ["--model", "model-b"],
+        );
+        assert.deepEqual(
+            launches[1].slice(launches[1].indexOf("--resume"), launches[1].indexOf("--resume") + 2),
+            ["--resume", "fake-claude-model-session"],
+        );
+    } finally {
+        session.dispose();
+        await fs.rm(dir, { recursive: true, force: true });
+    }
+});
+
+test("Claude serializes resumed turns across code-server windows and refreshes stale context", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-claude-windows-"));
+    const executable = path.join(dir, "fake-claude.cjs");
+    const argsLog = path.join(dir, "args.jsonl");
+    const coordinationRoot = path.join(dir, "coordination");
+    await fs.writeFile(
+        executable,
+        `#!/usr/bin/env node
+const fs = require("node:fs");
+const readline = require("node:readline");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.SYMPOSIUM_CLAUDE_ARGS, JSON.stringify(args) + "\\n");
+const resumeAt = args.indexOf("--resume");
+const sessionId = resumeAt >= 0 ? args[resumeAt + 1] : "new-session";
+process.stdout.write(JSON.stringify({ type: "system", subtype: "init", session_id: sessionId }) + "\\n");
+readline.createInterface({ input: process.stdin }).on("line", () => {
+    setTimeout(() => {
+        process.stdout.write(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "ok" }] } }) + "\\n");
+        process.stdout.write(JSON.stringify({ type: "result", is_error: false, result: "ok" }) + "\\n");
+    }, 100);
+});
+`,
+        { mode: 0o755 },
+    );
+
+    const config = {
+        executable,
+        model: "",
+        permissionMode: "plan",
+        env: { SYMPOSIUM_CLAUDE_ARGS: argsLog },
+    };
+    const options = { cwd: process.cwd(), resumeSessionId: "shared-resume-session" };
+    const first = new ClaudeSession(
+        config,
+        options,
+        new ClaudeSessionCoordination({ root: coordinationRoot }),
+    );
+    const second = new ClaudeSession(
+        config,
+        options,
+        new ClaudeSessionCoordination({ root: coordinationRoot }),
+    );
+
+    try {
+        const firstTurn = waitForTurnEnd(first);
+        const blockedTurn = waitForTurnEnd(second);
+        first.send("first window");
+        second.send("overlap");
+
+        const blockedEvents = await blockedTurn;
+        assert.ok(
+            blockedEvents.some(
+                (event) =>
+                    event.kind === "error" &&
+                    /already running in another code-server window/.test(event.message),
+            ),
+        );
+        await firstTurn;
+
+        const secondTurn = waitForTurnEnd(second);
+        second.send("second window after release");
+        await secondTurn;
+
+        const firstAgain = waitForTurnEnd(first);
+        first.send("first window after external change");
+        await firstAgain;
+
+        const launches = (await fs.readFile(argsLog, "utf8")).trim().split("\n");
+        assert.equal(launches.length, 3);
+    } finally {
+        first.dispose();
+        second.dispose();
+        await fs.rm(dir, { recursive: true, force: true });
     }
 });
 

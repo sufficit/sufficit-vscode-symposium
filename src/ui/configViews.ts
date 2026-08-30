@@ -232,6 +232,15 @@ export const configViews =
             '</div><div class="ctl">' + ctl + "</div></div>";
         const section = (title, body) =>
             '<section class="section"><div class="section-title">' + esc(title) + "</div>" + body + "</section>";
+        // Session metadata for a few dozen sessions is tens of KB, so a fixed
+        // MB unit rendered every real value as "0.0 MB" — the number was right,
+        // the unit was three orders of magnitude too big.
+        const formatBytes = (bytes) =>
+            bytes >= 1024 * 1024
+                ? (bytes / 1024 / 1024).toFixed(1) + " MB"
+                : bytes >= 1024
+                  ? (bytes / 1024).toFixed(1) + " KB"
+                  : bytes + " B";
 
         return (
             section(t("config.prefs.section.appearance"),
@@ -257,6 +266,9 @@ export const configViews =
                 item(t("config.prefs.turnSilenceMinutes.name"), t("config.prefs.turnSilenceMinutes.desc"),
                     sel("symposium.turnSilenceMinutes", String(p.turnSilenceMinutes ?? 5),
                         [{ v: "0", l: t("config.value.disabled") }, { v: "2", l: t("config.steps.2min") }, { v: "5", l: t("config.steps.5min") }, { v: "10", l: t("config.steps.10min") }, { v: "20", l: t("config.steps.20min") }, { v: "30", l: t("config.steps.30min") }])) +
+                item(t("config.prefs.turnRetrySilenceMinutes.name"), t("config.prefs.turnRetrySilenceMinutes.desc"),
+                    sel("symposium.turnRetrySilenceMinutes", String(p.turnRetrySilenceMinutes ?? 15),
+                        [{ v: "0", l: t("config.value.disabled") }, { v: "5", l: t("config.steps.5min") }, { v: "10", l: t("config.steps.10min") }, { v: "15", l: t("config.steps.15min") }, { v: "20", l: t("config.steps.20min") }, { v: "30", l: t("config.steps.30min") }])) +
                 item(t("config.prefs.autoApprove.name"), t("config.prefs.autoApprove.desc"),
                     sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
                         [{ v: "true", l: t("config.prefs.autoApprove.yes") }, { v: "false", l: t("config.prefs.autoApprove.no") }]))
@@ -279,12 +291,15 @@ export const configViews =
                 item(t("config.prefs.devMode.name"), t("config.prefs.devMode.desc"),
                     sel("symposium.chat.devMode", p.devMode ? "true" : "false",
                         [{ v: "true", l: t("config.prefs.devMode.on") }, { v: "false", l: t("config.prefs.devMode.off") }])) +
+                item(t("config.prefs.ahpDiagnostics.name"), t("config.prefs.ahpDiagnostics.desc"),
+                    sel("symposium.ahp.diagnostics", p.ahpDiagnostics ? "true" : "false",
+                        [{ v: "true", l: t("config.prefs.ahpDiagnostics.on") }, { v: "false", l: t("config.prefs.ahpDiagnostics.off") }])) +
                 item('Session Cache', 'Caches session metadata in memory for instant startup. Disable to free RAM.',
                     sel("symposium.chat.sessionCache", p.sessionCache ? "true" : "false",
                         [{ v: "true", l: "On" }, { v: "false", l: "Off" }])) +
                 item('Cache Memory', (p.sessionCacheRam && p.sessionCacheRam > 0)
-                    ? (p.sessionCacheRam / 1024 / 1024).toFixed(1) + ' MB (' + (p.sessionCacheCount || 0) + ' sessions cached)'
-                    : 'Cache disabled or empty (0 MB)',
+                    ? formatBytes(p.sessionCacheRam) + ' (' + (p.sessionCacheCount || 0) + ' sessions cached)'
+                    : 'Cache disabled or empty (0 B)',
                     '<span style="color:var(--sym-warn,#fbbf24)">read-only</span>')
             )
         );

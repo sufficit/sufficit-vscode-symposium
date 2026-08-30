@@ -219,7 +219,7 @@ export class SubagentManager implements SubagentHost {
         };
         rec.unsub = controller.subscribe((m) => this.onMessage(rec, m));
         this.recs.set(id, rec);
-        controller.sendText(task);
+        controller.client.sendText(task);
 
         if (opts.background) {
             return this.snapshot(rec);
@@ -237,8 +237,17 @@ export class SubagentManager implements SubagentHost {
         if (!rec || rec.status === "gone") {
             return false;
         }
+        // A blank/whitespace-only text would still reach sendText() (unlike
+        // the composer, which refuses to submit an empty message) and turn
+        // into a genuinely empty dispatched turn — a phantom "(no text)"
+        // bubble with nothing behind it. Reject it the same way the composer
+        // does instead of forwarding it.
+        const trimmed = String(text ?? "").trim();
+        if (!trimmed) {
+            return false;
+        }
         rec.status = "working";
-        rec.controller.sendText(String(text ?? ""));
+        rec.controller.client.sendText(trimmed);
         return true;
     }
 
@@ -247,7 +256,7 @@ export class SubagentManager implements SubagentHost {
         if (!rec) {
             return false;
         }
-        rec.controller.interrupt();
+        rec.controller.client.interrupt();
         this.live.disposeBySessionId(rec.controller.sessionId ?? rec.key);
         rec.status = "gone";
         rec.unsub();

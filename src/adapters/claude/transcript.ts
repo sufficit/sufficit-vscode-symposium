@@ -45,6 +45,25 @@ export function rawLineType(line: string): string | undefined {
     }
 }
 
+/** Turn activity encoded by current and legacy Claude Code JSONL formats. */
+export function rawLineActivity(line: string): "working" | "idle" | undefined {
+    if (!line.trim()) return undefined;
+    try {
+        const entry = JSON.parse(line) as {
+            type?: unknown;
+            isMeta?: unknown;
+            message?: { stop_reason?: unknown };
+        };
+        if (entry.isMeta === true) return undefined;
+        if (entry.type === "result") return "idle";
+        if (entry.type === "user") return "working";
+        if (entry.type !== "assistant") return undefined;
+        return entry.message?.stop_reason === "end_turn" ? "idle" : "working";
+    } catch {
+        return undefined;
+    }
+}
+
 /** Parses one transcript JSONL line into chat messages (text + tool calls). */
 export function parseTranscriptLine(
     line: string,
@@ -56,7 +75,14 @@ export function parseTranscriptLine(
     interface TranscriptEntry {
         isMeta?: boolean;
         type: "user" | "assistant" | "result";
+        model?: string;
+        effort?: string;
+        reasoning?: string;
         message?: {
+            model?: string;
+            effort?: string;
+            reasoning?: string;
+            reasoning_effort?: string;
             content?:
                 | string
                 | Array<{
@@ -85,6 +111,19 @@ export function parseTranscriptLine(
         return [];
     }
     const messages: HistoryMessage[] = [];
+    const entryModel =
+        typeof entry.model === "string"
+            ? entry.model
+            : typeof entry.message?.model === "string"
+              ? entry.message.model
+              : undefined;
+    const entryEffort =
+        entry.effort ??
+        entry.reasoning ??
+        entry.message?.effort ??
+        entry.message?.reasoning ??
+        entry.message?.reasoning_effort;
+    const entryReasoning = typeof entryEffort === "string" ? entryEffort : undefined;
     if (entry.type === "user") {
         const content = entry.message?.content;
         if (typeof content === "string") {
@@ -134,7 +173,12 @@ export function parseTranscriptLine(
                         messages.push({ role: "thinking", text: block.thinking });
                     }
                 } else if (block.type === "text" && typeof block.text === "string") {
-                    messages.push({ role: "assistant", text: block.text });
+                    messages.push({
+                        role: "assistant",
+                        text: block.text,
+                        ...(entryModel ? { model: entryModel } : {}),
+                        ...(entryReasoning ? { reasoning: entryReasoning } : {}),
+                    });
                 } else if (block.type === "tool_use") {
                     const counts = diffCounts(block.name ?? "", block.input);
                     messages.push({
@@ -186,6 +230,8 @@ export interface ClaudeSessionMeta {
     cwd?: string;
     gitBranch?: string;
     originSessionId?: string;
+    model?: string;
+    reasoning?: string;
 }
 
 const claudeMetaCache = new JsonlMetadataCache<ClaudeSessionMeta>();
@@ -201,6 +247,8 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
     let title: string | undefined;
     let cwd: string | undefined;
     let gitBranch: string | undefined;
+    let model: string | undefined;
+    let reasoning: string | undefined;
     for (const line of content.split("\n").slice(0, 30)) {
         try {
             const entry = JSON.parse(line);
@@ -209,6 +257,15 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
             }
             if (!gitBranch && typeof entry.gitBranch === "string" && entry.gitBranch) {
                 gitBranch = entry.gitBranch;
+            }
+            const message = entry.message;
+            if (!model && typeof message?.model === "string" && message.model) {
+                model = message.model;
+            }
+            const effort =
+                entry.effort ?? entry.reasoning ?? message?.effort ?? message?.reasoning_effort;
+            if (!reasoning && typeof effort === "string" && effort) {
+                reasoning = effort;
             }
             if (!title && entry.type === "user") {
                 const c = entry.message?.content;
@@ -223,7 +280,7 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
                     }
                 }
             }
-            if (title && cwd && gitBranch) {
+            if (title && cwd && gitBranch && model && reasoning) {
                 break;
             }
         } catch {
@@ -244,5 +301,12 @@ function parseSessionMeta(content: string): ClaudeSessionMeta {
         }
         originSessionId = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
     }
-    return { title, cwd, gitBranch, originSessionId };
+    return {
+        title,
+        cwd,
+        gitBranch,
+        originSessionId,
+        ...(model ? { model } : {}),
+        ...(reasoning ? { reasoning } : {}),
+    };
 }

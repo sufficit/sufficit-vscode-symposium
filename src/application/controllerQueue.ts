@@ -2,6 +2,21 @@ import type { BusySendMode } from "../protocol/sendMode";
 
 export type SendMode = "send" | BusySendMode;
 
+export interface QueueDispatchOptions {
+    /** Starts an unrelated direct turn without releasing work held after an error. */
+    preserveQueueHold?: boolean;
+}
+
+export type QueueHoldReason = "turn-failed" | "restored";
+
+export interface QueueHold {
+    reason: QueueHoldReason;
+    /** The turn (backend id if bound, else the controller-local turn id)
+     *  whose failure caused the hold, when known. */
+    turnId?: string;
+    at: number;
+}
+
 export interface PendingMessage {
     id?: number;
     clientMessageId?: string;
@@ -14,9 +29,8 @@ export interface PendingMessage {
     intentId?: string;
     /**
      * Set when this is a Retry: the logicalTurnId of the failed turn being
-     * retried (delivery 1C). When present, the adapter reuses that logicalTurnId
-     * instead of allocating a new one, so the retry is attributable to the
-     * original turn for observability — without duplicating the user message.
+     * retried. It is attribution metadata only; the adapter must allocate a
+     * fresh backend turn id so late events from the failed attempt stay stale.
      */
     retryOf?: string;
     text: string;
@@ -45,9 +59,43 @@ export interface PendingMessage {
 export class ChatQueue {
     private seq = 0;
     private readonly messages: PendingMessage[] = [];
+    /**
+     * Set when the turn ahead of this queue failed: the queued messages are
+     * NOT auto-dispatched (a failure is not a normal continuation point), but
+     * they are NOT silently dropped either — the user-authored text stays put
+     * until an explicit release (promote / retry). A fresh manual send runs
+     * independently and leaves the interrupted work paused.
+     * Without this flag the hold was invisible: `attentionStatus` (the signal
+     * that caused the hold) clears on the NEXT dispatch, so a later, unrelated
+     * message would silently drain the stale queue out of order once it
+     * finished — the queued text fires with no user intent behind it anymore.
+     */
+    private held: QueueHold | undefined;
 
     get isEmpty(): boolean {
         return this.messages.length === 0;
+    }
+
+    get length(): number {
+        return this.messages.length;
+    }
+
+    get isHeld(): boolean {
+        return this.held !== undefined;
+    }
+
+    get holdInfo(): QueueHold | undefined {
+        return this.held;
+    }
+
+    /** Marks the queue held after a turn failure — see `held` above. */
+    hold(hold: QueueHold = { reason: "turn-failed", at: Date.now() }): void {
+        this.held = hold;
+    }
+
+    /** Releases a hold (promote / retry / explicit user action). */
+    release(): void {
+        this.held = undefined;
     }
 
     enqueue(message: PendingMessage): void {
@@ -60,6 +108,11 @@ export class ChatQueue {
     }
 
     unshift(message: PendingMessage): void {
+        // Without an id the Queued panel's edit/promote/remove actions silently
+        // no-op on this row: they look it up by Number(id) → NaN.
+        if (message.id == null) {
+            message.id = ++this.seq;
+        }
         this.messages.unshift(message);
     }
 
@@ -80,8 +133,63 @@ export class ChatQueue {
         return this.take(id) !== undefined;
     }
 
+    removeExternal(id: string): boolean {
+        return this.takeExternal(id) !== undefined;
+    }
+
+    hasExternal(id: string): boolean {
+        return this.messages.some(
+            (message) => message.clientMessageId === id || String(message.id) === id,
+        );
+    }
+
+    takeExternal(id: string): PendingMessage | undefined {
+        const index = this.messages.findIndex(
+            (message) => message.clientMessageId === id || String(message.id) === id,
+        );
+        if (index < 0) return undefined;
+        const [message] = this.messages.splice(index, 1);
+        return message;
+    }
+
+    reorderExternal(order: readonly string[]): boolean {
+        const before = this.messages.map(
+            (message) => message.clientMessageId ?? String(message.id),
+        );
+        const rank = new Map(order.map((id, index) => [id, index]));
+        this.messages.sort((first, second) => {
+            const a = rank.get(first.clientMessageId ?? String(first.id));
+            const b = rank.get(second.clientMessageId ?? String(second.id));
+            if (a === undefined && b === undefined) return 0;
+            if (a === undefined) return 1;
+            if (b === undefined) return -1;
+            return a - b;
+        });
+        return before.some(
+            (id, index) =>
+                id !== (this.messages[index].clientMessageId ?? String(this.messages[index].id)),
+        );
+    }
+
+    wouldReorderExternal(order: readonly string[]): boolean {
+        const before = this.messages.map(
+            (message) => message.clientMessageId ?? String(message.id),
+        );
+        const rank = new Map(order.map((id, index) => [id, index]));
+        const after = [...before].sort((first, second) => {
+            const a = rank.get(first);
+            const b = rank.get(second);
+            if (a === undefined && b === undefined) return 0;
+            if (a === undefined) return 1;
+            if (b === undefined) return -1;
+            return a - b;
+        });
+        return before.some((id, index) => id !== after[index]);
+    }
+
     clear(): void {
         this.messages.length = 0;
+        this.held = undefined;
     }
 
     /** Rehydrates a persisted queue and advances the id sequence past it. */
@@ -98,6 +206,44 @@ export class ChatQueue {
         }
     }
 
+    /**
+     * Merges a follower's queue proposal into the owner's canonical queue.
+     * Browser-generated client ids are globally stable; headless sends fall
+     * back to a durable writer/id intent key. Numeric row ids are reassigned
+     * on collision so edit/promote/remove never target a sibling's message.
+     */
+    merge(messages: PendingMessage[], writerId: string): boolean {
+        let changed = false;
+        const identities = new Set(this.messages.map(queueIdentity).filter(isString));
+        const ids = new Set(
+            this.messages.flatMap((message) =>
+                typeof message.id === "number" && Number.isFinite(message.id) ? [message.id] : [],
+            ),
+        );
+        for (const [index, original] of messages.entries()) {
+            const message = { ...original, attachments: [...original.attachments] };
+            if (!message.clientMessageId && !message.intentId) {
+                message.intentId = `render-peer:${writerId}:${message.id ?? index}`;
+            }
+            const identity = queueIdentity(message);
+            if (identity && identities.has(identity)) continue;
+            if (
+                typeof message.id !== "number" ||
+                !Number.isFinite(message.id) ||
+                ids.has(message.id)
+            ) {
+                message.id = ++this.seq;
+            } else {
+                this.seq = Math.max(this.seq, message.id);
+            }
+            ids.add(message.id);
+            if (identity) identities.add(identity);
+            this.messages.push(message);
+            changed = true;
+        }
+        return changed;
+    }
+
     /** Full durable snapshot; the webview ignores dispatch-only metadata. */
     items(): PendingMessage[] {
         return this.messages.map((message) => ({
@@ -105,6 +251,16 @@ export class ChatQueue {
             attachments: [...message.attachments],
         }));
     }
+}
+
+function queueIdentity(message: PendingMessage): string | undefined {
+    if (message.clientMessageId) return `client:${message.clientMessageId}`;
+    if (message.intentId) return `intent:${message.intentId}`;
+    return undefined;
+}
+
+function isString(value: string | undefined): value is string {
+    return value !== undefined;
 }
 
 function sameAttachments(first: string[], second: unknown): boolean {

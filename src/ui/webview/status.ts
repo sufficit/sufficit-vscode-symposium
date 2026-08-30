@@ -27,7 +27,9 @@ import {
     activeFilePinned,
     activeFilePreview,
     busy,
+    canSteerInline,
     queued,
+    queueHeld,
     activeModel,
     loading,
     composerBlockedReason,
@@ -37,6 +39,9 @@ import {
 import { modelLabel, reasoningList } from "./models";
 import { normalizeBusySendMode } from "../../protocol/sendMode";
 
+// navigator.userAgentData isn't available in the Electron/webview runtime
+// VS Code ships, so this deprecated API is still the only reliable read here.
+// eslint-disable-next-line @typescript-eslint/no-deprecated
 export const isMac = navigator.platform.indexOf("Mac") === 0;
 export const MOD = isMac ? "⌘" : "Ctrl";
 export const ALT = isMac ? "⌥" : "Alt";
@@ -57,7 +62,7 @@ export const MODE_ICONS: Record<string, string> = {
     send: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.2 2.8 3 8 1.2 13.2a.5.5 0 0 0 .7.6l13-5.5a.5.5 0 0 0 0-.9l-13-5.5a.5.5 0 0 0-.7.6Z"/></svg>',
     // clock (wait, then send)
     queue: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 12.5A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 0 11Z"/><path d="M7.25 4h1.5v4.1l2.9 1.7-.75 1.3-3.65-2.15V4Z"/></svg>',
-    // lightning bolt (interrupt and send now)
+    // lightning bolt (reach the agent mid-turn, without stopping it)
     steer: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M9.4 1 3 9h3.6l-1.3 6 7.7-9.2H9.2L10.5 1H9.4Z"/></svg>',
     // curved arrow (redirect: cancel current, correct next)
     redirect:
@@ -65,8 +70,12 @@ export const MODE_ICONS: Record<string, string> = {
 };
 export const MODE_DESC: Record<string, string> = {
     send: "Send now; queued while a turn runs",
-    queue: "Always wait for the current turn (FIFO)",
-    steer: "Interrupt the running turn, CLEAR the queue, and send immediately",
+    queue: "Wait behind everything already queued (FIFO)",
+    get steer() {
+        return canSteerInline
+            ? "Reach the agent mid-turn without stopping it"
+            : "Sent next, ahead of the queue — this backend cannot interrupt a running turn";
+    },
     redirect: "Cancel the running turn and send the correction next (keeps the queue)",
 };
 export const STOP_ICON =
@@ -140,10 +149,12 @@ export function updateSendTitle() {
         (sendBtn as HTMLButtonElement).disabled = !canSend;
         (sendBtn as HTMLButtonElement).title = canSend
             ? mode === "steer"
-                ? "Steer: interrupt the running turn, clear the queue, and send now (Ctrl/Cmd+Enter) · Esc to stop"
+                ? canSteerInline
+                    ? "Steer: reach the agent during the running turn without stopping it (Ctrl/Cmd+Enter) · Esc to stop"
+                    : "Steer: sent next, ahead of the queue — this backend cannot take a message mid-turn (Ctrl/Cmd+Enter) · Esc to stop"
                 : mode === "redirect"
                   ? "Redirect: cancel the running turn and send the correction next · Esc to stop"
-                  : "Queue: send after the current turn finishes (Alt+Enter) · Esc to stop"
+                  : "Queue: send after everything already queued (Alt+Enter) · Esc to stop"
             : "Type a message to send · Esc to stop";
         sendCaret.style.display = "";
         stopBtn.style.display = "";
@@ -152,21 +163,27 @@ export function updateSendTitle() {
     sendGroup.classList.remove("busy", "redirect", "steer", "stopping");
     sendIcon.innerHTML = MODE_ICONS.send;
     (sendBtn as HTMLButtonElement).disabled = !canSend;
-    (sendBtn as HTMLButtonElement).title = canSend ? "Send (Enter)" : "Type a message to send";
+    (sendBtn as HTMLButtonElement).title = canSend
+        ? queueHeld
+            ? "Send now; paused queue stays unchanged (Enter)"
+            : "Send (Enter)"
+        : "Type a message to send";
     sendCaret.style.display = "none";
     stopBtn.style.display = "none";
 }
 
 export function setStatus(override?: string) {
-    const q = queued > 0 ? " · " + queued + " queued" : "";
+    const queueLabel = queued > 0 ? `${queued} ${queueHeld ? "held after error" : "queued"}` : "";
     status.textContent = composerBlockedReason
         ? ""
         : (override ??
           (busy
-              ? "thinking..." + (activeModel ? " · " + modelLabel(activeModel) : "") + q
-              : activeModel
-                ? "model: " + modelLabel(activeModel)
-                : ""));
+              ? ["thinking...", activeModel ? modelLabel(activeModel) : "", queueLabel]
+                    .filter(Boolean)
+                    .join(" · ")
+              : [activeModel ? "model: " + modelLabel(activeModel) : "", queueLabel]
+                    .filter(Boolean)
+                    .join(" · ")));
     // The model menu remains useful with an empty catalog: it exposes Refresh
     // models and manual entry, which is how a new Sufficit installation recovers
     // after presets/login become available. Reasoning has no such fallback.

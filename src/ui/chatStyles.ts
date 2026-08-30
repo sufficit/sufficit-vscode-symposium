@@ -6,7 +6,6 @@
  * reads that bundle so `chatHtml` can inline it into the <style> block exactly
  * as before — real CSS, not a hand-written string blob.
  */
-import { readFileSync } from "fs";
-import { join } from "path";
+import { readBundleAsset } from "./bundleAsset";
 
-export const chatStyles = readFileSync(join(__dirname, "ui/webview.css"), "utf8");
+export const chatStyles = readBundleAsset("webview.css");

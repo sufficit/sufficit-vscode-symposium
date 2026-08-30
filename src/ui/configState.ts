@@ -1,14 +1,15 @@
 import * as vscode from "vscode";
 import { readToolCredential } from "../config/agentFrontmatter";
 import { removeLegacySufficitToolImports } from "../config/importResources";
-import { ensureSufficitNativeServer, listServers } from "../config/servers";
+import { ensureSufficitNativeServers } from "../config/nativeMcpServers";
+import { listServers } from "../config/servers";
 import { getSttState } from "../voice/sttService";
 import type { ConfigPanelDeps } from "./configTypes";
 
 async function networkState(deps: ConfigPanelDeps) {
     const bridge = vscode.workspace.getConfiguration("symposium.bridge");
     const { getJoinedHostname, checkTailscaleStatus } = await import("../net/tailnet");
-    const { getMachineId } = await import("../net/relayClient");
+    const { getKnownRelayPublicUrl, getMachineId } = await import("../net/relayClient");
     let vpnHostname = getJoinedHostname();
     if (!vpnHostname) {
         const status = await checkTailscaleStatus();
@@ -26,9 +27,7 @@ async function networkState(deps: ConfigPanelDeps) {
         bridgePort: bridge.get<number>("port", 47600),
         relayMode: bridge.get<string>("relay", "auto"),
         relayMachineId: machineId,
-        relayPublicUrl: bridgeEnabled
-            ? `https://ai.sufficit.com.br/symposium?machineId=${machineId}`
-            : undefined,
+        relayPublicUrl: bridgeEnabled ? getKnownRelayPublicUrl() : undefined,
         vpnConnected: !!vpnHostname,
         vpnHostname: vpnHostname ?? undefined,
     };
@@ -44,10 +43,10 @@ export async function buildConfigState(deps: ConfigPanelDeps): Promise<unknown> 
     const networkInfo = await networkState(deps);
     if (profile) {
         try {
-            ensureSufficitNativeServer();
+            ensureSufficitNativeServers();
             removeLegacySufficitToolImports();
         } catch (error) {
-            console.error("Failed to ensure Sufficit native MCP server:", error);
+            console.error("Failed to ensure Sufficit native MCP servers:", error);
         }
     }
     const chat = vscode.workspace.getConfiguration("symposium.chat");
@@ -82,6 +81,7 @@ export async function buildConfigState(deps: ConfigPanelDeps): Promise<unknown> 
             memoryInstruction: chat.get<string>("memoryInstruction"),
             lmTools: root.get<string>("lmTools", "off"),
             turnSilenceMinutes: root.get<number>("turnSilenceMinutes", 5),
+            turnRetrySilenceMinutes: root.get<number>("turnRetrySilenceMinutes", 15),
             maxToolHops: openai.get<number>("maxToolHops", 50),
             noProgressStop: openai.get<number>("noProgressStop", 0),
             autoCompactAt: openai.get<number>("autoCompactAt", 0.8),
@@ -89,6 +89,9 @@ export async function buildConfigState(deps: ConfigPanelDeps): Promise<unknown> 
             maxHistoryMessages: openai.get<number>("maxHistoryMessages", 40),
             timeGapNotice: openai.get<string>("timeGapNotice", "5m"),
             devMode: chat.get<boolean>("devMode", false),
+            ahpDiagnostics: vscode.workspace
+                .getConfiguration("symposium.ahp")
+                .get<boolean>("diagnostics", false),
             sessionCache: chat.get<boolean>("sessionCache", true),
             sessionCacheRam: networkInfo.sessionCacheRam,
             sessionCacheCount: networkInfo.sessionCacheCount,

@@ -199,7 +199,10 @@ export class ConfigPanel {
                     let value: unknown = message.value;
                     if (message.key.endsWith("maxToolHops")) {
                         value = Math.max(1, Number(message.value) || 50);
-                    } else if (message.key.endsWith("turnSilenceMinutes")) {
+                    } else if (
+                        message.key.endsWith("turnSilenceMinutes") ||
+                        message.key.endsWith("turnRetrySilenceMinutes")
+                    ) {
                         value = Math.max(0, Number(message.value) || 0);
                     } else if (message.key.endsWith("noProgressStop")) {
                         value = Math.max(0, Number(message.value) || 0);
@@ -235,6 +238,8 @@ export class ConfigPanel {
                     } else if (message.key === "symposium.chat.sessionCache") {
                         value = message.value === "true";
                     } else if (message.key === "symposium.chat.devMode") {
+                        value = message.value === "true";
+                    } else if (message.key === "symposium.ahp.diagnostics") {
                         value = message.value === "true";
                     } else if (message.key === "symposium.voice.whisper.threads") {
                         value = Math.max(1, Number(message.value) || 4);

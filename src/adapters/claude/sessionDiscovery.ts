@@ -45,6 +45,8 @@ export async function listClaudeSessions(cached: readonly SessionInfo[]): Promis
                     cwd: meta.cwd,
                     gitBranch: meta.gitBranch,
                     lineageId: meta.originSessionId,
+                    model: meta.model,
+                    reasoning: meta.reasoning,
                     updatedAt: stat.mtime,
                     transcriptPath: fullPath,
                 });
@@ -102,6 +104,8 @@ async function listSubagentSessions(
                     gitBranch: meta.gitBranch,
                     parentId,
                     lineageId: parentId,
+                    model: meta.model,
+                    reasoning: meta.reasoning,
                     updatedAt: stat.mtime,
                     transcriptPath: fullPath,
                 });

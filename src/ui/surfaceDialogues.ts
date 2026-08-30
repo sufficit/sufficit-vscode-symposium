@@ -4,7 +4,7 @@ import { readWorkspaceBootstrap } from "../config/root";
 import { activeEditorContext, isSimpleBrowserOpen } from "./chatSurfaceContext";
 import type { WebviewToHost } from "../protocol/chat";
 import { restartFromMessage, retryLastMessage, editResend } from "./surfaceBranching";
-import { handleControllerEvent } from "./surfaceDialoguesAttach";
+import { handleControllerSideEffect } from "./surfaceDialoguesAttach";
 import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import { DEFAULT_BUSY_SEND_MODE } from "../protocol/sendMode";
 import { canonicalReasoning } from "../adapters/reasoning";
@@ -12,6 +12,11 @@ import {
     openTerminalDialogue as openTerminalDialogueFlow,
     type TerminalDialogueOptions,
 } from "./surfaceTerminalDialogue";
+import {
+    restoreOrStart as restoreOrStartFlow,
+    startDefaultDialogue as startDefaultDialogueFlow,
+} from "./surfaceDialoguesStartup";
+import { ensureAllowedWriteRoots } from "./surfaceWriteRoots";
 
 /** Coordinates new, resumed, terminal-backed and read-only dialogues. */
 export type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
@@ -22,46 +27,24 @@ export class SurfaceDialogues {
     /** Prevents an awaited follow operation from attaching to a newer dialogue. */
     private generation = 0;
 
-    /** Restores the last active session on open, or starts a default dialogue. */
-    async restoreOrStart(): Promise<void> {
-        const last = this.d.deps.lastActive.get();
-        if (last) {
-            // Time-bound: a backend's listSessions() (e.g. HTTP model discovery)
-            // can hang on code-server with no network/auth; never let it block
-            // startup and trap the UI on the boot screen.
-            const sessions = await Promise.race([
-                this.d.deps.listSessions().catch(() => [] as SessionInfo[]),
-                new Promise<SessionInfo[]>((resolve) => setTimeout(() => resolve([]), 6000)),
-            ]);
-            const info = sessions.find(
-                (s) => s.sessionId === last.sessionId && s.backend === last.backend,
-            );
-            if (info) {
-                this.openSession(info);
-                return;
-            }
-        }
-        this.startDefaultDialogue();
+    /**
+     * Restores the last active session on open, or starts a default dialogue.
+     * Implemented in surfaceDialoguesStartup.ts.
+     */
+    restoreOrStart(): Promise<void> {
+        return restoreOrStartFlow(
+            this.d,
+            (info) => this.openSession(info),
+            () => this.startDefaultDialogue(),
+        );
     }
 
-    /** Starts a new dialogue with Sufficit AI by default, then falls back to any available backend. */
+    /**
+     * Starts a new dialogue with Sufficit AI by default, then falls back to any
+     * available backend. Implemented in surfaceDialoguesStartup.ts.
+     */
     startDefaultDialogue(): void {
-        const backend = this.d.deps.adapterByBackend.has("openai")
-            ? "openai"
-            : this.d.deps.adapterByBackend.keys().next().value;
-        if (!backend) {
-            void this.d.webview.postMessage({
-                type: "boot",
-                id: "session",
-                label: "No backend available",
-                status: "fail",
-                detail: "configure an adapter",
-            });
-            void this.d.webview.postMessage({ type: "boot", complete: true });
-            return;
-        }
-        const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
-        this.openDialogue(backend, { cwd }, "New dialogue");
+        return startDefaultDialogueFlow(this.d, (b, o, t) => this.openDialogue(b, o, t));
     }
 
     /**
@@ -79,8 +62,8 @@ export class SurfaceDialogues {
      * Plain retry after a transient failure: resends the same text to the
      * CURRENT session, no branching. Implemented in surfaceBranching.ts.
      */
-    retryLastMessage(index: number, errorMessage?: string): void {
-        return retryLastMessage(this.d, index, errorMessage);
+    retryLastMessage(index: number, errorMessage?: string, expectedText?: string): void {
+        return retryLastMessage(this.d, index, errorMessage, expectedText);
     }
 
     /**
@@ -110,6 +93,7 @@ export class SurfaceDialogues {
                 cwd: this.d.deps.cwdFor(info),
                 resumeSessionId: info.sessionId,
                 model: info.model,
+                reasoning: info.reasoning,
                 lineageId: info.lineageId,
             },
             info.title,
@@ -162,6 +146,7 @@ export class SurfaceDialogues {
             whenBusy: vscode.workspace
                 .getConfiguration("symposium.chat")
                 .get("whenBusy", DEFAULT_BUSY_SEND_MODE),
+            canSteerInline: adapter.supportsInlineSteer?.() === true,
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
             openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace
@@ -172,7 +157,7 @@ export class SurfaceDialogues {
         if (adapter.history) {
             let messages: HistoryMessage[] | undefined;
             try {
-                messages = await adapter.history(info);
+                messages = (await adapter.history(info)).messages;
             } catch {
                 // ignore; live tail still attaches below
             }
@@ -233,27 +218,7 @@ export class SurfaceDialogues {
         if (!adapter) {
             return;
         }
-        // Write-root guardrail (delivery 1E): scope the agent's writes to the
-        // open workspace folders so it can't write across repo boundaries or
-        // into files outside the authorized workspace. Empty when no folders
-        // are open (no containment, preserving the unrestricted default).
-        if (!options.allowedWriteRoots || options.allowedWriteRoots.length === 0) {
-            const folders = vscode.workspace.workspaceFolders ?? [];
-            if (folders.length) {
-                options = { ...options, allowedWriteRoots: folders.map((f) => f.uri.fsPath) };
-            } else {
-                // No workspace folder open → write containment is off. Surface a
-                // notice so the user knows the agent is unrestricted (defect 6.3):
-                // a silent unrestricted agent is a footgun.
-                this.d.post({
-                    type: "event",
-                    event: {
-                        kind: "status-notice",
-                        text: "No workspace folder open — write-root containment is OFF. The agent can write to any path.",
-                    },
-                });
-            }
-        }
+        options = ensureAllowedWriteRoots(options, this.d.post);
         const generation = ++this.generation;
         this.d.setSendBlockedReason(undefined);
         this.d.detachActive();
@@ -293,10 +258,12 @@ export class SurfaceDialogues {
         // A persisted terminal outcome belongs to the previous interaction.
         // Opening/resuming the session acknowledges it; only a failure from the
         // current controller should produce the live red status indicator.
-        // Restore the exact visual for a reopened session: seed the render log
-        // (replayed when the sink binds below) so tool rows, diffs, status notices
-        // and panels reappear — not just text. Skips lossy history reconstruction.
+        // Restore persisted internal events before rebuilding the authoritative
+        // AHP projection for a reopened session.
         const seededVisual = !existing && !!options.resumeSessionId && controller.seedRenderLog();
+        if (seededVisual && controller.sessionKey) {
+            this.d.deps.ahp.rebuild(backend, controller.sessionKey);
+        }
         this.d.setController(controller);
         void this.d.sync.refreshTasks(); // load this session's tasks into the panel
         void this.d.sync.refreshGuardrails();
@@ -365,6 +332,7 @@ export class SurfaceDialogues {
             whenBusy: vscode.workspace
                 .getConfiguration("symposium.chat")
                 .get("whenBusy", DEFAULT_BUSY_SEND_MODE),
+            canSteerInline: adapter.supportsInlineSteer?.() === true,
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
             openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace
@@ -372,18 +340,37 @@ export class SurfaceDialogues {
                 .get<string>("shellExecution", "silent"),
         });
         this.d.activateUsage(adapter);
-        this.d.setControllerDetach(
-            controller.attach((message) => handleControllerEvent(this.d, backend, message)),
+        const ahpDetach = this.d.bindAhp(backend, controller);
+        const sideEffectDetach = controller.subscribeLive((message) =>
+            handleControllerSideEffect(this.d, backend, message),
         );
-        if (!existing && info && !seededVisual) {
-            void controller.loadHistory(info).finally(() => {
+        this.d.setControllerDetach(() => {
+            sideEffectDetach();
+            ahpDetach?.();
+        });
+        if (info && (existing || !seededVisual || ahpDetach)) {
+            // In AHP mode the webview renders ChatState.turns, which are only
+            // populated by the {type:"history"} envelope that loadHistory emits
+            // (projectionRuntime.onMessage → chat/turnsLoaded). The seeded visual
+            // log does not produce a history envelope for the AHP runtime, so sessions
+            // opened with a persisted render log would otherwise show no turns.
+            //
+            // Re-sync the projection runtime so the just-created controller appears
+            // in source.list() and gets an AHP record before the history
+            // envelope is emitted — otherwise the projection has no observer and the
+            // turns are silently dropped.
+            this.d.deps.ahp.sync();
+            // A live controller can outlive its webview while its restored AHP
+            // channel is empty/stale. Re-project authoritative history on every
+            // reopen; when the stream is already seeded, keep that derived page
+            // transient so it cannot duplicate the persisted render ledger.
+            void controller.loadHistory(info, !!existing || seededVisual).finally(() => {
                 if (generation === this.generation) {
                     this.d.post({ type: "history-end" });
                 }
             });
         } else if (historyPending) {
-            // Existing controllers and persisted visual logs replay
-            // synchronously during attach(), so their tail is ready now.
+            // Existing controllers already have an AHP snapshot, so their tail is ready now.
             this.d.post({ type: "history-end" });
         }
         if (options.resumeSessionId) {

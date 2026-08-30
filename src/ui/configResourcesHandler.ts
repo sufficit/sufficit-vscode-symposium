@@ -5,7 +5,7 @@ import type { ConfigHandlerCtx, ConfigMessage } from "./configTypes";
 /**
  * Handles resource-management webview messages (seed/import/new/delete agents,
  * tools, instructions, skills, plus open-root/open-file) for a live ConfigPanel.
- * Mirrors the controllerMessageHandler precedent. Returns true when handled,
+ * Follows the free-function handler pattern. Returns true when handled,
  * false otherwise.
  *
  * Case bodies are moved verbatim from ConfigPanel; only `this.X` was rewritten

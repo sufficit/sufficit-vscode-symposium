@@ -1,4 +1,8 @@
-import { clearSessionGuardrails, saveGuardrail } from "../../sync/guardrails";
+import {
+    clearSessionGuardrails,
+    MAX_GUARDRAIL_TEXT_LENGTH,
+    saveGuardrail,
+} from "../../sync/guardrails";
 import { LocalMemory } from "./localMemory";
 import type { ToolContext } from "./types";
 
@@ -34,32 +38,23 @@ async function search(args: Record<string, unknown>, ctx: ToolContext): Promise<
         query: String(args.query ?? ""),
         type: args.type ? String(args.type) : undefined,
         limit: typeof args.limit === "number" ? args.limit : undefined,
+        strategy: memorySearchStrategy(args.strategy),
+        maxTokens: typeof args.maxTokens === "number" ? args.maxTokens : 1_600,
+        diversityLambda: typeof args.diversityLambda === "number" ? args.diversityLambda : 0.65,
     };
     try {
-        return JSON.stringify(await ctx.hub.searchMemory(query));
+        return JSON.stringify(await ctx.hub.searchMemory(query, ctx.sessionId));
     } catch (error) {
-        warnFallback("searchMemory", error);
-        return JSON.stringify({
-            _notice:
-                "SHARED MEMORY UNAVAILABLE: Using local fallback. Results are from local session storage only, not from shared cross-agent knowledge.",
-            _memory_source: "local_fallback",
-            records: await new LocalMemory().searchMemory(query),
-        });
+        return remoteMemoryError("searchMemory", error);
     }
 }
 
 async function getObservations(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const ids = Array.isArray(args.ids) ? args.ids.map(String) : [];
     try {
-        return JSON.stringify(await ctx.hub.getByIds(ids));
+        return JSON.stringify(await ctx.hub.getByIds(ids, ctx.sessionId));
     } catch (error) {
-        warnFallback("getByIds", error);
-        return JSON.stringify({
-            _notice:
-                "SHARED MEMORY UNAVAILABLE: Using local fallback. Observations are from local session storage only, not from shared cross-agent knowledge.",
-            _memory_source: "local_fallback",
-            observations: await new LocalMemory().getByIds(ids),
-        });
+        return remoteMemoryError("getByIds", error);
     }
 }
 
@@ -84,24 +79,34 @@ async function save(args: Record<string, unknown>, ctx: ToolContext): Promise<st
         });
         return JSON.stringify({ id });
     } catch (error) {
-        warnFallback("save", error);
-        const id = await new LocalMemory().save({ ...entry, type });
-        return JSON.stringify({
-            id,
-            _notice:
-                "SHARED MEMORY UNAVAILABLE: Saved to local fallback storage only. This observation is NOT available in shared cross-agent knowledge.",
-            _memory_source: "local_fallback",
-        });
+        return remoteMemoryError("save", error);
     }
 }
 
 async function addGuardrail(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const text = String(args.text ?? "").trim();
     if (!text) return JSON.stringify({ error: "text is required" });
+    if (text.length > MAX_GUARDRAIL_TEXT_LENGTH) {
+        return JSON.stringify({ error: `text exceeds ${MAX_GUARDRAIL_TEXT_LENGTH} characters` });
+    }
     if (!ctx.sessionId) return JSON.stringify({ error: "no current session" });
+    const origin =
+        args.origin === "user-approved" || args.origin === "agent-requested"
+            ? args.origin
+            : "agent-requested";
+    const expiresAtUtc =
+        typeof args.expiresAtUtc === "string" && args.expiresAtUtc.trim()
+            ? args.expiresAtUtc.trim()
+            : undefined;
+    if (expiresAtUtc) {
+        const expiry = Date.parse(expiresAtUtc);
+        if (!Number.isFinite(expiry) || expiry <= Date.now()) {
+            return JSON.stringify({ error: "expiresAtUtc must be a valid future timestamp" });
+        }
+    }
     try {
         if (!ctx.hub.configured()) throw new Error("memory hub not configured");
-        const id = await saveGuardrail(ctx.hub, ctx.sessionId, text);
+        const id = await saveGuardrail(ctx.hub, ctx.sessionId, text, { origin, expiresAtUtc });
         return id ? JSON.stringify({ id }) : JSON.stringify({ error: "save failed" });
     } catch (error) {
         warnFallback("saveGuardrail", error);
@@ -109,7 +114,8 @@ async function addGuardrail(args: Record<string, unknown>, ctx: ToolContext): Pr
             type: "guardrail",
             title: `Guardrail for session ${ctx.sessionId}`,
             summary: text,
-            tags: `symposium-session:${ctx.sessionId},guardrail`,
+            tags: `symposium-session:${ctx.sessionId},guardrail,origin:${origin}`,
+            expiresAtUtc,
         });
         return JSON.stringify({
             id: id.id,
@@ -153,4 +159,19 @@ function warnFallback(operation: string, error: unknown): void {
     console.warn(
         `[Symposium] Hub ${operation} failed, using local memory: ${error instanceof Error ? error.message : String(error)}`,
     );
+}
+
+function remoteMemoryError(operation: string, error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[Symposium] Hub ${operation} failed: ${message}`);
+    return JSON.stringify({
+        error: `Memory ${operation} failed: ${message}`,
+        retryable: true,
+        _memory_source: "remote_unavailable",
+        _notice: "No local fallback was read or written.",
+    });
+}
+
+function memorySearchStrategy(value: unknown): "Exact" | "Semantic" | "Hybrid" {
+    return value === "Exact" || value === "Semantic" || value === "Hybrid" ? value : "Hybrid";
 }

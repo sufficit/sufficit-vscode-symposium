@@ -45,5 +45,5 @@ can become a client-facing authority.
 ## Remaining work
 
 Host models, event projection, persistence, authenticated WebSocket transport,
-PWA/editor migration and optional channels remain in
-[`PLAN-AHP-PHASES-1-6.md`](../PLAN-AHP-PHASES-1-6.md).
+PWA/editor migration and optional channels remain open. Their independent
+plans are indexed in [`AHP-ADOPTION.md`](../AHP-ADOPTION.md#execution-backlog).

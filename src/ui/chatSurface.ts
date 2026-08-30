@@ -14,17 +14,14 @@ import { HubClient } from "../sync/hubClient";
 import { pushVoicePreferences } from "./voicePreferences";
 import type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 import { registerChatSurfaceListeners } from "./chatSurfaceListeners";
-import { buildSurfaceLanguageHint } from "./chatSurfaceLanguage";
+import { buildSurfaceLanguageHint, resolveSurfaceLanguage } from "./chatSurfaceLanguage";
 import { SurfaceQuota } from "./surfaceQuota";
+import { AhpMessagePortTransport } from "../ahp/messagePortTransport";
+import { createSurfaceAhpPort } from "./surfaceAhp";
 
 export type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
-/**
- * Wires one webview (sidebar view or editor panel) to the chat machinery:
- * ready handshake with queued posts (postMessage before the webview script
- * is live is silently dropped), the in-webview sessions list, and dialogue
- * switching without rebuilding the HTML.
- */
+/** Wires one sidebar/editor webview to the shared chat machinery. */
 export class ChatSurface {
     private controller: ChatController | undefined;
     private controllerDetach: (() => void) | undefined;
@@ -42,6 +39,7 @@ export class ChatSurface {
     });
 
     private readonly disposables: vscode.Disposable[] = [];
+    private readonly ahpPort: AhpMessagePortTransport;
     private readonly changedFiles = new ChangedFilesManager(
         {
             post: (m) => this.post(m),
@@ -86,10 +84,14 @@ export class ChatSurface {
         // Restores this exact webview after a host command temporarily moves
         // workbench focus away (notably VS Code's editor-dictation command).
         private readonly reveal?: () => void | Thenable<void>,
-        // Editor panels show only the open conversation; the sidebar shows the
-        // sessions list beside it.
         private readonly chatOnly = false,
+        private readonly startInSessionsList = false,
     ) {
+        this.ahpPort = createSurfaceAhpPort(
+            this.deps,
+            (message) => this.post(message),
+            this.onSessionCreated,
+        );
         this.dialogues = new SurfaceDialogues({
             deps: this.deps,
             chatOnly: this.chatOnly,
@@ -102,6 +104,11 @@ export class ChatSurface {
             setControllerDetach: (detach) => {
                 this.controllerDetach = detach;
             },
+            bindAhp: (backend, controller) => {
+                const sessionId = controller.sessionKey ?? controller.sessionId;
+                return sessionId ? this.ahpPort.bind(backend, sessionId) : undefined;
+            },
+            dispatchAhp: (message) => this.ahpPort.handleMessage(message),
             onSessionCreated: (sessionId) => this.onSessionCreated?.(sessionId),
             setTerminalSession: (t) => {
                 this.terminalSession = t;
@@ -130,6 +137,7 @@ export class ChatSurface {
             markReady: () => this.markReady(),
             refreshSessions: () => this.refreshSessions(),
             refreshQuotas: (force) => this.quota.refresh(force),
+            startInSessionsList: this.startInSessionsList,
             openSession: (info) => this.openSession(info),
             restoreFocus: async () => {
                 await this.reveal?.();
@@ -144,9 +152,15 @@ export class ChatSurface {
             handoff: this.handoff,
             changedFiles: this.changedFiles,
             hub: this.hub,
+            ahp: this.ahpPort,
         });
         webview.options = { enableScripts: true };
-        webview.html = renderHtml();
+        const version = (
+            vscode.extensions.getExtension("sufficit.sufficit-vscode-symposium")?.packageJSON as
+                | { version?: string }
+                | undefined
+        )?.version;
+        webview.html = renderHtml(version);
         webview.onDidReceiveMessage((message) => void this.onMessage(message));
         registerChatSurfaceListeners({
             deps: this.deps,
@@ -196,18 +210,16 @@ export class ChatSurface {
             label: "Extension host connected",
             status: "ok",
         });
-        // Localize the webview UI: same precedence as the AI language hint
-        // (symposium.chat.preferredLanguage, else VS Code's display language).
-        const langCfg = vscode.workspace.getConfiguration("symposium.chat");
-        const lang =
-            langCfg.get<string>("preferredLanguage", "").trim() || vscode.env.language || "en";
-        void this.webview.postMessage({ type: "setLang", lang });
+        // Localize the webview UI: same precedence as the AI language hint.
+        void this.webview.postMessage({ type: "setLang", lang: resolveSurfaceLanguage() });
 
         this.pushVoicePreferences();
         const openIn = vscode.workspace
             .getConfiguration("symposium.chat")
             .get<string>("openIn", "editor");
-        this.post({ type: "prefs", openIn, sessionsOnly: !this.chatOnly && openIn === "editor" });
+        const sessionsOnly = this.startInSessionsList || (!this.chatOnly && openIn === "editor");
+        const chatOnly = this.chatOnly && !this.startInSessionsList;
+        this.post({ type: "prefs", openIn, sessionsOnly, chatOnly });
 
         for (const queued of this.queue) {
             void this.webview.postMessage(queued);
@@ -381,6 +393,7 @@ export class ChatSurface {
         // survive the view/panel being closed.
         this.detachActive();
         this.quota.dispose();
+        this.ahpPort.dispose();
         this.disposables.forEach((d) => d.dispose());
         this.disposables.length = 0;
     }

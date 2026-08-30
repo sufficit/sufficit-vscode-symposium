@@ -1,6 +1,6 @@
 export function isBridgeAuthorized(
     authorizationHeader: string | string[] | undefined,
-    url: URL,
+    _url: URL,
     token: string,
     customTokenHeader?: string | string[] | undefined,
 ): boolean {
@@ -14,11 +14,7 @@ export function isBridgeAuthorized(
     if (typeof customTokenHeader === "string" && customTokenHeader === token) {
         return true;
     }
-    // EventSource cannot set headers, so allow query-token auth only for
-    // GET /sessions/:id/follow SSE consumers. Every other endpoint, including
-    // /vault/resolve, must use Authorization: Bearer / X-Symposium-Token.
-    return (
-        /^\/sessions\/[^/]+\/follow\/?$/.test(url.pathname) &&
-        url.searchParams.get("token") === token
-    );
+    // Query-string credentials are intentionally rejected. Browser clients use
+    // the authenticated AHP WebSocket and HTTP callers must use a header.
+    return false;
 }

@@ -204,7 +204,11 @@ export function send(modeOverride = "") {
     // bubble now would splice it into the middle of the still-streaming turn;
     // the Queued panel already reflects it. The real "user" event (fired at
     // actual dispatch time) creates the bubble then, in the right order.
-    // Steer interrupts immediately, so it stays optimistic.
+    // Steer is the exception: backends that can splice it into the running turn
+    // never put it in the Queued panel, so without a bubble the message would
+    // be invisible until the next hop lands. Show it dimmed and let the host
+    // resolve it — a "user" row confirms it, a "queue" snapshot withdraws it
+    // when the backend turned out not to be able to take it.
     if (clientMessageId && (!busy || effectiveMode === "steer")) {
         addOptimisticUserMessage(clientMessageId, text);
     }

@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+    Compactor,
     SUMMARY_PREFIX,
     SUMMARY_BODY_INTRO,
     hasNewMessagesSinceCompaction,
     renormalizeSummary,
 } from "../adapters/openai/compactor";
+import type { ChatMessage } from "../adapters/openai/types";
 
 // --- Regressão entrega 0B: compactação é REFERENCE ONLY, não executável ---
 // O defeito: um summary imperativo ("Immediate next actions", pseudo tool calls)
@@ -118,4 +120,47 @@ test("reference-only summary does not itself contain forbidden headings", () => 
         SUMMARY_BODY_INTRO,
         /##\s*(Active Task|Immediate next actions|Remaining work|Next steps)/i,
     );
+});
+
+test("compaction request carries session provenance but opts out of memory learning", async () => {
+    const originalFetch = globalThis.fetch;
+    let capturedBody: Record<string, unknown> | undefined;
+    let capturedHeaders: Headers | undefined;
+    globalThis.fetch = ((_url: string | URL, init?: RequestInit) => {
+        capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        capturedHeaders = new Headers(init?.headers);
+        return Promise.resolve(new Response("", { status: 500 }));
+    }) as typeof fetch;
+    const messages: ChatMessage[] = Array.from({ length: 10 }, (_, index) => ({
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message-${index}`,
+    }));
+    const compactor = new Compactor({
+        cfg: {
+            api: "chat",
+            baseUrl: "https://ai.example.test/openai/v1",
+            model: "preset-test",
+            models: ["preset-test"],
+            headers: {},
+        },
+        sessionId: "compaction-session",
+        getMessages: () => messages,
+        getTurnNo: () => 1,
+        getLastInputTokens: () => 0,
+        model: () => "preset-test",
+        contextWindow: () => 100_000,
+        authToken: () => Promise.resolve("token"),
+        headers: () => ({ authorization: "Bearer token" }),
+        emit: () => undefined,
+        safePersist: () => undefined,
+    });
+
+    try {
+        assert.equal(await compactor.compact("auto"), false);
+        assert.equal(capturedBody?.session_id, "compaction-session");
+        assert.equal(capturedHeaders?.get("X-Symposium-Session-Id"), "compaction-session");
+        assert.equal(capturedHeaders?.get("X-Sufficit-Memory-Learning"), "off");
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
 });

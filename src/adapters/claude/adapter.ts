@@ -13,6 +13,7 @@ import {
     AgentSession,
     FollowHandle,
     HistoryMessage,
+    HistoryPage,
     SessionInfo,
     SessionStartOptions,
     SlashCommand,
@@ -20,7 +21,12 @@ import {
 import { getCached, setCached, ModelCacheEntry } from "../modelCache";
 import { ClaudeAdapterConfig, ClaudeSession } from "./session";
 import { claudeOAuthToken } from "./credentials";
-import { readJsonlTail } from "../jsonlPrefix";
+import {
+    decodeHistoryCursor,
+    encodeHistoryCursor,
+    readJsonlRange,
+    readJsonlTail,
+} from "../jsonlPrefix";
 import { parseTranscriptLine } from "./transcript";
 import { listClaudeSessions } from "./sessionDiscovery";
 import { followClaudeSession } from "./claudeFollow";
@@ -256,21 +262,39 @@ export class ClaudeAdapter implements AgentAdapter {
      * Rebuilds the dialogue from the transcript JSONL. Tool noise is
      * reduced to one line per tool call; meta/system entries are skipped.
      */
-    async history(info: SessionInfo): Promise<HistoryMessage[]> {
+    async history(info: SessionInfo, cursor?: string): Promise<HistoryPage> {
         const file = info.transcriptPath ?? (await this.findTranscript(info.sessionId));
         if (!file) {
-            return [];
+            return { messages: [] };
         }
         // Restore the recent transcript page from the physical tail. Reading a
         // 100+ MB JSONL file before opening its tab freezes the WSL extension
         // host; Claude Code likewise resumes by id instead of replaying it all.
-        const content = await readJsonlTail(file, 4 * 1024 * 1024);
+        const endByte = decodeHistoryCursor(cursor);
+        const PAGE_BYTES = 1024 * 1024;
+        let content: string;
+        let nextEndByte: number | undefined;
+        if (endByte === undefined) {
+            content = await readJsonlTail(file, 4 * 1024 * 1024);
+            try {
+                const stat = await fs.promises.stat(file);
+                nextEndByte = Math.max(0, stat.size - 4 * 1024 * 1024);
+                if (nextEndByte === 0) nextEndByte = undefined;
+            } catch {
+                nextEndByte = undefined;
+            }
+        } else {
+            const range = await readJsonlRange(file, endByte, PAGE_BYTES);
+            content = range.content;
+            nextEndByte = range.nextEndByte;
+        }
         const messages: HistoryMessage[] = [];
         const taskTracker = new ClaudeTaskTracker();
         for (const line of content.split("\n")) {
             messages.push(...parseTranscriptLine(line, taskTracker));
         }
-        return messages;
+        const nextCursor = nextEndByte !== undefined ? encodeHistoryCursor(nextEndByte) : undefined;
+        return { messages, nextCursor };
     }
 
     /**
