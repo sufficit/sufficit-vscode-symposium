@@ -39,6 +39,9 @@ export function extractWorkspaceCwd(content: string): string | undefined {
 /** Reads basic session metadata from a Gemini/Antigravity transcript.jsonl file. */
 export async function readGeminiMeta(filePath: string): Promise<GeminiSessionMeta> {
     const meta: GeminiSessionMeta = {};
+    if (!fs.existsSync(filePath)) {
+        return meta;
+    }
     let fileStream: fs.ReadStream;
     try {
         fileStream = fs.createReadStream(filePath, { encoding: "utf8" });
