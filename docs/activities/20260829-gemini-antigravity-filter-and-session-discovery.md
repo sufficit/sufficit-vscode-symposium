@@ -43,3 +43,4 @@ Antigravity sessions in Sufficit Symposium.
 - Typecheck, webview typecheck, ESLint and Prettier passed.
 - Engineering guardrails passed for 416 production TypeScript modules with zero
   dependency cycles and zero unreachable modules.
+- The reviewed host bundle is ~793 KiB; its explicit VSIX budget is 800 KiB.
