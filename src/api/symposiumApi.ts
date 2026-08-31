@@ -28,6 +28,8 @@ import type {
     PendingMessage,
     SendMode as ControllerSendMode,
 } from "../application/controllerQueue";
+import { SYMPOSIUM_FEATURE_VERSIONS, type FeatureVersionMap } from "../features";
+import { API_FEATURE_VERSION } from "./feature";
 
 // Re-export the public types of the extracted backend/settings slices so that
 // imports from "./symposiumApi" (bridge.ts, extension.ts, ui/configPanel.ts)
@@ -58,6 +60,8 @@ export type ApiSendOptions = Omit<PendingMessage, "text" | "clientMessageId" | "
  */
 export interface SymposiumApi {
     readonly version: string;
+    /** Independent versions of all public feature namespaces in this installation. */
+    readonly features: FeatureVersionMap;
 
     sessions: {
         /** Live sessions (running or idle) currently managed by Symposium. */
@@ -178,7 +182,7 @@ export interface SymposiumApiDeps {
     onSessionsChanged: vscode.Event<void>;
 }
 
-export const API_VERSION = "1.0.0";
+export const API_VERSION = API_FEATURE_VERSION;
 
 /** Builds the public API facade over the running extension state. */
 export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
@@ -216,6 +220,7 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
 
     return {
         version: API_VERSION,
+        features: SYMPOSIUM_FEATURE_VERSIONS,
 
         sessions: {
             list: () => deps.live.liveInfos(),

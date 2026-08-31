@@ -204,6 +204,12 @@ export class ConfigPanel {
                         message.key.endsWith("turnRetrySilenceMinutes")
                     ) {
                         value = Math.max(0, Number(message.value) || 0);
+                    } else if (message.key.endsWith("transientRetryLimit")) {
+                        const parsed = Number(message.value);
+                        value = [0, 2, 3, 5].includes(parsed) ? parsed : 3;
+                    } else if (message.key.endsWith("retryInitialDelayMilliseconds")) {
+                        const parsed = Number(message.value);
+                        value = [1_000, 2_000, 5_000].includes(parsed) ? parsed : 1_000;
                     } else if (message.key.endsWith("noProgressStop")) {
                         value = Math.max(0, Number(message.value) || 0);
                     } else if (message.key.endsWith("autoCompactAt")) {

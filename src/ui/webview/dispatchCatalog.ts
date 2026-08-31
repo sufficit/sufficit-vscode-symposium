@@ -58,6 +58,7 @@ type HistoryMessage = HistoryToolOptions & {
     toolName?: string;
     detail?: string;
     severity?: "info" | "warning" | "error";
+    retryable?: boolean;
 };
 type HistoryPayload = {
     carried?: boolean;

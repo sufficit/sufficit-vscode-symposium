@@ -1,6 +1,7 @@
 import type { ActionEnvelope, Snapshot } from "@microsoft/agent-host-protocol";
 import { AHP_ROOT_URI, parseAhpUri } from "./channelUris";
 import type { AhpRuntimeExport, AhpSessionHandle } from "./hostRuntime";
+import { AHP_FEATURE_VERSION } from "./feature";
 
 /**
  * Structural validation for persisted AHP state, plus the byte accounting the
@@ -9,7 +10,7 @@ import type { AhpRuntimeExport, AhpSessionHandle } from "./hostRuntime";
  * file loads and whether a save has to compact first.
  */
 
-export const AHP_PROTOCOL_VERSION = "0.6.0";
+export const AHP_PROTOCOL_VERSION = AHP_FEATURE_VERSION;
 export const AHP_SCHEMA_VERSION = 1;
 
 export interface PersistenceEnvelope {

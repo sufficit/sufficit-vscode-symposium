@@ -79,6 +79,7 @@ export class ChatController {
     private readonly live = new ControllerLiveState({
         armWatchdog: () => this.runner.armWatchdog(),
         clearWatchdog: () => this.runner.clearWatchdog(),
+        observeEvent: (event) => this.runner.observeEvent(event),
         emit: (message) => this.emit(message),
         statusChanged: () => this.onStatusChange?.(),
         recordChanged: (file, added, removed) => {
@@ -103,6 +104,7 @@ export class ChatController {
         dispatch: (message) => this.dispatchOwned(message),
         canMutateQueue: () => this.renderPersistence.canDispatch(),
         emitPeerQueueCommand: (command) => this.stream.emit(command),
+        cancelAutomaticRetry: () => this.runner.cancelAutomaticRetry(),
         log: (message) => this.onLog?.(message),
     });
     private readonly runner: ControllerTurnRunner;
@@ -162,7 +164,7 @@ export class ChatController {
     }
 
     get isBusy(): boolean {
-        return this.live.busy || this.renderPersistence.peerBusy;
+        return this.live.busy || this.runner.retryPending || this.renderPersistence.peerBusy;
     }
 
     get attentionStatus(): SessionTerminalStatus | undefined {
@@ -233,7 +235,7 @@ export class ChatController {
         // idea about. Live observers get no replay, so without an immediate
         // snapshot nothing ever contradicts those rows and they stay in the
         // Queued panel forever.
-        observer(createQueueSnapshot(this.queue, this.live.busy));
+        observer(createQueueSnapshot(this.queue, this.isBusy));
         observer({ type: "changed-files", items: this.changedItemsRaw() });
         return detach;
     }
@@ -293,8 +295,8 @@ export class ChatController {
             title: "Attach files to the message",
         });
     }
-
     private onSend(msg: PendingMessage, mode: SendMode): void {
+        this.runner.cancelAutomaticRetry();
         routeControllerSend(msg, mode, {
             queue: this.queue,
             dedup: this.dedup,
@@ -314,7 +316,7 @@ export class ChatController {
     }
 
     private emitQueue(): void {
-        this.emit(createQueueSnapshot(this.queue, this.live.busy));
+        this.emit(createQueueSnapshot(this.queue, this.isBusy));
     }
 
     private dispatchOwned(message: PendingMessage, options: QueueDispatchOptions = {}): void {
@@ -334,7 +336,7 @@ export class ChatController {
             isOwner: this.renderPersistence.isOwner,
             emitCanonical: () => this.emitQueue(),
             ingestNormalized: (normalized) => this.stream.ingestPersisted(normalized),
-            snapshot: () => createQueueSnapshot(this.queue, this.live.busy),
+            snapshot: () => createQueueSnapshot(this.queue, this.isBusy),
             drain: () => this.drainExternalQueueIfOwner(),
             applyCommand: (command) => applyPeerQueueCommand(command, this.client, this.onLog),
         });
@@ -343,7 +345,7 @@ export class ChatController {
     private drainExternalQueueIfOwner(): void {
         if (
             !this.renderPersistence.isOwner ||
-            this.live.busy ||
+            this.isBusy ||
             this.queue.isHeld ||
             this.queue.isEmpty
         ) {
@@ -389,6 +391,7 @@ export class ChatController {
 
     dispose(): void {
         this.runner.clearWatchdog();
+        this.runner.cancelAutomaticRetry();
         this.session?.dispose();
         this.session = undefined;
         this.renderPersistence.dispose();

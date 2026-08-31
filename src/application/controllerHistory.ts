@@ -83,6 +83,12 @@ function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
                     ...(reasoning ? { reasoning } : {}),
                     ...(row.ts !== undefined ? { ts: row.ts } : {}),
                 });
+            } else if (row.role === "error") {
+                messages.push({
+                    role: "error",
+                    text: row.text,
+                    ...(row.retryable === true ? { retryable: true } : {}),
+                });
             } else if (row.role === "status-notice") {
                 messages.push({ role: "status-notice", text: row.text, severity: row.severity });
             }

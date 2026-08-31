@@ -8,7 +8,13 @@
  * every turn-termination path still routes through `completeTurn`
  * (controllerTurnCompletion.ts).
  */
-import type { AgentAdapter, AgentSession, SessionStartOptions } from "../adapters/types";
+import type {
+    AgentAdapter,
+    AgentEvent,
+    AgentSession,
+    SessionStartOptions,
+} from "../adapters/types";
+import { TransientRetryController } from "../recovery/transientRetry";
 import type { HubClient } from "../sync/hubClient";
 import { dispatchControllerMessage } from "./controllerDispatch";
 import type { HubState } from "./controllerHubState";
@@ -66,13 +72,35 @@ export class ControllerTurnRunner {
     private readonly watchdogState = {
         timer: undefined as ReturnType<typeof setTimeout> | undefined,
     };
+    private readonly transientRetry: TransientRetryController;
 
-    constructor(private readonly deps: ControllerTurnRunnerDeps) {}
+    constructor(private readonly deps: ControllerTurnRunnerDeps) {
+        this.transientRetry = new TransientRetryController({
+            clock: deps.ports.clock,
+            configuration: deps.ports.configuration,
+            emit: deps.emit,
+            dispatch: (message) => void this.dispatch(message),
+            statusChanged: deps.statusChanged,
+            log: deps.log,
+        });
+    }
 
     /** Whether a silence watchdog is currently pending — a controller
      *  reattached while busy needs one rearmed. */
     get watching(): boolean {
         return !!this.watchdogState.timer;
+    }
+
+    get retryPending(): boolean {
+        return this.transientRetry.pending;
+    }
+
+    observeEvent(event: AgentEvent): boolean {
+        return this.transientRetry.observe(event);
+    }
+
+    cancelAutomaticRetry(): boolean {
+        return this.transientRetry.cancel();
     }
 
     armWatchdog(): void {
@@ -93,6 +121,7 @@ export class ControllerTurnRunner {
         const turn = this.deps.live.turns.begin(turnOriginOf(message), {
             intentId: message.intentId,
         });
+        this.transientRetry.begin(turn, message);
         // Start from the user's explicit dispatch, not from the previous
         // attempt's deadline or from the first provider event. This resets the
         // retry clock immediately, including slow adapter startup.
@@ -143,6 +172,7 @@ export class ControllerTurnRunner {
             holdQueue: (hold) => this.deps.queue.hold(hold),
             queuedCount: () => this.deps.queue.length,
             releaseOwnership: this.deps.releaseOwnership,
+            recoverFailedTurn: (turn) => this.transientRetry.recover(turn),
             log: this.deps.log,
         };
     }
@@ -153,7 +183,14 @@ export class ControllerTurnRunner {
             completeTurn: (turn, outcome) =>
                 completeTurn(turn, this.completionContext(), { outcome, emitTurnEnd: true }),
             cancel: () => this.deps.getSession()?.cancel(),
-            emit: this.deps.emit,
+            emit: (message) => {
+                const value = message as { type?: unknown; event?: AgentEvent } | null;
+                if (value?.type === "event" && value.event) {
+                    this.deps.live.eventHandler.handle(value.event);
+                } else {
+                    this.deps.emit(message);
+                }
+            },
             silenceMinutes: () =>
                 this.deps.ports.configuration.get("symposium", "turnSilenceMinutes", 5),
             retrySilenceMinutes: () =>

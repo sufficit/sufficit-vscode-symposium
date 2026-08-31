@@ -221,8 +221,8 @@ export const configViews =
 
     function prefsView() {
         const p = (state && state.prefs) || {};
-        const sel = (key, value, opts) =>
-            '<select class="pref" data-key="' + esc(key) + '">' +
+        const sel = (key, value, opts, disabled) =>
+            '<select class="pref" data-key="' + esc(key) + '"' + (disabled ? ' disabled aria-disabled="true"' : '') + '>' +
             opts.map(o => '<option value="' + esc(o.v) + '"' + (o.v === value ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") +
             "</select>";
         const item = (name, desc, ctl) =>
@@ -269,6 +269,12 @@ export const configViews =
                 item(t("config.prefs.turnRetrySilenceMinutes.name"), t("config.prefs.turnRetrySilenceMinutes.desc"),
                     sel("symposium.turnRetrySilenceMinutes", String(p.turnRetrySilenceMinutes ?? 15),
                         [{ v: "0", l: t("config.value.disabled") }, { v: "5", l: t("config.steps.5min") }, { v: "10", l: t("config.steps.10min") }, { v: "15", l: t("config.steps.15min") }, { v: "20", l: t("config.steps.20min") }, { v: "30", l: t("config.steps.30min") }])) +
+                item(t("config.prefs.transientRetryLimit.name"), t("config.prefs.transientRetryLimit.desc"),
+                    sel("symposium.transientRetryLimit", String(p.transientRetryLimit ?? 3),
+                        [{ v: "0", l: t("config.prefs.transientRetryLimit.off") }, { v: "2", l: t("config.prefs.transientRetryLimit.2") }, { v: "3", l: t("config.prefs.transientRetryLimit.3") }, { v: "5", l: t("config.prefs.transientRetryLimit.5") }])) +
+                item(t("config.prefs.retryInitialDelay.name"), t("config.prefs.retryInitialDelay.desc"),
+                    sel("symposium.retryInitialDelayMilliseconds", String(p.retryInitialDelayMilliseconds ?? 1000),
+                        [{ v: "1000", l: t("config.prefs.retryInitialDelay.1s") }, { v: "2000", l: t("config.prefs.retryInitialDelay.2s") }, { v: "5000", l: t("config.prefs.retryInitialDelay.5s") }], Number(p.transientRetryLimit ?? 3) === 0)) +
                 item(t("config.prefs.autoApprove.name"), t("config.prefs.autoApprove.desc"),
                     sel("chat.tools.global.autoApprove", p.autoApprove ? "true" : "false",
                         [{ v: "true", l: t("config.prefs.autoApprove.yes") }, { v: "false", l: t("config.prefs.autoApprove.no") }]))

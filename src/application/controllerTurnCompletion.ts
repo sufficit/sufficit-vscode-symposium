@@ -24,6 +24,8 @@ export interface TurnCompletionContext {
     holdQueue(hold: QueueHold): void;
     queuedCount(): number;
     releaseOwnership(): void;
+    /** Returns true when bounded recovery owns the next action for this failure. */
+    recoverFailedTurn?(turn: Turn): boolean;
     log?(message: string): void;
 }
 
@@ -53,6 +55,14 @@ export function completeTurn(
                 ...(turn.backendId ? { logicalTurnId: turn.backendId } : {}),
             },
         });
+    }
+    const recoveryScheduled = ctx.recoverFailedTurn?.(turn) ?? false;
+    if (turn.outcome === "failed" && recoveryScheduled) {
+        ctx.statusChanged();
+        // Keep queued work behind the automatic retry and publish the pending
+        // state without turning it into a misleading "held after error" row.
+        ctx.emitQueue();
+        return;
     }
     ctx.statusChanged();
     if (turn.holdsQueue) {

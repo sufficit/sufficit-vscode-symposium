@@ -1,4 +1,4 @@
-import type { TodoItem } from "../adapters/types";
+import type { AgentEvent, TodoItem } from "../adapters/types";
 import { latestTodoSnapshot, todoSnapshotFromRenderMessage } from "./todoState";
 import type { PendingMessage, QueueHold } from "./controllerQueue";
 import { ControllerEventHandler } from "./controllerEventHandler";
@@ -8,6 +8,7 @@ import { TurnTracker } from "./turn";
 interface ControllerLiveStateDeps {
     armWatchdog(): void;
     clearWatchdog(): void;
+    observeEvent?(event: AgentEvent): boolean;
     emit(message: unknown): void;
     statusChanged(): void;
     recordChanged(file: string, added?: number, removed?: number): void;
@@ -36,6 +37,7 @@ export class ControllerLiveState {
             turns: this.turns,
             armWatchdog: deps.armWatchdog,
             clearWatchdog: deps.clearWatchdog,
+            observeEvent: deps.observeEvent,
             emit: deps.emit,
             statusChanged: deps.statusChanged,
             recordChanged: deps.recordChanged,

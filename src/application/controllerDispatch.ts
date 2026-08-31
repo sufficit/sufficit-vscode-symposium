@@ -5,6 +5,7 @@ import type {
     SessionStartOptions,
 } from "../adapters/types";
 import type { HubClient } from "../sync/hubClient";
+import { isTransientErrorMessage } from "../adapters/transientError";
 import { buildDispatchOutbound } from "./controllerDispatchPrompt";
 import { prepareDispatch } from "./controllerDispatchPrep";
 import type { HubState } from "./controllerHubState";
@@ -54,14 +55,12 @@ export async function dispatchControllerMessage(
     try {
         await prepareAndSend(message, context);
     } catch (error) {
-        context.emit({
-            type: "event",
-            event: {
-                kind: "error",
-                message: error instanceof Error ? error.message : String(error),
-            },
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        context.onSessionEvent({
+            kind: "error",
+            message: errorMessage,
+            retryable: isTransientErrorMessage(errorMessage),
         });
-        context.turn.recordError();
         // The adapter never ran (setup failed before session.send), so
         // nothing else will emit this turn's end — completeTurn must.
         completeTurn(context.turn, context.completion, { emitTurnEnd: true });

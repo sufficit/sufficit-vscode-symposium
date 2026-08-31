@@ -118,6 +118,19 @@ export const CONFIG_PT_MESSAGES: Dict = {
     "config.prefs.turnRetrySilenceMinutes.name": "Tempo limite do retry",
     "config.prefs.turnRetrySilenceMinutes.desc":
         "Janela de silêncio separada para um retry explícito após um turno travado. Evita que o Retry falhe novamente no mesmo limite do turno normal.",
+    "config.prefs.transientRetryLimit.name": "Tentativas automáticas após falha temporária",
+    "config.prefs.transientRetryLimit.desc":
+        "Repete a mesma solicitação somente em falhas transitórias de conexão ou provedor, sem duplicar a mensagem. Para com segurança se já houve resposta ou execução de ferramenta.",
+    "config.prefs.transientRetryLimit.off": "Desativado",
+    "config.prefs.transientRetryLimit.2": "2 tentativas",
+    "config.prefs.transientRetryLimit.3": "3 tentativas (recomendado)",
+    "config.prefs.transientRetryLimit.5": "5 tentativas",
+    "config.prefs.retryInitialDelay.name": "Primeira pausa do retry",
+    "config.prefs.retryInitialDelay.desc":
+        "Tempo antes da primeira nova tentativa. As pausas seguintes dobram progressivamente, até o máximo de 30 segundos.",
+    "config.prefs.retryInitialDelay.1s": "1 segundo (recomendado)",
+    "config.prefs.retryInitialDelay.2s": "2 segundos",
+    "config.prefs.retryInitialDelay.5s": "5 segundos",
     "config.steps.2min": "2 minutos",
     "config.steps.5min": "5 minutos",
     "config.steps.15min": "15 minutos",

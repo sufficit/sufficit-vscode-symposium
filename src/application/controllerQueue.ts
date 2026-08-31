@@ -36,6 +36,8 @@ export interface PendingMessage {
      * fresh backend turn id so late events from the failed attempt stay stale.
      */
     retryOf?: string;
+    /** Internal bounded-recovery attempt count. Not rendered as a user message. */
+    automaticRetryAttempt?: number;
     text: string;
     attachments: string[];
     model?: string;

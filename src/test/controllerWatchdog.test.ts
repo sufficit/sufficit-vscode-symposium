@@ -121,3 +121,40 @@ test("rearming invalidates a deadline callback from the previous attempt", () =>
 test("a retry marker survives when the original turn id is unavailable", () => {
     assert.equal(turnOriginOf({ retryOf: undefined, interruptedBy: "stalled" }), "retry");
 });
+
+test("scheduled automatic recovery keeps queued work behind the retry", () => {
+    const testContext = stalledContext(2);
+    testContext.ctx.completeTurn = (turn, outcome) => {
+        completeTurn(
+            turn,
+            {
+                turns: testContext.turns,
+                clearWatchdog: () => testContext.calls.push("clearWatchdog"),
+                statusChanged: () => testContext.calls.push("status"),
+                emit: (message) => testContext.emitted.push(message),
+                takeQueued: () => {
+                    testContext.calls.push("takeQueued");
+                    return undefined;
+                },
+                emitQueue: () => testContext.calls.push("emitQueue"),
+                dispatch: () => testContext.calls.push("dispatch"),
+                holdQueue: () => testContext.calls.push("holdQueue"),
+                queuedCount: () => 2,
+                releaseOwnership: () => testContext.calls.push("releaseOwnership"),
+                recoverFailedTurn: () => true,
+            },
+            { outcome, emitTurnEnd: true },
+        );
+    };
+
+    forceEndStalledTurn(
+        testContext.ctx,
+        { timer: undefined as ReturnType<typeof setTimeout> | undefined },
+        5,
+    );
+
+    assert.equal(testContext.calls.includes("emitQueue"), true);
+    assert.equal(testContext.calls.includes("takeQueued"), false);
+    assert.equal(testContext.calls.includes("holdQueue"), false);
+    assert.equal(testContext.calls.includes("releaseOwnership"), false);
+});

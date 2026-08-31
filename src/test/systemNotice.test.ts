@@ -40,6 +40,68 @@ test("system warnings are excluded from the assistant transcript", () => {
     ]);
 });
 
+test("terminal errors survive render-log replay with retry metadata", () => {
+    assert.deepEqual(
+        replayRows([
+            { type: "user", text: "Run the task" },
+            { type: "event", event: { kind: "text", text: "Partial reply" } },
+            {
+                type: "event",
+                event: { kind: "error", message: "fetch failed", retryable: true },
+            },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [
+            { role: "user", text: "Run the task" },
+            { role: "assistant", text: "Partial reply", thinking: undefined },
+            { role: "error", text: "fetch failed", retryable: true },
+        ],
+    );
+});
+
+test("controller history restores a terminal error instead of only its red session status", async () => {
+    const originalHome = process.env.HOME;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-render-error-"));
+    process.env.HOME = path.join(root, "home");
+    fs.mkdirSync(process.env.HOME, { recursive: true });
+    const sessionId = "errored-render-session";
+    const emitted: unknown[] = [];
+    try {
+        appendRender(sessionId, { type: "user", text: "Run the task" });
+        appendRender(sessionId, {
+            type: "event",
+            event: { kind: "text", text: "Partial reply" },
+        });
+        appendRender(sessionId, {
+            type: "event",
+            event: { kind: "error", message: "fetch failed", retryable: true },
+        });
+        appendRender(sessionId, { type: "event", event: { kind: "turn-end" } });
+
+        await loadControllerHistory(
+            { backend: "openai" } as AgentAdapter,
+            { backend: "openai", sessionId, title: "Errored" },
+            (message) => emitted.push(message),
+        );
+
+        assert.deepEqual(emitted, [
+            {
+                type: "history",
+                messages: [
+                    { role: "user", text: "Run the task" },
+                    { role: "assistant", text: "Partial reply" },
+                    { role: "error", text: "fetch failed", retryable: true },
+                ],
+                replace: true,
+            },
+        ]);
+    } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
 test("history hides a contradictory missing-response warning after terminal TodoWrite", () => {
     const rows = replayRows([
         { type: "event", event: { kind: "turn-start" } },

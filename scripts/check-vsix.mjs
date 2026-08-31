@@ -72,11 +72,11 @@ for (const entry of missing) failures.push(`required packaged path is missing: $
 for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`);
 
 const budgets = new Map([
-    // Linux provider fallback, bounded PCM telemetry and serialized previews
-    // added 4.2KB to the measured host bundle and 5.3KB to the webview. Keep
-    // roughly 5KB of regression margin on each artifact; the independent 1MB
-    // archive ceiling continues to constrain the complete package.
-    ["extension/out/extension.js", 810 * 1024],
+    // Feature-version discovery and bounded transient recovery added 5.7KB to
+    // the measured host bundle. Keep roughly 6KB of regression margin; the
+    // independent 1MB archive ceiling continues to constrain the complete
+    // package.
+    ["extension/out/extension.js", 822 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

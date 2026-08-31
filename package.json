@@ -2,7 +2,7 @@
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
     "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.829.1",
+    "version": "2026.831.1",
     "publisher": "sufficit",
     "license": "MIT-0",
     "icon": "media/symposium-icon.png",
@@ -259,6 +259,38 @@
                     "default": 15,
                     "minimum": 0,
                     "description": "Minutes of silence allowed for an explicit retry after a stalled turn. This separate recovery window prevents the Retry action from deterministically failing again at the normal stalled-turn timeout; set to 0 to disable the retry watchdog."
+                },
+                "symposium.transientRetryLimit": {
+                    "type": "number",
+                    "default": 3,
+                    "enum": [
+                        0,
+                        2,
+                        3,
+                        5
+                    ],
+                    "enumDescriptions": [
+                        "Disable automatic retries.",
+                        "Retry transient failures up to 2 times.",
+                        "Retry transient failures up to 3 times (recommended).",
+                        "Retry transient failures up to 5 times."
+                    ],
+                    "description": "Maximum automatic retries for explicitly retryable provider/transport failures. Uses the same bounded policy as Sufficit AI Genius and never replays after visible assistant or tool output."
+                },
+                "symposium.retryInitialDelayMilliseconds": {
+                    "type": "number",
+                    "default": 1000,
+                    "enum": [
+                        1000,
+                        2000,
+                        5000
+                    ],
+                    "enumDescriptions": [
+                        "Start after 1 second (recommended).",
+                        "Start after 2 seconds.",
+                        "Start after 5 seconds."
+                    ],
+                    "description": "Initial pause before an automatic transient retry. Each subsequent retry doubles the delay, capped at 30 seconds."
                 },
                 "symposium.hub.url": {
                     "type": "string",

@@ -97,7 +97,11 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             });
         } else if (message.role === "error") {
             turn.state = TURN_ERROR;
-            turn.error = { errorType: "agent", message: message.text ?? "" };
+            turn.error = {
+                errorType: "agent",
+                message: message.text ?? "",
+                _meta: { retryable: message.retryable === true },
+            };
         }
     }
     flush();

@@ -1,4 +1,5 @@
 import { AHP_SUPPORTED_PROTOCOL_VERSIONS } from "../ahp/wireProtocol";
+import { SYMPOSIUM_FEATURE_VERSIONS } from "../features";
 
 export const SYMPOSIUM_DISCOVERY_PATH = "/.well-known/symposium.json";
 export const SYMPOSIUM_OPENAPI_PATH = "/openapi.json";
@@ -24,6 +25,7 @@ export function createSymposiumDiscovery(
     return {
         discoveryVersion: "1.0",
         service: { name: "Symposium", apiVersion },
+        features: SYMPOSIUM_FEATURE_VERSIONS,
         protocols: {
             ahp: {
                 transport: "websocket",
@@ -52,7 +54,11 @@ export function createSymposiumOpenApi(apiVersion: string): Record<string, unkno
     const protectedGet = { get: { responses: ok } };
     return {
         openapi: "3.1.0",
-        info: { title: "Symposium Bridge API", version: apiVersion },
+        info: {
+            title: "Symposium Bridge API",
+            version: apiVersion,
+            "x-symposium-feature-versions": SYMPOSIUM_FEATURE_VERSIONS,
+        },
         paths: {
             [SYMPOSIUM_DISCOVERY_PATH]: publicGet,
             [SYMPOSIUM_OPENAPI_PATH]: publicGet,

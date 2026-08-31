@@ -7,6 +7,8 @@ import { isResponseBlockingToolEvent, MISSING_FINAL_RESPONSE_NOTICE } from "./fi
 
 export interface ControllerEventBindings extends TurnCompletionContext {
     armWatchdog(): void;
+    /** False defers the raw event while a controller-owned recovery is pending. */
+    observeEvent?(event: AgentEvent): boolean;
     recordChanged(path: string, added?: number, removed?: number): void;
     setTodos(todos: TodoItem[]): void;
     trackingMode(): TrackingMode | undefined;
@@ -34,7 +36,9 @@ export class ControllerEventHandler {
             this.onTurnEnd(event);
             return;
         }
-        b.emit({ type: "event", event });
+        if (b.observeEvent?.(event) !== false) {
+            b.emit({ type: "event", event });
+        }
         this.applyEventSideEffects(event);
     };
 

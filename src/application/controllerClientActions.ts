@@ -13,6 +13,7 @@ interface ControllerClientActionDeps {
     dispatch(message: PendingMessage): void;
     canMutateQueue(): boolean;
     emitPeerQueueCommand(command: PeerQueueCommand): void;
+    cancelAutomaticRetry?(): boolean;
     log?(message: string): void;
 }
 
@@ -29,6 +30,7 @@ export class ControllerClientActions {
     }
 
     interrupt(): void {
+        this.deps.cancelAutomaticRetry?.();
         this.deps.getSession()?.cancel();
     }
 
@@ -100,6 +102,7 @@ export class ControllerClientActions {
     continueTurn(): boolean {
         const session = this.deps.getSession();
         if (this.deps.turns.isBusy || !session?.continueTurn) return false;
+        this.deps.cancelAutomaticRetry?.();
         // begin()'s attention is derived undefined while live, so this also
         // clears any stale error badge from the previous turn.
         this.deps.turns.begin("continue").markSent();

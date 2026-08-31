@@ -138,6 +138,7 @@ export function transcriptMessagesUpTo(log: unknown[], index: number): Transcrip
 
 export type ReplayRow =
     | TranscriptRow
+    | { role: "error"; text: string; retryable?: boolean }
     | { role: "status-notice"; text: string; severity?: "info" | "warning" | "error" };
 
 /**
@@ -185,10 +186,12 @@ export function replayRows(log: unknown[]): ReplayRow[] {
         event?: {
             kind?: string;
             text?: string;
+            message?: string;
             model?: string;
             reasoning?: string;
             terminal?: boolean;
             severity?: "info" | "warning" | "error";
+            retryable?: boolean;
             ts?: unknown;
         };
     }>) {
@@ -222,6 +225,23 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                             ...(ts !== undefined ? { ts } : {}),
                         });
                     }
+                } else if (h?.role === "error" && text) {
+                    rows.push({
+                        role: "error",
+                        text,
+                        ...((h as { retryable?: unknown }).retryable === true
+                            ? { retryable: true }
+                            : {}),
+                    });
+                } else if (h?.role === "status-notice" && text) {
+                    const severity = (h as { severity?: unknown }).severity;
+                    rows.push({
+                        role: "status-notice",
+                        text,
+                        ...(severity === "info" || severity === "warning" || severity === "error"
+                            ? { severity }
+                            : {}),
+                    });
                 }
             }
         } else if (message?.type === "user") {
@@ -260,11 +280,18 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                     severity: message.event.severity,
                 });
             }
+        } else if (message?.type === "event" && message.event?.kind === "error") {
+            flushAssistant();
+            if (message.event.message) {
+                rows.push({
+                    role: "error",
+                    text: message.event.message,
+                    ...(message.event.retryable === true ? { retryable: true } : {}),
+                });
+            }
         } else if (
             message?.type === "event" &&
-            (message.event?.kind === "tool-start" ||
-                message.event?.kind === "error" ||
-                message.event?.kind === "session")
+            (message.event?.kind === "tool-start" || message.event?.kind === "session")
         ) {
             flushAssistant();
         } else if (message?.type === "event" && message.event?.kind === "turn-start") {

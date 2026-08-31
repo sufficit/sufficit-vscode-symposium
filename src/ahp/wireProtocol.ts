@@ -1,4 +1,6 @@
-export const AHP_SUPPORTED_PROTOCOL_VERSIONS = ["0.6.0", "0.5.2", "0.5.1"] as const;
+import { AHP_FEATURE_VERSION } from "./feature";
+
+export const AHP_SUPPORTED_PROTOCOL_VERSIONS = [AHP_FEATURE_VERSION, "0.5.2", "0.5.1"] as const;
 
 export const AHP_RPC_ERRORS = {
     parse: -32700,

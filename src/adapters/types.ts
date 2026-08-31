@@ -15,6 +15,8 @@ export interface HistoryMessage {
      *  severity so a replayed warning/error notice renders with the same
      *  visual weight it had live. */
     severity?: SystemNoticeSeverity;
+    /** Whether a replayed terminal error may safely retry the failed message. */
+    retryable?: boolean;
     /**
      * Null means the adapter found a turn but produced no text for it (e.g. an
      * image/attachment-only user message with no caption). Each adapter decides

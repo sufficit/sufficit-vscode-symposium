@@ -65,6 +65,21 @@ test("failed and cancelled projections finish in distinct terminal states", () =
     assert.equal(chat.turns[0].state, "cancelled");
 });
 
+test("history projection preserves terminal errors and retryability", () => {
+    const [turn] = historyTurns([
+        { role: "user", text: "Run the task" },
+        { role: "assistant", text: "Partial reply" },
+        { role: "error", text: "fetch failed", retryable: true },
+    ]);
+
+    assert.equal(turn.state, "error");
+    assert.deepEqual(turn.error, {
+        errorType: "agent",
+        message: "fetch failed",
+        _meta: { retryable: true },
+    });
+});
+
 test("projection keeps tool approval correlation and excludes arbitrary provider metadata", () => {
     const runtime = fixture("openai");
     rememberProjectedUser(runtime.projection, "write");
