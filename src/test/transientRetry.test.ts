@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentEvent } from "../adapters/types";
+import { httpFailureEvent } from "../adapters/openai/turnPreflight";
+import type { TurnRunnerDeps } from "../adapters/openai/turnRunnerDeps";
 import type { PendingMessage } from "../application/controllerQueue";
 import type { ClockPort, ConfigurationPort } from "../application/ports";
 import { Turn } from "../application/turn";
@@ -115,6 +117,30 @@ test("transient recovery retries the same message with bounded exponential pause
     second.end();
     assert.equal(h.retry.recover(second), true);
     assert.equal(h.clock.scheduled[1].delay, 2_000);
+});
+
+test("an OpenAI HTTP 429 schedules automatic recovery instead of ending silently", async () => {
+    const event = await httpFailureEvent(
+        { contextWindow: () => 1_000_000 } as unknown as TurnRunnerDeps,
+        new Response('{"error":{"type":"rate_limit_error","message":"Too many requests"}}', {
+            status: 429,
+            statusText: "Too Many Requests",
+        }),
+        { inputTokens: 44_965, requestChars: 179_860, messageCount: 21, toolCount: 26 },
+    );
+    assert.equal(event.kind, "error");
+    assert.equal(event.retryable, true);
+
+    const h = harness();
+    const turn = createTurn("http-429");
+    h.retry.begin(turn, { text: "fazer trim end", attachments: [], intentId: "rate-limit" });
+    assert.equal(h.retry.observe(event), false, "the raw 429 is replaced by recovery state");
+    turn.recordError();
+    turn.end();
+    assert.equal(h.retry.recover(turn), true);
+    assert.equal(recoveryOf(h.emitted[0])?.state, "scheduled");
+    assert.equal(recoveryOf(h.emitted[0])?.attempt, 1);
+    assert.equal(h.clock.scheduled[0].delay, 1_000);
 });
 
 test("configured retry limit exposes the final error instead of looping forever", () => {

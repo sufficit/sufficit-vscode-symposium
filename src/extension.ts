@@ -44,6 +44,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const output = vscode.window.createOutputChannel("Symposium");
     setSymposiumOutput(output);
     context.subscriptions.push(output);
+    symposiumLog(`[extension] activated version=${String(context.extension.packageJSON.version)}`);
     void migrateLegacySettings().catch((error) => {
         symposiumLog(
             `[settings] legacy migration failed: ${error instanceof Error ? error.message : String(error)}`,

@@ -68,6 +68,21 @@ uma tag só passa quando seu nome é exatamente `v<package.json.version>`.
    code-server --list-extensions --show-versions
    ```
 
+7. Confirme a ativação da nova versão. Instalar o VSIX não substitui o código
+   já carregado por janelas abertas: cada Extension Host mantém a versão que
+   ativou até a janela ser recarregada. Execute `Symposium: Reload Window
+   (apply latest build)` em cada janela afetada e confirme no log `Symposium`:
+
+   ```text
+   [extension] activated version=<versão-publicada>
+   ```
+
+   Em um code-server administrado, uma reinicialização remota só é válida após
+   identificar a janela e o PID exato do seu `extensionHost`, confirmar que ela
+   não possui turno em andamento e encerrar apenas esse PID. Nunca use `pkill -f`
+   ou reinicie todos os hosts para aplicar uma extensão. A instalação só está
+   concluída quando a versão listada e a versão ativada no log são iguais.
+
 ## Publicação automática
 
 Ao receber `vX.Y.Z`, o workflow `Publish VS Code Extension` instala dependências,
