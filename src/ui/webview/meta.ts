@@ -157,7 +157,7 @@ export function applyMeta(data: MetaMessageData): void {
     setReasoningLabel();
     setPermissionModes(data.permissionModes || []);
     setPermissionValue(data.permission || "default");
-    setPermissionDefault(data.permission || "default");
+    setPermissionDefault(data.permissionDefault || data.permission || "default");
     // Always shown (the `|| true` made the prior expression constant);
     // the config button is available regardless of permissionModes.
     configBtn.style.display = "";

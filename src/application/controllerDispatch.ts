@@ -85,6 +85,13 @@ async function prepareAndSend(
         message,
     );
     let session = context.getSession();
+    if (session && message.permission) {
+        // API sessions may own a normalized copy of the start options. Push the
+        // per-message picker value through the live-session contract as well,
+        // otherwise the UI can say admin while the old manager/user policy is
+        // still being enforced.
+        session.setPermission?.(message.permission);
+    }
     if (!session) {
         session = context.adapter.start(context.options);
         session.on("event", context.onSessionEvent);

@@ -317,7 +317,11 @@ export class SurfaceDialogues {
             // Real busy state (resets a stuck "thinking" compose on reopen).
             busy: controller.isBusy,
             permissionModes: adapter.permissionModes?.() ?? [],
-            permission: adapter.defaultPermission?.() ?? "default",
+            permissionDefault: adapter.defaultPermission?.() ?? "default",
+            // Show the policy the live controller actually enforces. Using the
+            // adapter default here made resumed manager/user sessions look like
+            // admin even while an approval prompt was correctly pending.
+            permission: controller.getPermission() || adapter.defaultPermission?.() || "default",
             sessionId: controller.sessionKey ?? controller.sessionId,
             title,
             sessionsSide,

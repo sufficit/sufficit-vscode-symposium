@@ -62,6 +62,7 @@ export type WebviewToHost =
     | { type: "ready" }
     | { type: "webview-error"; message: string }
     | { type: "set-tools"; tools: unknown[] }
+    | { type: "set-permission"; permission: string }
     | { type: "attach-browser-page" }
     | { type: "account-login" }
     | { type: "account-logout" }

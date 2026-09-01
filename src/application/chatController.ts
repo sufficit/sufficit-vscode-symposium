@@ -195,7 +195,6 @@ export class ChatController {
     get title(): string {
         return this.live.firstTitle || "New session";
     }
-
     setModel(model: string): void {
         this.options.model = model === "default" ? undefined : model;
         this.session?.setModel?.(model);
@@ -204,7 +203,13 @@ export class ChatController {
         return this.session?.getModel?.() || this.options.model || "";
     }
     getReasoning = (): string => this.options.reasoning || "";
-
+    setPermission(permission: string): void {
+        this.options.permission = permission;
+        this.session?.setPermission?.(permission);
+    }
+    getPermission(): string {
+        return this.session?.getPermission?.() || this.options.permission || "";
+    }
     transcript(): string {
         return transcriptText(this.stream.messages);
     }
@@ -224,7 +229,6 @@ export class ChatController {
     getSession(): AgentSession | undefined {
         return this.session;
     }
-
     subscribe(observer: (message: unknown) => void): () => void {
         return this.stream.addObserver(observer);
     }
@@ -246,7 +250,6 @@ export class ChatController {
     aiToolsInfo(): { available: string[]; enabled: string[] } | undefined {
         return this.session?.aiTools?.();
     }
-
     setAiTools(names: string[]): void {
         this.session?.setAiTools?.(names);
     }
@@ -273,10 +276,7 @@ export class ChatController {
         });
     }
 
-    /**
-     * Loads the next older page of history (scroll-up pagination). No-op when
-     * there is no cursor (transcript fully loaded or no history loaded yet).
-     */
+    /** Loads the next older history page when a cursor remains. */
     async loadMoreHistory(): Promise<void> {
         if (!this.historyInfo || !this.historyCursor) return;
         const cursor = this.historyCursor;

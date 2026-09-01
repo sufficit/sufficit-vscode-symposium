@@ -41,6 +41,16 @@ export async function handleSurfaceCommandMessage(
             }
             return true;
         }
+        case "set-permission": {
+            const controller = deps.getController();
+            if (controller && typeof message.permission === "string") {
+                controller.setPermission(message.permission);
+                symposiumLog(
+                    `[surface] permission changed requested=${message.permission} effective=${controller.getPermission() || "default"}`,
+                );
+            }
+            return true;
+        }
         case "pin-model": {
             const backend = deps.getController()?.backend ?? deps.getTerminalSession()?.backend;
             if (backend && typeof message.model === "string") {

@@ -176,6 +176,40 @@ test("OpenAI applies a model picker change when normalized reasoning cloned the 
 
     try {
         assert.equal(session.getModel?.(), "glm-5.3");
+        assert.equal(session.getPermission?.(), undefined);
+        session.setPermission?.("manager");
+        assert.equal(session.getPermission?.(), "manager");
+        const permissionEvents: AgentEvent[] = [];
+        session.on("event", (event: AgentEvent) => permissionEvents.push(event));
+        const pendingApproval = (
+            session as AgentSession & {
+                requestApproval(
+                    toolId: string,
+                    toolName: string,
+                    detail: string,
+                    tier: "destructive",
+                ): Promise<boolean>;
+            }
+        ).requestApproval("permission-change", "shell", "test", "destructive");
+        session.setPermission?.("admin");
+        assert.equal(
+            session.getPermission?.(),
+            "admin",
+            "permission changes must reach the normalized live-session options",
+        );
+        assert.equal(
+            await pendingApproval,
+            true,
+            "switching to admin must release an approval that is already waiting",
+        );
+        assert.ok(
+            permissionEvents.some(
+                (event) =>
+                    event.kind === "approval-resolved" &&
+                    event.toolId === "permission-change" &&
+                    event.approved,
+            ),
+        );
         session.setModel?.("preset-development");
         assert.equal(session.getModel?.(), "preset-development");
         await collectTurn(session, "use selected preset");

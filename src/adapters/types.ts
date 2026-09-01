@@ -221,6 +221,10 @@ export interface AgentSession extends EventEmitter {
     setModel?(model: string): void;
     /** Effective model used by the latest backend turn, when available. */
     getModel?(): string;
+    /** Replaces the permission mode for this live session and its next tool call. */
+    setPermission?(permission: string): void;
+    /** Effective permission mode enforced by the live backend session. */
+    getPermission?(): string | undefined;
     /** Interrupt the current turn if the backend supports it. */
     cancel(): void;
     /** Resume a backend-owned pause without adding a user message to the model context. */
