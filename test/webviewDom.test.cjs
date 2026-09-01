@@ -253,6 +253,43 @@ test("webview DOM distinguishes live usage, non-fatal errors and actionable syst
     harness.dom.window.close();
 });
 
+test("approved destructive actions replace the danger treatment with a success state", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "tool-start",
+            toolId: "destructive-1",
+            toolName: "shell",
+            detail: "restart service",
+        },
+    });
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "approval-request",
+            toolId: "destructive-1",
+            toolName: "shell",
+            detail: "restart service",
+            tier: "destructive",
+        },
+    });
+
+    const approval = harness.document.querySelector(".toolApproval");
+    assert.equal(approval.classList.contains("destructive"), true);
+    approval.querySelector(".toolApprovalBtn.accept").click();
+
+    assert.equal(approval.classList.contains("answered"), true);
+    assert.equal(approval.classList.contains("approved"), true);
+    assert.equal(approval.classList.contains("destructive"), false);
+    assert.equal(approval.querySelector(".toolApprovalLabel").textContent, "Approved");
+    assert.equal(harness.sent.at(-1).type, "approval-response");
+    assert.equal(harness.sent.at(-1).toolId, "destructive-1");
+    assert.equal(harness.sent.at(-1).approved, true);
+    harness.dom.window.close();
+});
+
 test("webview DOM announces AHP reconciliation and renders a chat snapshot once", async () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));

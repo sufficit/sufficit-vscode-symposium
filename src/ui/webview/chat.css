@@ -1329,11 +1329,11 @@
     .toolApproval {
         display: flex; align-items: center; justify-content: space-between; gap: 10px;
         flex-wrap: wrap; margin-top: 8px; padding: 7px 10px; border-radius: 5px;
-        border-left: 2px solid var(--vscode-focusBorder, #7C3AED);
+        border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #7C3AED) 55%, transparent);
         background: color-mix(in srgb, var(--vscode-focusBorder, #7C3AED) 8%, transparent);
     }
     .toolApproval.destructive {
-        border-left-color: var(--vscode-gitDecoration-deletedResourceForeground, #d16969);
+        border-color: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 55%, transparent);
         background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 10%, transparent);
     }
     .toolApprovalLabel { font-size: 0.88em; }
@@ -1351,8 +1351,21 @@
         background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 16%, transparent);
     }
     .toolApprovalBtn.reject:hover { background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 26%, transparent); }
-    .toolApproval.answered { opacity: 0.65; }
     .toolApproval.answered .toolApprovalLabel { font-style: italic; }
+    .toolApproval.answered.approved {
+        border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950)) 55%, transparent);
+        background: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950)) 10%, transparent);
+    }
+    .toolApproval.answered.approved .toolApprovalLabel {
+        color: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950));
+    }
+    .toolApproval.answered.denied {
+        border-color: color-mix(in srgb, var(--vscode-testing-iconFailed, var(--vscode-gitDecoration-deletedResourceForeground, #d16969)) 55%, transparent);
+        background: color-mix(in srgb, var(--vscode-testing-iconFailed, var(--vscode-gitDecoration-deletedResourceForeground, #d16969)) 10%, transparent);
+    }
+    .toolApproval.answered.denied .toolApprovalLabel {
+        color: var(--vscode-testing-iconFailed, var(--vscode-gitDecoration-deletedResourceForeground, #d16969));
+    }
 
     /* ---- thinking / extended reasoning block ---- */
     .thinkWrap { margin: 4px -10px 8px -10px; padding: 0 10px; }
