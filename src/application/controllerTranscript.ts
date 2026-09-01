@@ -138,7 +138,7 @@ export function transcriptMessagesUpTo(log: unknown[], index: number): Transcrip
 
 export type ReplayRow =
     | TranscriptRow
-    | { role: "error"; text: string; retryable?: boolean }
+    | { role: "error"; text: string; retryable?: boolean; retryAt?: number }
     | { role: "status-notice"; text: string; severity?: "info" | "warning" | "error" };
 
 /**
@@ -192,6 +192,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
             terminal?: boolean;
             severity?: "info" | "warning" | "error";
             retryable?: boolean;
+            retryAt?: number;
             ts?: unknown;
         };
     }>) {
@@ -226,12 +227,14 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                         });
                     }
                 } else if (h?.role === "error" && text) {
+                    const retryAt = timestamp((h as { retryAt?: unknown }).retryAt);
                     rows.push({
                         role: "error",
                         text,
                         ...((h as { retryable?: unknown }).retryable === true
                             ? { retryable: true }
                             : {}),
+                        ...(retryAt !== undefined ? { retryAt } : {}),
                     });
                 } else if (h?.role === "status-notice" && text) {
                     const severity = (h as { severity?: unknown }).severity;
@@ -287,6 +290,9 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                     role: "error",
                     text: message.event.message,
                     ...(message.event.retryable === true ? { retryable: true } : {}),
+                    ...(timestamp(message.event.retryAt) !== undefined
+                        ? { retryAt: timestamp(message.event.retryAt) }
+                        : {}),
                 });
             }
         } else if (

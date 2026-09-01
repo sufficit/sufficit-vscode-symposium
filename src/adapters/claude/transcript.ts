@@ -7,8 +7,10 @@ import {
     toolFilePath,
 } from "../parse";
 import { JsonlMetadataCache, readJsonlPrefix } from "../jsonlPrefix";
+import { blockedQuotaRetryAt } from "../quota";
 import { HistoryMessage } from "../types";
 import { ClaudeTaskTracker } from "./tasks";
+import { parseClaudeQuota } from "./usage";
 
 /**
  * Cleans a stored user message for display: slash-command invocations are
@@ -208,7 +210,12 @@ export function parseTranscriptLine(
                 : typeof entry.subtype === "string"
                   ? entry.subtype
                   : "unknown error";
-        messages.push({ role: "error", text: msg });
+        const retryAt = blockedQuotaRetryAt(parseClaudeQuota(entry, "claude"));
+        messages.push({
+            role: "error",
+            text: msg,
+            ...(retryAt !== undefined ? { retryable: true, retryAt } : {}),
+        });
     }
     // Stamp the transcript time so history shows real timestamps on hover.
     const ts = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : NaN;

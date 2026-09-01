@@ -105,7 +105,13 @@ export type WebviewToHost =
     | { type: "pick-agent"; backend: string }
     | { type: "install-agent"; backend: string }
     | { type: "restart-from-message"; index: number }
-    | { type: "retry-last-message"; index: number; text: string; errorMessage?: string }
+    | {
+          type: "retry-last-message";
+          index: number;
+          text: string;
+          errorMessage?: string;
+          retryAt?: number;
+      }
     | { type: "load-more-history" }
     | { type: "open-settings" }
     | { type: "inspect"; target: "context" | "request" }

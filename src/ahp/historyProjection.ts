@@ -100,7 +100,10 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             turn.error = {
                 errorType: "agent",
                 message: message.text ?? "",
-                _meta: { retryable: message.retryable === true },
+                _meta: {
+                    retryable: message.retryable === true,
+                    ...(message.retryAt !== undefined ? { retryAt: message.retryAt } : {}),
+                },
             };
         }
     }

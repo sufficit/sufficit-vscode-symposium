@@ -12,6 +12,7 @@ import { handleMarkdownImageMessage } from "./surfaceMessageMarkdown";
 import { resolveLocalFileTarget } from "./markdownImages";
 import { handleSurfaceCommandMessage } from "./surfaceMessageCommands";
 import { openExternalSurfaceLink } from "./surfaceMessageLinks";
+import { handleSurfaceRetry } from "./surfaceRetry";
 
 /**
  * Webview → host message router for a chat surface: the big switch that turns
@@ -208,11 +209,7 @@ export class SurfaceMessages {
                 }
                 case "retry-last-message": {
                     if (typeof message.index === "number") {
-                        this.d.dialogues.retryLastMessage(
-                            message.index,
-                            message.errorMessage,
-                            message.text,
-                        );
+                        handleSurfaceRetry(message, this.d);
                     }
                     return;
                 }

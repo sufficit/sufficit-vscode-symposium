@@ -49,6 +49,19 @@ test("unknown terminal errors preserve their technical detail", () => {
     assert.equal(out.detail, "socket closed unexpectedly");
 });
 
+test("a hard quota explains that Retry appears only at the provider reset", () => {
+    const out = presentTurnError(
+        "You've hit your session limit · resets 2:30pm (America/Sao_Paulo)",
+        true,
+        20_000,
+        10_000,
+    );
+
+    assert.match(out.summary, /provider limit is exhausted/i);
+    assert.match(out.summary, /Retry will become available/i);
+    assert.doesNotMatch(out.summary, /automatic recovery was unavailable/i);
+});
+
 // A provider that is out of capacity is the clearest case for Retry: the same
 // request may succeed moments later. It arrives mid-stream, after the gateway
 // already sent 200 + SSE headers, so the HTTP status can no longer say 429/503

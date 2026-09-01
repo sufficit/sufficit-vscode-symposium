@@ -52,7 +52,7 @@ export function projectAgentEvent(
             if (event.model) state.model = event.model;
             return projectUsage(state, event);
         case "error":
-            return projectError(state, event.message, event.retryable);
+            return projectError(state, event);
         case "turn-end":
             return endTurn(state, event.durationMs);
         case "status-notice":
@@ -338,14 +338,20 @@ function projectUsage(
 
 function projectError(
     state: AhpProjectionState,
-    message: string,
-    retryable: boolean | undefined,
+    event: Extract<AgentEvent, { kind: "error" }>,
 ): AhpProjectionAction[] {
     if (!state.turnId) return [];
     state.failed = true;
     const action = chatAction("chat/error", state.turnId, {
         duration: elapsed(state),
-        error: { errorType: "agent", message, _meta: { retryable: retryable === true } },
+        error: {
+            errorType: "agent",
+            message: event.message,
+            _meta: {
+                retryable: event.retryable === true,
+                ...(event.retryAt !== undefined ? { retryAt: event.retryAt } : {}),
+            },
+        },
     });
     resetTurn(state);
     return [action, ...activity(undefined)];

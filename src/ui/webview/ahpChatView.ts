@@ -26,6 +26,7 @@ import { setBusy } from "./state";
 import { setStatus } from "./status";
 import { renderInSlices } from "./renderScheduler";
 import { renderAhpRecoveryStatus } from "./ahpRecoveryView";
+import { asRecord, numberValue, optionalString } from "./ahpValues";
 
 let renderGeneration = 0;
 let pendingRender: Promise<void> = Promise.resolve();
@@ -183,10 +184,12 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
             break;
         case "chat/error": {
             const error = asRecord(action.error);
+            const metadata = asRecord(error._meta);
             applyEvent({
                 kind: "error",
                 message: String(error.message ?? "Agent error"),
-                retryable: asRecord(error._meta).retryable === true,
+                retryable: metadata.retryable === true,
+                retryAt: numberValue(metadata.retryAt),
             });
             applyEvent({ kind: "turn-end", durationMs: numberValue(action.duration) });
             break;
@@ -243,6 +246,7 @@ function renderTurn(
             String(error.message ?? "Agent error"),
             historicalError,
             asRecord(error._meta).retryable === true,
+            numberValue(asRecord(error._meta).retryAt),
         );
     }
     if (!active) {
@@ -371,18 +375,6 @@ function stringContent(value: unknown): string {
         : typeof record.text === "string"
           ? record.text
           : "";
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function optionalString(value: unknown): string | undefined {
-    return typeof value === "string" ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function severity(value: unknown): "info" | "warning" | "error" {

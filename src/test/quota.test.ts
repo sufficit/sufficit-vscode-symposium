@@ -354,12 +354,19 @@ test("Claude session forwards a hard session limit as immediate quota state", ()
         JSON.stringify({
             type: "result",
             is_error: true,
+            timestamp: "2026-07-22T15:00:00.000Z",
             result: "You've hit your session limit · resets 8:20pm (America/Sao_Paulo)",
         }),
     );
 
     assert.equal(events[0]?.kind, "quota");
     assert.equal(events[0]?.kind === "quota" ? events[0].windows[0]?.usedPercent : undefined, 100);
-    assert.equal(events[1]?.kind, "error");
+    assert.deepEqual(events[1], {
+        kind: "error",
+        message: "You've hit your session limit · resets 8:20pm (America/Sao_Paulo)",
+        retryable: true,
+        retryAt: Date.parse("2026-07-22T23:20:00.000Z"),
+        automaticRetry: false,
+    });
     session.dispose();
 });

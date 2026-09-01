@@ -77,7 +77,12 @@ export class TransientRetryController {
         }
         if (startsToolActivity(event)) active.toolActivityStarted = true;
 
-        if (event.kind !== "error" || event.fatal === false || event.retryable !== true) {
+        if (
+            event.kind !== "error" ||
+            event.fatal === false ||
+            event.retryable !== true ||
+            event.automaticRetry === false
+        ) {
             return true;
         }
 

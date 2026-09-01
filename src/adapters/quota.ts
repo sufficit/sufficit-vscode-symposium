@@ -1,5 +1,17 @@
 import type { AdapterQuotaSnapshot, UsageQuotaWindow } from "./types";
 
+/** Latest reset among currently blocked windows. A request is only useful
+ * again once every blocked window that carries a deadline has reset. */
+export function blockedQuotaRetryAt(
+    snapshot: AdapterQuotaSnapshot | undefined,
+): number | undefined {
+    const resets = (snapshot?.windows ?? [])
+        .filter((window) => window.status === "blocked")
+        .map((window) => window.resetsAt)
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    return resets.length ? Math.max(...resets) : undefined;
+}
+
 type JsonObject = Record<string, unknown>;
 
 function asObject(value: unknown): JsonObject | undefined {

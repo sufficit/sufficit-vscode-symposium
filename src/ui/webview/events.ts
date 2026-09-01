@@ -104,7 +104,7 @@ export function applyEvent(ev: AgentEvent): void {
         // busy here made the next composer send look immediate and rendered its
         // optimistic bubble outside the host queue. Only turn-end may release
         // the composer; the host controller already follows that same rule.
-        renderError(ev.message, ev.historical, ev.retryable);
+        renderError(ev.message, ev.historical, ev.retryable, ev.retryAt);
     } else if (ev.kind === "session") {
         if (ev.model) {
             applyEffectiveModel(ev.model);

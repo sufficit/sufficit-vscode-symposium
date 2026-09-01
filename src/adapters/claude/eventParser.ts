@@ -10,6 +10,7 @@ import {
     toolResultText,
 } from "../parse";
 import type { AgentEvent } from "../types";
+import { blockedQuotaRetryAt } from "../quota";
 import { ClaudeTaskTracker } from "./tasks";
 import { parseClaudeQuota } from "./usage";
 
@@ -80,7 +81,8 @@ export class ClaudeEventParser {
         else if (event.type === "system") this.handleSystem(event);
         else if (event.type === "assistant") this.handleAssistant(event);
         else if (event.type === "user") this.handleUser(event);
-        else if (event.type === "result") this.handleResult(event, sourceCancelled);
+        else if (event.type === "result")
+            this.handleResult(event, sourceCancelled, blockedQuotaRetryAt(quota));
     }
 
     private handleStream(event: Record<string, unknown>): void {
@@ -226,12 +228,28 @@ export class ClaudeEventParser {
         this.finishDeferredToolResult();
     }
 
-    private handleResult(event: Record<string, unknown>, sourceCancelled: boolean): void {
+    private handleResult(
+        event: Record<string, unknown>,
+        sourceCancelled: boolean,
+        retryAt?: number,
+    ): void {
         if (typeof event.session_id === "string") this.deps.setSessionId(event.session_id);
         this.streamedText = false;
         this.streamedThinking = false;
         if (event.is_error && !sourceCancelled) {
-            this.deps.emit({ kind: "error", message: resultError(event) });
+            this.deps.emit({
+                kind: "error",
+                message: resultError(event),
+                ...(retryAt !== undefined
+                    ? {
+                          retryable: true,
+                          retryAt,
+                          // A session/account limit can last hours. Keep the
+                          // request under user control and reveal Retry at reset.
+                          automaticRetry: false,
+                      }
+                    : {}),
+            });
         }
         const usage = record(event.usage) ?? record(record(event.message)?.usage);
         if (usage) this.emitUsage(usage);

@@ -150,6 +150,12 @@ export type AgentEvent =
           kind: "error";
           message: string;
           retryable?: boolean;
+          /** Earliest Unix timestamp at which retrying can succeed. Hard
+           *  provider quotas use this to keep Retry unavailable until reset. */
+          retryAt?: number;
+          /** False for long-lived hard quotas: expose a gated manual Retry
+           *  instead of dispatching an unexpected request hours later. */
+          automaticRetry?: boolean;
           fatal?: boolean;
           historical?: boolean;
       };

@@ -38,15 +38,22 @@ function requiredDirectives(message: string): string[] {
  * UI. This is presentation only: the exact error remains available in the
  * expandable technical-details section and on the Retry hand-off.
  */
-export function presentTurnError(message: unknown, retryable?: boolean): ErrorPresentation {
+export function presentTurnError(
+    message: unknown,
+    retryable?: boolean,
+    retryAt?: number,
+    now = Date.now(),
+): ErrorPresentation {
     const detail =
         String(message ?? "").trim() ||
         "The request ended without an error detail from the backend.";
     const status = httpStatus(detail);
     const retry =
-        retryable === true
-            ? " Automatic recovery was unavailable or exhausted. You may retry the same message."
-            : " Retry is unavailable for this response; update the request or configuration before sending again.";
+        retryable === true && typeof retryAt === "number" && retryAt > now
+            ? " The provider limit is exhausted. Retry will become available when the stated reset time is reached."
+            : retryable === true
+              ? " Automatic recovery was unavailable or exhausted. You may retry the same message."
+              : " Retry is unavailable for this response; update the request or configuration before sending again.";
 
     if (status === 503 && /ai_backends_exhausted|all ai backends exhausted/i.test(detail)) {
         return {

@@ -66,17 +66,18 @@ test("failed and cancelled projections finish in distinct terminal states", () =
 });
 
 test("history projection preserves terminal errors and retryability", () => {
+    const retryAt = Date.parse("2026-07-22T17:30:00.000Z");
     const [turn] = historyTurns([
         { role: "user", text: "Run the task" },
         { role: "assistant", text: "Partial reply" },
-        { role: "error", text: "fetch failed", retryable: true },
+        { role: "error", text: "fetch failed", retryable: true, retryAt },
     ]);
 
     assert.equal(turn.state, "error");
     assert.deepEqual(turn.error, {
         errorType: "agent",
         message: "fetch failed",
-        _meta: { retryable: true },
+        _meta: { retryable: true, retryAt },
     });
 });
 

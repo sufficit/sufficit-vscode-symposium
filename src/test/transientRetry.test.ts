@@ -143,6 +143,26 @@ test("an OpenAI HTTP 429 schedules automatic recovery instead of ending silently
     assert.equal(h.clock.scheduled[0].delay, 1_000);
 });
 
+test("a hard provider quota stays visible and never auto-sends hours later", () => {
+    const h = harness();
+    const turn = createTurn("session-limit");
+    h.retry.begin(turn, { text: "continue", attachments: [], intentId: "hard-limit" });
+    const event: AgentEvent = {
+        kind: "error",
+        message: "You've hit your session limit · resets 2:30pm (America/Sao_Paulo)",
+        retryable: true,
+        retryAt: 3_600_000,
+        automaticRetry: false,
+    };
+
+    assert.equal(h.retry.observe(event), true, "the quota error remains visible");
+    turn.recordError();
+    turn.end();
+    assert.equal(h.retry.recover(turn), false);
+    assert.equal(h.clock.scheduled.length, 0);
+    assert.deepEqual(h.dispatched, []);
+});
+
 test("configured retry limit exposes the final error instead of looping forever", () => {
     const h = harness({ transientRetryLimit: 2 });
     const turn = createTurn("final", "retry");

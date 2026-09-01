@@ -7,6 +7,7 @@ import {
     branchBanner,
     confirmOptimisticMessage,
     message,
+    renderError,
     renderStatusNotice,
     renderThinkBlock,
     resetLastMsg,
@@ -59,6 +60,7 @@ type HistoryMessage = HistoryToolOptions & {
     detail?: string;
     severity?: "info" | "warning" | "error";
     retryable?: boolean;
+    retryAt?: number;
 };
 type HistoryPayload = {
     carried?: boolean;
@@ -328,7 +330,7 @@ function renderHistoryMessage(m: HistoryMessage): void {
             diff: m.diff,
         });
     } else if (m.role === "error") {
-        append("error", "✖ " + m.text);
+        renderError(m.text ?? "", true, m.retryable, m.retryAt);
     } else if (m.role === "status-notice" && m.text) {
         // A replayed tool-loop Continue action would be stale.
         renderStatusNotice(m.text, undefined, m.severity);

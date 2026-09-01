@@ -16,6 +16,7 @@ import { presentTurnError } from "../errorPresentation";
 import { reasoningDefault, reasoningValue } from "./models";
 import type { TransientRetryNotice } from "../../adapters/events";
 import { renderTransientRetryNotice } from "./retryStatusNotice";
+import { appendGatedRetry } from "./retryGate";
 export { renderThinkBlock, streamThinkingDelta } from "./thinking";
 
 // Tracks the Retry bar for the most recent retry click, so it can be
@@ -41,12 +42,17 @@ export function resolvePendingRetry() {
 // that is no longer the last thing that happened (see renderStream.ts's
 // neutralizeSupersededErrors) — its Retry button is omitted, since retrying
 // it now would rewind past everything that already happened after it.
-export function renderError(message: string, historical = false, retryable = false): void {
+export function renderError(
+    message: string,
+    historical = false,
+    retryable = false,
+    retryAt?: number,
+): void {
     const stick = nearBottom();
     endToolGroup();
     endStream();
     removeDuplicateAssistantError(message);
-    const presentation = presentTurnError(message, retryable);
+    const presentation = presentTurnError(message, retryable, retryAt);
     const el = createSystemNotice(presentation.summary, "error");
     el.classList.add("turnError");
     el.dataset.errorStatus = /\bHTTP\s+(\d{3})\b/i.exec(presentation.detail)?.[1] || "unknown";
@@ -79,6 +85,7 @@ export function renderError(message: string, historical = false, retryable = fal
                     index: lastUser.idx,
                     text: lastUser.text,
                     errorMessage: message,
+                    retryAt,
                 });
                 if (!busy) {
                     setBusy(true);
@@ -90,7 +97,7 @@ export function renderError(message: string, historical = false, retryable = fal
                 retry.appendChild(document.createTextNode(" Retrying…"));
                 pendingRetryBar = bar;
             });
-            bar.appendChild(retry);
+            appendGatedRetry(bar, retry, retryAt);
         }
 
         const edit = document.createElement("button");

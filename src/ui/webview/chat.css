@@ -1331,7 +1331,16 @@
         font: 0.85em/1.45 var(--vscode-editor-font-family, monospace);
         color: var(--vscode-descriptionForeground);
     }
-    .errActions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .errActions {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+    }
+    .retryAvailability {
+        flex: 1 0 100%; color: var(--vscode-descriptionForeground);
+        font-size: 0.9em; font-variant-numeric: tabular-nums;
+    }
+    .retryAvailability--ready {
+        color: var(--vscode-foreground); font-weight: 600;
+    }
     .retryBtn {
         display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
         font: inherit; font-size: 0.9em; padding: 3px 10px; border-radius: 5px;
@@ -1343,6 +1352,7 @@
     .retryBtn svg { width: 13px; height: 13px; }
     .retryBtn:disabled { opacity: 0.55; cursor: default; }
     .retryBtn:disabled:hover { background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2)); }
+    .retryBtn[hidden] { display: none; }
     .meta { opacity: 0.55; font-size: 0.82em; text-align: center; margin: 10px 0; }
 
     /* ---- inline tool-approval gate (admin/manager/user permission modes) ---- */

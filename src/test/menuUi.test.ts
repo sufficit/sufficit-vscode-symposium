@@ -223,7 +223,7 @@ test("an adapter error does not release the busy composer before turn-end", () =
     assert.ok(errorBranch, "error branch must remain present");
     assert.match(
         events,
-        /else if \(ev\.kind === "error"\)[\s\S]*?Errors are observations, not lifecycle boundaries[\s\S]*?renderError\(ev\.message, ev\.historical, ev\.retryable\);/,
+        /else if \(ev\.kind === "error"\)[\s\S]*?Errors are observations, not lifecycle boundaries[\s\S]*?renderError\(ev\.message, ev\.historical, ev\.retryable, ev\.retryAt\);/,
     );
     assert.doesNotMatch(errorBranch, /setBusy\(false\)/);
 });
