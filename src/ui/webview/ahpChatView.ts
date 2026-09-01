@@ -25,6 +25,7 @@ import { fillToolResult, renderApprovalRequest, renderTool } from "./tools";
 import { setBusy } from "./state";
 import { setStatus } from "./status";
 import { renderInSlices } from "./renderScheduler";
+import { renderAhpRecoveryStatus } from "./ahpRecoveryView";
 
 let renderGeneration = 0;
 let pendingRender: Promise<void> = Promise.resolve();
@@ -206,6 +207,9 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
             } as AgentEvent);
             break;
         }
+        case "symposium/recoveryStatus":
+            renderAhpRecoveryStatus(action);
+            break;
         case "chat/turnsLoaded":
             prependTurns(Array.isArray(action.turns) ? (action.turns as Turn[]) : []);
             if (chat) setHasMoreHistory(!!chat.turnsNextCursor);

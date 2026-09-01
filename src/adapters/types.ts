@@ -5,7 +5,7 @@ import type { AdapterUsageProvider } from "./quotaTypes";
 
 export type { AgentBackend, SessionInfo, SessionTerminalStatus } from "./sessionInfo";
 export type { AdapterQuotaSnapshot, AdapterUsageProvider, UsageQuotaWindow } from "./quotaTypes";
-export type { AgentEvent, SystemNoticeSeverity, TodoItem } from "./events";
+export type { AgentEvent, SystemNoticeSeverity, TodoItem, TransientRetryNotice } from "./events";
 import type { SystemNoticeSeverity } from "./events";
 
 /** One past message reconstructed from a stored transcript. */

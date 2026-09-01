@@ -653,6 +653,26 @@
     .statusNoticeAction:hover { background: var(--vscode-button-hoverBackground); }
     .statusNoticeAction:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
     .statusNoticeAction:disabled { cursor: wait; opacity: 0.7; }
+    .retryStatusNotice { margin-block: 10px; }
+    .retryStatusHeadline { font-weight: 650; }
+    .retryStatusProgress {
+        display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px;
+        color: var(--vscode-foreground); font-variant-numeric: tabular-nums;
+    }
+    .retryStatusAttempt { font-weight: 600; }
+    .retryStatusCountdown { color: var(--vscode-descriptionForeground); }
+    .retryStatusReason {
+        margin-top: 5px; color: var(--vscode-descriptionForeground);
+        overflow-wrap: anywhere;
+    }
+    .retryStatusNote {
+        margin-top: 5px; color: var(--vscode-descriptionForeground); font-size: 0.92em;
+    }
+    .retryStatusNotice--running .statusNoticeIcon svg { animation: retryStatusSpin 900ms linear infinite; }
+    @media (prefers-reduced-motion: reduce) {
+        .retryStatusNotice--running .statusNoticeIcon svg { animation: none; }
+    }
+    @keyframes retryStatusSpin { to { transform: rotate(360deg); } }
     /* Transient highlight when a status-notice's anchor link scrolls to a message. */
     .anchorFlash { animation: anchorFlash 1.6s ease-out; border-radius: 4px; }
     @keyframes anchorFlash {

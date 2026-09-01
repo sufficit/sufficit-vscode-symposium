@@ -13,7 +13,9 @@ test("transient retry policy is exported and configurable from Preferences", () 
     const properties = manifest.contributes.configuration.properties;
 
     assert.equal(properties["symposium.transientRetryLimit"]?.default, 3);
+    assert.equal(properties["symposium.transientRetryAfterToolActivity"]?.default, true);
     assert.equal(properties["symposium.retryInitialDelayMilliseconds"]?.default, 1_000);
     assert.match(configViews, /symposium\.transientRetryLimit/);
+    assert.match(configViews, /symposium\.transientRetryAfterToolActivity/);
     assert.match(configViews, /symposium\.retryInitialDelayMilliseconds/);
 });

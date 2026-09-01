@@ -83,6 +83,10 @@ export async function buildConfigState(deps: ConfigPanelDeps): Promise<unknown> 
             turnSilenceMinutes: root.get<number>("turnSilenceMinutes", 5),
             turnRetrySilenceMinutes: root.get<number>("turnRetrySilenceMinutes", 15),
             transientRetryLimit: root.get<number>("transientRetryLimit", 3),
+            transientRetryAfterToolActivity: root.get<boolean>(
+                "transientRetryAfterToolActivity",
+                true,
+            ),
             retryInitialDelayMilliseconds: root.get<number>("retryInitialDelayMilliseconds", 1_000),
             maxToolHops: openai.get<number>("maxToolHops", 50),
             noProgressStop: openai.get<number>("noProgressStop", 0),

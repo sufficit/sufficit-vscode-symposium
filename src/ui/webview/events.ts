@@ -67,7 +67,7 @@ export function applyEvent(ev: AgentEvent): void {
             streamDelta(ev.text, ev.model, ev.reasoning, ev.ts);
         }
     } else if (ev.kind === "status-notice")
-        renderStatusNotice(ev.text, ev.anchorIndex, ev.severity, ev.action);
+        renderStatusNotice(ev.text, ev.anchorIndex, ev.severity, ev.action, ev.recovery);
     else if (ev.kind === "tool-start") {
         endStream();
         renderTool(ev.toolName, ev.detail || "", {

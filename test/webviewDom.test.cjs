@@ -253,6 +253,56 @@ test("webview DOM distinguishes live usage, non-fatal errors and actionable syst
     harness.dom.window.close();
 });
 
+test("automatic retry is one visible local-only card with attempt and countdown", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna", { busy: true }));
+    const retryAt = Date.now() + 30_000;
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "status-notice",
+            text: "Retrying automatically",
+            severity: "warning",
+            recovery: {
+                id: "intent-retry",
+                state: "scheduled",
+                attempt: 1,
+                limit: 3,
+                retryAt,
+                reason: "fetch failed",
+            },
+        },
+    });
+
+    let card = harness.document.querySelector('[data-retry-id="intent-retry"]');
+    assert.ok(card);
+    assert.match(card.textContent, /Automatic recovery/);
+    assert.match(card.textContent, /Attempt 1 of 3/);
+    assert.match(card.textContent, /Retrying in (29|30)s/);
+    assert.match(card.textContent, /not sent to the agent/);
+
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "status-notice",
+            text: "Retry running",
+            severity: "warning",
+            recovery: {
+                id: "intent-retry",
+                state: "running",
+                attempt: 1,
+                limit: 3,
+                reason: "fetch failed",
+            },
+        },
+    });
+    card = harness.document.querySelector('[data-retry-id="intent-retry"]');
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice").length, 1);
+    assert.match(card.textContent, /Trying again now/);
+    assert.doesNotMatch(card.textContent, /Retrying in/);
+    harness.dom.window.close();
+});
+
 test("approved destructive actions replace the danger treatment with a success state", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));
@@ -399,10 +449,28 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
     await new Promise((resolve) => setTimeout(resolve, 30));
 
     harness.deliver({
-        type: "event",
-        event: {
-            kind: "status-notice",
-            text: "Retrying the previous request — no new user message was added.",
+        type: "ahp-frame",
+        frame: {
+            kind: "action",
+            generation: 1,
+            envelope: {
+                channel: resource,
+                serverSeq: 2,
+                origin: undefined,
+                action: {
+                    type: "symposium/recoveryStatus",
+                    content: "Retrying the previous request — no new user message was added.",
+                    severity: "warning",
+                    recovery: {
+                        id: "intent-ahp-retry",
+                        state: "scheduled",
+                        attempt: 1,
+                        limit: 3,
+                        retryAt: Date.now() + 30_000,
+                        reason: "fetch failed",
+                    },
+                },
+            },
         },
     });
     harness.deliver({
@@ -412,7 +480,7 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
             generation: 1,
             envelope: {
                 channel: resource,
-                serverSeq: 2,
+                serverSeq: 3,
                 origin: undefined,
                 action: {
                     type: "chat/turnStarted",
@@ -429,7 +497,8 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    assert.match(harness.document.querySelector("#log").textContent, /no new user message/);
+    assert.match(harness.document.querySelector("#log").textContent, /Automatic recovery/);
+    assert.match(harness.document.querySelector("#log").textContent, /not sent to the agent/);
     assert.equal(harness.document.querySelectorAll("#log .msg.user").length, 0);
     assert.doesNotMatch(harness.document.querySelector("#log").textContent, /\(no text\)/);
     assert.equal(harness.document.querySelector("#composer").classList.contains("working"), true);

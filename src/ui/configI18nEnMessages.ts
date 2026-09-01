@@ -118,11 +118,16 @@ export const CONFIG_EN_MESSAGES: Dict = {
         "Separate silence window for an explicit retry after a stalled turn. It prevents Retry from failing again at the normal stalled-turn timeout.",
     "config.prefs.transientRetryLimit.name": "Automatic retries after a temporary failure",
     "config.prefs.transientRetryLimit.desc":
-        "Repeats the same request only for transient connection or provider failures, without duplicating the message. Stops safely after any reply or tool execution.",
+        "Retries only transient connection or provider failures, without duplicating the user message. Stops safely after partial assistant output.",
     "config.prefs.transientRetryLimit.off": "Disabled",
     "config.prefs.transientRetryLimit.2": "2 retries",
     "config.prefs.transientRetryLimit.3": "3 retries (recommended)",
     "config.prefs.transientRetryLimit.5": "5 retries",
+    "config.prefs.transientRetryAfterTools.name": "Recover after tool activity",
+    "config.prefs.transientRetryAfterTools.desc":
+        "Resume the same request when the connection drops after tools ran. Disable for workflows whose tools cannot safely be repeated.",
+    "config.prefs.transientRetryAfterTools.on": "Enabled (recommended)",
+    "config.prefs.transientRetryAfterTools.off": "Disabled",
     "config.prefs.retryInitialDelay.name": "First retry pause",
     "config.prefs.retryInitialDelay.desc":
         "Delay before the first retry. Later pauses double progressively, up to 30 seconds.",

@@ -13,12 +13,21 @@ interface DeferredRetryError {
     initialDelayMilliseconds: number;
 }
 
+interface ScheduledRetry {
+    id: string;
+    attempt: number;
+    limit: number;
+    reason: string;
+}
+
 interface ActiveAttempt {
     turn: Turn;
     message: PendingMessage;
     attempt: number;
-    visibleOutputStarted: boolean;
+    unsafeOutputStarted: boolean;
+    toolActivityStarted: boolean;
     deferred?: DeferredRetryError;
+    exhausted?: Extract<AgentEvent, { kind: "error" }>;
 }
 
 export interface TransientRetryDeps {
@@ -38,6 +47,7 @@ export interface TransientRetryDeps {
 export class TransientRetryController {
     private active: ActiveAttempt | undefined;
     private timer: ReturnType<typeof setTimeout> | undefined;
+    private scheduled: ScheduledRetry | undefined;
     private _pending = false;
 
     constructor(private readonly deps: TransientRetryDeps) {}
@@ -51,7 +61,8 @@ export class TransientRetryController {
             turn,
             message: cloneMessage(message),
             attempt: normalizeAttempt(message.automaticRetryAttempt),
-            visibleOutputStarted: false,
+            unsafeOutputStarted: false,
+            toolActivityStarted: false,
         };
     }
 
@@ -60,22 +71,27 @@ export class TransientRetryController {
         const active = this.active;
         if (!active || active.turn.phase === "ended") return true;
 
-        if (startsVisibleOutput(event)) {
-            active.visibleOutputStarted = true;
+        if (startsUnsafeOutput(event)) {
+            active.unsafeOutputStarted = true;
             this.flushDeferred(active);
         }
+        if (startsToolActivity(event)) active.toolActivityStarted = true;
 
-        if (
-            event.kind !== "error" ||
-            event.fatal === false ||
-            event.retryable !== true ||
-            active.visibleOutputStarted
-        ) {
+        if (event.kind !== "error" || event.fatal === false || event.retryable !== true) {
             return true;
         }
 
         const policy = readPolicy(this.deps.configuration);
-        if (active.attempt >= policy.limit) return true;
+        if (
+            active.unsafeOutputStarted ||
+            (active.toolActivityStarted && !policy.afterToolActivity)
+        ) {
+            return true;
+        }
+        if (active.attempt >= policy.limit) {
+            if (active.attempt > 0) active.exhausted = event;
+            return true;
+        }
 
         active.deferred = {
             event,
@@ -95,8 +111,29 @@ export class TransientRetryController {
         if (!active || active.turn !== turn) return false;
         this.active = undefined;
 
+        if (turn.outcome === "completed" && active.attempt > 0) {
+            this.emitRecovery(
+                active.message.automaticRetryId ?? retryIdentity(active),
+                "recovered",
+                active.attempt,
+                readPolicy(this.deps.configuration).limit,
+            );
+            return false;
+        }
+
+        if (active.exhausted) {
+            this.emitRecovery(
+                active.message.automaticRetryId ?? retryIdentity(active),
+                "exhausted",
+                active.attempt,
+                readPolicy(this.deps.configuration).limit,
+                conciseRetryReason(active.exhausted.message),
+            );
+            return false;
+        }
+
         const deferred = active.deferred;
-        if (!deferred || active.visibleOutputStarted || turn.outcome !== "failed") {
+        if (!deferred || active.unsafeOutputStarted || turn.outcome !== "failed") {
             this.flushDeferred(active);
             return false;
         }
@@ -107,6 +144,7 @@ export class TransientRetryController {
             MAXIMUM_RETRY_DELAY_MILLISECONDS,
         );
         const reason = conciseRetryReason(deferred.event.message);
+        const retryId = active.message.automaticRetryId ?? retryIdentity(active);
         const retry: PendingMessage = {
             ...cloneMessage(active.message),
             id: undefined,
@@ -114,29 +152,29 @@ export class TransientRetryController {
             retryOf: turn.backendId ?? turn.id,
             interruptedBy: reason,
             automaticRetryAttempt: attempt,
+            automaticRetryId: retryId,
         };
 
         this._pending = true;
+        this.scheduled = { id: retryId, attempt, limit: deferred.limit, reason };
         this.deps.log?.(
             `[retry] transient failure; retry ${attempt}/${deferred.limit} in ${delayMilliseconds} ms: ${reason}`,
         );
-        this.deps.emit({
-            type: "event",
-            event: {
-                kind: "status-notice",
-                severity: "warning",
-                text: retryScheduledText(
-                    delayMilliseconds,
-                    attempt,
-                    deferred.limit,
-                    this.deps.configuration.language,
-                ),
-            },
+        this.emitRecovery(retryId, "scheduled", attempt, deferred.limit, reason, {
+            retryAt: this.deps.clock.now() + delayMilliseconds,
+            text: retryScheduledText(
+                delayMilliseconds,
+                attempt,
+                deferred.limit,
+                this.deps.configuration.language,
+            ),
         });
         this.deps.statusChanged();
         this.timer = this.deps.clock.setTimeout(() => {
             this.timer = undefined;
             this._pending = false;
+            this.scheduled = undefined;
+            this.emitRecovery(retryId, "running", attempt, deferred.limit, reason);
             this.deps.statusChanged();
             this.deps.dispatch(retry);
         }, delayMilliseconds);
@@ -148,11 +186,22 @@ export class TransientRetryController {
             this.deps.clock.clearTimeout(this.timer);
             this.timer = undefined;
         }
+        const scheduled = this.scheduled;
         const changed = this._pending;
         this._pending = false;
-        this.active = undefined;
+        this.scheduled = undefined;
         if (changed) {
             this.deps.log?.("[retry] scheduled automatic retry cancelled by a newer action");
+            if (scheduled) {
+                this.emitRecovery(
+                    scheduled.id,
+                    "cancelled",
+                    scheduled.attempt,
+                    scheduled.limit,
+                    scheduled.reason,
+                );
+            }
+            this.active = undefined;
             this.deps.statusChanged();
         }
         return changed;
@@ -163,11 +212,34 @@ export class TransientRetryController {
         this.deps.emit({ type: "event", event: active.deferred.event });
         active.deferred = undefined;
     }
+
+    private emitRecovery(
+        id: string,
+        state: "scheduled" | "running" | "recovered" | "cancelled" | "exhausted",
+        attempt: number,
+        limit: number,
+        reason?: string,
+        options: { retryAt?: number; text?: string } = {},
+    ): void {
+        const text =
+            options.text ?? retryStateText(state, attempt, limit, this.deps.configuration.language);
+        this.deps.emit({
+            type: "event",
+            event: {
+                kind: "status-notice",
+                severity:
+                    state === "recovered" ? "info" : state === "exhausted" ? "error" : "warning",
+                text,
+                recovery: { id, state, attempt, limit, reason, retryAt: options.retryAt },
+            },
+        });
+    }
 }
 
 function readPolicy(configuration: ConfigurationPort): {
     limit: number;
     initialDelayMilliseconds: number;
+    afterToolActivity: boolean;
 } {
     const configuredLimit = configuration.get(
         "symposium",
@@ -179,6 +251,11 @@ function readPolicy(configuration: ConfigurationPort): {
         "retryInitialDelayMilliseconds",
         DEFAULT_RETRY_INITIAL_DELAY_MILLISECONDS,
     );
+    const afterToolActivity = configuration.get(
+        "symposium",
+        "transientRetryAfterToolActivity",
+        true,
+    );
     return {
         limit: [0, 2, 3, 5].includes(configuredLimit)
             ? configuredLimit
@@ -186,6 +263,7 @@ function readPolicy(configuration: ConfigurationPort): {
         initialDelayMilliseconds: [1_000, 2_000, 5_000].includes(configuredDelay)
             ? configuredDelay
             : DEFAULT_RETRY_INITIAL_DELAY_MILLISECONDS,
+        afterToolActivity: afterToolActivity === true,
     };
 }
 
@@ -193,15 +271,22 @@ function normalizeAttempt(value: number | undefined): number {
     return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
 }
 
-function startsVisibleOutput(event: AgentEvent): boolean {
+function startsUnsafeOutput(event: AgentEvent): boolean {
     if (event.kind === "text") return event.text.trim().length > 0;
     return (
         event.kind === "thinking" ||
-        event.kind === "tool-start" ||
-        event.kind === "tool-output" ||
-        event.kind === "tool-end" ||
         event.kind === "approval-request" ||
         event.kind === "approval-resolved"
+    );
+}
+
+function startsToolActivity(event: AgentEvent): boolean {
+    return event.kind === "tool-start" || event.kind === "tool-output" || event.kind === "tool-end";
+}
+
+function retryIdentity(active: ActiveAttempt): string {
+    return (
+        active.message.intentId ?? active.turn.intentId ?? active.turn.backendId ?? active.turn.id
     );
 }
 
@@ -231,4 +316,31 @@ function retryScheduledText(
         return `Falha temporária de conexão. Nova tentativa automática em ${seconds} segundo${seconds === 1 ? "" : "s"} (${attempt}/${limit}); a mensagem original não será duplicada.`;
     }
     return `Temporary connection failure. Retrying automatically in ${seconds} second${seconds === 1 ? "" : "s"} (${attempt}/${limit}); the original message will not be duplicated.`;
+}
+
+function retryStateText(
+    state: "scheduled" | "running" | "recovered" | "cancelled" | "exhausted",
+    attempt: number,
+    limit: number,
+    language: string,
+): string {
+    const portuguese = language.toLowerCase().startsWith("pt");
+    if (state === "running") {
+        return portuguese
+            ? `Tentativa automática ${attempt}/${limit} em andamento.`
+            : `Automatic retry ${attempt}/${limit} is running.`;
+    }
+    if (state === "recovered") {
+        return portuguese
+            ? `Conexão recuperada na tentativa ${attempt}/${limit}.`
+            : `Connection recovered on attempt ${attempt}/${limit}.`;
+    }
+    if (state === "cancelled") {
+        return portuguese
+            ? `Tentativa automática ${attempt}/${limit} cancelada.`
+            : `Automatic retry ${attempt}/${limit} was cancelled.`;
+    }
+    return portuguese
+        ? `As ${limit} tentativas automáticas falharam.`
+        : `All ${limit} automatic retries failed.`;
 }

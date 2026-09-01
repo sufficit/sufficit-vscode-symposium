@@ -11,6 +11,19 @@ export interface TodoItem {
 /** Visual importance for a system-authored notice in the conversation. */
 export type SystemNoticeSeverity = "info" | "warning" | "error";
 
+/** Structured UI-only state for a bounded transient retry chain. */
+export interface TransientRetryNotice {
+    /** Stable across every attempt so the webview updates one card in place. */
+    id: string;
+    state: "scheduled" | "running" | "recovered" | "cancelled" | "exhausted";
+    attempt: number;
+    limit: number;
+    /** Absolute Unix timestamp used by the webview's local countdown. */
+    retryAt?: number;
+    /** Concise transport/provider failure; never added to model context. */
+    reason?: string;
+}
+
 /** A normalized event emitted by any adapter while a turn is running. */
 export type AgentEvent =
     | { kind: "session"; sessionId: string; model?: string }
@@ -33,6 +46,8 @@ export type AgentEvent =
           anchorIndex?: number;
           terminal?: boolean;
           action?: "continue-tool-loop";
+          /** Operational recovery state. System-authored and excluded from transcripts. */
+          recovery?: TransientRetryNotice;
       }
     | { kind: "thinking"; text: string }
     | {

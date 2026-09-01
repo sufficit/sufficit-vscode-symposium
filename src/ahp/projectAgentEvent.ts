@@ -9,6 +9,7 @@ import {
     type AhpProjectionAction,
     type AhpProjectionState,
 } from "./projectionCore";
+import { projectStatusNotice } from "./projectStatusNotice";
 export {
     createProjectionState,
     type AhpProjectionAction,
@@ -357,35 +358,6 @@ function endTurn(state: AhpProjectionState, duration: number | undefined): AhpPr
     });
     resetTurn(state);
     return [action, ...activity(undefined)];
-}
-
-/**
- * A terminal notice is the reason the turn stopped, so it becomes a durable
- * response part. Projecting it as activity only — which is what every notice
- * used to do — meant the next event overwrote it and the transcript never
- * explained why the turn ended, while the session badge still said it stopped
- * with a warning. Non-terminal notices really are progress chatter (compaction,
- * an auth retry) and stay transient.
- */
-function projectStatusNotice(
-    state: AhpProjectionState,
-    event: Extract<AgentEvent, { kind: "status-notice" }>,
-): AhpProjectionAction[] {
-    if (!event.terminal || !state.turnId) {
-        return activity(event.text);
-    }
-    // Close the open text part so later text starts its own bubble after this.
-    state.textPartId = undefined;
-    return [
-        chatAction("chat/responsePart", state.turnId, {
-            part: {
-                kind: "notice",
-                id: partId(state, "notice"),
-                content: event.text,
-                _meta: { severity: event.severity ?? "info" },
-            },
-        }),
-    ];
 }
 
 function resetTurn(state: AhpProjectionState): void {

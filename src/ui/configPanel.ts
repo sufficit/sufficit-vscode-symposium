@@ -195,7 +195,6 @@ export class ConfigPanel {
                 return;
             case "set-pref":
                 if (typeof message.key === "string") {
-                    // Coerce by key: numbers for hops, booleans for autoApprove and voice options.
                     let value: unknown = message.value;
                     if (message.key.endsWith("maxToolHops")) {
                         value = Math.max(1, Number(message.value) || 50);
@@ -207,6 +206,8 @@ export class ConfigPanel {
                     } else if (message.key.endsWith("transientRetryLimit")) {
                         const parsed = Number(message.value);
                         value = [0, 2, 3, 5].includes(parsed) ? parsed : 3;
+                    } else if (message.key.endsWith("transientRetryAfterToolActivity")) {
+                        value = message.value === "true";
                     } else if (message.key.endsWith("retryInitialDelayMilliseconds")) {
                         const parsed = Number(message.value);
                         value = [1_000, 2_000, 5_000].includes(parsed) ? parsed : 1_000;
@@ -220,7 +221,6 @@ export class ConfigPanel {
                         value = Math.max(0, Number(message.value) || 0);
                     } else if (message.key === "chat.tools.global.autoApprove") {
                         value = message.value === "true";
-                        // optIn must be on for the global flag to take effect.
                         await vscode.workspace
                             .getConfiguration()
                             .update(

@@ -272,6 +272,9 @@ export const configViews =
                 item(t("config.prefs.transientRetryLimit.name"), t("config.prefs.transientRetryLimit.desc"),
                     sel("symposium.transientRetryLimit", String(p.transientRetryLimit ?? 3),
                         [{ v: "0", l: t("config.prefs.transientRetryLimit.off") }, { v: "2", l: t("config.prefs.transientRetryLimit.2") }, { v: "3", l: t("config.prefs.transientRetryLimit.3") }, { v: "5", l: t("config.prefs.transientRetryLimit.5") }])) +
+                item(t("config.prefs.transientRetryAfterTools.name"), t("config.prefs.transientRetryAfterTools.desc"),
+                    sel("symposium.transientRetryAfterToolActivity", p.transientRetryAfterToolActivity === false ? "false" : "true",
+                        [{ v: "true", l: t("config.prefs.transientRetryAfterTools.on") }, { v: "false", l: t("config.prefs.transientRetryAfterTools.off") }], Number(p.transientRetryLimit ?? 3) === 0)) +
                 item(t("config.prefs.retryInitialDelay.name"), t("config.prefs.retryInitialDelay.desc"),
                     sel("symposium.retryInitialDelayMilliseconds", String(p.retryInitialDelayMilliseconds ?? 1000),
                         [{ v: "1000", l: t("config.prefs.retryInitialDelay.1s") }, { v: "2000", l: t("config.prefs.retryInitialDelay.2s") }, { v: "5000", l: t("config.prefs.retryInitialDelay.5s") }], Number(p.transientRetryLimit ?? 3) === 0)) +

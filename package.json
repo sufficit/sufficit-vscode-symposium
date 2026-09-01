@@ -2,7 +2,7 @@
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
     "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.901.3",
+    "version": "2026.901.4",
     "publisher": "sufficit",
     "license": "MIT-0",
     "icon": "media/symposium-icon.png",
@@ -275,7 +275,12 @@
                         "Retry transient failures up to 3 times (recommended).",
                         "Retry transient failures up to 5 times."
                     ],
-                    "description": "Maximum automatic retries for explicitly retryable provider/transport failures. Uses the same bounded policy as Sufficit AI Genius and never replays after visible assistant or tool output."
+                    "description": "Maximum automatic retries for explicitly retryable provider/transport failures. Uses bounded exponential backoff and does not add another user message."
+                },
+                "symposium.transientRetryAfterToolActivity": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Continue automatic recovery when a transient connection failure happens after tool activity. The retry resumes the same logical intent and the recovery status remains UI-only. Disable for workflows whose tools are not idempotent."
                 },
                 "symposium.retryInitialDelayMilliseconds": {
                     "type": "number",
@@ -1077,7 +1082,7 @@
         "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
         "compile": "npm run clean && tsc -p ./ && npm run build:webview && npm run build:pwa && npm run bundle",
         "compile:test": "npm run clean && tsc -p ./ && npm run build:webview",
-        "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --outfile=out/ui/webview.bundle.js && esbuild src/ui/webview/chat.css --bundle --outfile=out/ui/webview.css",
+        "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --minify-syntax --outfile=out/ui/webview.bundle.js && esbuild src/ui/webview/chat.css --bundle --outfile=out/ui/webview.css",
         "build:pwa": "node scripts/build-pwa.mjs",
         "bundle": "node scripts/bundle.js",
         "bundle:dev": "node scripts/bundle.js --dev",

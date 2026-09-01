@@ -10,7 +10,7 @@ test("all-backends-exhausted 503 has a concise actionable system summary", () =>
 
     assert.match(out.summary, /HTTP 503/);
     assert.match(out.summary, /all configured backends were unavailable/i);
-    assert.match(out.summary, /not retry automatically/i);
+    assert.match(out.summary, /automatic recovery was unavailable or exhausted/i);
     assert.equal(out.detail, raw);
 });
 

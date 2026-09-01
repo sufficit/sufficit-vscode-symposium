@@ -45,7 +45,7 @@ export function presentTurnError(message: unknown, retryable?: boolean): ErrorPr
     const status = httpStatus(detail);
     const retry =
         retryable === true
-            ? " You may retry the same message; Symposium will not retry automatically."
+            ? " Automatic recovery was unavailable or exhausted. You may retry the same message."
             : " Retry is unavailable for this response; update the request or configuration before sending again.";
 
     if (status === 503 && /ai_backends_exhausted|all ai backends exhausted/i.test(detail)) {

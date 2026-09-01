@@ -4,6 +4,7 @@ import type { AgentEvent } from "../adapters/types";
 import type { PendingMessage } from "../application/controllerQueue";
 import type { ClockPort, ConfigurationPort } from "../application/ports";
 import { Turn } from "../application/turn";
+import { transcriptMessages } from "../application/controllerTranscript";
 import { conciseRetryReason, TransientRetryController } from "../recovery/transientRetry";
 
 class FakeClock implements ClockPort {
@@ -29,7 +30,7 @@ class FakeClock implements ClockPort {
     }
 }
 
-function configuration(values: Record<string, number> = {}): ConfigurationPort {
+function configuration(values: Record<string, number | boolean> = {}): ConfigurationPort {
     return {
         language: "pt-BR",
         get<T>(_section: string, key: string, fallback: T): T {
@@ -49,7 +50,7 @@ function transientError(message = "fetch failed"): AgentEvent {
     return { kind: "error", message, retryable: true };
 }
 
-function harness(values: Record<string, number> = {}) {
+function harness(values: Record<string, number | boolean> = {}) {
     const clock = new FakeClock();
     const emitted: unknown[] = [];
     const dispatched: PendingMessage[] = [];
@@ -83,6 +84,14 @@ test("transient recovery retries the same message with bounded exponential pause
     assert.equal(h.retry.pending, true);
     assert.equal(h.clock.scheduled[0].delay, 1_000);
     assert.equal(h.emitted.length, 1, "only the recovery notice is rendered");
+    assert.deepEqual(recoveryOf(h.emitted[0]), {
+        id: "intent-1",
+        state: "scheduled",
+        attempt: 1,
+        limit: 3,
+        reason: "fetch failed",
+        retryAt: 1_000,
+    });
 
     h.clock.run(0);
     assert.equal(h.retry.pending, false);
@@ -96,6 +105,8 @@ test("transient recovery retries the same message with bounded exponential pause
     assert.equal(retried.retryOf, "backend-turn-1");
     assert.equal(retried.interruptedBy, "fetch failed");
     assert.equal(retried.automaticRetryAttempt, 1);
+    assert.equal(retried.automaticRetryId, "intent-1");
+    assert.equal(recoveryOf(h.emitted[1])?.state, "running");
 
     const second = createTurn("turn-2", "retry");
     h.retry.begin(second, retried);
@@ -120,12 +131,13 @@ test("configured retry limit exposes the final error instead of looping forever"
     turn.end();
     assert.equal(h.retry.recover(turn), false);
     assert.equal(h.clock.scheduled.length, 0);
+    assert.equal(recoveryOf(h.emitted[0])?.state, "exhausted");
 });
 
-test("visible reply or tool activity prevents unsafe replay", () => {
+test("visible assistant output prevents unsafe replay", () => {
     for (const visible of [
         { kind: "text", text: "resposta parcial" },
-        { kind: "tool-start", toolName: "write_file" },
+        { kind: "thinking", text: "raciocínio parcial" },
     ] satisfies AgentEvent[]) {
         const h = harness();
         const turn = createTurn(`visible-${visible.kind}`);
@@ -137,6 +149,53 @@ test("visible reply or tool activity prevents unsafe replay", () => {
         assert.equal(h.retry.recover(turn), false);
         assert.equal(h.clock.scheduled.length, 0);
     }
+});
+
+test("tool activity can resume the same logical intent without another user row", () => {
+    const h = harness();
+    const turn = createTurn("after-tool");
+    h.retry.begin(turn, { text: "pedido", attachments: [], intentId: "intent-tool" });
+    assert.equal(h.retry.observe({ kind: "tool-start", toolName: "write_file" }), true);
+    assert.equal(h.retry.observe(transientError()), false);
+    turn.recordError();
+    turn.end();
+    assert.equal(h.retry.recover(turn), true);
+
+    h.clock.run(0);
+    assert.equal(h.dispatched.length, 1);
+    assert.equal(h.dispatched[0].retryOf, "backend-after-tool");
+    assert.equal(h.dispatched[0].automaticRetryId, "intent-tool");
+});
+
+test("tool activity recovery can be disabled for non-idempotent workflows", () => {
+    const h = harness({ transientRetryAfterToolActivity: false });
+    const turn = createTurn("unsafe-tool");
+    h.retry.begin(turn, { text: "pedido", attachments: [] });
+    h.retry.observe({ kind: "tool-end", toolName: "deploy", result: "ok" });
+    assert.equal(h.retry.observe(transientError()), true);
+    turn.recordError();
+    turn.end();
+    assert.equal(h.retry.recover(turn), false);
+    assert.equal(h.clock.scheduled.length, 0);
+});
+
+test("a successful retry resolves the same recovery card", () => {
+    const h = harness();
+    const first = createTurn("failed");
+    h.retry.begin(first, { text: "pedido", attachments: [], intentId: "intent-success" });
+    h.retry.observe(transientError());
+    first.recordError();
+    first.end();
+    h.retry.recover(first);
+    h.clock.run(0);
+
+    const retried = h.dispatched[0];
+    const second = createTurn("successful", "retry");
+    h.retry.begin(second, retried);
+    second.end("completed");
+    assert.equal(h.retry.recover(second), false);
+    assert.equal(recoveryOf(h.emitted.at(-1))?.state, "recovered");
+    assert.equal(recoveryOf(h.emitted.at(-1))?.id, "intent-success");
 });
 
 test("a manual action cancels the scheduled retry and prevents duplicate dispatch", () => {
@@ -152,6 +211,7 @@ test("a manual action cancels the scheduled retry and prevents duplicate dispatc
     h.clock.run(0);
     assert.deepEqual(h.dispatched, []);
     assert.equal(h.retry.pending, false);
+    assert.equal(recoveryOf(h.emitted.at(-1))?.state, "cancelled");
 });
 
 test("retry reason keeps the useful status and discards maintenance-page HTML", () => {
@@ -162,3 +222,32 @@ test("retry reason keeps the useful status and discards maintenance-page HTML", 
         "HTTP 503 Service Unavailable",
     );
 });
+
+test("automatic retry status is UI-only and excluded from the agent transcript", () => {
+    const rows = transcriptMessages([
+        { type: "user", text: "Continue the deployment" },
+        {
+            type: "event",
+            event: {
+                kind: "status-notice",
+                text: "Retrying automatically",
+                recovery: {
+                    id: "intent-1",
+                    state: "scheduled",
+                    attempt: 1,
+                    limit: 3,
+                    retryAt: 1_000,
+                },
+            },
+        },
+    ]);
+    assert.deepEqual(rows, [{ role: "user", text: "Continue the deployment" }]);
+});
+
+function recoveryOf(message: unknown) {
+    return (
+        message as {
+            event?: Extract<AgentEvent, { kind: "status-notice" }>;
+        }
+    ).event?.recovery;
+}

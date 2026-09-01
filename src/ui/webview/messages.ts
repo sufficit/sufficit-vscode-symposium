@@ -14,6 +14,8 @@ import { createSystemNotice } from "./systemNotice";
 import { t } from "./i18n";
 import { presentTurnError } from "../errorPresentation";
 import { reasoningDefault, reasoningValue } from "./models";
+import type { TransientRetryNotice } from "../../adapters/events";
+import { renderTransientRetryNotice } from "./retryStatusNotice";
 export { renderThinkBlock, streamThinkingDelta } from "./thinking";
 
 // Tracks the Retry bar for the most recent retry click, so it can be
@@ -196,6 +198,7 @@ export function renderStatusNotice(
     anchorIndex?: number,
     severity: "info" | "warning" | "error" = "info",
     action?: "continue-tool-loop",
+    recovery?: TransientRetryNotice,
 ): HTMLDivElement {
     const stick = nearBottom();
     // Close any open tool-action group too: a notice fired mid tool-loop
@@ -203,6 +206,13 @@ export function renderStatusNotice(
     // silently re-attach to the group that was open before this notice.
     endToolGroup();
     endStream();
+    if (recovery) {
+        const rendered = renderTransientRetryNotice(recovery);
+        if (rendered.created) log.appendChild(rendered.element);
+        refreshEmpty();
+        autoScroll(stick);
+        return rendered.element;
+    }
     const noticeAction =
         action === "continue-tool-loop"
             ? {

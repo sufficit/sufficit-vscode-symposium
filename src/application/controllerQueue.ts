@@ -38,6 +38,8 @@ export interface PendingMessage {
     retryOf?: string;
     /** Internal bounded-recovery attempt count. Not rendered as a user message. */
     automaticRetryAttempt?: number;
+    /** Stable identity for the UI-only recovery card across retry attempts. */
+    automaticRetryId?: string;
     text: string;
     attachments: string[];
     model?: string;
