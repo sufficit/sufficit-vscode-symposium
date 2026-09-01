@@ -176,7 +176,11 @@ test("OpenAI applies a model picker change when normalized reasoning cloned the 
 
     try {
         assert.equal(session.getModel?.(), "glm-5.3");
-        assert.equal(session.getPermission?.(), undefined);
+        assert.equal(
+            session.getPermission?.(),
+            "admin",
+            "an omitted session permission must materialize the adapter's admin default",
+        );
         session.setPermission?.("manager");
         assert.equal(session.getPermission?.(), "manager");
         const permissionEvents: AgentEvent[] = [];

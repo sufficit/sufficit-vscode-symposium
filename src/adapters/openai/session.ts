@@ -66,6 +66,11 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         private readonly options: SessionStartOptions,
     ) {
         super();
+        // The picker displays the adapter default when no per-session override
+        // exists. Materialize that same default before the runner receives the
+        // options; otherwise write-root containment sees undefined as non-admin
+        // and asks for approval while the UI truthfully displays "admin".
+        this.options.permission ??= this.cfg.permissionMode ?? "admin";
         this.runtime = new OpenAISessionRuntime(this.cfg, this.options, this.backend);
         const restored = restoreOpenAISession(
             backend,

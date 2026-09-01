@@ -25,6 +25,10 @@ export class ApprovalState {
         detail: string | undefined,
         tier: ApprovalTier,
     ): Promise<boolean> {
+        // Defense in depth: admin is an unconditional no-prompt contract. Even
+        // if a future caller misclassifies the effective mode, never expose an
+        // approval card or pause the tool while this live session is admin.
+        if (this.mode === "admin") return Promise.resolve(true);
         return new Promise<boolean>((resolve) => {
             this.pending.set(toolId, { resolve, tier });
             this.emit({ kind: "approval-request", toolId, toolName, detail, tier });
