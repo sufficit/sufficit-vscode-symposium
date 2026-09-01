@@ -26,7 +26,9 @@ exigiu ativar a versão instalada e tornar essa etapa verificável.
 - O Extension Host afetado foi identificado, confirmado ocioso e encerrado
   isoladamente. O code-server o recriou como PID `766651`.
 - A ativação agora registra `[extension] activated version=<version>` no canal
-  Symposium.
+  Symposium. A evidência é emitida após a inicialização do `OutputChannel`, pois
+  o code-server descartava o primeiro `appendLine` enquanto conectava o logger
+  persistente.
 - O procedimento de release passa a considerar instalação e ativação como
   verificações distintas; uma versão só está implantada quando ambas coincidem.
 - Foi adicionado um teste que transforma uma resposta HTTP 429 do adaptador
@@ -35,12 +37,14 @@ exigiu ativar a versão instalada e tornar essa etapa verificável.
 
 ## Release
 
-- alvo: `v2026.901.5`
+- alvo final: `v2026.901.6`
+- `v2026.901.5`: correção funcional e primeira versão do guardrail
+- `v2026.901.6`: emissão resiliente da evidência de versão no code-server
 - feature de recuperação: `symposium.recovery` `1.1.0` (contrato inalterado)
 
 ## Verificação
 
 - teste focal de auto-retry: aprovado
 - `npm run verify:package`: aprovado
-- release guardrail: aprovado para `v2026.901.5`
-- VSIX: 41 arquivos, 507.356 bytes
+- release guardrail: aprovado para `v2026.901.6`
+- VSIX: 41 arquivos, 507.384 bytes

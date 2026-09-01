@@ -44,7 +44,17 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const output = vscode.window.createOutputChannel("Symposium");
     setSymposiumOutput(output);
     context.subscriptions.push(output);
-    symposiumLog(`[extension] activated version=${String(context.extension.packageJSON.version)}`);
+    // code-server can discard the first OutputChannel append while its file-backed
+    // logger is still attaching. Emit the deployment evidence after that startup
+    // boundary so operators can distinguish an installed VSIX from the version
+    // that the active Extension Host actually loaded.
+    const activatedVersion = String(context.extension.packageJSON.version);
+    const activationEvidenceTimer = setTimeout(() => {
+        symposiumLog(`[extension] activated version=${activatedVersion}`);
+    }, 1_500);
+    context.subscriptions.push({
+        dispose: () => clearTimeout(activationEvidenceTimer),
+    });
     void migrateLegacySettings().catch((error) => {
         symposiumLog(
             `[settings] legacy migration failed: ${error instanceof Error ? error.message : String(error)}`,
