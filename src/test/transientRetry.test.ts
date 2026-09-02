@@ -181,20 +181,26 @@ test("configured retry limit exposes the final error instead of looping forever"
 });
 
 test("visible assistant output prevents unsafe replay", () => {
-    for (const visible of [
-        { kind: "text", text: "resposta parcial" },
-        { kind: "thinking", text: "raciocínio parcial" },
-    ] satisfies AgentEvent[]) {
-        const h = harness();
-        const turn = createTurn(`visible-${visible.kind}`);
-        h.retry.begin(turn, { text: "pedido", attachments: [] });
-        assert.equal(h.retry.observe(visible), true);
-        assert.equal(h.retry.observe(transientError()), true);
-        turn.recordError();
-        turn.end();
-        assert.equal(h.retry.recover(turn), false);
-        assert.equal(h.clock.scheduled.length, 0);
-    }
+    const h = harness();
+    const turn = createTurn("visible-text");
+    h.retry.begin(turn, { text: "pedido", attachments: [] });
+    assert.equal(h.retry.observe({ kind: "text", text: "resposta parcial" }), true);
+    assert.equal(h.retry.observe(transientError()), true);
+    turn.recordError();
+    turn.end();
+    assert.equal(h.retry.recover(turn), false);
+    assert.equal(h.clock.scheduled.length, 0);
+});
+
+test("thinking progress does not suppress transient recovery", () => {
+    const h = harness();
+    const turn = createTurn("thinking-progress");
+    h.retry.begin(turn, { text: "pedido", attachments: [] });
+    h.retry.observe({ kind: "thinking", text: "analisando" });
+    assert.equal(h.retry.observe(transientError()), false);
+    turn.recordError();
+    turn.end();
+    assert.equal(h.retry.recover(turn), true);
 });
 
 test("tool activity can resume the same logical intent without another user row", () => {
@@ -202,6 +208,7 @@ test("tool activity can resume the same logical intent without another user row"
     const turn = createTurn("after-tool");
     h.retry.begin(turn, { text: "pedido", attachments: [], intentId: "intent-tool" });
     assert.equal(h.retry.observe({ kind: "tool-start", toolName: "write_file" }), true);
+    assert.equal(h.retry.observe({ kind: "text", text: "arquivo atualizado" }), true);
     assert.equal(h.retry.observe(transientError()), false);
     turn.recordError();
     turn.end();

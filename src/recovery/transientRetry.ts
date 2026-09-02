@@ -26,8 +26,8 @@ interface ActiveAttempt {
     turn: Turn;
     message: PendingMessage;
     attempt: number;
-    unsafeOutputStarted: boolean;
-    toolActivityStarted: boolean;
+    outputStarted: boolean;
+    toolStarted: boolean;
     deferred?: DeferredRetryError;
     exhausted?: Extract<AgentEvent, { kind: "error" }>;
 }
@@ -63,8 +63,8 @@ export class TransientRetryController {
             turn,
             message: cloneMessage(message),
             attempt: normalizeAttempt(message.automaticRetryAttempt),
-            unsafeOutputStarted: false,
-            toolActivityStarted: false,
+            outputStarted: false,
+            toolStarted: false,
         };
     }
 
@@ -74,10 +74,10 @@ export class TransientRetryController {
         if (!active || active.turn.phase === "ended") return true;
 
         if (startsUnsafeOutput(event)) {
-            active.unsafeOutputStarted = true;
+            active.outputStarted = true;
             this.flushDeferred(active);
         }
-        if (startsToolActivity(event)) active.toolActivityStarted = true;
+        if (startsToolActivity(event)) active.toolStarted = true;
 
         if (
             event.kind !== "error" ||
@@ -89,10 +89,7 @@ export class TransientRetryController {
         }
 
         const policy = readPolicy(this.deps.configuration);
-        if (
-            active.unsafeOutputStarted ||
-            (active.toolActivityStarted && !policy.afterToolActivity)
-        ) {
+        if (retryBlocked(active, policy.afterToolActivity)) {
             return true;
         }
         if (active.attempt >= policy.limit) {
@@ -140,7 +137,11 @@ export class TransientRetryController {
         }
 
         const deferred = active.deferred;
-        if (!deferred || active.unsafeOutputStarted || turn.outcome !== "failed") {
+        if (
+            !deferred ||
+            retryBlocked(active, readPolicy(this.deps.configuration).afterToolActivity) ||
+            turn.outcome !== "failed"
+        ) {
             this.flushDeferred(active);
             return false;
         }
@@ -280,15 +281,18 @@ function normalizeAttempt(value: number | undefined): number {
 
 function startsUnsafeOutput(event: AgentEvent): boolean {
     if (event.kind === "text") return event.text.trim().length > 0;
-    return (
-        event.kind === "thinking" ||
-        event.kind === "approval-request" ||
-        event.kind === "approval-resolved"
-    );
+    return event.kind === "approval-request" || event.kind === "approval-resolved";
 }
 
 function startsToolActivity(event: AgentEvent): boolean {
     return event.kind === "tool-start" || event.kind === "tool-output" || event.kind === "tool-end";
+}
+
+/** Tool-recovery preference takes precedence over progress narration emitted
+ * around that tool. Without it, normal agent commentary made the setting
+ * ineffective. Standalone assistant output and approvals remain non-replayable. */
+function retryBlocked(active: ActiveAttempt, afterToolActivity: boolean): boolean {
+    return active.toolStarted ? !afterToolActivity : active.outputStarted;
 }
 
 function retryIdentity(active: ActiveAttempt): string {
