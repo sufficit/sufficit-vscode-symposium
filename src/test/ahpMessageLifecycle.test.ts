@@ -297,3 +297,36 @@ test("HOST-QUEUE ROUND TRIP — projectQueue add then remove converges to no pen
     assert.equal(harness.chat.queuedMessages, undefined);
     assert.equal(selectPendingMessages(harness.chat).length, 0);
 });
+
+test("RECOVERED RETRY — successful synthetic continuation clears the prior terminal error", () => {
+    const harness = new Harness();
+    const projection = createProjectionState();
+    rememberProjectedUser(projection, "deploy");
+
+    harness.dispatchAll(
+        projectAgentEvent(projection, { kind: "turn-start", logicalTurnId: "failed" }),
+    );
+    harness.dispatchAll(projectAgentEvent(projection, { kind: "text", text: "Partial progress" }));
+    harness.dispatchAll(
+        projectAgentEvent(projection, {
+            kind: "error",
+            message: "fetch failed",
+            retryable: true,
+        }),
+    );
+    assert.equal(harness.chat.turns[0]?.state, "error");
+
+    harness.dispatchAll(
+        projectAgentEvent(projection, { kind: "turn-start", logicalTurnId: "retry" }),
+    );
+    harness.dispatchAll(
+        projectAgentEvent(projection, { kind: "text", text: "Deployment completed" }),
+    );
+    harness.dispatchAll(projectAgentEvent(projection, { kind: "turn-end", durationMs: 10 }));
+
+    assert.equal(harness.chat.turns.length, 2);
+    assert.equal(harness.chat.turns[0]?.state, "cancelled");
+    assert.equal(harness.chat.turns[0]?.error, undefined);
+    assert.equal(harness.chat.turns[1]?.state, "complete");
+    assert.equal(harness.chat.activeTurn, undefined);
+});

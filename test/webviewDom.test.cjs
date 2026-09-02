@@ -547,6 +547,69 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
     harness.dom.window.close();
 });
 
+test("successful AHP retry removes the superseded live error notice", async () => {
+    const harness = createHarness();
+    const resource = "ahp-chat:/33333333-3333-5333-8333-333333333333";
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource,
+                fromSeq: 1,
+                state: {
+                    resource,
+                    title: "Recovered",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [],
+                },
+            },
+        },
+    });
+    const action = (serverSeq, value) =>
+        harness.deliver({
+            type: "ahp-frame",
+            frame: {
+                kind: "action",
+                generation: 1,
+                envelope: { channel: resource, serverSeq, origin: undefined, action: value },
+            },
+        });
+    action(2, {
+        type: "chat/turnStarted",
+        turnId: "failed",
+        startedAt: new Date(1).toISOString(),
+        message: { text: "deploy", origin: { kind: "user" } },
+    });
+    action(3, {
+        type: "chat/error",
+        turnId: "failed",
+        error: { message: "fetch failed", _meta: { retryable: true } },
+    });
+    action(4, {
+        type: "chat/turnStarted",
+        turnId: "retry",
+        startedAt: new Date(2).toISOString(),
+        message: { text: "", origin: { kind: "user" }, _meta: { synthetic: true } },
+    });
+    action(5, {
+        type: "chat/responsePart",
+        turnId: "retry",
+        part: { kind: "markdown", id: "reply", content: "" },
+    });
+    action(6, { type: "chat/delta", turnId: "retry", partId: "reply", content: "Done" });
+    action(7, { type: "chat/turnComplete", turnId: "retry", duration: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    assert.equal(harness.document.querySelectorAll(".turnError").length, 0);
+    assert.match(harness.document.querySelector("#log").textContent, /Done/);
+    harness.dom.window.close();
+});
+
 test("held queue stays visibly paused while new messages remain direct", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna", { busy: false }));

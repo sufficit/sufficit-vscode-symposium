@@ -12,7 +12,7 @@ import { asArray, asRecord, nonNegative, optionalString, stringArray } from "./c
 import { mergeToolMetadata } from "./toolMetadata";
 import { mergeAssistantMetadata } from "./assistantMetadata";
 import { reconcileLoadedTurns, withoutSubmissionDuplicate } from "./turnReconciliation";
-
+import { settleRecoveredError } from "./recoveredError";
 type ActionRecord = { type: string } & Record<string, unknown>;
 type PartRecord = Record<string, unknown> & {
     kind: string;
@@ -124,21 +124,16 @@ function startTurn(state: ChatState, action: ActionRecord): ChatState {
     const queuedId = optionalString(action.queuedMessageId);
     const message = action.message as Message;
     // Drop the row by id when there is one; otherwise drop a SINGLE row
-    // carrying the same text. queuedMessageId is only present when the
-    // projection still held the pendingUser slot, and the first send after an
-    // idle period reaches turn-start without it — the row that outlived
-    // v25-v33. One row, because the same text may legitimately be queued
-    // several times and this turn accounts for exactly one of them.
+    // carrying the same text. The first send after idle can lose queuedMessageId.
+    // Drop one row because identical text may legitimately be queued repeatedly.
     const byId = state.queuedMessages?.filter((item) => item.id !== queuedId);
     const queuedMessages =
         byId && byId.length === state.queuedMessages?.length
             ? dropFirstByText(byId, message?.text)
             : byId;
     // A stuck activeTurn (missed turnComplete) must never cause this
-    // turnStarted to be dropped whole — that leaves an immortal fake queue
-    // row while the user bubble still renders. Supersede: finalize the stuck
-    // turn as cancelled (no duration, it never actually finished) and start
-    // the new one.
+    // turnStarted to be dropped whole. Finalize the stuck turn as cancelled,
+    // then start the new one without leaving an immortal fake queue row.
     const activeTurn: NonNullable<ChatState["activeTurn"]> = {
         id: turnId,
         startedAt: String(action.startedAt ?? new Date().toISOString()),
@@ -256,7 +251,10 @@ function endTurn(
     const turn = finalizeTurn(active, turnState, nonNegative(action.duration), action.error);
     const next: ChatState = {
         ...state,
-        turns: [...state.turns, turn],
+        turns: [
+            ...(turnState === "complete" ? settleRecoveredError(state.turns, turn) : state.turns),
+            turn,
+        ],
         activeTurn: undefined,
         activity: undefined,
         status: replaceActivityStatus(state.status, status),

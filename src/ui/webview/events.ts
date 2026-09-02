@@ -38,7 +38,7 @@ import { legacyGuardrailStopNotice } from "../../adapters/openai/turnNotices";
 import type { AgentEvent } from "../../adapters/types";
 
 /** Apply an `event` message payload (streaming turn events). */
-export function applyEvent(ev: AgentEvent): void {
+export function applyEvent(ev: AgentEvent, errorTurnId?: string): void {
     // Any real turn-progress event proves a pending retry took effect (the
     // stalled/errored attempt resumed) — clear its "Retrying…" button on the
     // first sign of life, not just at full turn-end (which can be long after,
@@ -104,7 +104,7 @@ export function applyEvent(ev: AgentEvent): void {
         // busy here made the next composer send look immediate and rendered its
         // optimistic bubble outside the host queue. Only turn-end may release
         // the composer; the host controller already follows that same rule.
-        renderError(ev.message, ev.historical, ev.retryable, ev.retryAt);
+        renderError(ev.message, ev.historical, ev.retryable, ev.retryAt, errorTurnId);
     } else if (ev.kind === "session") {
         if (ev.model) {
             applyEffectiveModel(ev.model);

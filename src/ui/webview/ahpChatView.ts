@@ -27,6 +27,7 @@ import { setStatus } from "./status";
 import { renderInSlices } from "./renderScheduler";
 import { renderAhpRecoveryStatus } from "./ahpRecoveryView";
 import { asRecord, numberValue, optionalString } from "./ahpValues";
+import { removeRecoveredErrorNotice } from "./ahpRecoveredErrorView";
 
 let renderGeneration = 0;
 let pendingRender: Promise<void> = Promise.resolve();
@@ -185,16 +186,22 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
         case "chat/error": {
             const error = asRecord(action.error);
             const metadata = asRecord(error._meta);
-            applyEvent({
-                kind: "error",
-                message: String(error.message ?? "Agent error"),
-                retryable: metadata.retryable === true,
-                retryAt: numberValue(metadata.retryAt),
-            });
+            applyEvent(
+                {
+                    kind: "error",
+                    message: String(error.message ?? "Agent error"),
+                    retryable: metadata.retryable === true,
+                    retryAt: numberValue(metadata.retryAt),
+                },
+                optionalString(action.turnId),
+            );
             applyEvent({ kind: "turn-end", durationMs: numberValue(action.duration) });
             break;
         }
         case "chat/turnComplete":
+            if (chat) removeRecoveredErrorNotice(chat, String(action.turnId ?? ""));
+            applyEvent({ kind: "turn-end", durationMs: numberValue(action.duration) });
+            break;
         case "chat/turnCancelled":
             applyEvent({ kind: "turn-end", durationMs: numberValue(action.duration) });
             break;
@@ -247,6 +254,7 @@ function renderTurn(
             historicalError,
             asRecord(error._meta).retryable === true,
             numberValue(asRecord(error._meta).retryAt),
+            turn.id,
         );
     }
     if (!active) {

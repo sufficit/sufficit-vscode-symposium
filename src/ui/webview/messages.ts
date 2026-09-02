@@ -47,6 +47,7 @@ export function renderError(
     historical = false,
     retryable = false,
     retryAt?: number,
+    turnId?: string,
 ): void {
     const stick = nearBottom();
     endToolGroup();
@@ -55,6 +56,7 @@ export function renderError(
     const presentation = presentTurnError(message, retryable, retryAt);
     const el = createSystemNotice(presentation.summary, "error");
     el.classList.add("turnError");
+    if (turnId) el.dataset.turnId = turnId;
     el.dataset.errorStatus = /\bHTTP\s+(\d{3})\b/i.exec(presentation.detail)?.[1] || "unknown";
     if (presentation.detail !== presentation.summary) {
         const content = el.querySelector(".statusNoticeContent");

@@ -11,6 +11,7 @@ import type {
 } from "@microsoft/agent-host-protocol";
 import { safeMeta } from "./projectionCore";
 import { assistantMetadata } from "./assistantMetadata";
+import { resumeHistoricalTurn } from "./recoveredError";
 
 const MESSAGE_USER = "user" as MessageKind.User;
 const PART_MARKDOWN = "markdown" as ResponsePartKind.Markdown;
@@ -55,6 +56,7 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
         const turn = (current ??= historyTurn(index, "", message.ts));
         inheritTurnTimestamp(turn, message.ts);
         if (message.role === "assistant") {
+            resumeHistoricalTurn(turn);
             turn.responseParts.push({
                 kind: PART_MARKDOWN,
                 id: `history-${index + 1}-text`,
@@ -66,12 +68,14 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
                 }),
             } as unknown as ResponsePart);
         } else if (message.role === "thinking") {
+            resumeHistoricalTurn(turn);
             turn.responseParts.push({
                 kind: PART_REASONING,
                 id: `history-${index + 1}-reasoning`,
                 content: message.text ?? "",
             });
         } else if (message.role === "tool") {
+            resumeHistoricalTurn(turn);
             turn.responseParts.push({
                 kind: PART_TOOL_CALL,
                 toolCall: {

@@ -11,6 +11,7 @@ import {
     rememberProjectedUser,
     seedQueueProjection,
 } from "../ahp";
+import { historyTurns } from "../ahp/historyProjection";
 
 /**
  * Recovery-path invariants for docs/plans/20260810-message-lifecycle-hardening.md
@@ -100,6 +101,22 @@ test("automatic recovery projects as transient UI state outside conversation his
         retryAt: 1_000,
         reason: "fetch failed",
     });
+});
+
+test("historical output after an error supersedes the obsolete terminal failure", () => {
+    const [turn] = historyTurns([
+        { role: "user", text: "deploy" },
+        { role: "assistant", text: "Partial progress" },
+        { role: "error", text: "fetch failed", retryable: true },
+        { role: "assistant", text: "Deployment completed" },
+    ]);
+
+    assert.equal(turn.state, "complete");
+    assert.equal(turn.error, undefined);
+    assert.deepEqual(
+        turn.responseParts.map((part) => (part as { content?: string }).content),
+        ["Partial progress", "Deployment completed"],
+    );
 });
 
 test("seedQueueProjection lets an empty host queue remove restored queued and steering rows", () => {

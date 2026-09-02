@@ -1,6 +1,6 @@
 import { defineFeature } from "../features/definition";
 
-export const AHP_FEATURE_VERSION = "0.6.1";
+export const AHP_FEATURE_VERSION = "0.6.2";
 
 export const AHP_FEATURE = defineFeature({
     namespace: "symposium.ahp",
