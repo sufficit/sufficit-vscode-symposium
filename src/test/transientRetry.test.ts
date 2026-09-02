@@ -269,6 +269,15 @@ test("retry reason keeps the useful status and discards maintenance-page HTML", 
     );
 });
 
+test("retry reason replaces an HTML response without a status", () => {
+    assert.equal(
+        conciseRetryReason(
+            "<!doctype html><html><head><style>body { color: red; }</style><title>Maintenance in progress</title></head></html>",
+        ),
+        "temporary provider failure",
+    );
+});
+
 test("automatic retry status is UI-only and excluded from the agent transcript", () => {
     const rows = transcriptMessages([
         { type: "user", text: "Continue the deployment" },

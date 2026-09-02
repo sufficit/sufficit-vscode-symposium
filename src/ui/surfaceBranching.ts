@@ -1,6 +1,7 @@
 import type { SessionInfo, SessionStartOptions } from "../adapters/types";
 import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 import type { WebviewToHost } from "../protocol/chat";
+import { conciseRetryReason } from "../recovery/retryReason";
 
 /**
  * Branch flows for a chat surface: restart-from-message and edit-and-resend.
@@ -95,7 +96,7 @@ export function retryLastMessage(
     // in from the webview's click (not captured host-side): an in-memory
     // host field wouldn't survive a reload between the error and this click,
     // but the rendered error text does (it's restored from persisted history).
-    const interruptedBy = errorMessage;
+    const interruptedBy = errorMessage ? conciseRetryReason(errorMessage) : undefined;
     if (interruptedBy) {
         // Visible confirmation (same status-notice channel as compaction/
         // gap notices). This notice is UI-only; the adapter separately sends
@@ -106,7 +107,7 @@ export function retryLastMessage(
             type: "event",
             event: {
                 kind: "status-notice",
-                text: `Retrying the previous request — no new user message was added. The model received the interruption reason: ${interruptedBy}`,
+                text: `Retrying; no user message. Reason: ${interruptedBy}`,
                 anchorIndex: adjustedIndex,
             },
         });

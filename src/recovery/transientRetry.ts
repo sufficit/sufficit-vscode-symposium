@@ -2,6 +2,8 @@ import type { AgentEvent } from "../adapters/types";
 import type { PendingMessage } from "../application/controllerQueue";
 import type { ClockPort, ConfigurationPort } from "../application/ports";
 import type { Turn } from "../application/turn";
+import { conciseRetryReason } from "./retryReason";
+export { conciseRetryReason } from "./retryReason";
 
 export const DEFAULT_TRANSIENT_RETRY_LIMIT = 3;
 export const DEFAULT_RETRY_INITIAL_DELAY_MILLISECONDS = 1_000;
@@ -297,17 +299,6 @@ function retryIdentity(active: ActiveAttempt): string {
 
 function cloneMessage(message: PendingMessage): PendingMessage {
     return { ...message, attachments: [...message.attachments] };
-}
-
-export function conciseRetryReason(message: string): string {
-    const status = /\bHTTP\s+\d{3}(?:\s+[A-Za-z][^<\n\r]{0,100})?/i.exec(message)?.[0]?.trim();
-    if (status) return status;
-    const firstLine = message
-        .replace(/<[^>]*>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    if (!firstLine) return "temporary provider failure";
-    return firstLine.length > 240 ? `${firstLine.slice(0, 237)}…` : firstLine;
 }
 
 function retryScheduledText(
