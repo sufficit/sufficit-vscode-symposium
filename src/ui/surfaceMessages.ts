@@ -180,6 +180,7 @@ export class SurfaceMessages {
                 case "remove-guardrail": {
                     if (typeof message.id === "string") {
                         await removeSurfaceGuardrail(this.d.hub, message.id);
+                        this.d.sync.forgetGuardrail(message.id);
                         await this.d.getController()?.reloadGuardrails();
                         void this.d.sync.refreshGuardrails();
                     }
@@ -195,6 +196,7 @@ export class SurfaceMessages {
                         );
                         if (ok === "Clear") {
                             await clearSurfaceGuardrails(this.d.hub, sid);
+                            this.d.sync.clearGuardrails();
                             await this.d.getController()?.reloadGuardrails();
                             void this.d.sync.refreshGuardrails();
                         }
