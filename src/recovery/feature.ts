@@ -1,6 +1,6 @@
 import { defineFeature } from "../features/definition";
 
-export const RECOVERY_FEATURE_VERSION = "1.3.0";
+export const RECOVERY_FEATURE_VERSION = "1.3.1";
 
 export const RECOVERY_FEATURE = defineFeature({
     namespace: "symposium.recovery",

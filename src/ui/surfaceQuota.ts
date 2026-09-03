@@ -1,10 +1,12 @@
 import type { AdapterUsageProvider, AgentAdapter } from "../adapters/types";
 import { symposiumLog } from "../extension/log";
+import { withAbortableDeadline } from "../sync/requestDeadline";
 import { presetQuotaLoadingEvent } from "./chatSurfaceContext";
 
 interface SurfaceQuotaDeps {
     post: (message: unknown) => void;
     getModel: () => string | undefined;
+    timeoutMilliseconds?: number;
 }
 
 export class SurfaceQuota {
@@ -12,6 +14,7 @@ export class SurfaceQuota {
     private model: string | null | undefined;
     private generation = 0;
     private timer: ReturnType<typeof setInterval> | undefined;
+    private refreshInFlight: Promise<void> | undefined;
 
     constructor(private readonly deps: SurfaceQuotaDeps) {}
 
@@ -19,6 +22,7 @@ export class SurfaceQuota {
         this.usage = adapter.usage;
         this.model = null;
         this.generation++;
+        this.refreshInFlight = undefined;
         void this.refresh();
     }
 
@@ -26,41 +30,54 @@ export class SurfaceQuota {
         this.timer ??= setInterval(() => void this.refresh(), 60_000);
     }
 
-    async refresh(force = false): Promise<void> {
+    refresh(force = false): Promise<void> {
+        if (this.refreshInFlight) return this.refreshInFlight;
+        const generation = this.generation;
+        return (this.refreshInFlight = this.runRefresh(force, generation).finally(() => {
+            if (generation === this.generation) this.refreshInFlight = undefined;
+        }));
+    }
+
+    private async runRefresh(force: boolean, generation: number): Promise<void> {
         const usage = this.usage;
         if (!usage) return;
-        const generation = this.generation;
         const model = this.deps.getModel();
         if (usage.backend === "openai" && model !== this.model) {
             this.model = model;
             this.deps.post(presetQuotaLoadingEvent(usage));
         }
         this.deps.post({ type: "quota-loading", loading: true });
+        let failed = false;
         try {
-            const snapshot = await usage.read(force, { model });
+            const snapshot = await withAbortableDeadline(
+                "quota",
+                this.deps.timeoutMilliseconds ?? 15_000,
+                () => usage.read(force, { model }),
+            );
             if (!this.isCurrent(generation, usage)) return;
             this.deps.post({ type: "event", event: { kind: "quota", ...snapshot } });
         } catch (error) {
             if (!this.isCurrent(generation, usage)) return;
-            symposiumLog(
-                `[quota] Failed to read local adapter usage: ${error instanceof Error ? error.message : String(error)}`,
-            );
-            this.deps.post({
-                type: "quota-loading",
-                loading: false,
-                backend: usage.backend,
-                error: true,
-            });
+            failed = true;
+            symposiumLog(`[quota] Read: ${error instanceof Error ? error.message : String(error)}`);
         } finally {
             if (this.isCurrent(generation, usage)) {
-                this.deps.post({ type: "quota-loading", loading: false, backend: usage.backend });
+                this.deps.post({
+                    type: "quota-loading",
+                    loading: false,
+                    backend: usage.backend,
+                    ...(failed ? { error: true } : {}),
+                });
             }
         }
     }
 
     dispose(): void {
-        if (this.timer) clearInterval(this.timer);
+        clearInterval(this.timer);
         this.timer = undefined;
+        this.generation++;
+        this.usage = undefined;
+        this.refreshInFlight = undefined;
     }
 
     private isCurrent(generation: number, usage: AdapterUsageProvider): boolean {

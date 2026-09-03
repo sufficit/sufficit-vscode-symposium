@@ -241,6 +241,7 @@ export class TransientRetryController {
     private flushDeferred(active: ActiveAttempt): void {
         if (!active.deferred) return;
         this.deps.emit({ type: "event", event: active.deferred.event });
+        active.turn.takeError();
         active.deferred = undefined;
     }
 

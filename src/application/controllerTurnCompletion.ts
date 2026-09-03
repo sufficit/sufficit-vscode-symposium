@@ -12,6 +12,9 @@
 import type { PendingMessage } from "./controllerQueue";
 import type { QueueHold } from "./controllerQueue";
 import type { Turn, TurnOutcome, TurnTracker } from "./turn";
+import type { AgentEvent } from "../adapters/types";
+
+type TurnEndEvent = Extract<AgentEvent, { kind: "turn-end" }>;
 
 export interface TurnCompletionContext {
     turns: TurnTracker;
@@ -38,7 +41,7 @@ export interface TurnCompletionContext {
 export function completeTurn(
     turn: Turn,
     ctx: TurnCompletionContext,
-    options?: { outcome?: TurnOutcome; emitTurnEnd?: boolean },
+    options?: { outcome?: TurnOutcome; emitTurnEnd?: boolean; turnEndEvent?: TurnEndEvent },
 ): void {
     const changed = ctx.turns.end(turn, options?.outcome);
     if (!changed) {
@@ -46,17 +49,30 @@ export function completeTurn(
         return;
     }
     ctx.clearWatchdog();
+    // Recovery owns a retryable raw error only until it has either scheduled
+    // another attempt or put that error back into the render stream. This must
+    // happen before turn-end: AHP intentionally resets its active turn at the
+    // terminal boundary and cannot associate a late error card afterwards.
+    const recoveryScheduled = ctx.recoverFailedTurn?.(turn) ?? false;
+    if (turn.outcome === "failed" && !recoveryScheduled) {
+        const hiddenError = turn.takeError();
+        if (hiddenError) {
+            ctx.log?.(`[turn] exposing deferred terminal error fallback for ${turn.describe()}`);
+            ctx.emit({ type: "event", event: hiddenError });
+        }
+    }
     if (options?.emitTurnEnd) {
         ctx.emit({
             type: "event",
-            event: {
-                kind: "turn-end",
-                durationMs: turn.durationMs,
-                ...(turn.backendId ? { logicalTurnId: turn.backendId } : {}),
-            },
+            event:
+                options.turnEndEvent ??
+                ({
+                    kind: "turn-end",
+                    durationMs: turn.durationMs,
+                    ...(turn.backendId ? { logicalTurnId: turn.backendId } : {}),
+                } satisfies TurnEndEvent),
         });
     }
-    const recoveryScheduled = ctx.recoverFailedTurn?.(turn) ?? false;
     if (turn.outcome === "failed" && recoveryScheduled) {
         ctx.statusChanged();
         // Keep queued work behind the automatic retry and publish the pending

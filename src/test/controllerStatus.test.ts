@@ -4,7 +4,12 @@ import { ControllerEventHandler } from "../application/controllerEventHandler";
 import { MISSING_FINAL_RESPONSE_NOTICE } from "../application/finalResponseState";
 import { TurnTracker } from "../application/turn";
 
-function handlerState() {
+function handlerState(
+    options: {
+        observeEvent?: (event: Parameters<ControllerEventHandler["handle"]>[0]) => boolean;
+        recoverFailedTurn?: () => boolean;
+    } = {},
+) {
     const turns = new TurnTracker();
     turns.begin("user");
     let ownershipReleases = 0;
@@ -18,15 +23,65 @@ function handlerState() {
         recordChanged: () => undefined,
         setTodos: () => undefined,
         trackingMode: () => undefined,
+        observeEvent: options.observeEvent,
         takeQueued: () => undefined,
         emitQueue: () => undefined,
         dispatch: () => undefined,
         holdQueue: () => undefined,
         queuedCount: () => 0,
         releaseOwnership: () => ownershipReleases++,
+        recoverFailedTurn: options.recoverFailedTurn,
     });
     return { turns, handler, emitted, ownershipReleases: () => ownershipReleases };
 }
+
+test("a deferred terminal error is exposed before turn-end when recovery cannot own it", () => {
+    const { turns, handler, emitted } = handlerState({
+        observeEvent: (event) => event.kind !== "error",
+        recoverFailedTurn: () => false,
+    });
+    const error = { kind: "error", message: "provider stream failed", retryable: true } as const;
+
+    handler.handle(error);
+    handler.handle({ kind: "turn-end", durationMs: 47_013 });
+
+    const terminal = emitted.filter(
+        (message) =>
+            (message as { event?: { kind?: string } }).event?.kind === "error" ||
+            (message as { event?: { kind?: string } }).event?.kind === "turn-end",
+    ) as Array<{ event: { kind: string; message?: string; durationMs?: number } }>;
+    assert.deepEqual(
+        terminal.map(({ event }) => event.kind),
+        ["error", "turn-end"],
+    );
+    assert.equal(terminal[0].event.message, error.message);
+    assert.equal(terminal[1].event.durationMs, 47_013);
+    assert.equal(turns.lastTurn?.outcome, "failed");
+    assert.equal(turns.lastTurn?.takeError(), undefined);
+});
+
+test("automatic recovery keeps its deferred raw error hidden", () => {
+    const { handler, emitted } = handlerState({
+        observeEvent: (event) => event.kind !== "error",
+        recoverFailedTurn: () => true,
+    });
+
+    handler.handle({ kind: "error", message: "HTTP 503", retryable: true });
+    handler.handle({ kind: "turn-end" });
+
+    assert.equal(
+        emitted.some(
+            (message) => (message as { event?: { kind?: string } }).event?.kind === "error",
+        ),
+        false,
+    );
+    assert.equal(
+        emitted.filter(
+            (message) => (message as { event?: { kind?: string } }).event?.kind === "turn-end",
+        ).length,
+        1,
+    );
+});
 
 test("terminal warning marks a stopped session for attention and releases idle ownership", () => {
     const { turns, handler, ownershipReleases } = handlerState();

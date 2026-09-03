@@ -14,7 +14,9 @@
  * reconstructed via optional-field comparisons scattered across the event
  * handler.
  */
-import type { SessionTerminalStatus } from "../adapters/types";
+import type { AgentEvent, SessionTerminalStatus } from "../adapters/types";
+
+type TurnErrorEvent = Extract<AgentEvent, { kind: "error" }>;
 
 /** pending = created by dispatch, not yet handed to the backend.
  *  running = the backend has the message (or emitted turn-start).
@@ -47,6 +49,13 @@ export class Turn {
     private _phase: TurnPhase = "pending";
     private _outcome: TurnOutcome | undefined;
     private _attention: SessionTerminalStatus | undefined;
+    /**
+     * The terminal provider error belongs to the turn, not to the retry
+     * controller. `visible` is false while automatic recovery deliberately
+     * defers the raw card. Keeping the event here prevents an internal retry
+     * state mismatch from swallowing the only explanation shown to the user.
+     */
+    private _hiddenError: TurnErrorEvent | undefined;
     private _cancelRequested = false;
     private _endedAt: number | undefined;
     // A completed turn needs a final assistant response after its last tool.
@@ -124,8 +133,15 @@ export class Turn {
 
     /** Sticky; error wins over warning. Legal after end() — it then only
      *  affects the session badge, never `holdsQueue` (outcome is frozen). */
-    recordError(): void {
+    recordError(event?: TurnErrorEvent, visible = true): void {
         this._attention = "error";
+        if (event) this._hiddenError = visible ? undefined : event;
+    }
+
+    takeError(): TurnErrorEvent | undefined {
+        const event = this._hiddenError;
+        this._hiddenError = undefined;
+        return event;
     }
 
     recordWarning(): void {
