@@ -245,8 +245,12 @@ test("a successful retry resolves the same recovery card", () => {
     const retried = h.dispatched[0];
     const second = createTurn("successful", "retry");
     h.retry.begin(second, retried);
+    assert.equal(h.retry.observe({ kind: "text", text: "resposta retomada" }), true);
+    assert.equal(recoveryOf(h.emitted.at(-1))?.state, "recovered");
+    const emittedAfterProgress = h.emitted.length;
     second.end("completed");
     assert.equal(h.retry.recover(second), false);
+    assert.equal(h.emitted.length, emittedAfterProgress, "turn-end must not duplicate recovered");
     assert.equal(recoveryOf(h.emitted.at(-1))?.state, "recovered");
     assert.equal(recoveryOf(h.emitted.at(-1))?.id, "intent-success");
 });

@@ -28,6 +28,11 @@ import { renderInSlices } from "./renderScheduler";
 import { renderAhpRecoveryStatus } from "./ahpRecoveryView";
 import { asRecord, numberValue, optionalString } from "./ahpValues";
 import { removeRecoveredErrorNotice } from "./ahpRecoveredErrorView";
+import {
+    isEmptyStreamAnchor,
+    isSyntheticControlMessage,
+    reconcileAhpRetryLifecycle,
+} from "./ahpRetryReconciliation";
 
 let renderGeneration = 0;
 let pendingRender: Promise<void> = Promise.resolve();
@@ -105,6 +110,7 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
         renderRejectedSubmission(envelope, chat);
         return;
     }
+    reconcileAhpRetryLifecycle(action);
     switch (action.type) {
         case "chat/turnStarted": {
             const turnMessage = asRecord(action.message);
@@ -344,18 +350,6 @@ function prependTurns(turns: Turn[]): void {
             log.insertBefore(added[index], log.firstChild);
         }
     });
-}
-
-function isEmptyStreamAnchor(part: ResponsePart): boolean {
-    const value = part as unknown as Record<string, unknown>;
-    return (
-        (value.kind === "markdown" || value.kind === "reasoning") &&
-        String(value.content ?? "") === ""
-    );
-}
-
-function isSyntheticControlMessage(message: Record<string, unknown>): boolean {
-    return asRecord(message._meta).synthetic === true;
 }
 
 function affectsQueueOrLifecycle(type: string): boolean {

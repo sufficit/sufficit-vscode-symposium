@@ -4,6 +4,7 @@ import { t } from "./i18n";
 
 interface RetryCard {
     element: HTMLDivElement;
+    recovery: TransientRetryNotice;
     timer?: ReturnType<typeof setInterval>;
 }
 
@@ -37,7 +38,7 @@ export function renderTransientRetryNotice(recovery: TransientRetryNotice): {
     const created = !previous?.element.isConnected;
     if (previous?.element.isConnected) previous.element.replaceWith(element);
 
-    const card: RetryCard = { element };
+    const card: RetryCard = { element, recovery };
     if (recovery.state === "scheduled" && recovery.retryAt) {
         const countdown = element.querySelector<HTMLElement>(".retryStatusCountdown");
         const update = () => {
@@ -58,6 +59,24 @@ export function renderTransientRetryNotice(recovery: TransientRetryNotice): {
     }
     cards.set(recovery.id, card);
     return { element, created };
+}
+
+/**
+ * Reconciles a running recovery card from authoritative conversation progress.
+ * This is a UI safety net for an ephemeral `recovered` action lost while an
+ * AHP/webview client reconnects; it never emits or resubmits agent input.
+ */
+export function resolveRunningTransientRetryNotices(
+    state: "recovered" | "cancelled" = "recovered",
+): void {
+    for (const card of [...cards.values()]) {
+        if (!card.element.isConnected || card.recovery.state !== "running") continue;
+        renderTransientRetryNotice({
+            ...card.recovery,
+            state,
+            retryAt: undefined,
+        });
+    }
 }
 
 function buildBody(body: HTMLElement, recovery: TransientRetryNotice): void {

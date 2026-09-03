@@ -36,6 +36,7 @@ import {
 } from "./state";
 import { legacyGuardrailStopNotice } from "../../adapters/openai/turnNotices";
 import type { AgentEvent } from "../../adapters/types";
+import { resolveRunningTransientRetryNotices } from "./retryStatusNotice";
 
 /** Apply an `event` message payload (streaming turn events). */
 export function applyEvent(ev: AgentEvent, errorTurnId?: string): void {
@@ -48,6 +49,9 @@ export function applyEvent(ev: AgentEvent, errorTurnId?: string): void {
     // instantly instead of on real progress.
     if (ev.kind !== "status-notice") {
         resolvePendingRetry();
+    }
+    if (isRetryProgressEvent(ev)) {
+        resolveRunningTransientRetryNotices();
     }
     // Claude streams extended thinking token-by-token. Consecutive thinking
     // deltas should stay in one block; text/tools/status events close it via
@@ -145,6 +149,19 @@ export function applyEvent(ev: AgentEvent, errorTurnId?: string): void {
                 " —",
         );
     }
+}
+
+function isRetryProgressEvent(event: AgentEvent): boolean {
+    if (event.kind === "text" || event.kind === "thinking") {
+        return event.text.trim().length > 0;
+    }
+    return (
+        event.kind === "tool-start" ||
+        event.kind === "tool-output" ||
+        event.kind === "tool-end" ||
+        event.kind === "approval-request" ||
+        event.kind === "approval-resolved"
+    );
 }
 
 function applyEffectiveModel(model: unknown): void {

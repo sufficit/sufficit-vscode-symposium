@@ -300,6 +300,15 @@ test("automatic retry is one visible local-only card with attempt and countdown"
     assert.equal(harness.document.querySelectorAll(".retryStatusNotice").length, 1);
     assert.match(card.textContent, /Trying again now/);
     assert.doesNotMatch(card.textContent, /Retrying in/);
+
+    harness.deliver({
+        type: "event",
+        event: { kind: "text", text: "Recovered response" },
+    });
+    card = harness.document.querySelector('[data-retry-id="intent-retry"]');
+    assert.equal(card.classList.contains("retryStatusNotice--running"), false);
+    assert.equal(card.classList.contains("retryStatusNotice--recovered"), true);
+    assert.match(card.textContent, /Connection recovered/);
     harness.dom.window.close();
 });
 
@@ -463,10 +472,9 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
                     severity: "warning",
                     recovery: {
                         id: "intent-ahp-retry",
-                        state: "scheduled",
+                        state: "running",
                         attempt: 1,
                         limit: 3,
-                        retryAt: Date.now() + 30_000,
                         reason: "fetch failed",
                     },
                 },
@@ -502,6 +510,29 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
     assert.equal(harness.document.querySelectorAll("#log .msg.user").length, 0);
     assert.doesNotMatch(harness.document.querySelector("#log").textContent, /\(no text\)/);
     assert.equal(harness.document.querySelector("#composer").classList.contains("working"), true);
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--running").length, 1);
+
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "action",
+            generation: 1,
+            envelope: {
+                channel: resource,
+                serverSeq: 4,
+                origin: undefined,
+                action: {
+                    type: "chat/responsePart",
+                    turnId: "retry-turn",
+                    part: { kind: "markdown", id: "reply", content: "Recovered live reply" },
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--running").length, 0);
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--recovered").length, 1);
+    assert.match(harness.document.querySelector("#log").textContent, /Connection recovered/);
 
     // The same synthetic marker must remain hidden after an authoritative
     // snapshot rebuild (session switch/reload), while real agent output stays.
@@ -544,6 +575,67 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
     assert.equal(harness.document.querySelectorAll("#log .msg.user").length, 0);
     assert.doesNotMatch(harness.document.querySelector("#log").textContent, /\(no text\)/);
     assert.match(harness.document.querySelector("#log").textContent, /Recovered reply/);
+    harness.dom.window.close();
+});
+
+test("AHP turn completion reconciles a running retry when recovered was missed", async () => {
+    const harness = createHarness();
+    const resource = "ahp-chat:/44444444-4444-5444-8444-444444444444";
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource,
+                fromSeq: 1,
+                state: {
+                    resource,
+                    title: "Retry completion",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [],
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const action = (serverSeq, value) =>
+        harness.deliver({
+            type: "ahp-frame",
+            frame: {
+                kind: "action",
+                generation: 1,
+                envelope: { channel: resource, serverSeq, origin: undefined, action: value },
+            },
+        });
+    action(2, {
+        type: "symposium/recoveryStatus",
+        content: "Retry running",
+        severity: "warning",
+        recovery: {
+            id: "intent-missed-recovered",
+            state: "running",
+            attempt: 1,
+            limit: 3,
+            reason: "fetch failed",
+        },
+    });
+    action(3, {
+        type: "chat/turnStarted",
+        turnId: "retry-turn",
+        startedAt: new Date(1).toISOString(),
+        message: { text: "", origin: { kind: "user" }, _meta: { synthetic: true } },
+    });
+    action(4, { type: "chat/turnComplete", turnId: "retry-turn", duration: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--running").length, 0);
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--recovered").length, 1);
+    assert.match(harness.document.querySelector("#log").textContent, /Connection recovered/);
     harness.dom.window.close();
 });
 

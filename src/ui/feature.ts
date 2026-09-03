@@ -1,6 +1,6 @@
 import { defineFeature } from "../features/definition";
 
-export const CHAT_UI_FEATURE_VERSION = "1.1.3";
+export const CHAT_UI_FEATURE_VERSION = "1.1.4";
 
 export const CHAT_UI_FEATURE = defineFeature({
     namespace: "symposium.chat-ui",

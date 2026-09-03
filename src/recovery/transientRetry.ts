@@ -26,6 +26,7 @@ interface ActiveAttempt {
     turn: Turn;
     message: PendingMessage;
     attempt: number;
+    recoveryAcknowledged: boolean;
     outputStarted: boolean;
     toolStarted: boolean;
     deferred?: DeferredRetryError;
@@ -63,6 +64,7 @@ export class TransientRetryController {
             turn,
             message: cloneMessage(message),
             attempt: normalizeAttempt(message.automaticRetryAttempt),
+            recoveryAcknowledged: false,
             outputStarted: false,
             toolStarted: false,
         };
@@ -73,6 +75,7 @@ export class TransientRetryController {
         const active = this.active;
         if (!active || active.turn.phase === "ended") return true;
 
+        this.acknowledgeRecovery(active, event);
         if (startsUnsafeOutput(event)) {
             active.outputStarted = true;
             this.flushDeferred(active);
@@ -115,7 +118,7 @@ export class TransientRetryController {
         if (!active || active.turn !== turn) return false;
         this.active = undefined;
 
-        if (turn.outcome === "completed" && active.attempt > 0) {
+        if (turn.outcome === "completed" && active.attempt > 0 && !active.recoveryAcknowledged) {
             this.emitRecovery(
                 active.message.automaticRetryId ?? retryIdentity(active),
                 "recovered",
@@ -215,6 +218,26 @@ export class TransientRetryController {
         return changed;
     }
 
+    /**
+     * The transport is recovered as soon as a retry produces real agent
+     * progress. Waiting for turn-end can leave a warning spinner alive through
+     * minutes of tools and text, and an ephemeral terminal event can be missed
+     * by a reconnecting AHP client. Keep the attempt active so a later
+     * transient failure can still schedule the next bounded retry.
+     */
+    private acknowledgeRecovery(active: ActiveAttempt, event: AgentEvent): void {
+        if (active.attempt <= 0 || active.recoveryAcknowledged || !startsRetryProgress(event)) {
+            return;
+        }
+        active.recoveryAcknowledged = true;
+        this.emitRecovery(
+            active.message.automaticRetryId ?? retryIdentity(active),
+            "recovered",
+            active.attempt,
+            readPolicy(this.deps.configuration).limit,
+        );
+    }
+
     private flushDeferred(active: ActiveAttempt): void {
         if (!active.deferred) return;
         this.deps.emit({ type: "event", event: active.deferred.event });
@@ -286,6 +309,17 @@ function startsUnsafeOutput(event: AgentEvent): boolean {
 
 function startsToolActivity(event: AgentEvent): boolean {
     return event.kind === "tool-start" || event.kind === "tool-output" || event.kind === "tool-end";
+}
+
+function startsRetryProgress(event: AgentEvent): boolean {
+    if (event.kind === "text" || event.kind === "thinking") {
+        return event.text.trim().length > 0;
+    }
+    return (
+        startsToolActivity(event) ||
+        event.kind === "approval-request" ||
+        event.kind === "approval-resolved"
+    );
 }
 
 /** Tool-recovery preference takes precedence over progress narration emitted
