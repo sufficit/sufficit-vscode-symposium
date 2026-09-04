@@ -86,6 +86,22 @@ function meta(sessionId, model, extra = {}) {
     };
 }
 
+test("paste with no clipboard data asks the host to read the OS clipboard", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+
+    // Linux/Wayland: Chromium fires paste with an empty item list (and often
+    // no clipboardData at all) for image-only clipboards. The composer must
+    // hand the request to the extension host instead of dropping it silently.
+    harness.document.dispatchEvent(
+        new harness.dom.window.Event("paste", { bubbles: true, cancelable: true }),
+    );
+
+    const fallback = harness.sent.findLast((message) => message.type === "paste-image-fallback");
+    assert.ok(fallback, "expected a paste-image-fallback message");
+    harness.dom.window.close();
+});
+
 test("webview DOM restores composer text and attachments independently per session", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));

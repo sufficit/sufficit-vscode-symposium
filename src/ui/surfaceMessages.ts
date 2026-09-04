@@ -137,6 +137,7 @@ export class SurfaceMessages {
                     return;
                 }
                 case "paste-image":
+                case "paste-image-fallback":
                 case "drop-file":
                 case "drop-files":
                 case "drop-uris": {
