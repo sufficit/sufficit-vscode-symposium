@@ -341,7 +341,8 @@ input.addEventListener("blur", () => {
 });
 
 export function handlePaste(e: ClipboardEvent): void {
-    const items = (e.clipboardData && e.clipboardData.items) || [];
+    const data = e.clipboardData;
+    const items = (data && data.items) || [];
     for (const item of items) {
         if (item.kind === "file" && item.type.startsWith("image/")) {
             const file = item.getAsFile();
@@ -355,6 +356,15 @@ export function handlePaste(e: ClipboardEvent): void {
             reader.readAsDataURL(file);
             return;
         }
+    }
+    // Linux/Wayland: Chromium often exposes image-only clipboards (screenshots,
+    // "Copy image" in browsers) with an EMPTY item list, so the loop above
+    // never fires and the paste silently does nothing. Ask the extension host
+    // to read the OS clipboard directly (wl-paste/xclip). Pastes carrying text
+    // or file URIs still fall through to the native textarea handling.
+    const hasText = !!(data && (data.getData("text/plain") || data.getData("text/uri-list")));
+    if (!hasText) {
+        postMessage({ type: "paste-image-fallback" });
     }
 }
 document.addEventListener("paste", handlePaste);

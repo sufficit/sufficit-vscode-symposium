@@ -1,4 +1,5 @@
 import * as crypto from "crypto";
+import { execFile } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -163,4 +164,120 @@ export function attachmentFromUri(uri: string): AttachmentFile | undefined {
     } catch {
         return undefined;
     }
+}
+
+/** Cap on clipboard image payloads read via external tools (25 MB). */
+const CLIPBOARD_IMAGE_MAX_BYTES = 25 * 1024 * 1024;
+
+/** Result of reading an image from the OS clipboard (Linux fallback path). */
+export interface ClipboardImageRead {
+    /** Attachment when an image was found and written to disk. */
+    file?: AttachmentFile;
+    /** Actionable hint when the clipboard may hold an image but no reader tool exists. */
+    installHint?: string;
+}
+
+interface ClipboardReader {
+    bin: string;
+    listArgs: string[];
+    readArgs: (mime: string) => string[];
+}
+
+/** Runs a clipboard tool; resolves with code+stdout (never rejects). */
+function runCapture(
+    bin: string,
+    args: string[],
+): Promise<{ code: number; stdout: Buffer; missing: boolean }> {
+    return new Promise((resolve) => {
+        execFile(
+            bin,
+            args,
+            { encoding: "buffer", maxBuffer: CLIPBOARD_IMAGE_MAX_BYTES, timeout: 3000 },
+            (err, stdout) => {
+                const rawCode = (err as { code?: unknown } | null)?.code;
+                resolve({
+                    code: typeof rawCode === "number" ? rawCode : err ? 1 : 0,
+                    stdout,
+                    missing: (err as NodeJS.ErrnoException | null)?.code === "ENOENT",
+                });
+            },
+        );
+    });
+}
+
+/** First supported image MIME from a tool's offered target list (svg last resort). */
+export function pickImageType(types: string[]): string | undefined {
+    const offered = types.map((t) => t.trim()).filter(Boolean);
+    const set = new Set(offered);
+    const preferred = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/bmp"];
+    const explicit = preferred.find((mime) => set.has(mime));
+    if (explicit) {
+        return explicit;
+    }
+    const other = offered.find((t) => t.startsWith("image/") && t !== "image/svg+xml");
+    return other || offered.find((t) => t === "image/svg+xml");
+}
+
+/** Ordered Linux clipboard readers: native Wayland first, then X11 (XWayland). */
+function clipboardReaders(): ClipboardReader[] {
+    const readers: ClipboardReader[] = [];
+    if (process.platform === "linux" && process.env.WAYLAND_DISPLAY) {
+        readers.push({
+            bin: "wl-paste",
+            listArgs: ["--list-types"],
+            // -t/--type is a valued flag, NOT positional (wl-clipboard(1)).
+            readArgs: (mime) => ["--no-newline", "--type", mime],
+        });
+    }
+    if (process.platform === "linux" && (process.env.DISPLAY || readers.length === 0)) {
+        readers.push({
+            bin: "xclip",
+            listArgs: ["-selection", "clipboard", "-t", "TARGETS", "-o"],
+            readArgs: (mime) => ["-selection", "clipboard", "-t", mime, "-o"],
+        });
+    }
+    return readers;
+}
+
+/**
+ * Reads an image straight from the OS clipboard (Linux only).
+ *
+ * The webview's paste event often carries NO image item on Linux/Wayland
+ * (Chromium exposes image-only clipboards with an empty item list), so the
+ * extension host probes the clipboard itself: lists the offered MIME types
+ * with wl-paste/xclip, picks the best image type, and reads its bytes.
+ */
+export async function readClipboardImage(): Promise<ClipboardImageRead> {
+    const readers = clipboardReaders();
+    const missing: string[] = [];
+    for (const reader of readers) {
+        const listed = await runCapture(reader.bin, reader.listArgs);
+        if (listed.missing) {
+            missing.push(reader.bin);
+            continue;
+        }
+        if (listed.code !== 0) {
+            continue;
+        }
+        const mime = pickImageType(listed.stdout.toString().split(/\r?\n/));
+        if (!mime) {
+            continue;
+        }
+        const read = await runCapture(reader.bin, reader.readArgs(mime));
+        if (read.missing || read.code !== 0 || read.stdout.length === 0) {
+            continue;
+        }
+        const file = await writePastedImage(mime, read.stdout.toString("base64"));
+        if (file) {
+            symposiumLog(`[surface] clipboard image read via ${reader.bin}: ${file.path}`);
+            return { file };
+        }
+    }
+    if (missing.length > 0 && missing.length === readers.length) {
+        return {
+            installHint:
+                "No clipboard reader found — install 'wl-clipboard' (Wayland) and/or 'xclip' (X11) to paste images.",
+        };
+    }
+    return {};
 }
