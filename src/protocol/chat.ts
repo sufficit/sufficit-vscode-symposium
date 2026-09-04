@@ -71,6 +71,7 @@ export type WebviewToHost =
     | { type: "open-active-session" }
     | { type: "open-session-editor"; sessionId: string; backend: string }
     | { type: "paste-image"; mime: string; data: string }
+    | { type: "paste-image-fallback" }
     | {
           type: "stt-transcribe";
           data: string;
