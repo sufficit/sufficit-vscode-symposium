@@ -10,6 +10,7 @@ import {
     toolResultText,
 } from "../parse";
 import type { AgentEvent } from "../types";
+import { isTransientErrorMessage } from "../transientError";
 import { blockedQuotaRetryAt } from "../quota";
 import { ClaudeTaskTracker } from "./tasks";
 import { parseClaudeQuota } from "./usage";
@@ -237,9 +238,11 @@ export class ClaudeEventParser {
         this.streamedText = false;
         this.streamedThinking = false;
         if (event.is_error && !sourceCancelled) {
+            const message = resultError(event);
             this.deps.emit({
                 kind: "error",
-                message: resultError(event),
+                message,
+                retryable: isTransientErrorMessage(message),
                 ...(retryAt !== undefined
                     ? {
                           retryable: true,

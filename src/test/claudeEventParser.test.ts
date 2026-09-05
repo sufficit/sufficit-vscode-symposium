@@ -41,6 +41,47 @@ test("Claude usage carries the effective model for late UI metadata", () => {
     });
 });
 
+test("Claude marks a transient result error as retryable", () => {
+    const events: AgentEvent[] = [];
+    const instance = parser(events);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "result",
+            is_error: true,
+            result: "fetch failed",
+        }),
+    );
+
+    assert.deepEqual(events[0], {
+        kind: "error",
+        message: "fetch failed",
+        retryable: true,
+    });
+    assert.equal(events.at(-1)?.kind, "turn-end");
+});
+
+test("Claude keeps session-limit result errors manual until reset", () => {
+    const events: AgentEvent[] = [];
+    const instance = parser(events);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "result",
+            is_error: true,
+            result: "You've hit your session limit · resets 2:30pm (America/Sao_Paulo)",
+        }),
+    );
+
+    const error = events.find(
+        (event): event is Extract<AgentEvent, { kind: "error" }> => event.kind === "error",
+    );
+    assert.ok(error);
+    assert.equal(error.retryable, true);
+    assert.equal(error.automaticRetry, false);
+    assert.ok(error.retryAt);
+});
+
 test("Claude live text keeps provider timestamp, model and effort", () => {
     const events: AgentEvent[] = [];
     const timestamp = "2026-08-19T01:27:00.000Z";
