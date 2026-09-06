@@ -77,27 +77,27 @@ export class TurnRunner {
         const effort = this.d.options.reasoning;
         const compression = new TurnCompression(this.d);
         const requestMessages = (): ChatMessage[] => compression.apply(messages);
-        const access = await prepareTurnAccess(this.d, responses);
-        if (!access) {
-            if (isCurrentRun()) {
-                emitTurnEnd();
-            }
-            return;
-        }
-        let { loginToken } = access;
-        const { noExplicitAuth, finalTools } = access;
-
-        const unlimited = this.d.options.autonomy === "away";
-        const HARD_CAP = 200;
-        const softCap = unlimited ? HARD_CAP : Math.max(1, this.d.cfg.maxToolHops ?? 50);
-        const maxHops = Math.min(softCap, HARD_CAP);
-        let hitCap = !unlimited; // cleared when the model finishes on its own
-        let toolHistoryMaterializationNoticeEmitted = false;
-        const recentCalls: string[] = [];
-        let blockedRepeatFingerprint = activeRepeatedToolCallFingerprint(messages);
-        const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
-        let noTextHops = 0;
         try {
+            // Keep network-backed access preparation inside this retryable boundary.
+            const access = await prepareTurnAccess(this.d, responses);
+            if (!access) {
+                if (isCurrentRun()) {
+                    emitTurnEnd();
+                }
+                return;
+            }
+            let { loginToken } = access;
+            const { noExplicitAuth, finalTools } = access;
+            const unlimited = this.d.options.autonomy === "away";
+            const HARD_CAP = 200;
+            const softCap = unlimited ? HARD_CAP : Math.max(1, this.d.cfg.maxToolHops ?? 50);
+            const maxHops = Math.min(softCap, HARD_CAP);
+            let hitCap = !unlimited; // cleared when the model finishes on its own
+            let toolHistoryMaterializationNoticeEmitted = false;
+            const recentCalls: string[] = [];
+            let blockedRepeatFingerprint = activeRepeatedToolCallFingerprint(messages);
+            const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
+            let noTextHops = 0;
             for (let hop = 0; hop < maxHops; hop++) {
                 if (this.cancelled || !isCurrentRun()) {
                     hitCap = false;
