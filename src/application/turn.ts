@@ -62,6 +62,11 @@ export class Turn {
     // Without this bit, a provider that simply closes after a tool/result is
     // indistinguishable from a healthy answer and the UI goes idle silently.
     private _awaitingFinalResponse = true;
+    // These markers are retained on the durable turn so a replacement
+    // Extension Host can reconstruct the retry safety boundary before it
+    // sees the terminal provider error.
+    private _assistantOutputStarted = false;
+    private _toolActivityStarted = false;
 
     constructor(init: TurnInit) {
         this.id = init.id;
@@ -97,6 +102,14 @@ export class Turn {
 
     get awaitingFinalResponse(): boolean {
         return this._awaitingFinalResponse;
+    }
+
+    get assistantOutputStarted(): boolean {
+        return this._assistantOutputStarted;
+    }
+
+    get toolActivityStarted(): boolean {
+        return this._toolActivityStarted;
     }
 
     get durationMs(): number | undefined {
@@ -151,10 +164,12 @@ export class Turn {
     }
 
     recordAssistantText(): void {
+        this._assistantOutputStarted = true;
         this._awaitingFinalResponse = false;
     }
 
     recordToolActivity(): void {
+        this._toolActivityStarted = true;
         this._awaitingFinalResponse = true;
     }
 

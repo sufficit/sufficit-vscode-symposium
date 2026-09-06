@@ -52,6 +52,8 @@ interface ControllerTurnRunnerDeps {
     emitQueue(): void;
     statusChanged(): void;
     releaseOwnership(): void;
+    /** Reconstructs the current user request when a host was replaced mid-turn. */
+    recoverableMessage?(turn: import("./turn").Turn): PendingMessage | undefined;
     log(message: string): void;
 }
 
@@ -96,6 +98,17 @@ export class ControllerTurnRunner {
     }
 
     observeEvent(event: AgentEvent): boolean {
+        const turn = this.deps.live.turns.current;
+        if (
+            turn &&
+            event.kind === "error" &&
+            event.fatal !== false &&
+            event.retryable === true &&
+            event.automaticRetry !== false
+        ) {
+            const message = this.deps.recoverableMessage?.(turn);
+            if (message) this.transientRetry.ensureForTurn(turn, message);
+        }
         return this.transientRetry.observe(event);
     }
 

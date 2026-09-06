@@ -3,11 +3,17 @@ import type { PendingMessage } from "../application/controllerQueue";
 import type { ClockPort, ConfigurationPort } from "../application/ports";
 import type { Turn } from "../application/turn";
 import { conciseRetryReason } from "./retryReason";
+import {
+    MAXIMUM_RETRY_DELAY_MILLISECONDS,
+    normalizeAttempt,
+    readRetryPolicy,
+} from "./transientRetryPolicy";
 export { conciseRetryReason } from "./retryReason";
-
-export const DEFAULT_TRANSIENT_RETRY_LIMIT = 3;
-export const DEFAULT_RETRY_INITIAL_DELAY_MILLISECONDS = 1_000;
-export const MAXIMUM_RETRY_DELAY_MILLISECONDS = 30_000;
+export {
+    DEFAULT_RETRY_INITIAL_DELAY_MILLISECONDS,
+    DEFAULT_TRANSIENT_RETRY_LIMIT,
+    MAXIMUM_RETRY_DELAY_MILLISECONDS,
+} from "./transientRetryPolicy";
 
 interface DeferredRetryError {
     event: Extract<AgentEvent, { kind: "error" }>;
@@ -45,7 +51,8 @@ export interface TransientRetryDeps {
 /**
  * Controller-owned transient recovery. It mirrors the Genius policy: retry only
  * failures explicitly classified as transient, use bounded exponential backoff,
- * and never replay a turn after user-visible output or tool activity started.
+ * and never replay a turn after standalone user-visible output started. Tool
+ * activity is governed separately by the explicit idempotency preference.
  */
 export class TransientRetryController {
     private active: ActiveAttempt | undefined;
@@ -70,6 +77,25 @@ export class TransientRetryController {
         };
     }
 
+    /**
+     * Rehydrates the in-memory boundary after an Extension Host hand-off.
+     * Render persistence keeps the turn alive across hosts, but the retry
+     * controller itself is intentionally process-local. Without this bridge a
+     * retryable error from a resumed live turn was rendered normally and could
+     * never reach `recover()` with the original request metadata.
+     */
+    ensureForTurn(turn: Turn, message: PendingMessage): boolean {
+        if (this.active?.turn === turn) return false;
+        if (this.active) return false;
+        this.begin(turn, message);
+        const active = this.active as ActiveAttempt | undefined;
+        if (!active) return false;
+        active.outputStarted = turn.assistantOutputStarted;
+        active.toolStarted = turn.toolActivityStarted;
+        this.deps.log?.(`[retry] rehydrated controller state for ${turn.describe()}`);
+        return true;
+    }
+
     /** Returns false when the raw event must be deferred while recovery runs. */
     observe(event: AgentEvent): boolean {
         const active = this.active;
@@ -91,8 +117,11 @@ export class TransientRetryController {
             return true;
         }
 
-        const policy = readPolicy(this.deps.configuration);
+        const policy = readRetryPolicy(this.deps.configuration);
         if (retryBlocked(active, policy.afterToolActivity)) {
+            this.deps.log?.(
+                `[retry] not scheduled: ${retryBlockReason(active, policy.afterToolActivity)}`,
+            );
             return true;
         }
         if (active.attempt >= policy.limit) {
@@ -123,7 +152,7 @@ export class TransientRetryController {
                 active.message.automaticRetryId ?? retryIdentity(active),
                 "recovered",
                 active.attempt,
-                readPolicy(this.deps.configuration).limit,
+                readRetryPolicy(this.deps.configuration).limit,
             );
             return false;
         }
@@ -133,18 +162,26 @@ export class TransientRetryController {
                 active.message.automaticRetryId ?? retryIdentity(active),
                 "exhausted",
                 active.attempt,
-                readPolicy(this.deps.configuration).limit,
+                readRetryPolicy(this.deps.configuration).limit,
                 conciseRetryReason(active.exhausted.message),
             );
             return false;
         }
 
         const deferred = active.deferred;
-        if (
-            !deferred ||
-            retryBlocked(active, readPolicy(this.deps.configuration).afterToolActivity) ||
-            turn.outcome !== "failed"
-        ) {
+        const policy = readRetryPolicy(this.deps.configuration);
+        const blocked = retryBlocked(active, policy.afterToolActivity);
+        if (!deferred || blocked || turn.outcome !== "failed") {
+            if (!deferred) this.deps.log?.("[retry] not scheduled: no deferred retryable error");
+            else if (blocked) {
+                this.deps.log?.(
+                    `[retry] not scheduled: ${retryBlockReason(active, policy.afterToolActivity)}`,
+                );
+            } else {
+                this.deps.log?.(
+                    `[retry] not scheduled: turn outcome is ${turn.outcome ?? "unknown"}`,
+                );
+            }
             this.flushDeferred(active);
             return false;
         }
@@ -234,7 +271,7 @@ export class TransientRetryController {
             active.message.automaticRetryId ?? retryIdentity(active),
             "recovered",
             active.attempt,
-            readPolicy(this.deps.configuration).limit,
+            readRetryPolicy(this.deps.configuration).limit,
         );
     }
 
@@ -268,41 +305,6 @@ export class TransientRetryController {
     }
 }
 
-function readPolicy(configuration: ConfigurationPort): {
-    limit: number;
-    initialDelayMilliseconds: number;
-    afterToolActivity: boolean;
-} {
-    const configuredLimit = configuration.get(
-        "symposium",
-        "transientRetryLimit",
-        DEFAULT_TRANSIENT_RETRY_LIMIT,
-    );
-    const configuredDelay = configuration.get(
-        "symposium",
-        "retryInitialDelayMilliseconds",
-        DEFAULT_RETRY_INITIAL_DELAY_MILLISECONDS,
-    );
-    const afterToolActivity = configuration.get(
-        "symposium",
-        "transientRetryAfterToolActivity",
-        true,
-    );
-    return {
-        limit: [0, 2, 3, 5].includes(configuredLimit)
-            ? configuredLimit
-            : DEFAULT_TRANSIENT_RETRY_LIMIT,
-        initialDelayMilliseconds: [1_000, 2_000, 5_000].includes(configuredDelay)
-            ? configuredDelay
-            : DEFAULT_RETRY_INITIAL_DELAY_MILLISECONDS,
-        afterToolActivity: afterToolActivity === true,
-    };
-}
-
-function normalizeAttempt(value: number | undefined): number {
-    return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0;
-}
-
 function startsUnsafeOutput(event: AgentEvent): boolean {
     if (event.kind === "text") return event.text.trim().length > 0;
     return event.kind === "approval-request" || event.kind === "approval-resolved";
@@ -328,6 +330,14 @@ function startsRetryProgress(event: AgentEvent): boolean {
  * ineffective. Standalone assistant output and approvals remain non-replayable. */
 function retryBlocked(active: ActiveAttempt, afterToolActivity: boolean): boolean {
     return active.toolStarted ? !afterToolActivity : active.outputStarted;
+}
+
+function retryBlockReason(active: ActiveAttempt, afterToolActivity: boolean): string {
+    if (active.toolStarted && !afterToolActivity) {
+        return "tool activity is present and recovery-after-tools is disabled";
+    }
+    if (active.outputStarted) return "standalone assistant output already started";
+    return "the retry safety policy blocked this turn";
 }
 
 function retryIdentity(active: ActiveAttempt): string {

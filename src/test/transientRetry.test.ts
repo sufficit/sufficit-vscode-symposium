@@ -32,7 +32,7 @@ class FakeClock implements ClockPort {
     }
 }
 
-function configuration(values: Record<string, number | boolean> = {}): ConfigurationPort {
+function configuration(values: Record<string, number | boolean | string> = {}): ConfigurationPort {
     return {
         language: "pt-BR",
         get<T>(_section: string, key: string, fallback: T): T {
@@ -52,7 +52,7 @@ function transientError(message = "fetch failed"): AgentEvent {
     return { kind: "error", message, retryable: true };
 }
 
-function harness(values: Record<string, number | boolean> = {}) {
+function harness(values: Record<string, number | boolean | string> = {}) {
     const clock = new FakeClock();
     const emitted: unknown[] = [];
     const dispatched: PendingMessage[] = [];
@@ -230,6 +230,71 @@ test("tool activity recovery can be disabled for non-idempotent workflows", () =
     turn.end();
     assert.equal(h.retry.recover(turn), false);
     assert.equal(h.clock.scheduled.length, 0);
+});
+
+test("a rehydrated live turn schedules recovery after an Extension Host hand-off", () => {
+    const h = harness();
+    const turn = createTurn("rehydrated");
+    const message: PendingMessage = { text: "continuar", attachments: [] };
+
+    assert.equal(h.retry.ensureForTurn(turn, message), true);
+    assert.equal(h.retry.observe({ kind: "tool-start", toolName: "read_file" }), true);
+    assert.equal(h.retry.observe(transientError()), false);
+    turn.recordError();
+    turn.end();
+
+    assert.equal(h.retry.recover(turn), true);
+    assert.equal(h.clock.scheduled[0].delay, 1_000);
+    h.clock.run(0);
+    assert.equal(h.dispatched[0].text, message.text);
+    assert.equal(h.dispatched[0].retryOf, "backend-rehydrated");
+});
+
+test("rehydration keeps the standalone-output safety boundary", () => {
+    const h = harness();
+    const turn = createTurn("rehydrated-output");
+    turn.recordAssistantText();
+
+    assert.equal(h.retry.ensureForTurn(turn, { text: "continuar", attachments: [] }), true);
+    assert.equal(h.retry.observe(transientError()), true);
+    turn.recordError();
+    turn.end();
+
+    assert.equal(h.retry.recover(turn), false);
+    assert.equal(h.clock.scheduled.length, 0);
+    assert.equal(h.emitted.length, 0);
+});
+
+test("rehydration honors the explicit no-retry-after-tools preference", () => {
+    const h = harness({ transientRetryAfterToolActivity: false });
+    const turn = createTurn("rehydrated-tool");
+    turn.recordToolActivity();
+
+    assert.equal(h.retry.ensureForTurn(turn, { text: "continuar", attachments: [] }), true);
+    assert.equal(h.retry.observe(transientError()), true);
+    turn.recordError();
+    turn.end();
+
+    assert.equal(h.retry.recover(turn), false);
+    assert.equal(h.clock.scheduled.length, 0);
+    assert.equal(h.emitted.length, 0);
+});
+
+test("serialized retry preferences are normalized instead of disabling recovery", () => {
+    const h = harness({
+        transientRetryLimit: "2",
+        retryInitialDelayMilliseconds: "2000",
+        transientRetryAfterToolActivity: "true",
+    });
+    const turn = createTurn("serialized-config");
+    h.retry.begin(turn, { text: "pedido", attachments: [] });
+    h.retry.observe({ kind: "tool-end", toolName: "shell" });
+    assert.equal(h.retry.observe(transientError()), false);
+    turn.recordError();
+    turn.end();
+    assert.equal(h.retry.recover(turn), true);
+    assert.equal(h.clock.scheduled[0].delay, 2_000);
+    assert.equal(recoveryOf(h.emitted[0])?.limit, 2);
 });
 
 test("a successful retry resolves the same recovery card", () => {

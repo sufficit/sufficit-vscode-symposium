@@ -9,6 +9,7 @@ import { todosSummary } from "../adapters/todos";
 import { probeRtk } from "../adapters/rtk";
 import { HubClient } from "../sync/hubClient";
 import { transcriptText, transcriptMessages, transcriptMessagesUpTo } from "./controllerTranscript";
+import { recoverableMessage } from "./controllerRetryMessage";
 import {
     ChatQueue,
     MessageDedup,
@@ -142,6 +143,7 @@ export class ChatController {
             emitQueue: () => this.emitQueue(),
             statusChanged: () => this.onStatusChange?.(),
             releaseOwnership: () => this.renderPersistence.releaseOwnership(),
+            recoverableMessage: (turn) => recoverableMessage(this.stream.messages, turn),
             log: (message) => this.onLog?.(message),
         });
         void probeRtk(options.cwd);
@@ -300,9 +302,7 @@ export class ChatController {
         routeControllerSend(msg, mode, {
             queue: this.queue,
             dedup: this.dedup,
-            // A live peer owner is a writable session, but not from this
-            // controller. Route the message through the shared durable queue
-            // instead of starting a second adapter resume.
+            // Peer owner: route through the shared queue, not a second resume.
             busy: () => this.live.busy || !this.renderPersistence.canDispatch(),
             cancel: () => this.session?.cancel(),
             dispatch: (message, options) => this.dispatchOwned(message, options),
