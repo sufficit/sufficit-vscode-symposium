@@ -73,11 +73,11 @@ for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`
 
 const budgets = new Map([
     // Feature-version discovery, bounded transient recovery, lifecycle
-    // reconciliation, host-handoff retry rehydration and Claude transport
-    // classification raised the measured host bundle slightly above the
-    // previous 824 KiB cap. The independent 1MB archive ceiling continues
-    // to constrain the package.
-    ["extension/out/extension.js", 825 * 1024],
+    // reconciliation, host-handoff retry rehydration, request-snapshot retry
+    // admission and Claude transport classification raised the measured host
+    // bundle slightly above the previous 825 KiB cap. The independent 1MB
+    // archive ceiling continues to constrain the package.
+    ["extension/out/extension.js", 826 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

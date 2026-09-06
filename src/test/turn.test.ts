@@ -2,6 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Turn, TurnTracker } from "../application/turn";
 
+test("Turn keeps an isolated request snapshot for retry admission", () => {
+    const turn = new Turn({ id: "t-request", origin: "user", startedAt: 0 });
+    const request = { text: "continuar", attachments: ["/tmp/a.png"], model: "genius" };
+
+    turn.setRequest(request);
+    request.attachments.push("/tmp/mutated.png");
+
+    assert.deepEqual(turn.request, {
+        text: "continuar",
+        attachments: ["/tmp/a.png"],
+        model: "genius",
+    });
+});
+
 test("Turn.end derives outcome: error wins over cancel", () => {
     const turn = new Turn({ id: "t1", origin: "user", startedAt: 0 });
     turn.recordError();

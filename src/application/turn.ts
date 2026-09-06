@@ -15,6 +15,7 @@
  * handler.
  */
 import type { AgentEvent, SessionTerminalStatus } from "../adapters/types";
+import type { PendingMessage } from "./controllerQueue";
 
 type TurnErrorEvent = Extract<AgentEvent, { kind: "error" }>;
 
@@ -67,6 +68,9 @@ export class Turn {
     // sees the terminal provider error.
     private _assistantOutputStarted = false;
     private _toolActivityStarted = false;
+    /** Exact request snapshot used to re-admit recovery after a host hand-off
+     * or a pre-dispatch failure, before the user row reaches the render log. */
+    private _request: PendingMessage | undefined;
 
     constructor(init: TurnInit) {
         this.id = init.id;
@@ -110,6 +114,14 @@ export class Turn {
 
     get toolActivityStarted(): boolean {
         return this._toolActivityStarted;
+    }
+
+    get request(): PendingMessage | undefined {
+        return this._request;
+    }
+
+    setRequest(request: PendingMessage): void {
+        this._request = clonePendingMessage(request);
     }
 
     get durationMs(): number | undefined {
@@ -203,6 +215,10 @@ export class Turn {
     describe(): string {
         return `${this.id}[${this._phase}]${this._outcome ? `(${this._outcome})` : ""} backend=${this._backendId ?? "none"} attention=${this._attention ?? "none"} origin=${this.origin}`;
     }
+}
+
+function clonePendingMessage(message: PendingMessage): PendingMessage {
+    return { ...message, attachments: [...message.attachments] };
 }
 
 export type TurnEndDecision =

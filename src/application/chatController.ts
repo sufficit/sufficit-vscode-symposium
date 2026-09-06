@@ -59,7 +59,6 @@ export class ChatController {
     private readonly hub = new HubClient();
     // Checkpoint already injected as resume context.
     private injectedCheckpointId: string | undefined;
-
     private readonly changed = new ChangedFilesState();
     private readonly queue = new ChatQueue();
     // Persisted internal event stream; AHP owns client reconstruction.
@@ -106,6 +105,7 @@ export class ChatController {
         canMutateQueue: () => this.renderPersistence.canDispatch(),
         emitPeerQueueCommand: (command) => this.stream.emit(command),
         cancelAutomaticRetry: () => this.runner.cancelAutomaticRetry(),
+        recoverableMessage: (turn) => recoverableMessage(this.stream.messages, turn),
         log: (message) => this.onLog?.(message),
     });
     private readonly runner: ControllerTurnRunner;

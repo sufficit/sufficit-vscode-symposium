@@ -3,7 +3,7 @@ import test from "node:test";
 import { ControllerClientActions } from "../application/controllerClientActions";
 import { ChatQueue } from "../application/controllerQueue";
 import type { PeerQueueCommand } from "../application/controllerPeerQueue";
-import type { TurnTracker } from "../application/turn";
+import { TurnTracker } from "../application/turn";
 
 test("follower forwards Send next without rewriting the owner's queue snapshot", () => {
     const queue = heldQueue();
@@ -36,6 +36,27 @@ test("owner Send next releases a failed hold and dispatches exactly that message
     assert.equal(queue.isEmpty, true);
     assert.deepEqual(dispatched, ["continue"]);
     assert.equal(snapshots, 1);
+});
+
+test("continue records the last request before a retryable continuation failure", () => {
+    const queue = new ChatQueue();
+    const request = { text: "continuar", attachments: [], intentId: "intent-continue" };
+    const turns = new TurnTracker();
+    const actions = new ControllerClientActions({
+        queue,
+        getSession: () => ({ continueTurn: () => undefined }) as never,
+        turns,
+        statusChanged: () => undefined,
+        onSend: () => assert.fail("not used"),
+        emitQueue: () => undefined,
+        dispatch: () => undefined,
+        canMutateQueue: () => true,
+        emitPeerQueueCommand: () => undefined,
+        recoverableMessage: () => request,
+    });
+
+    assert.equal(actions.continueTurn(), true);
+    assert.deepEqual(turns.current?.request, request);
 });
 
 function heldQueue(): ChatQueue {

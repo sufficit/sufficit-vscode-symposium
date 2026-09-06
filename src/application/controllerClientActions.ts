@@ -1,7 +1,7 @@
 import type { AgentSession } from "../adapters/types";
 import type { ChatQueue, PendingMessage, SendMode } from "./controllerQueue";
 import type { PeerQueueCommand } from "./controllerPeerQueue";
-import type { TurnTracker } from "./turn";
+import type { Turn, TurnTracker } from "./turn";
 
 interface ControllerClientActionDeps {
     queue: ChatQueue;
@@ -14,6 +14,7 @@ interface ControllerClientActionDeps {
     canMutateQueue(): boolean;
     emitPeerQueueCommand(command: PeerQueueCommand): void;
     cancelAutomaticRetry?(): boolean;
+    recoverableMessage?(turn: Turn): PendingMessage | undefined;
     log?(message: string): void;
 }
 
@@ -105,7 +106,10 @@ export class ControllerClientActions {
         this.deps.cancelAutomaticRetry?.();
         // begin()'s attention is derived undefined while live, so this also
         // clears any stale error badge from the previous turn.
-        this.deps.turns.begin("continue").markSent();
+        const turn = this.deps.turns.begin("continue");
+        const message = this.deps.recoverableMessage?.(turn);
+        if (message) turn.setRequest(message);
+        turn.markSent();
         this.deps.statusChanged();
         session.continueTurn();
         return true;

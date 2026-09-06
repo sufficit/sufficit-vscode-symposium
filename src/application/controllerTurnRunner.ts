@@ -106,7 +106,7 @@ export class ControllerTurnRunner {
             event.retryable === true &&
             event.automaticRetry !== false
         ) {
-            const message = this.deps.recoverableMessage?.(turn);
+            const message = turn.request ?? this.deps.recoverableMessage?.(turn);
             if (message) this.transientRetry.ensureForTurn(turn, message);
         }
         return this.transientRetry.observe(event);
@@ -134,6 +134,7 @@ export class ControllerTurnRunner {
         const turn = this.deps.live.turns.begin(turnOriginOf(message), {
             intentId: message.intentId,
         });
+        turn.setRequest(message);
         this.transientRetry.begin(turn, message);
         // Start from the user's explicit dispatch, not from the previous
         // attempt's deadline or from the first provider event. This resets the
