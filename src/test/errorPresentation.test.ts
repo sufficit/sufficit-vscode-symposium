@@ -103,6 +103,17 @@ test("HTTP transient statuses are retryable even without a descriptive status te
     }
 });
 
+test("503 maintenance/update responses are retryable in English and legacy Portuguese", () => {
+    for (const message of [
+        "503 Service Unavailable — Sufficit AI — update in progress",
+        "HTTP 503 Service Unavailable <html><title>Sufficit AI — maintenance</title></html>",
+        "503 — atualização em andamento",
+        "HTTP 503 while the proxy is updating",
+    ]) {
+        assert.equal(isTransientErrorMessage(message), true, message);
+    }
+});
+
 test("a genuine request problem is still not retryable", () => {
     for (const message of [
         "invalid api key",
