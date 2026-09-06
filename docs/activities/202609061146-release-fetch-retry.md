@@ -30,8 +30,16 @@
 - Workflow de publicação configurado para publicar a tag `v2026.906.1` no Visual
   Studio Marketplace, Open VSX e GitHub Release.
 
-## Entrega
+## Entrega concluída
 
-O commit desta release será publicado em `develop`, seguido da tag anotada
-`v2026.906.1`. Após a conclusão do workflow, o VSIX deverá ser instalado nos
-ambientes VS Code/code-server e a janela recarregada para ativar a versão nova.
+- Commit publicado: `4e0b098af9e16444a334c928b0f4f1b144201aee`.
+- Tag anotada publicada: `v2026.906.1`.
+- Workflow de publicação: run `34040228785`, concluída com sucesso.
+- Marketplace, Open VSX e GitHub Release publicados com o VSIX da versão.
+- VS Code local instalado e confirmado com
+  `sufficit.sufficit-vscode-symposium@2026.906.1`.
+- code-server development instalado e confirmado com
+  `sufficit.sufficit-vscode-symposium@2026.906.1`.
+
+Janelas já abertas precisam de `Symposium: Reload Window (apply latest build)`
+para carregar o novo Extension Host; a instalação não reinicia janelas ativas.
