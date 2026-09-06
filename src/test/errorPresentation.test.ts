@@ -14,6 +14,18 @@ test("all-backends-exhausted 503 has a concise actionable system summary", () =>
     assert.equal(out.detail, raw);
 });
 
+test("503 maintenance HTML is compacted before it reaches the technical details", () => {
+    const raw =
+        "HTTP 503 Service Unavailable <!doctype html><html><head><title>Sufficit AI — atualização em andamento</title><style>body { color: red; }</style></head><body><h1>Voltamos em instantes.</h1><p>Estamos concluindo uma atualização sem perder o endereço que você acessou.</p></body></html>";
+    const out = presentTurnError(raw, true);
+
+    assert.match(out.summary, /HTTP 503/);
+    assert.match(out.detail, /HTTP 503 Service Unavailable/);
+    assert.match(out.detail, /Sufficit AI/);
+    assert.doesNotMatch(out.detail, /doctype|<html|<style|color: red/i);
+    assert.ok(out.detail.length <= 512);
+});
+
 test("403 identifies the required directive and explains the recovery", () => {
     const out = presentTurnError(
         'HTTP 403 Forbidden {"error":{"type":"permission_error","code":"insufficient_directive","required_directives":["AIUser"]}}',
@@ -73,6 +85,19 @@ test("capacity and throttling failures are retryable", () => {
         "rate limit exceeded",
         "429 Too Many Requests",
         "Service Unavailable",
+    ]) {
+        assert.equal(isTransientErrorMessage(message), true, message);
+    }
+});
+
+test("HTTP transient statuses are retryable even without a descriptive status text", () => {
+    for (const message of [
+        "HTTP 408",
+        "HTTP 429",
+        "HTTP 500",
+        "HTTP 502",
+        "HTTP 503",
+        "HTTP 504",
     ]) {
         assert.equal(isTransientErrorMessage(message), true, message);
     }

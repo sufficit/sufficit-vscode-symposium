@@ -75,6 +75,30 @@ test("plain retry never promotes a provider maintenance page into chat or agent 
     assert.match(JSON.stringify(posted), /HTTP 503 Service Unavailable/);
 });
 
+test("plain retry keeps a compact 503 continuity reason", () => {
+    let handled: WebviewToHost | undefined;
+    const deps = {
+        getController: () => ({
+            transcriptMessages: () => [{ role: "user", text: "continue deployment" }],
+        }),
+        post: () => undefined,
+        dispatchAhp: (message: WebviewToHost) => {
+            handled = message;
+            return true;
+        },
+    } as unknown as SurfaceDialoguesDeps;
+
+    retryLastMessage(
+        deps,
+        0,
+        "HTTP 503 Service Unavailable <!doctype html><html><body>maintenance</body></html>",
+    );
+
+    assert.equal(handled?.type, "send");
+    assert.equal(handled?.interruptedBy, "HTTP 503 Service Unavailable");
+    assert.ok((handled?.interruptedBy || "").length < 100);
+});
+
 test("plain retry survives AHP row-index drift by matching the visible user text", () => {
     let handled: WebviewToHost | undefined;
     const posted: unknown[] = [];

@@ -312,6 +312,37 @@ test("automatic retry is one visible local-only card with attempt and countdown"
     harness.dom.window.close();
 });
 
+test("503 maintenance HTML stays compact and is never sent as retry context", () => {
+    const harness = createHarness();
+    const raw =
+        "HTTP 503 Service Unavailable <!doctype html><html><head><title>Sufficit AI — atualização em andamento</title><style>body { color: red; }</style></head><body><h1>Voltamos em instantes.</h1></body></html>";
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({
+        type: "user",
+        text: "continue deployment",
+        attachments: [],
+        clientMessageId: "client-503",
+    });
+    harness.deliver({
+        type: "event",
+        event: { kind: "error", message: raw, retryable: true },
+    });
+
+    const details = harness.document.querySelector(".turnErrorDetails pre");
+    assert.ok(details);
+    assert.match(details.textContent, /HTTP 503 Service Unavailable/);
+    assert.match(details.textContent, /Sufficit AI/);
+    assert.doesNotMatch(details.textContent, /doctype|<html|<style|color: red/i);
+    assert.ok(details.textContent.length <= 512);
+
+    harness.document.querySelector(".retryBtn").click();
+    const retry = harness.sent.findLast((message) => message.type === "retry-last-message");
+    assert.ok(retry);
+    assert.doesNotMatch(JSON.stringify(retry), /doctype|<html|<style|color: red/i);
+    assert.match(retry.errorMessage, /HTTP 503 Service Unavailable/);
+    harness.dom.window.close();
+});
+
 test("approved destructive actions replace the danger treatment with a success state", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));

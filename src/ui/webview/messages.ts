@@ -77,6 +77,7 @@ export function renderError(
         bar.className = "errActions";
         if (retryable === true) {
             const retry = document.createElement("button");
+            retry.type = "button";
             retry.className = "retryBtn errBtn";
             retry.appendChild(svgIcon("history"));
             retry.appendChild(document.createTextNode(" Retry"));
@@ -86,7 +87,9 @@ export function renderError(
                     type: "retry-last-message",
                     index: lastUser.idx,
                     text: lastUser.text,
-                    errorMessage: message,
+                    // Do not send an entire gateway maintenance page back as
+                    // continuity context when the user retries manually.
+                    errorMessage: presentation.detail,
                     retryAt,
                 });
                 if (!busy) {
@@ -103,6 +106,7 @@ export function renderError(
         }
 
         const edit = document.createElement("button");
+        edit.type = "button";
         edit.className = "retryBtn errBtn";
         edit.appendChild(svgIcon("edit"));
         edit.appendChild(document.createTextNode(" Edit"));
