@@ -2,6 +2,9 @@
   <img src="media/symposium-icon.png" width="96" height="96" alt="Sufficit Symposium icon">
 </p>
 
+> **Worktrees (padrão Sufficit):** toda árvore de trabalho deste projeto (humanos ou agentes de IA) deve ser criada dentro da pasta do próprio projeto: `git worktree add .worktrees/<nome>`. A pasta `.worktrees/` é ignorada pelo git (`.gitignore` → `**/.worktrees/`) e nunca deve ser versionada ou criada fora da raiz do repositório.
+
+
 # Sufficit Symposium
 
 <p align="center">
