@@ -116,6 +116,11 @@ export class ControllerTurnRunner {
         return this.transientRetry.cancel();
     }
 
+    /** Used by adapter completion as well as dispatch failures and watchdogs. */
+    recoverFailedTurn(turn: import("./turn").Turn): boolean {
+        return this.transientRetry.recover(turn);
+    }
+
     armWatchdog(): void {
         armWatchdogFn(this.watchdogContext(), this.watchdogState);
     }
@@ -186,7 +191,7 @@ export class ControllerTurnRunner {
             holdQueue: (hold) => this.deps.queue.hold(hold),
             queuedCount: () => this.deps.queue.length,
             releaseOwnership: this.deps.releaseOwnership,
-            recoverFailedTurn: (turn) => this.transientRetry.recover(turn),
+            recoverFailedTurn: (turn) => this.recoverFailedTurn(turn),
             log: this.deps.log,
         };
     }

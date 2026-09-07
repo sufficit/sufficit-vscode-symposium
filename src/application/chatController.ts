@@ -74,12 +74,12 @@ export class ChatController {
         guardrailsLoaded: false,
         pendingTasks: [],
     };
-    /** Prevents processing an accepted clientMessageId twice. */
     private readonly dedup = new MessageDedup();
     private readonly live = new ControllerLiveState({
         armWatchdog: () => this.runner.armWatchdog(),
         clearWatchdog: () => this.runner.clearWatchdog(),
         observeEvent: (event) => this.runner.observeEvent(event),
+        recoverFailedTurn: (turn) => this.runner.recoverFailedTurn(turn),
         emit: (message) => this.emit(message),
         statusChanged: () => this.onStatusChange?.(),
         recordChanged: (file, added, removed) => {

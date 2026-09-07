@@ -3,12 +3,13 @@ import { latestTodoSnapshot, todoSnapshotFromRenderMessage } from "./todoState";
 import type { PendingMessage, QueueHold } from "./controllerQueue";
 import { ControllerEventHandler } from "./controllerEventHandler";
 import type { TrackingMode } from "./outboundPrompt";
-import { TurnTracker } from "./turn";
+import { TurnTracker, type Turn } from "./turn";
 
 interface ControllerLiveStateDeps {
     armWatchdog(): void;
     clearWatchdog(): void;
     observeEvent?(event: AgentEvent): boolean;
+    recoverFailedTurn(turn: Turn): boolean;
     emit(message: unknown): void;
     statusChanged(): void;
     recordChanged(file: string, added?: number, removed?: number): void;
@@ -38,6 +39,7 @@ export class ControllerLiveState {
             armWatchdog: deps.armWatchdog,
             clearWatchdog: deps.clearWatchdog,
             observeEvent: deps.observeEvent,
+            recoverFailedTurn: deps.recoverFailedTurn,
             emit: deps.emit,
             statusChanged: deps.statusChanged,
             recordChanged: deps.recordChanged,
