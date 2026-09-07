@@ -228,10 +228,10 @@ export const CONFIG_EN_MESSAGES: Dict = {
     "config.compaction.section.auto": "Auto-compaction",
     "config.compaction.autoCompactAt.name": "Auto-compact threshold",
     "config.compaction.autoCompactAt.desc":
-        "Summarize older turns into one note when a request reaches this fraction of the model's context window. The full transcript stays in the lossless ledger (recoverable via read_session). Disabled = only manual /compact.",
+        "Summarize older turns at this fraction of the context window. Recover the original with read_session. Disabled = manual /compact only.",
     "config.compaction.autoCompactOnTasksComplete.name": "Compact when all tasks are done",
     "config.compaction.autoCompactOnTasksComplete.desc":
-        "Auto-compact the moment the last pending session task is completed (task_complete/TaskUpdate reports zero remaining) — a natural end-of-work boundary, independent of the context-window threshold above.",
+        "Summarize when the last pending task finishes, regardless of the threshold above.",
     "config.value.enabled": "Enabled",
     "config.value.disabled": "Disabled",
     "config.value.yes": "Yes",
@@ -245,7 +245,7 @@ export const CONFIG_EN_MESSAGES: Dict = {
     "config.compaction.section.history": "History window",
     "config.compaction.maxHistoryMessages.name": "Max history messages",
     "config.compaction.maxHistoryMessages.desc":
-        "Max recent conversation messages sent per request to OpenAI-compatible backends. System/developer prompts are kept separately. Lower this if long tool-heavy sessions hit provider context limits. Unlimited = no local trimming.",
+        "Recent messages sent to API backends; system/developer prompts are separate. Latest user message and tool pairs may exceed this cap. 0 = no local trimming.",
     "config.messages.20": "20 messages",
     "config.messages.40": "40 messages",
     "config.messages.60": "60 messages",

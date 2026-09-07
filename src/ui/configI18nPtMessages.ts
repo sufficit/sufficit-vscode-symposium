@@ -232,11 +232,11 @@ export const CONFIG_PT_MESSAGES: Dict = {
     "config.compaction.section.auto": "Compactação automática",
     "config.compaction.autoCompactAt.name": "Limiar de compactação automática",
     "config.compaction.autoCompactAt.desc":
-        "Resume os turnos mais antigos em uma nota quando uma requisição atinge esta fração da janela de contexto do modelo. A transcrição completa permanece no registro sem perdas (recuperável via read_session). Desativado = apenas /compact manual.",
+        "Resume turnos antigos nesta fração da janela de contexto. Consulte o original com read_session. Desativado = apenas /compact manual.",
     "config.compaction.autoCompactOnTasksComplete.name":
         "Compactar quando todas as tarefas terminarem",
     "config.compaction.autoCompactOnTasksComplete.desc":
-        "Compacta automaticamente assim que a última tarefa pendente da sessão é concluída (task_complete/TaskUpdate reporta zero pendentes) — um limite natural de fim de trabalho, independente do limiar de janela de contexto acima.",
+        "Resume quando a última tarefa pendente termina, independentemente do limiar acima.",
     "config.value.disabled": "Desativado",
     "config.value.yes": "Sim",
     "config.value.no": "Não",
@@ -249,7 +249,7 @@ export const CONFIG_PT_MESSAGES: Dict = {
     "config.compaction.section.history": "Janela de histórico",
     "config.compaction.maxHistoryMessages.name": "Máximo de mensagens no histórico",
     "config.compaction.maxHistoryMessages.desc":
-        "Máximo de mensagens recentes da conversa enviadas por requisição aos backends compatíveis com OpenAI. Prompts de sistema/desenvolvedor são mantidos à parte. Reduza se sessões longas com muitas ferramentas atingirem os limites de contexto do provedor. Ilimitado = sem corte local.",
+        "Mensagens recentes enviadas às APIs; prompts de sistema/desenvolvedor ficam à parte. A última mensagem do usuário e pares de ferramentas podem exceder este teto. 0 = sem corte local.",
     "config.messages.20": "20 mensagens",
     "config.messages.40": "40 mensagens",
     "config.messages.60": "60 mensagens",

@@ -29,7 +29,7 @@ Entrega na branch `feat/context-history-settings`, para revisão, sem publicaç�
 - `npx tsc -p .` e `npm run test:unit`: 658 testes aprovados, zero falhas.
 - `COVERAGE_BASE_SHA=4db304d6711ddda68b04baace7857074f7180dc1 npm run verify`:
   lint, formatação, typechecks, testes/cobertura, guardrails e build aprovados.
-  Cobertura das linhas alteradas: 97,26% (142/146; mínimo 85%).
+  Cobertura das linhas alteradas conferida após o commit: 97,28% (143/147; mínimo 85%).
 - `npm run check:size`: fontes com até 400 linhas.
 - `npm run check:configscript`: scripts válidos em EN/PT-BR.
 - `git diff --check`: sem problemas de whitespace.
@@ -46,6 +46,14 @@ foram corrigidas com import estático e promises explícitas. A checagem com a b
 da PR também revelou cobertura insuficiente; testes do aviso de omissão, leitura
 configurável e preferências de adaptadores personalizados fecharam essa lacuna.
 Entrega: [PR #53](https://github.com/sufficit/sufficit-vscode-symposium/pull/53).
+
+Verify, Extension Host e CodeQL passaram no GitHub. A validação do VSIX identificou
+379 bytes acima do orçamento de 800 KiB; descrições repetitivas da seção foram
+encurtadas em EN/PT-BR, com nova aprovação da revisão de texto. A suíte de 658
+testes e o build passaram novamente. `npm ci` no clone isolado resolveu a árvore
+de dependências compartilhada que impedia o empacotador local. `npm run package:vsix`
+e `npm run check:vsix` passaram: 41 arquivos, pacote de 495.788 bytes e bundle
+de 818.945 bytes, dentro do teto de 819.200. O limite de tamanho não foi aumentado.
 
 Não houve instalação da extensão. A consulta depende do conteúdo efetivamente
 persistido; não recupera truncamentos antigos. Orçamento total por tokens, busca
