@@ -11,6 +11,7 @@ import {
     rememberProjectedUser,
     seedQueueProjection,
 } from "../ahp";
+import { historyTurns } from "../ahp/historyProjection";
 
 /**
  * Recovery-path invariants for docs/plans/20260810-message-lifecycle-hardening.md
@@ -67,6 +68,55 @@ test("resetTurn clears pendingUser so a later turn-start with no user emit is sy
     const message = record(action.message);
     assert.equal(message.text, "");
     assert.deepEqual(message._meta, { synthetic: true });
+});
+
+test("automatic recovery projects as transient UI state outside conversation history", () => {
+    const state = createProjectionState();
+    projectAgentEvent(state, turnStart("failed-turn"));
+    projectAgentEvent(state, turnEnd());
+
+    const actions = projectAgentEvent(state, {
+        kind: "status-notice",
+        text: "Retrying automatically",
+        severity: "warning",
+        recovery: {
+            id: "intent-1",
+            state: "scheduled",
+            attempt: 1,
+            limit: 3,
+            retryAt: 1_000,
+            reason: "fetch failed",
+        },
+    });
+
+    assert.equal(actions.length, 1);
+    const action = record(actions[0].action);
+    assert.equal(action.type, "symposium/recoveryStatus");
+    assert.equal(action.content, "Retrying automatically");
+    assert.deepEqual(action.recovery, {
+        id: "intent-1",
+        state: "scheduled",
+        attempt: 1,
+        limit: 3,
+        retryAt: 1_000,
+        reason: "fetch failed",
+    });
+});
+
+test("historical output after an error supersedes the obsolete terminal failure", () => {
+    const [turn] = historyTurns([
+        { role: "user", text: "deploy" },
+        { role: "assistant", text: "Partial progress" },
+        { role: "error", text: "fetch failed", retryable: true },
+        { role: "assistant", text: "Deployment completed" },
+    ]);
+
+    assert.equal(turn.state, "complete");
+    assert.equal(turn.error, undefined);
+    assert.deepEqual(
+        turn.responseParts.map((part) => (part as { content?: string }).content),
+        ["Partial progress", "Deployment completed"],
+    );
 });
 
 test("seedQueueProjection lets an empty host queue remove restored queued and steering rows", () => {

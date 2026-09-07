@@ -72,11 +72,11 @@ for (const entry of missing) failures.push(`required packaged path is missing: $
 for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`);
 
 const budgets = new Map([
-    // Gemini/Antigravity discovery adds two bounded transcript readers and
-    // source-specific catalog adapters. The measured host bundle is ~793 KiB;
-    // 800 KiB leaves less than 1% headroom while keeping growth explicit.
-    ["extension/out/extension.js", 800 * 1024],
-    ["extension/out/ui/webview.bundle.js", 320 * 1024],
+    // Reuniting main's Gemini discovery/context controls with develop's
+    // published recovery and voice features measures 837.2 KiB. Keep 840 KiB
+    // explicit for this combined release and retain the independent 1 MiB archive cap.
+    ["extension/out/extension.js", 840 * 1024],
+    ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
 for (const [entry, budget] of budgets) {

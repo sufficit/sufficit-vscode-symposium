@@ -20,7 +20,7 @@ import {
     sessionCostUsd,
 } from "./statusbar";
 import { setStatus } from "./status";
-import { modelLabel, setModelLabel, setModelValue } from "./models";
+import { modelLabel } from "./models";
 import { sendBtn } from "./dom";
 import {
     activeModel,
@@ -36,9 +36,10 @@ import {
 } from "./state";
 import { legacyGuardrailStopNotice } from "../../adapters/openai/turnNotices";
 import type { AgentEvent } from "../../adapters/types";
+import { resolveRunningTransientRetryNotices } from "./retryStatusNotice";
 
 /** Apply an `event` message payload (streaming turn events). */
-export function applyEvent(ev: AgentEvent): void {
+export function applyEvent(ev: AgentEvent, errorTurnId?: string): void {
     // Any real turn-progress event proves a pending retry took effect (the
     // stalled/errored attempt resumed) — clear its "Retrying…" button on the
     // first sign of life, not just at full turn-end (which can be long after,
@@ -48,6 +49,9 @@ export function applyEvent(ev: AgentEvent): void {
     // instantly instead of on real progress.
     if (ev.kind !== "status-notice") {
         resolvePendingRetry();
+    }
+    if (isRetryProgressEvent(ev)) {
+        resolveRunningTransientRetryNotices();
     }
     // Claude streams extended thinking token-by-token. Consecutive thinking
     // deltas should stay in one block; text/tools/status events close it via
@@ -67,7 +71,7 @@ export function applyEvent(ev: AgentEvent): void {
             streamDelta(ev.text, ev.model, ev.reasoning, ev.ts);
         }
     } else if (ev.kind === "status-notice")
-        renderStatusNotice(ev.text, ev.anchorIndex, ev.severity, ev.action);
+        renderStatusNotice(ev.text, ev.anchorIndex, ev.severity, ev.action, ev.recovery);
     else if (ev.kind === "tool-start") {
         endStream();
         renderTool(ev.toolName, ev.detail || "", {
@@ -104,7 +108,7 @@ export function applyEvent(ev: AgentEvent): void {
         // busy here made the next composer send look immediate and rendered its
         // optimistic bubble outside the host queue. Only turn-end may release
         // the composer; the host controller already follows that same rule.
-        renderError(ev.message, ev.historical, ev.retryable);
+        renderError(ev.message, ev.historical, ev.retryable, ev.retryAt, errorTurnId);
     } else if (ev.kind === "session") {
         if (ev.model) {
             applyEffectiveModel(ev.model);
@@ -147,16 +151,27 @@ export function applyEvent(ev: AgentEvent): void {
     }
 }
 
+function isRetryProgressEvent(event: AgentEvent): boolean {
+    if (event.kind === "text" || event.kind === "thinking") {
+        return event.text.trim().length > 0;
+    }
+    return (
+        event.kind === "tool-start" ||
+        event.kind === "tool-output" ||
+        event.kind === "tool-end" ||
+        event.kind === "approval-request" ||
+        event.kind === "approval-resolved"
+    );
+}
+
 function applyEffectiveModel(model: unknown): void {
     if (typeof model !== "string" || !model) {
         return;
     }
+    // The provider model that actually answered and the preset/model requested
+    // for the next turn are separate pieces of state. Gateway routing may turn
+    // a selected preset into a concrete provider model; reflecting that in the
+    // status and reply metadata must never rewrite the user's picker selection.
     setActiveModel(model);
     updateLastAssistantModel(model);
-    // A queued message already captured its own model. Keep that picker value
-    // until the queued turn starts; otherwise show the model actually used.
-    if (!queued) {
-        setModelValue(model);
-        setModelLabel();
-    }
 }

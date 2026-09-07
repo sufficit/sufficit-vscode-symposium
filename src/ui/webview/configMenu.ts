@@ -80,6 +80,7 @@ configBtn.addEventListener("click", (ev) => {
             mi.appendChild(lbl);
             mi.addEventListener("click", () => {
                 setPermissionValue(p);
+                postMessage({ type: "set-permission", permission: p });
                 ctxMenu.style.display = "none";
             });
             list.appendChild(mi);

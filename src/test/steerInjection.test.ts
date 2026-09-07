@@ -83,8 +83,9 @@ test("steer is injected into the running turn instead of queued", () => {
 
 test("committing an injection emits the user row that persists and renders it", () => {
     const h = harness();
+    const createdAt = Date.parse("2026-08-25T15:46:28.513Z");
     routeControllerSend(
-        { text: "use gh instead", attachments: [], clientMessageId: "c1" },
+        { text: "use gh instead", attachments: [], clientMessageId: "c1", createdAt },
         "steer",
         h.context,
     );
@@ -92,8 +93,25 @@ test("committing an injection emits the user row that persists and renders it", 
     h.offers[0].onCommitted?.("turn-7");
 
     assert.deepEqual(h.emitted, [
-        { type: "user", text: "use gh instead", attachments: [], clientMessageId: "c1" },
+        {
+            type: "user",
+            text: "use gh instead",
+            attachments: [],
+            clientMessageId: "c1",
+            ts: createdAt,
+        },
     ]);
+});
+
+test("the router captures submission time before a message waits in the queue", () => {
+    const h = harness();
+    const message: PendingMessage = { text: "wait", attachments: [], clientMessageId: "queued" };
+
+    routeControllerSend(message, "queue", h.context);
+
+    assert.equal(typeof message.createdAt, "number");
+    assert.ok((message.createdAt ?? 0) > 0);
+    assert.equal(h.queue.items()[0].createdAt, message.createdAt);
 });
 
 test("a dropped injection falls back to the queue instead of vanishing", () => {

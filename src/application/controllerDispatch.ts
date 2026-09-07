@@ -5,6 +5,7 @@ import type {
     SessionStartOptions,
 } from "../adapters/types";
 import type { HubClient } from "../sync/hubClient";
+import { isTransientErrorMessage } from "../adapters/transientError";
 import { buildDispatchOutbound } from "./controllerDispatchPrompt";
 import { prepareDispatch } from "./controllerDispatchPrep";
 import type { HubState } from "./controllerHubState";
@@ -54,14 +55,12 @@ export async function dispatchControllerMessage(
     try {
         await prepareAndSend(message, context);
     } catch (error) {
-        context.emit({
-            type: "event",
-            event: {
-                kind: "error",
-                message: error instanceof Error ? error.message : String(error),
-            },
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        context.onSessionEvent({
+            kind: "error",
+            message: errorMessage,
+            retryable: isTransientErrorMessage(errorMessage),
         });
-        context.turn.recordError();
         // The adapter never ran (setup failed before session.send), so
         // nothing else will emit this turn's end — completeTurn must.
         completeTurn(context.turn, context.completion, { emitTurnEnd: true });
@@ -86,6 +85,13 @@ async function prepareAndSend(
         message,
     );
     let session = context.getSession();
+    if (session && message.permission) {
+        // API sessions may own a normalized copy of the start options. Push the
+        // per-message picker value through the live-session contract as well,
+        // otherwise the UI can say admin while the old manager/user policy is
+        // still being enforced.
+        session.setPermission?.(message.permission);
+    }
     if (!session) {
         session = context.adapter.start(context.options);
         session.on("event", context.onSessionEvent);
@@ -115,6 +121,7 @@ async function prepareAndSend(
             text: message.text,
             attachments: message.attachments,
             clientMessageId: message.clientMessageId,
+            ts: message.createdAt ?? Date.now(),
         });
     }
     const intentId = message.intentId ?? context.ports.ids.create();

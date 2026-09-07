@@ -3,9 +3,12 @@ import type { AgentEvent, TodoItem } from "../adapters/types";
 import { parseTodoFence } from "../adapters/todos";
 import type { TrackingMode } from "./outboundPrompt";
 import { completeTurn, type TurnCompletionContext } from "./controllerTurnCompletion";
+import { isResponseBlockingToolEvent, MISSING_FINAL_RESPONSE_NOTICE } from "./finalResponseState";
 
 export interface ControllerEventBindings extends TurnCompletionContext {
     armWatchdog(): void;
+    /** False defers the raw event while a controller-owned recovery is pending. */
+    observeEvent?(event: AgentEvent): boolean;
     recordChanged(path: string, added?: number, removed?: number): void;
     setTodos(todos: TodoItem[]): void;
     trackingMode(): TrackingMode | undefined;
@@ -33,8 +36,11 @@ export class ControllerEventHandler {
             this.onTurnEnd(event);
             return;
         }
-        b.emit({ type: "event", event });
-        this.applyEventSideEffects(event);
+        const forwarded = b.observeEvent?.(event) !== false;
+        if (forwarded) {
+            b.emit({ type: "event", event });
+        }
+        this.applyEventSideEffects(event, forwarded);
     };
 
     private onTurnStart(event: Extract<AgentEvent, { kind: "turn-start" }>): void {
@@ -64,14 +70,34 @@ export class ControllerEventHandler {
             !event.logicalTurnId && decision.turn.backendId
                 ? { ...event, logicalTurnId: decision.turn.backendId }
                 : event;
-        b.emit({ type: "event", event: enriched });
-        // false: this event IS the adapter's own turn-end; completeTurn must
-        // not synthesize a second one.
-        completeTurn(decision.turn, b, { emitTurnEnd: false });
+        if (
+            decision.turn.awaitingFinalResponse &&
+            !decision.turn.cancelRequested &&
+            !decision.turn.attention
+        ) {
+            const notice: AgentEvent = {
+                kind: "status-notice",
+                severity: "warning",
+                terminal: true,
+                text: MISSING_FINAL_RESPONSE_NOTICE,
+            };
+            b.emit({ type: "event", event: notice });
+            decision.turn.recordWarning();
+        }
+        // Recovery must decide whether to expose the deferred provider error
+        // BEFORE turn-end resets the AHP projection. completeTurn publishes
+        // this exact adapter event at that boundary, then applies queue policy.
+        completeTurn(decision.turn, b, { emitTurnEnd: true, turnEndEvent: enriched });
     }
 
-    private applyEventSideEffects(event: AgentEvent): void {
+    private applyEventSideEffects(event: AgentEvent, forwarded = true): void {
         const b = this.b;
+        if (event.kind === "text" && event.text.trim()) {
+            b.turns.current?.recordAssistantText();
+        }
+        if (isResponseBlockingToolEvent(event)) {
+            b.turns.current?.recordToolActivity();
+        }
         if (event.kind === "session") {
             b.statusChanged();
         }
@@ -98,7 +124,7 @@ export class ControllerEventHandler {
         // !historical: replaying a stored transcript containing a past fatal
         // error must not badge an otherwise-idle reopened session as errored.
         if (event.kind === "error" && event.fatal !== false && !event.historical) {
-            (b.turns.current ?? b.turns.lastTurn)?.recordError();
+            (b.turns.current ?? b.turns.lastTurn)?.recordError(event, forwarded);
         }
         if (event.kind === "status-notice" && event.terminal && event.severity === "warning") {
             (b.turns.current ?? b.turns.lastTurn)?.recordWarning();

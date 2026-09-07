@@ -1,3 +1,5 @@
+import { withoutContradictoryFinalResponseWarnings } from "./finalResponseState";
+
 /** Application-owned persisted render event stream.
  *
  * Keeps a bounded log for transcript/persistence purposes and fans new events
@@ -29,7 +31,9 @@ export class RenderStream {
         // "turn-start" with no matching "turn-end". Replaying that on reopen would
         // flip the webview into a stuck "thinking" state forever. Drop any trailing
         // turn-start that is never closed by a later turn-end before seeding.
-        const sanitized = neutralizeSupersededErrors(dropOrphanTurnStart(messages));
+        const sanitized = neutralizeSupersededErrors(
+            dropOrphanTurnStart(withoutContradictoryFinalResponseWarnings(messages)),
+        );
         for (const m of sanitized) {
             this.log.push(m);
         }

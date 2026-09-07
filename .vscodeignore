@@ -13,6 +13,7 @@ tsconfig.json
 tsconfig.webview.json
 ARCHITECTURE.md
 docs/**
+PLAN-*.md
 .vscode/**
 .github/**
 .vsce*.token

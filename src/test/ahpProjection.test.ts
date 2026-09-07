@@ -65,6 +65,22 @@ test("failed and cancelled projections finish in distinct terminal states", () =
     assert.equal(chat.turns[0].state, "cancelled");
 });
 
+test("history projection preserves terminal errors and retryability", () => {
+    const retryAt = Date.parse("2026-07-22T17:30:00.000Z");
+    const [turn] = historyTurns([
+        { role: "user", text: "Run the task" },
+        { role: "assistant", text: "Partial reply" },
+        { role: "error", text: "fetch failed", retryable: true, retryAt },
+    ]);
+
+    assert.equal(turn.state, "error");
+    assert.deepEqual(turn.error, {
+        errorType: "agent",
+        message: "fetch failed",
+        _meta: { retryable: true, retryAt },
+    });
+});
+
 test("projection keeps tool approval correlation and excludes arbitrary provider metadata", () => {
     const runtime = fixture("openai");
     rememberProjectedUser(runtime.projection, "write");
@@ -192,6 +208,18 @@ test("assistant timestamp, model and effort survive live and history AHP project
         _meta?: { symposium?: Record<string, unknown> };
     };
     assert.deepEqual(historyPart._meta?.symposium, livePart._meta?.symposium);
+    assert.equal(
+        history.startedAt,
+        new Date(timestamp).toISOString(),
+        "legacy user rows inherit the first real timestamp in their turn",
+    );
+
+    const submittedAt = Date.parse("2026-08-19T22:52:50.000Z");
+    const [timestampedHistory] = historyTurns([
+        { role: "user", text: "question", ts: submittedAt },
+        { role: "assistant", text: "answer", ts: timestamp },
+    ]);
+    assert.equal(timestampedHistory.startedAt, new Date(submittedAt).toISOString());
 
     assert.deepEqual(
         readAssistantMetadata({

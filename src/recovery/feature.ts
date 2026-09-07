@@ -1,0 +1,9 @@
+import { defineFeature } from "../features/definition";
+
+export const RECOVERY_FEATURE_VERSION = "1.3.4";
+
+export const RECOVERY_FEATURE = defineFeature({
+    namespace: "symposium.recovery",
+    version: RECOVERY_FEATURE_VERSION,
+    description: "Visible bounded recovery from transient provider and transport failures.",
+});

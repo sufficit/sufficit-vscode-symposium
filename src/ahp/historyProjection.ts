@@ -11,6 +11,7 @@ import type {
 } from "@microsoft/agent-host-protocol";
 import { safeMeta } from "./projectionCore";
 import { assistantMetadata } from "./assistantMetadata";
+import { resumeHistoricalTurn } from "./recoveredError";
 
 const MESSAGE_USER = "user" as MessageKind.User;
 const PART_MARKDOWN = "markdown" as ResponsePartKind.Markdown;
@@ -53,7 +54,9 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             continue;
         }
         const turn = (current ??= historyTurn(index, "", message.ts));
+        inheritTurnTimestamp(turn, message.ts);
         if (message.role === "assistant") {
+            resumeHistoricalTurn(turn);
             turn.responseParts.push({
                 kind: PART_MARKDOWN,
                 id: `history-${index + 1}-text`,
@@ -65,12 +68,14 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
                 }),
             } as unknown as ResponsePart);
         } else if (message.role === "thinking") {
+            resumeHistoricalTurn(turn);
             turn.responseParts.push({
                 kind: PART_REASONING,
                 id: `history-${index + 1}-reasoning`,
                 content: message.text ?? "",
             });
         } else if (message.role === "tool") {
+            resumeHistoricalTurn(turn);
             turn.responseParts.push({
                 kind: PART_TOOL_CALL,
                 toolCall: {
@@ -96,7 +101,14 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             });
         } else if (message.role === "error") {
             turn.state = TURN_ERROR;
-            turn.error = { errorType: "agent", message: message.text ?? "" };
+            turn.error = {
+                errorType: "agent",
+                message: message.text ?? "",
+                _meta: {
+                    retryable: message.retryable === true,
+                    ...(message.retryAt !== undefined ? { retryAt: message.retryAt } : {}),
+                },
+            };
         }
     }
     flush();
@@ -117,4 +129,19 @@ function historyTurn(
         responseParts: [],
         usage: undefined,
     };
+}
+
+function inheritTurnTimestamp(
+    turn: ChatState["turns"][number],
+    timestamp: number | undefined,
+): void {
+    if (
+        typeof timestamp !== "number" ||
+        !Number.isFinite(timestamp) ||
+        timestamp <= 0 ||
+        (typeof turn.startedAt === "string" && Date.parse(turn.startedAt) > 0)
+    ) {
+        return;
+    }
+    turn.startedAt = new Date(timestamp).toISOString();
 }

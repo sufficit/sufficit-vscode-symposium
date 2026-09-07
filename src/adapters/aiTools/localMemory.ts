@@ -152,12 +152,19 @@ export class LocalMemory {
     /** Save an observation */
     save(obs: Observation): Promise<{ id: string }> {
         return Promise.resolve().then(() => {
+            const title = obs.title.trim();
+            const summary = obs.summary.trim();
+            if (!title || !summary) {
+                throw new Error("memory title and summary are required and must contain text");
+            }
             ensureMemoryDir();
 
             // Generate ID if not provided
             const id = obs.id || generateId();
             const obsWithId = {
                 ...obs,
+                title,
+                summary,
                 id,
                 createdAtUtc: obs.createdAtUtc ?? new Date().toISOString(),
             };

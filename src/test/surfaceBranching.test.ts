@@ -44,11 +44,59 @@ test("plain retry resends the interrupted message with its timeout reason", () =
             type: "event",
             event: {
                 kind: "status-notice",
-                text: `Retrying the previous request — no new user message was added. The model received the interruption reason: ${reason}`,
+                text: `Retrying; no user message. Reason: ${reason}`,
                 anchorIndex: 0,
             },
         },
     ]);
+});
+
+test("plain retry never promotes a provider maintenance page into chat or agent context", () => {
+    let handled: WebviewToHost | undefined;
+    const posted: unknown[] = [];
+    const deps = {
+        getController: () => ({
+            transcriptMessages: () => [{ role: "user", text: "continue deployment" }],
+        }),
+        post: (message: unknown) => posted.push(message),
+        dispatchAhp: (message: WebviewToHost) => {
+            handled = message;
+            return true;
+        },
+    } as unknown as SurfaceDialoguesDeps;
+    const maintenancePage =
+        "HTTP 503 Service Unavailable <!doctype html><html><head><style>body { color: red; }</style></head><body>maintenance</body></html>";
+
+    retryLastMessage(deps, 0, maintenancePage);
+
+    assert.equal(handled?.type, "send");
+    assert.equal(handled?.interruptedBy, "HTTP 503 Service Unavailable");
+    assert.doesNotMatch(JSON.stringify(posted), /doctype|<html|<style|color: red/i);
+    assert.match(JSON.stringify(posted), /HTTP 503 Service Unavailable/);
+});
+
+test("plain retry keeps a compact 503 continuity reason", () => {
+    let handled: WebviewToHost | undefined;
+    const deps = {
+        getController: () => ({
+            transcriptMessages: () => [{ role: "user", text: "continue deployment" }],
+        }),
+        post: () => undefined,
+        dispatchAhp: (message: WebviewToHost) => {
+            handled = message;
+            return true;
+        },
+    } as unknown as SurfaceDialoguesDeps;
+
+    retryLastMessage(
+        deps,
+        0,
+        "HTTP 503 Service Unavailable <!doctype html><html><body>maintenance</body></html>",
+    );
+
+    assert.equal(handled?.type, "send");
+    assert.equal(handled?.interruptedBy, "HTTP 503 Service Unavailable");
+    assert.ok((handled?.interruptedBy || "").length < 100);
 });
 
 test("plain retry survives AHP row-index drift by matching the visible user text", () => {
@@ -80,7 +128,7 @@ test("plain retry survives AHP row-index drift by matching the visible user text
             type: "event",
             event: {
                 kind: "status-notice",
-                text: "Retrying the previous request — no new user message was added. The model received the interruption reason: stalled",
+                text: "Retrying; no user message. Reason: stalled",
                 anchorIndex: 1,
             },
         },

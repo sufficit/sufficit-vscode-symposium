@@ -12,6 +12,7 @@ import type { ChatMessage } from "../adapters/openai/types";
 import type { CompressionStrategyType } from "./types";
 
 export { CompressionManager } from "./manager";
+export * from "./feature";
 export {
     CompressionPreset,
     CompressionSettings,

@@ -82,3 +82,24 @@ test("Claude history keeps model and effort on each assistant message", () => {
         },
     ]);
 });
+
+test("Claude history preserves the hard-limit reset used to gate Retry", () => {
+    const messages = parseTranscriptLine(
+        JSON.stringify({
+            type: "result",
+            is_error: true,
+            timestamp: "2026-07-22T15:00:00.000Z",
+            result: "You've hit your session limit · resets 2:30pm (America/Sao_Paulo)",
+        }),
+    );
+
+    assert.deepEqual(messages, [
+        {
+            role: "error",
+            text: "You've hit your session limit · resets 2:30pm (America/Sao_Paulo)",
+            retryable: true,
+            retryAt: Date.parse("2026-07-22T17:30:00.000Z"),
+            ts: Date.parse("2026-07-22T15:00:00.000Z"),
+        },
+    ]);
+});

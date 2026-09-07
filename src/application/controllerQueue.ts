@@ -20,6 +20,9 @@ export interface QueueHold {
 export interface PendingMessage {
     id?: number;
     clientMessageId?: string;
+    /** User submission time in Unix milliseconds. Captured before queueing so
+     *  delayed dispatch/replay never makes an older message look newly sent. */
+    createdAt?: number;
     /**
      * Controller-assigned intent id for this user request. Stable across the
      * turn it drives; the adapter carries it into ledger rows without deciding
@@ -33,6 +36,10 @@ export interface PendingMessage {
      * fresh backend turn id so late events from the failed attempt stay stale.
      */
     retryOf?: string;
+    /** Internal bounded-recovery attempt count. Not rendered as a user message. */
+    automaticRetryAttempt?: number;
+    /** Stable identity for the UI-only recovery card across retry attempts. */
+    automaticRetryId?: string;
     text: string;
     attachments: string[];
     model?: string;

@@ -185,10 +185,170 @@ function repositoryArtifacts() {
     console.log(`✓ checked ${tracked.length} tracked paths for backup artifacts`);
 }
 
+function isExported(statement) {
+    return statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+}
+
+function objectProperty(object, name) {
+    return object.properties.find(
+        (property) =>
+            ts.isPropertyAssignment(property) &&
+            (stringLiteral(property.name) ??
+                (ts.isIdentifier(property.name) ? property.name.text : undefined)) === name,
+    );
+}
+
+function featureContracts(files) {
+    const featureFiles = files.filter((file) => file.endsWith("/feature.ts")).sort();
+    const catalogPath = "src/features/catalog.ts";
+    const publicIndexPath = "src/features/index.ts";
+    const catalogSource = readFileSync(catalogPath, "utf8");
+    const catalogFile = ts.createSourceFile(
+        catalogPath,
+        catalogSource,
+        ts.ScriptTarget.Latest,
+        true,
+    );
+    const catalogImports = new Set(
+        catalogFile.statements
+            .filter(ts.isImportDeclaration)
+            .map((statement) => stringLiteral(statement.moduleSpecifier))
+            .filter((specifier) => specifier?.endsWith("/feature")),
+    );
+    const publicIndex = ts.createSourceFile(
+        publicIndexPath,
+        readFileSync(publicIndexPath, "utf8"),
+        ts.ScriptTarget.Latest,
+        true,
+    );
+    const publicExports = new Set(
+        publicIndex.statements
+            .filter(ts.isExportDeclaration)
+            .map((statement) => stringLiteral(statement.moduleSpecifier))
+            .filter((specifier) => specifier?.endsWith("/feature")),
+    );
+    const namespaces = new Map();
+    const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+    for (const file of featureFiles) {
+        const source = readFileSync(file, "utf8");
+        const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+        const versions = [];
+        const definitions = [];
+
+        for (const statement of sourceFile.statements) {
+            if (!ts.isVariableStatement(statement) || !isExported(statement)) continue;
+            for (const declaration of statement.declarationList.declarations) {
+                if (!ts.isIdentifier(declaration.name)) continue;
+                const name = declaration.name.text;
+                if (name.endsWith("_FEATURE_VERSION")) {
+                    versions.push({ name, version: stringLiteral(declaration.initializer) });
+                    continue;
+                }
+                if (
+                    !name.endsWith("_FEATURE") ||
+                    !declaration.initializer ||
+                    !ts.isCallExpression(declaration.initializer) ||
+                    !ts.isIdentifier(declaration.initializer.expression) ||
+                    declaration.initializer.expression.text !== "defineFeature"
+                ) {
+                    continue;
+                }
+                const definition = declaration.initializer.arguments[0];
+                if (!definition || !ts.isObjectLiteralExpression(definition)) continue;
+                const namespaceProperty = objectProperty(definition, "namespace");
+                const versionProperty = objectProperty(definition, "version");
+                const descriptionProperty = objectProperty(definition, "description");
+                definitions.push({
+                    name,
+                    namespace:
+                        namespaceProperty && ts.isPropertyAssignment(namespaceProperty)
+                            ? stringLiteral(namespaceProperty.initializer)
+                            : undefined,
+                    versionName:
+                        versionProperty &&
+                        ts.isPropertyAssignment(versionProperty) &&
+                        ts.isIdentifier(versionProperty.initializer)
+                            ? versionProperty.initializer.text
+                            : undefined,
+                    description:
+                        descriptionProperty && ts.isPropertyAssignment(descriptionProperty)
+                            ? stringLiteral(descriptionProperty.initializer)
+                            : undefined,
+                });
+            }
+        }
+
+        if (versions.length !== 1) {
+            failures.push(`${file} must export exactly one *_FEATURE_VERSION constant`);
+        }
+        if (definitions.length !== 1) {
+            failures.push(`${file} must export exactly one *_FEATURE defined with defineFeature()`);
+        }
+        const version = versions[0];
+        const definition = definitions[0];
+        if (version && (!version.version || !semver.test(version.version))) {
+            failures.push(
+                `${file} has invalid semantic feature version ${String(version.version)}`,
+            );
+        }
+        if (definition) {
+            if (
+                !definition.namespace?.match(/^symposium\.[a-z][a-z0-9]*(?:[.-][a-z][a-z0-9]*)*$/)
+            ) {
+                failures.push(
+                    `${file} has invalid feature namespace ${String(definition.namespace)}`,
+                );
+            } else if (namespaces.has(definition.namespace)) {
+                failures.push(
+                    `${file} duplicates namespace ${definition.namespace} from ${namespaces.get(definition.namespace)}`,
+                );
+            } else {
+                namespaces.set(definition.namespace, file);
+            }
+            if (version && definition.versionName !== version.name) {
+                failures.push(`${file} feature definition must reference ${version.name}`);
+            }
+            if (!definition.description?.trim()) {
+                failures.push(`${file} feature definition must include a description`);
+            }
+        }
+
+        const modulePath = `../${file.slice("src/".length, -".ts".length)}`;
+        if (!catalogImports.has(modulePath)) {
+            failures.push(`${file} is missing from ${catalogPath}`);
+        }
+        if (!publicExports.has(modulePath)) {
+            failures.push(`${file} is not publicly exported by ${publicIndexPath}`);
+        }
+        const directory = file.slice(0, file.lastIndexOf("/"));
+        const barrel = `${directory}/index.ts`;
+        if (
+            existsSync(barrel) &&
+            !/from\s+["']\.\/feature["']/.test(readFileSync(barrel, "utf8"))
+        ) {
+            failures.push(`${barrel} must export its local feature metadata`);
+        }
+    }
+
+    if (catalogImports.size !== featureFiles.length) {
+        failures.push(
+            `${catalogPath} imports ${catalogImports.size} feature modules but ${featureFiles.length} exist`,
+        );
+    }
+    if (publicExports.size !== featureFiles.length) {
+        failures.push(
+            `${publicIndexPath} exports ${publicExports.size} feature modules but ${featureFiles.length} exist`,
+        );
+    }
+    console.log(`✓ checked ${featureFiles.length} versioned feature namespaces`);
+}
+
 const files = walk(ROOT);
 configurationContracts(files);
 i18nContracts();
 repositoryArtifacts();
+featureContracts(files);
 
 if (failures.length) {
     console.error(`✗ engineering guardrails found ${failures.length} issue(s):`);

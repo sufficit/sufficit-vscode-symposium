@@ -61,13 +61,21 @@ async function getObservations(args: Record<string, unknown>, ctx: ToolContext):
 async function save(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const type = String(args.type ?? "note");
     const tags = args.tags ? String(args.tags) : "";
+    const title = String(args.title ?? "").trim();
+    const summary = String(args.summary ?? "").trim();
+    if (!title || !summary) {
+        return JSON.stringify({
+            error: "title and summary are required and must contain text",
+            retryable: false,
+        });
+    }
     const allowedTaskTypes = new Set(["task-anchor", "task-checkpoint"]);
     const effectiveType = type.startsWith("task") && !allowedTaskTypes.has(type) ? "note" : type;
     const sessionScoped = !!ctx.sessionId && effectiveType.startsWith("task");
     const entry = {
         type: effectiveType,
-        title: String(args.title ?? ""),
-        summary: String(args.summary ?? ""),
+        title,
+        summary,
         payload: args.payload ? String(args.payload) : undefined,
         tags: tags || undefined,
     };

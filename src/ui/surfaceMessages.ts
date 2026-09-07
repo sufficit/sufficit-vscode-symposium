@@ -11,6 +11,8 @@ import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 import { handleMarkdownImageMessage } from "./surfaceMessageMarkdown";
 import { resolveLocalFileTarget } from "./markdownImages";
 import { handleSurfaceCommandMessage } from "./surfaceMessageCommands";
+import { openExternalSurfaceLink } from "./surfaceMessageLinks";
+import { handleSurfaceRetry } from "./surfaceRetry";
 
 /**
  * Webview → host message router for a chat surface: the big switch that turns
@@ -146,6 +148,7 @@ export class SurfaceMessages {
                     return;
                 }
                 case "voice-start":
+                case "voice-preview":
                 case "voice-stop":
                 case "voice-cancel":
                 case "stt-transcribe": {
@@ -177,6 +180,7 @@ export class SurfaceMessages {
                 case "remove-guardrail": {
                     if (typeof message.id === "string") {
                         await removeSurfaceGuardrail(this.d.hub, message.id);
+                        this.d.sync.forgetGuardrail(message.id);
                         await this.d.getController()?.reloadGuardrails();
                         void this.d.sync.refreshGuardrails();
                     }
@@ -192,6 +196,7 @@ export class SurfaceMessages {
                         );
                         if (ok === "Clear") {
                             await clearSurfaceGuardrails(this.d.hub, sid);
+                            this.d.sync.clearGuardrails();
                             await this.d.getController()?.reloadGuardrails();
                             void this.d.sync.refreshGuardrails();
                         }
@@ -206,11 +211,7 @@ export class SurfaceMessages {
                 }
                 case "retry-last-message": {
                     if (typeof message.index === "number") {
-                        this.d.dialogues.retryLastMessage(
-                            message.index,
-                            message.errorMessage,
-                            message.text,
-                        );
+                        handleSurfaceRetry(message, this.d);
                     }
                     return;
                 }
@@ -261,6 +262,10 @@ export class SurfaceMessages {
                             { preview: true, selection },
                         );
                     }
+                    return;
+                }
+                case "open-link": {
+                    await openExternalSurfaceLink(message.url);
                     return;
                 }
                 case "resolve-markdown-image": {

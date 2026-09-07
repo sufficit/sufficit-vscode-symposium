@@ -13,6 +13,27 @@ export interface SurfaceGuardrail {
     text: string;
 }
 
+export const GUARDRAIL_INDEX_GRACE_MS = 60_000;
+
+/**
+ * Keeps exact-id guardrails visible while the hub search index catches up.
+ * Explicit remove/clear actions discard their optimistic ids in SurfaceSync,
+ * so this grace period cannot resurrect a user-removed item.
+ */
+export function reconcileSurfaceGuardrails(
+    fetched: SurfaceGuardrail[],
+    previous: SurfaceGuardrail[],
+    optimisticAtMs: Map<string, number>,
+    now = Date.now(),
+): SurfaceGuardrail[] {
+    for (const [id, seenAt] of optimisticAtMs) {
+        if (now - seenAt >= GUARDRAIL_INDEX_GRACE_MS) optimisticAtMs.delete(id);
+    }
+    const have = new Set(fetched.map((item) => item.id));
+    const pending = previous.filter((item) => !have.has(item.id) && optimisticAtMs.has(item.id));
+    return [...fetched, ...pending];
+}
+
 /** Reads the same shared/local guardrail source used by the controller. */
 export async function loadSurfaceGuardrails(
     hub: HubClient,

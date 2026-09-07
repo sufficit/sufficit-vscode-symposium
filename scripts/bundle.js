@@ -101,6 +101,24 @@ async function build() {
         }
     }
 
+    // `tsc` runs again inside this bundler and therefore recreates host-side
+    // modules under `out/pwa` after build-pwa has produced its closed browser
+    // bundle. Retain only the explicit PWA runtime assets.
+    const pwaDir = path.join(outDir, "pwa");
+    const pwaAssets = new Set([
+        "app.js",
+        "icon.svg",
+        "manifest.webmanifest",
+        "sw.js",
+        "webview.css",
+    ]);
+    if (fs.existsSync(pwaDir)) {
+        for (const entry of fs.readdirSync(pwaDir, { withFileTypes: true })) {
+            if (pwaAssets.has(entry.name)) continue;
+            fs.rmSync(path.join(pwaDir, entry.name), { recursive: true, force: true });
+        }
+    }
+
     console.log("✅ Bundle created successfully!");
     console.log(
         `📊 Bundle size: ${(fs.statSync(path.join(outDir, "extension.js")).size / 1024).toFixed(2)} KB`,

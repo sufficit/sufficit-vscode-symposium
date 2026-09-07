@@ -6,7 +6,7 @@ import { AgentAdapter, SlashCommand } from "../adapters/types";
 import { HubClient, Observation } from "../sync/hubClient";
 import { fetchSessionTasks, TaskItem } from "../sync/tasks";
 import { applyTaskState, reconcileTaskStateOverrides, TaskStateOverride } from "../sync/taskUi";
-import { loadSurfaceGuardrails } from "./surfaceGuardrails";
+import { loadSurfaceGuardrails, reconcileSurfaceGuardrails } from "./surfaceGuardrails";
 import { ledgerDir } from "../ledger";
 import { attachBrowserPage } from "./surfaceBrowserAttachment";
 
@@ -40,6 +40,7 @@ export class SurfaceSync {
     // async search index settling) instead of waiting for searchMemory to see it.
     private lastTasks: TaskItem[] = [];
     private lastGuardrails: { id: string; text: string }[] = [];
+    private guardrailFirstSeenAtMs = new Map<string, number>();
     // Session id the caches belong to; on change the optimistic cache is dropped
     // so items from a previous session never leak into the panel.
     private lastSessionId = "";
@@ -76,6 +77,7 @@ export class SurfaceSync {
             this.lastSessionId = sessionId;
             this.lastTasks = [];
             this.lastGuardrails = [];
+            this.guardrailFirstSeenAtMs.clear();
             this.taskFirstSeenAtMs.clear();
             this.taskStateOverrides.clear();
         }
@@ -249,17 +251,18 @@ export class SurfaceSync {
     /** Pushes the session's user guardrails to the panel. */
     async refreshGuardrails(): Promise<void> {
         const sessionId = this.d.getController()?.sessionId ?? "";
-        const items = await loadSurfaceGuardrails(this.hub, sessionId, this.lastGuardrails);
+        const fetched = await loadSurfaceGuardrails(this.hub, sessionId, this.lastGuardrails);
+        const items = reconcileSurfaceGuardrails(
+            fetched,
+            this.lastGuardrails,
+            this.guardrailFirstSeenAtMs,
+        );
         this.lastGuardrails = items;
         this.d.post({ type: "guardrails", items });
     }
 
-    /**
-     * Optimistic refresh of a just-added guardrail (read-by-id, instant; does
-     * not depend on the hub's async search index). Falls back to a full refresh.
-     * Pass source: "local" when add_guardrail fell back to LocalMemory so we read
-     * from there instead of the hub.
-     */
+    /** Adds a guardrail by exact id before the search index catches up.
+     * `source` selects LocalMemory when the remote write used its fallback. */
     async bumpGuardrailById(id: string, source?: "hub" | "local"): Promise<void> {
         if (!id) {
             return this.refreshGuardrails();
@@ -284,6 +287,7 @@ export class SurfaceSync {
             const merged = have.has(created.id)
                 ? this.lastGuardrails
                 : [...this.lastGuardrails, created];
+            this.guardrailFirstSeenAtMs.set(created.id, Date.now());
             this.lastGuardrails = merged;
             this.d.post({ type: "guardrails", items: merged });
         } catch {
@@ -294,6 +298,17 @@ export class SurfaceSync {
         if (source !== "local") {
             void this.refreshGuardrails();
         }
+    }
+    forgetGuardrail(id: string): void {
+        this.guardrailFirstSeenAtMs.delete(id);
+        this.lastGuardrails = this.lastGuardrails.filter((item) => item.id !== id);
+        this.d.post({ type: "guardrails", items: this.lastGuardrails });
+    }
+
+    clearGuardrails(): void {
+        this.guardrailFirstSeenAtMs.clear();
+        this.lastGuardrails = [];
+        this.d.post({ type: "guardrails", items: [] });
     }
 
     /** Attaches a VS Code integrated-browser page snapshot as a context file. */

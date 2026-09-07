@@ -30,6 +30,13 @@ export function routeControllerSend(
     context: SendRouterContext,
 ): void {
     message.mode = mode;
+    if (
+        typeof message.createdAt !== "number" ||
+        !Number.isFinite(message.createdAt) ||
+        message.createdAt <= 0
+    ) {
+        message.createdAt = Date.now();
+    }
     const preview = message.text.length > 40 ? `${message.text.slice(0, 40)}…` : message.text;
     if (!context.dedup.accept(message.clientMessageId)) {
         context.log?.(`[send] "${preview}" dropped — duplicate clientMessageId (already accepted)`);

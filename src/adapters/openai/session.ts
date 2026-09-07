@@ -12,6 +12,7 @@ import { appendUserTurn, isObjectiveText } from "./sessionSend";
 import { TurnInjectionQueue } from "./turnInjection";
 import { buildFollowupAnchor, OpenAISessionRuntime } from "./sessionRuntime";
 import { restoreOpenAISession } from "./sessionRestore";
+import { ApprovalState } from "./approvalState";
 
 /**
  * A direct OpenAI-compatible chat session (no CLI): streams /chat/completions
@@ -52,11 +53,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
     private progress: string[] = [];
     // Last reported prompt size — feeds the compactor's auto-compact threshold.
     private lastInputTokens = 0;
-    // Inline tool-approval gate (admin/manager/user modes): one pending
-    // resolver per in-flight "approval-request", keyed by toolId. The turn
-    // loop awaits requestApproval() and blocks until resolveApproval() (fired
-    // by the webview's accept/reject click) resolves the matching entry.
-    private pendingApprovals = new Map<string, (approved: boolean) => void>();
+    private readonly approvals: ApprovalState;
     // Context compaction + the per-turn streaming loop; both constructor-
     // initialized (they eagerly read cfg/options/sessionId).
     private readonly compactor: Compactor;
@@ -69,6 +66,11 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         private readonly options: SessionStartOptions,
     ) {
         super();
+        // The picker displays the adapter default when no per-session override
+        // exists. Materialize that same default before the runner receives the
+        // options; otherwise write-root containment sees undefined as non-admin
+        // and asks for approval while the UI truthfully displays "admin".
+        this.options.permission ??= this.cfg.permissionMode ?? "admin";
         this.runtime = new OpenAISessionRuntime(this.cfg, this.options, this.backend);
         const restored = restoreOpenAISession(
             backend,
@@ -81,6 +83,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         this.title = restored.title;
         this.lineageId = restored.lineageId;
         this.turnSeq = restored.turnSeq;
+        this.approvals = new ApprovalState(this.options, (event) => this.emit("event", event));
         this.compactor = new Compactor({
             cfg: this.cfg,
             sessionId: this.sessionId,
@@ -211,21 +214,21 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         detail: string | undefined,
         tier: "write" | "destructive",
     ): Promise<boolean> {
-        return new Promise<boolean>((resolve) => {
-            this.pendingApprovals.set(toolId, resolve);
-            this.emit("event", { kind: "approval-request", toolId, toolName, detail, tier });
-        });
+        return this.approvals.request(toolId, toolName, detail, tier);
+    }
+
+    /** Applies a picker change immediately, including to an already-running tool loop. */
+    setPermission(permission: string): void {
+        this.approvals.setMode(permission);
+    }
+
+    getPermission(): string | undefined {
+        return this.approvals.mode;
     }
 
     /** Answers a pending approval-request (called from the webview's accept/reject click). */
     resolveApproval(toolId: string, approved: boolean): void {
-        const resolve = this.pendingApprovals.get(toolId);
-        if (!resolve) {
-            return;
-        }
-        this.pendingApprovals.delete(toolId);
-        resolve(approved);
-        this.emit("event", { kind: "approval-resolved", toolId, approved });
+        this.approvals.resolve(toolId, approved);
     }
 
     /**
@@ -342,6 +345,15 @@ export class OpenAISession extends EventEmitter implements AgentSession {
         this.pausedForToolCap = false;
         this.pendingResumeTurnId = this.currentLogicalTurnId;
         void this.runner.run();
+    }
+
+    setModel(model: string): void {
+        this.runtime.setModel(model);
+        this.safePersist();
+    }
+
+    getModel(): string {
+        return this.runtime.model();
     }
 
     /** See AgentSession.injectUserMessage. The TurnRunner opens the window for

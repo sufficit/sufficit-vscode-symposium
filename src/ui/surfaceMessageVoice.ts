@@ -9,7 +9,9 @@
 import type { WebviewToHost } from "../protocol/chat";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
-/** Handles voice-start/stop/cancel/stt-transcribe. Returns true if handled. */
+const previewJobs = new Map<string, Promise<void>>();
+
+/** Handles voice capture and transcription messages. Returns true if handled. */
 export async function handleVoiceMessage(
     message: WebviewToHost,
     d: SurfaceMessagesDeps,
@@ -33,24 +35,52 @@ export async function handleVoiceMessage(
                     // Native mic capture in the extension host (no webview
                     // getUserMedia — VS Code drops that permission on reload).
                     const { startCapture } = await import("../voice/recorder");
-                    await startCapture(
+                    const status = await startCapture(
                         settings.ffmpegPath,
-                        message.vad ? () => d.post({ type: "voice-silence" }) : undefined,
-                        message.vad ? () => d.post({ type: "voice-speech" }) : undefined,
+                        {
+                            onStatus: (snapshot) => d.post({ type: "voice-status", ...snapshot }),
+                            onSilence: message.vad
+                                ? (captureId) => d.post({ type: "voice-silence", captureId })
+                                : undefined,
+                            onSpeech: message.vad
+                                ? (captureId) => d.post({ type: "voice-speech", captureId })
+                                : undefined,
+                        },
+                        message.captureId,
                     );
+                    d.post({ type: "voice-status", ...status });
                 }
-                d.post({ type: "voice-recording", ok: true });
+                d.post({ type: "voice-recording", ok: true, captureId: message.captureId });
             } catch (e) {
                 d.post({
                     type: "voice-recording",
                     ok: false,
+                    captureId: message.captureId,
                     error: String((e && (e as Error).message) || e),
                 });
             }
             return true;
         }
+        case "voice-preview": {
+            const existing = previewJobs.get(message.captureId);
+            if (existing) {
+                await existing;
+                return true;
+            }
+            const job = runVoicePreview(message.captureId, d);
+            previewJobs.set(message.captureId, job);
+            try {
+                await job;
+            } finally {
+                if (previewJobs.get(message.captureId) === job) {
+                    previewJobs.delete(message.captureId);
+                }
+            }
+            return true;
+        }
         case "voice-stop": {
             try {
+                await previewJobs.get(message.captureId);
                 const { readSettings, transcribeWav } = await import("../voice/sttService");
                 let text: string;
                 if (readSettings().engine === "vscode-speech") {
@@ -61,9 +91,13 @@ export async function handleVoiceMessage(
                     const { stopCapture } = await import("../voice/recorder");
                     text = await transcribeWav(await stopCapture());
                 }
-                d.post({ type: "stt-result", text });
+                d.post({ type: "stt-result", text, captureId: message.captureId, final: true });
             } catch (e) {
-                d.post({ type: "stt-error", error: String((e && (e as Error).message) || e) });
+                d.post({
+                    type: "stt-error",
+                    captureId: message.captureId,
+                    error: String((e && (e as Error).message) || e),
+                });
             }
             return true;
         }
@@ -74,7 +108,7 @@ export async function handleVoiceMessage(
                 await cancelVscodeSpeechDictation();
             } else {
                 const { cancelCapture } = await import("../voice/recorder");
-                cancelCapture();
+                await cancelCapture();
             }
             return true;
         }
@@ -84,13 +118,47 @@ export async function handleVoiceMessage(
             try {
                 const { transcribeAudio } = await import("../voice/sttService");
                 const text = await transcribeAudio(message.data, message.mime);
-                d.post({ type: "stt-result", text });
+                d.post({
+                    type: message.purpose === "preview" ? "voice-preview-result" : "stt-result",
+                    captureId: message.captureId,
+                    text,
+                    final: message.purpose !== "preview",
+                });
             } catch (e) {
-                d.post({ type: "stt-error", error: String((e && (e as Error).message) || e) });
+                d.post({
+                    type: message.purpose === "preview" ? "voice-preview-result" : "stt-error",
+                    captureId: message.captureId,
+                    error: String((e && (e as Error).message) || e),
+                });
             }
             return true;
         }
         default:
             return false;
+    }
+}
+
+async function runVoicePreview(captureId: string, d: SurfaceMessagesDeps): Promise<void> {
+    const { finishCapturePreview, prepareCapturePreview } = await import("../voice/recorder");
+    const preview = prepareCapturePreview();
+    if (!preview || preview.captureId !== captureId) {
+        d.post({ type: "voice-preview-result", captureId, text: "" });
+        return;
+    }
+    try {
+        const { transcribeWav } = await import("../voice/sttService");
+        const text = await transcribeWav(preview.wavPath);
+        d.post({
+            type: "voice-preview-result",
+            captureId,
+            text: finishCapturePreview(preview, text, true),
+        });
+    } catch (e) {
+        finishCapturePreview(preview, "", false);
+        d.post({
+            type: "voice-preview-result",
+            captureId,
+            error: String((e && (e as Error).message) || e),
+        });
     }
 }

@@ -17,6 +17,8 @@ import type { HubStateContext } from "../application/controllerHubState";
 import { buildTurnTools } from "../adapters/openai/turnTools";
 import { classifyTool } from "../adapters/aiTools/permissionTiers";
 import { prepareDispatch } from "../application/controllerDispatchPrep";
+import { GUARDRAIL_INDEX_GRACE_MS, reconcileSurfaceGuardrails } from "../ui/surfaceGuardrails";
+import { SurfaceSync } from "../ui/surfaceSync";
 
 /** Minimal hub stub: records saves (with sessionId/privacyLevel) and serves them back. */
 function hubStub(opts: { records?: any[]; configured?: boolean; searchThrows?: boolean } = {}) {
@@ -296,4 +298,63 @@ test("reloadGuardrails: empty result still marks loaded (not a failure)", async 
     await reloadGuardrails(ctx);
     assert.deepEqual(state.guardrails, []);
     assert.equal(state.guardrailsLoaded, true);
+});
+
+test("surface reconciliation keeps a just-added guardrail while search indexing lags", () => {
+    const now = 10_000;
+    const created = { id: "new-guardrail", text: "keep release steps explicit" };
+    const optimistic = new Map([[created.id, now]]);
+
+    assert.deepEqual(reconcileSurfaceGuardrails([], [created], optimistic, now + 400), [created]);
+    assert.deepEqual(
+        reconcileSurfaceGuardrails([created], [created], optimistic, now + 1_000),
+        [created],
+        "canonical search result does not duplicate the optimistic row",
+    );
+});
+
+test("surface reconciliation drops stale rows that are not optimistic or exceed their grace", () => {
+    const now = 20_000;
+    const pending = { id: "pending", text: "temporary optimistic row" };
+    const stale = { id: "stale", text: "not protected" };
+    const optimistic = new Map([[pending.id, now]]);
+
+    assert.deepEqual(reconcileSurfaceGuardrails([], [pending, stale], optimistic, now + 1), [
+        pending,
+    ]);
+    assert.deepEqual(
+        reconcileSurfaceGuardrails([], [pending], optimistic, now + GUARDRAIL_INDEX_GRACE_MS),
+        [],
+    );
+    assert.equal(optimistic.has(pending.id), false);
+});
+
+test("SurfaceSync never erases an exact-id guardrail with a stale empty search result", async () => {
+    const posts: { id: string; text: string }[][] = [];
+    const sync = new SurfaceSync({
+        post: (message: any) => {
+            if (message?.type === "guardrails") posts.push(message.items);
+        },
+        getController: () => ({ sessionId: "session-live", cwd: "/tmp", backend: "openai" }),
+        getTerminalSession: () => undefined,
+        getAccount: () => undefined,
+        setLoggedIn: () => undefined,
+        getCommands: () => [],
+    });
+    const hub = (sync as any).hub;
+    hub.configured = () => true;
+    hub.getByIds = () =>
+        Promise.resolve([
+            { id: "guardrail-live", type: "guardrail", summary: "publish immediately" },
+        ]);
+    hub.searchMemory = () => Promise.resolve([]);
+
+    await sync.bumpGuardrailById("guardrail-live");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.ok(posts.length >= 2, "exact-id publish and search reconciliation both ran");
+    assert.ok(
+        posts.every((items) => items.some((item) => item.id === "guardrail-live")),
+        "the stale search response never removes the visible guardrail",
+    );
 });

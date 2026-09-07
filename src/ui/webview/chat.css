@@ -655,6 +655,26 @@
     .statusNoticeAction:hover { background: var(--vscode-button-hoverBackground); }
     .statusNoticeAction:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 2px; }
     .statusNoticeAction:disabled { cursor: wait; opacity: 0.7; }
+    .retryStatusNotice { margin-block: 10px; }
+    .retryStatusHeadline { font-weight: 650; }
+    .retryStatusProgress {
+        display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px;
+        color: var(--vscode-foreground); font-variant-numeric: tabular-nums;
+    }
+    .retryStatusAttempt { font-weight: 600; }
+    .retryStatusCountdown { color: var(--vscode-descriptionForeground); }
+    .retryStatusReason {
+        margin-top: 5px; color: var(--vscode-descriptionForeground);
+        overflow-wrap: anywhere;
+    }
+    .retryStatusNote {
+        margin-top: 5px; color: var(--vscode-descriptionForeground); font-size: 0.92em;
+    }
+    .retryStatusNotice--running .statusNoticeIcon svg { animation: retryStatusSpin 900ms linear infinite; }
+    @media (prefers-reduced-motion: reduce) {
+        .retryStatusNotice--running .statusNoticeIcon svg { animation: none; }
+    }
+    @keyframes retryStatusSpin { to { transform: rotate(360deg); } }
     /* Transient highlight when a status-notice's anchor link scrolls to a message. */
     .anchorFlash { animation: anchorFlash 1.6s ease-out; border-radius: 4px; }
     @keyframes anchorFlash {
@@ -1313,7 +1333,16 @@
         font: 0.85em/1.45 var(--vscode-editor-font-family, monospace);
         color: var(--vscode-descriptionForeground);
     }
-    .errActions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .errActions {
+        display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+    }
+    .retryAvailability {
+        flex: 1 0 100%; color: var(--vscode-descriptionForeground);
+        font-size: 0.9em; font-variant-numeric: tabular-nums;
+    }
+    .retryAvailability--ready {
+        color: var(--vscode-foreground); font-weight: 600;
+    }
     .retryBtn {
         display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
         font: inherit; font-size: 0.9em; padding: 3px 10px; border-radius: 5px;
@@ -1325,17 +1354,18 @@
     .retryBtn svg { width: 13px; height: 13px; }
     .retryBtn:disabled { opacity: 0.55; cursor: default; }
     .retryBtn:disabled:hover { background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.2)); }
+    .retryBtn[hidden] { display: none; }
     .meta { opacity: 0.55; font-size: 0.82em; text-align: center; margin: 10px 0; }
 
     /* ---- inline tool-approval gate (admin/manager/user permission modes) ---- */
     .toolApproval {
         display: flex; align-items: center; justify-content: space-between; gap: 10px;
         flex-wrap: wrap; margin-top: 8px; padding: 7px 10px; border-radius: 5px;
-        border-left: 2px solid var(--vscode-focusBorder, #7C3AED);
+        border: 1px solid color-mix(in srgb, var(--vscode-focusBorder, #7C3AED) 55%, transparent);
         background: color-mix(in srgb, var(--vscode-focusBorder, #7C3AED) 8%, transparent);
     }
     .toolApproval.destructive {
-        border-left-color: var(--vscode-gitDecoration-deletedResourceForeground, #d16969);
+        border-color: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 55%, transparent);
         background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 10%, transparent);
     }
     .toolApprovalLabel { font-size: 0.88em; }
@@ -1353,8 +1383,21 @@
         background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 16%, transparent);
     }
     .toolApprovalBtn.reject:hover { background: color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #d16969) 26%, transparent); }
-    .toolApproval.answered { opacity: 0.65; }
     .toolApproval.answered .toolApprovalLabel { font-style: italic; }
+    .toolApproval.answered.approved {
+        border-color: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950)) 55%, transparent);
+        background: color-mix(in srgb, var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950)) 10%, transparent);
+    }
+    .toolApproval.answered.approved .toolApprovalLabel {
+        color: var(--vscode-testing-iconPassed, var(--vscode-charts-green, #3fb950));
+    }
+    .toolApproval.answered.denied {
+        border-color: color-mix(in srgb, var(--vscode-testing-iconFailed, var(--vscode-gitDecoration-deletedResourceForeground, #d16969)) 55%, transparent);
+        background: color-mix(in srgb, var(--vscode-testing-iconFailed, var(--vscode-gitDecoration-deletedResourceForeground, #d16969)) 10%, transparent);
+    }
+    .toolApproval.answered.denied .toolApprovalLabel {
+        color: var(--vscode-testing-iconFailed, var(--vscode-gitDecoration-deletedResourceForeground, #d16969));
+    }
 
     /* ---- thinking / extended reasoning block ---- */
     .thinkWrap { margin: 4px -10px 8px -10px; padding: 0 10px; }
@@ -1563,6 +1606,33 @@
     .menubtn .lbl { max-width: 150px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
     .menubtn svg { width: 11px; height: 11px; opacity: 0.7; flex-shrink: 0; }
     #status { opacity: 0.55; font-size: 0.82em; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    #voiceActivity {
+        display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+        color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap;
+    }
+    #voiceActivity[hidden] { display: none; }
+    #voiceActivityLabel { overflow: hidden; text-overflow: ellipsis; }
+    #voiceMeter {
+        position: relative; width: 30px; height: 4px; flex: 0 0 30px; overflow: hidden;
+        border-radius: 2px; background: var(--vscode-progressBar-background, rgba(128,128,128,0.25));
+    }
+    #voiceLevel {
+        position: absolute; inset: 0; transform: scaleX(var(--voice-level, 0)); transform-origin: left center;
+        border-radius: inherit; background: var(--vscode-charts-green, var(--vscode-testing-iconPassed));
+        transition: transform 90ms linear, background-color 150ms ease;
+    }
+    #voiceActivity[data-state="speech"] #voiceLevel { background: var(--vscode-charts-blue, var(--vscode-focusBorder)); }
+    #voiceActivity[data-state="finalizing"] #voiceLevel {
+        transform: scaleX(1); transform-origin: center;
+        animation: voiceFinalize 900ms ease-in-out infinite alternate;
+    }
+    #voiceActivity[data-state="error"] { color: var(--vscode-errorForeground); }
+    @keyframes voiceFinalize { from { transform: scaleX(0.25); } to { transform: scaleX(1); } }
+    @media (max-width: 520px) { #voiceActivityLabel { display: none; } }
+    @media (prefers-reduced-motion: reduce) {
+        #voiceLevel { transition: none; }
+        #voiceActivity[data-state="finalizing"] #voiceLevel { animation: none; transform: scaleX(1); }
+    }
     #ahpConnectionStatus { color: var(--vscode-descriptionForeground); font-size: 0.82em; white-space: nowrap; }
     #ahpConnectionStatus[data-state="failed"] { color: var(--vscode-errorForeground); }
     .iconBtn {

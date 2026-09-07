@@ -91,6 +91,7 @@ export interface MetaMessageData {
     reasoningLevels?: string[];
     permissionModes?: string[];
     permission?: string;
+    permissionDefault?: string;
     readOnly?: boolean;
     readOnlyReason?: string;
     terminal?: boolean;

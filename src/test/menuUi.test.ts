@@ -22,6 +22,9 @@ const status = source("ui/webview/status.ts");
 const menus = source("ui/webview/menus.ts");
 const sessionItem = source("ui/webview/sessionItem.ts");
 const markdown = source("ui/webview/markdown.ts");
+const markdownLinks = source("ui/webview/markdownLinks.ts");
+const surfaceMessageLinks = source("ui/surfaceMessageLinks.ts");
+const pwaShim = source("ui/webview/pwaShim.ts");
 const i18n = source("ui/webview/i18n.ts");
 const messageRow = source("ui/webview/messageRow.ts");
 const dispatchCatalog = source("ui/webview/dispatchCatalog.ts");
@@ -81,14 +84,22 @@ test("choice menu exposes persistent and accessible selected states", () => {
 });
 
 test("Markdown links expose their original destination through an accessible context menu", () => {
+    assert.match(markdown, /bindMarkdownTarget\(action, href, local \? "file" : "link"\)/);
     assert.match(
         markdown,
-        /anchor\.addEventListener\("contextmenu", \(event\) =>[\s\S]*?showLinkMenu\([\s\S]*?event,[\s\S]*?href,[\s\S]*?\(\) => anchor\.click\(\),/,
+        /bindMarkdownTarget\(anchor, href, isLocalMarkdownTarget\(href\) \? "file" : "link"\)/,
     );
+    assert.match(markdownLinks, /event\.preventDefault\(\)/);
+    assert.match(markdownLinks, /postMessage\(\{ type: "open-link", url: href \}\)/);
+    assert.match(markdownLinks, /showLinkMenu\(event as MouseEvent, href, open, kind\)/);
+    assert.doesNotMatch(markdown, /\(\) => (?:anchor|action)\.click\(\)/);
+    assert.match(protocol, /\{ type: "open-link"; url: string \}/);
+    assert.match(surfaceMessages, /case "open-link"/);
     assert.match(
-        markdown,
-        /action\.addEventListener\("contextmenu", \(event\) =>[\s\S]*?showLinkMenu\([\s\S]*?event as MouseEvent, href, \(\) => action\.click\(\),/,
+        surfaceMessageLinks,
+        /vscode\.env\.openExternal\(vscode\.Uri\.parse\(url, true\)\)/,
     );
+    assert.match(pwaShim, /window\.open\(message\.url, "_blank", "noopener,noreferrer"\)/);
     assert.match(menus, /export function showLinkMenu\(/);
     assert.match(menus, /item\.setAttribute\("role", "menuitem"\)/);
     assert.match(menus, /copyText\(address, \(\) => showToast\(t\("chat\.link\.copied"\)\)\)/);
@@ -190,9 +201,15 @@ test("a fresh central panel opens the sessions navigator and can return to the a
     assert.match(css, /#root\.sessions-only #sessionsBackBtn/);
 });
 
-test("effective model changes do not get hidden behind the next queued model", () => {
+test("effective model updates status without replacing the requested picker preset", () => {
     assert.match(events, /ev\.kind === "model"/);
-    assert.match(events, /if \(!queued\) \{\s*setModelValue\(model\);\s*setModelLabel\(\);\s*\}/);
+    const effectiveModelBody = events
+        .split("function applyEffectiveModel(model: unknown): void {")[1]
+        ?.split("\n}")[0];
+    assert.ok(effectiveModelBody, "effective-model handler must remain present");
+    assert.match(effectiveModelBody, /setActiveModel\(model\)/);
+    assert.match(effectiveModelBody, /updateLastAssistantModel\(model\)/);
+    assert.doesNotMatch(effectiveModelBody, /setModelValue|setModelLabel/);
     assert.match(
         status,
         /\["thinking\.\.\.", activeModel \? modelLabel\(activeModel\) : "", queueLabel\]/,
@@ -206,7 +223,7 @@ test("an adapter error does not release the busy composer before turn-end", () =
     assert.ok(errorBranch, "error branch must remain present");
     assert.match(
         events,
-        /else if \(ev\.kind === "error"\)[\s\S]*?Errors are observations, not lifecycle boundaries[\s\S]*?renderError\(ev\.message, ev\.historical, ev\.retryable\);/,
+        /else if \(ev\.kind === "error"\)[\s\S]*?Errors are observations, not lifecycle boundaries[\s\S]*?renderError\(ev\.message, ev\.historical, ev\.retryable, ev\.retryAt, errorTurnId\);/,
     );
     assert.doesNotMatch(errorBranch, /setBusy\(false\)/);
 });

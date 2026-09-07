@@ -1,40 +1,324 @@
-/**
- * Host-side (native) microphone capture via ffmpeg.
- *
- * VS Code webviews lose getUserMedia permission between reloads/hides, so the
- * chat mic records HERE, in the extension host process, with the platform's
- * native audio input (dshow / avfoundation / pulse). The webview only sends
- * start/stop — no browser permission involved. Output is 16 kHz mono WAV,
- * ready for the local STT engines without a second ffmpeg pass.
- */
-import { spawn, ChildProcess } from "child_process";
+/** Provider-neutral host microphone capture with bounded PCM and live telemetry. */
+import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import {
+    buildVoiceCaptureCandidates,
+    executableExists,
+    VoiceCaptureCandidate,
+} from "./voiceCaptureProviders";
+import {
+    DEFAULT_VOICE_AUDIO_OPTIONS,
+    encodePcm16Wave,
+    VoiceAudioBuffer,
+    VoiceAudioMetrics,
+} from "./voiceAudioBuffer";
 
-let proc: ChildProcess | null = null;
-let outPath = "";
-// ffmpeg takes a short moment to release the input device after `q`. Keeping
-// this promise lets a new recording wait for that release instead of spawning
-// a competing capture process (which commonly surfaces as a permission error
-// on the second use of the microphone).
-let stopping: Promise<void> | null = null;
-// ffmpeg's own process exit does NOT mean PulseAudio has finished tearing down
-// that client's connection to the "default" source server-side — there's a
-// real gap between "our child process is gone" and "the audio server actually
-// freed the device". Without this buffer, a start immediately following a
-// stop intermittently hit a pulse open failure (desktop only — code-server
-// sessions use the browser's Web Speech API instead, never this ffmpeg path).
-const DEVICE_RELEASE_GRACE_MS = 250;
+const CAPTURE_STARTUP_TIMEOUT_MS = 2_000;
+const STATUS_INTERVAL_MS = 100;
+const PREVIEW_MINIMUM_AUDIO_MS = 700;
+const PREVIEW_MINIMUM_INTERVAL_MS = 1_500;
+const PREVIEW_MAXIMUM_INTERVAL_MS = 4_000;
+const PREVIEW_SEGMENT_MAXIMUM_SECONDS = 12;
 
-function ff(ffmpegPath: string): string {
-    return ffmpegPath && ffmpegPath.trim() ? ffmpegPath.trim() : "ffmpeg";
+export interface VoiceCaptureStatus extends VoiceAudioMetrics {
+    captureId: string;
+    recording: boolean;
+    provider?: string;
+    providerLabel?: string;
+    device?: string;
+    availableProviders: string[];
+    lastError?: string;
 }
 
-/** First DirectShow audio capture device name (Windows). */
-function firstDshowAudioDevice(bin: string): Promise<string> {
+export interface VoiceCaptureCallbacks {
+    onStatus?: (status: VoiceCaptureStatus) => void;
+    onSilence?: (captureId: string) => void;
+    onSpeech?: (captureId: string) => void;
+}
+
+export interface PreparedVoicePreview {
+    captureId: string;
+    leaseId: number;
+    wavPath: string;
+}
+
+interface CaptureSession {
+    captureId: string;
+    candidate: VoiceCaptureCandidate;
+    availableProviders: string[];
+    child: ChildProcessWithoutNullStreams;
+    buffer: VoiceAudioBuffer;
+    callbacks: VoiceCaptureCallbacks;
+    stderr: string;
+    stopping: boolean;
+    lastStatusAt: number;
+    lastError?: string;
+    committedBytes: number;
+    committedText: string;
+    lastPreviewAt: number;
+    previewLease?: number;
+}
+
+interface PreviewLease {
+    session: CaptureSession;
+    endOffset: number;
+    commit: boolean;
+}
+
+let activeSession: CaptureSession | undefined;
+let stopping: Promise<void> | undefined;
+let nextPreviewLease = 1;
+const previewLeases = new Map<number, PreviewLease>();
+
+export function isCapturing(): boolean {
+    return !!activeSession;
+}
+
+export async function startCapture(
+    ffmpegPath: string,
+    callbacks: VoiceCaptureCallbacks = {},
+    captureId = createCaptureId(),
+): Promise<VoiceCaptureStatus> {
+    if (stopping) await stopping;
+    if (activeSession) await cancelCapture();
+
+    const candidates = await availableCandidates(ffmpegPath);
+    const errors: string[] = [];
+    for (const candidate of candidates) {
+        try {
+            const session = await startCandidate(candidate, candidates, callbacks, captureId);
+            activeSession = session;
+            emitStatus(session, true);
+            return statusOf(session, true);
+        } catch (error) {
+            errors.push(`${candidate.id}: ${messageOf(error)}`);
+        }
+    }
+    const detail = errors.length
+        ? errors.join(" | ")
+        : "No supported microphone capture provider is installed.";
+    throw new Error(detail);
+}
+
+export function prepareCapturePreview(now = Date.now()): PreparedVoicePreview | undefined {
+    const session = activeSession;
+    if (!session || session.previewLease !== undefined) return undefined;
+    const metrics = session.buffer.metrics();
+    const segmentBytes = metrics.capturedBytes - session.committedBytes;
+    const bytesPerSecond = DEFAULT_VOICE_AUDIO_OPTIONS.sampleRate * 2;
+    const minimumBytes = (bytesPerSecond * PREVIEW_MINIMUM_AUDIO_MS) / 1000;
+    if (!metrics.hasSpeech || segmentBytes < minimumBytes) return undefined;
+
+    const sinceLast = session.lastPreviewAt ? now - session.lastPreviewAt : Infinity;
+    if (sinceLast < PREVIEW_MINIMUM_INTERVAL_MS) return undefined;
+    if (session.lastPreviewAt && !metrics.isSilent && sinceLast < PREVIEW_MAXIMUM_INTERVAL_MS) {
+        return undefined;
+    }
+
+    const endOffset = metrics.capturedBytes;
+    const segment = session.buffer.slice(session.committedBytes, endOffset);
+    const wavPath = writeTemporaryWave(segment, "preview");
+    const segmentSeconds = segmentBytes / bytesPerSecond;
+    const leaseId = nextPreviewLease++;
+    session.previewLease = leaseId;
+    session.lastPreviewAt = now;
+    previewLeases.set(leaseId, {
+        session,
+        endOffset,
+        commit: metrics.isSilent || segmentSeconds >= PREVIEW_SEGMENT_MAXIMUM_SECONDS,
+    });
+    return { captureId: session.captureId, leaseId, wavPath };
+}
+
+export function finishCapturePreview(
+    preview: PreparedVoicePreview,
+    text: string,
+    succeeded: boolean,
+): string {
+    const lease = previewLeases.get(preview.leaseId);
+    previewLeases.delete(preview.leaseId);
+    if (!lease) return "";
+    const { session } = lease;
+    if (session.previewLease === preview.leaseId) session.previewLease = undefined;
+    const clean = text.trim();
+    if (succeeded && clean && lease.commit) {
+        session.committedText = joinTranscript(session.committedText, clean);
+        session.committedBytes = lease.endOffset;
+        return session.committedText;
+    }
+    return succeeded ? joinTranscript(session.committedText, clean) : session.committedText;
+}
+
+/** Stops the active provider and materializes one canonical WAV for the final pass. */
+export async function stopCapture(): Promise<string> {
+    const session = activeSession;
+    if (!session) throw new Error("not recording");
+    activeSession = undefined;
+    const operation = stopProcess(session);
+    stopping = operation;
+    try {
+        await operation;
+    } finally {
+        if (stopping === operation) stopping = undefined;
+    }
+    emitStatus(session, true);
+    const pcm = session.buffer.slice();
+    if (pcm.length < DEFAULT_VOICE_AUDIO_OPTIONS.sampleRate / 5) {
+        throw new Error("no audio captured");
+    }
+    return writeTemporaryWave(pcm, "final");
+}
+
+export async function cancelCapture(): Promise<void> {
+    const session = activeSession;
+    activeSession = undefined;
+    if (!session) return;
+    const operation = stopProcess(session);
+    stopping = operation;
+    try {
+        await operation;
+    } finally {
+        if (stopping === operation) stopping = undefined;
+        emitStatus(session, true);
+    }
+}
+
+export function getCaptureStatus(): VoiceCaptureStatus | undefined {
+    return activeSession ? statusOf(activeSession, true) : undefined;
+}
+
+async function startCandidate(
+    candidate: VoiceCaptureCandidate,
+    allCandidates: VoiceCaptureCandidate[],
+    callbacks: VoiceCaptureCallbacks,
+    captureId: string,
+): Promise<CaptureSession> {
+    const child = spawn(candidate.command, candidate.args, { stdio: ["pipe", "pipe", "pipe"] });
+    const session: CaptureSession = {
+        captureId,
+        candidate,
+        availableProviders: allCandidates.map((item) => item.id),
+        child,
+        buffer: new VoiceAudioBuffer(),
+        callbacks,
+        stderr: "",
+        stopping: false,
+        lastStatusAt: 0,
+        committedBytes: 0,
+        committedText: "",
+        lastPreviewAt: 0,
+    };
+
+    try {
+        await waitForFirstAudio(session, callbacks);
+    } catch (error) {
+        // Release the failed provider before the fallback opens the same device.
+        await stopProcess(session);
+        throw error;
+    }
+    return session;
+}
+
+function waitForFirstAudio(
+    session: CaptureSession,
+    callbacks: VoiceCaptureCallbacks,
+): Promise<void> {
+    const { child, captureId } = session;
     return new Promise((resolve, reject) => {
-        const p = spawn(bin, [
+        let settled = false;
+        const timer = setTimeout(
+            () => fail(new Error("no audio arrived before startup timeout")),
+            CAPTURE_STARTUP_TIMEOUT_MS,
+        );
+        const finish = (callback: () => void) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            callback();
+        };
+        const fail = (error: Error) => finish(() => reject(error));
+        child.stdout.on("data", (chunk: Buffer) => {
+            const activity = session.buffer.append(chunk);
+            if (session.buffer.metrics().capturedBytes > 0) finish(resolve);
+            if (activity.speechStarted) callbacks.onSpeech?.(captureId);
+            if (activity.silenceStarted) callbacks.onSilence?.(captureId);
+            emitStatus(session);
+        });
+        child.stderr.on("data", (chunk: Buffer) => {
+            session.stderr = trimError(session.stderr + chunk.toString());
+        });
+        child.once("error", fail);
+        child.once("close", (code) => {
+            if (!settled) {
+                fail(
+                    new Error(
+                        `provider exited before delivering audio (code ${code}). ${session.stderr}`.trim(),
+                    ),
+                );
+            } else if (!session.stopping) {
+                session.lastError =
+                    `Microphone provider stopped unexpectedly (code ${code}). ${session.stderr}`.trim();
+                if (activeSession === session) activeSession = undefined;
+                emitStatus(session, true);
+            }
+        });
+    });
+}
+
+async function stopProcess(session: CaptureSession): Promise<void> {
+    if (session.stopping) return;
+    session.stopping = true;
+    const child = session.child;
+    if (child.exitCode !== null || child.killed) return;
+    if (await signalAndWait(child, "SIGINT", 1_500)) return;
+    if (await signalAndWait(child, "SIGTERM", 1_000)) return;
+    child.kill("SIGKILL");
+    await waitForClose(child, 1_000);
+}
+
+async function signalAndWait(
+    child: ChildProcessWithoutNullStreams,
+    signal: NodeJS.Signals,
+    timeoutMs: number,
+): Promise<boolean> {
+    try {
+        child.kill(signal);
+    } catch {
+        return true;
+    }
+    return waitForClose(child, timeoutMs);
+}
+
+function waitForClose(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> {
+    if (child.exitCode !== null) return Promise.resolve(true);
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+            child.off("close", closed);
+            resolve(false);
+        }, timeoutMs);
+        const closed = () => {
+            clearTimeout(timer);
+            resolve(true);
+        };
+        child.once("close", closed);
+    });
+}
+
+async function availableCandidates(ffmpegPath: string): Promise<VoiceCaptureCandidate[]> {
+    let windowsDevice: string | undefined;
+    if (process.platform === "win32") windowsDevice = await firstDshowAudioDevice(ffmpegPath);
+    return buildVoiceCaptureCandidates(ffmpegPath, process.platform, windowsDevice).filter(
+        (candidate) => executableExists(candidate.command),
+    );
+}
+
+async function firstDshowAudioDevice(ffmpegPath: string): Promise<string | undefined> {
+    const command = ffmpegPath.trim() || "ffmpeg";
+    if (!executableExists(command)) return undefined;
+    return new Promise((resolve) => {
+        const child = spawn(command, [
             "-hide_banner",
             "-list_devices",
             "true",
@@ -43,257 +327,58 @@ function firstDshowAudioDevice(bin: string): Promise<string> {
             "-i",
             "dummy",
         ]);
-        let err = "";
-        p.stderr.on("data", (d) => {
-            err += d.toString();
-        });
-        p.on("error", (e) => reject(e));
-        p.on("close", () => {
-            // [dshow @ ...] "Microphone (Realtek ...)" (audio)
-            const m = err.match(/"([^"]+)"\s*\(audio\)/);
-            if (m) {
-                resolve(m[1]);
-            } else {
-                reject(new Error("no audio input device found (dshow)"));
-            }
-        });
+        let stderr = "";
+        child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
+        child.once("error", () => resolve(undefined));
+        child.once("close", () => resolve(stderr.match(/"([^"]+)"\s*\(audio\)/)?.[1]));
     });
 }
 
-async function inputArgs(bin: string): Promise<string[]> {
-    if (process.platform === "win32") {
-        const dev = await firstDshowAudioDevice(bin);
-        return ["-f", "dshow", "-i", `audio=${dev}`];
-    }
-    if (process.platform === "darwin") {
-        return ["-f", "avfoundation", "-i", ":0"];
-    }
-    // Linux and WSLg (PulseAudio socket is exported by WSLg).
-    return ["-f", "pulse", "-i", "default"];
-}
-
-export function isCapturing(): boolean {
-    return !!proc;
-}
-
-/**
- * Starts recording. Rejects fast when ffmpeg dies immediately (no device/permission).
- *
- * `onSilence`, when given, adds ffmpeg's own `silencedetect` filter (a
- * passthrough analysis filter — it doesn't touch the recorded audio) and
- * calls back on every sustained pause, parsed straight out of the SAME
- * process's stderr. Deliberately NOT a second ffmpeg process reading the mic
- * concurrently: the webview's getUserMedia-based VAD (src/ui/webview/voice.ts)
- * is unreliable in VS Code desktop for the exact same permission reason host
- * capture exists at all, so silence detection needs to ride along on the one
- * mic access that's actually known to work here.
- *
- * `onSpeech`, when given, fires on the SAME filter's `silence_end` marker —
- * i.e. real audio activity happened, as opposed to a still-silent capture.
- * Lets the caller distinguish "this continuous-mode auto-restart genuinely
- * captured new speech" from "nothing was said yet", which a fixed timeout
- * can't do reliably (the user reading back the transcript before clicking
- * Send routinely takes longer than any short timeout).
- */
-export async function startCapture(
-    ffmpegPath: string,
-    onSilence?: () => void,
-    onSpeech?: () => void,
-): Promise<void> {
-    if (stopping) {
-        await stopping;
-    }
-    if (proc) {
-        // There is only ever one legitimate capture at a time, so a proc still
-        // set here is stale state — either a quick stop-then-start raced past
-        // stopCapture()'s `stopping` guard (the webview posts messages without
-        // waiting for the previous handler, and stopCapture's own `await
-        // import(...)` gives a start request a window to run first), or the
-        // webview reloaded/switched mid-recording without ever calling
-        // stopCapture/cancelCapture. Either way, self-heal instead of wedging
-        // every future recording until the extension host restarts.
-        cancelCapture();
-        if (stopping) {
-            await stopping;
-        }
-    }
-    const bin = ff(ffmpegPath);
-    const args = await inputArgs(bin);
-    const filterArgs = onSilence || onSpeech ? ["-af", "silencedetect=noise=-30dB:d=0.9"] : [];
-    outPath = path.join(os.tmpdir(), `symposium-rec-${Date.now()}.wav`);
-    const p = spawn(
-        bin,
-        ["-hide_banner", "-y", ...args, ...filterArgs, "-ac", "1", "-ar", "16000", outPath],
-        { stdio: ["pipe", "ignore", "pipe"] },
-    );
-    proc = p;
-    let err = "";
-    p.stderr.on("data", (d) => {
-        const chunk = d.toString();
-        err += chunk;
-        // ffmpeg logs "silence_start: <t>" once ~0.9s of continuous silence is
-        // confirmed (the `d` param above) — exactly the "pause, cut the
-        // segment" signal the caller wants, no separate timer needed here.
-        if (onSilence && chunk.includes("silence_start")) {
-            onSilence();
-        }
-        // "silence_end: <t> | silence_duration: <d>" logs when audio resumes
-        // after a silent stretch — i.e. actual speech, not just an open mic.
-        if (onSpeech && chunk.includes("silence_end")) {
-            onSpeech();
-        }
-    });
-    // Startup-only verification: reject if ffmpeg dies within the first
-    // 700ms (no device/permission), resolve if it's still alive after that.
-    // The error/close listeners MUST be removed once settled — otherwise
-    // they stay attached to `p` and a later, perfectly successful stop
-    // (stopCapture() closes ffmpeg gracefully once the user is done talking)
-    // fires this SAME "close" listener too. For a short recording that ends
-    // before the 700ms mark, this verification promise would still be
-    // pending at that point, so the legitimate stop gets misreported as a
-    // startup failure ("audio capture failed (ffmpeg code 0)" — code 0 is
-    // success) even though the WAV was captured fine.
-    await new Promise<void>((resolve, reject) => {
-        const cleanup = () => {
-            clearTimeout(ok);
-            p.off("error", onError);
-            p.off("close", onClose);
-        };
-        const onError = (e: Error) => {
-            cleanup();
-            if (proc === p) {
-                proc = null;
-            }
-            reject(e);
-        };
-        const onClose = (code: number | null) => {
-            cleanup();
-            if (proc === p) {
-                proc = null;
-                reject(
-                    new Error(
-                        `audio capture failed (ffmpeg code ${code}). ${err.split("\n").filter(Boolean).slice(-2).join(" ").trim()}`,
-                    ),
-                );
-            }
-        };
-        const ok = setTimeout(() => {
-            cleanup();
-            resolve();
-        }, 700);
-        p.on("error", onError);
-        p.on("close", onClose);
-    });
-}
-
-/** Stops recording and returns the captured WAV path. */
-export async function stopCapture(): Promise<string> {
-    const p = proc;
-    if (!p) {
-        throw new Error("not recording");
-    }
-    let resolveStopped: (() => void) | undefined;
-    const stopped = new Promise<void>((resolve) => {
-        resolveStopped = resolve;
-    });
-    stopping = stopped;
-    const finish = () => {
-        // Grace period: see DEVICE_RELEASE_GRACE_MS above the process ends,
-        // the audio server needs a moment to actually free the device.
-        setTimeout(() => {
-            if (proc === p) {
-                proc = null;
-            }
-            if (stopping === stopped) {
-                stopping = null;
-            }
-            resolveStopped?.();
-        }, DEVICE_RELEASE_GRACE_MS);
+function statusOf(session: CaptureSession, recording: boolean): VoiceCaptureStatus {
+    return {
+        captureId: session.captureId,
+        recording: recording && activeSession === session && !session.stopping,
+        provider: session.candidate.id,
+        providerLabel: session.candidate.label,
+        device: session.candidate.device,
+        availableProviders: session.availableProviders,
+        lastError: session.lastError,
+        ...session.buffer.metrics(),
     };
-    await new Promise<void>((resolve) => {
-        const done = setTimeout(() => {
-            try {
-                p.kill();
-            } catch {
-                /* gone */
-            }
-            finish();
-            resolve();
-        }, 3000); // hard cap
-        p.on("close", () => {
-            clearTimeout(done);
-            finish();
-            resolve();
-        });
-        try {
-            p.stdin?.write("q");
-        } catch {
-            /* fall through to kill */
-        }
-        setTimeout(() => {
-            try {
-                p.kill();
-            } catch {
-                /* gone */
-            }
-        }, 1500);
-    });
-    if (!fs.existsSync(outPath) || fs.statSync(outPath).size < 128) {
-        throw new Error("no audio captured");
-    }
-    return outPath;
 }
 
-/** Aborts recording and discards the file. */
-export function cancelCapture(): void {
-    const p = proc;
-    if (p) {
-        let resolveStopped: (() => void) | undefined;
-        const stopped = new Promise<void>((resolve) => {
-            resolveStopped = resolve;
-        });
-        stopping = stopped;
-        const finish = () => {
-            // Grace period: see DEVICE_RELEASE_GRACE_MS.
-            setTimeout(() => {
-                if (proc === p) {
-                    proc = null;
-                }
-                if (stopping === stopped) {
-                    stopping = null;
-                }
-                resolveStopped?.();
-            }, DEVICE_RELEASE_GRACE_MS);
-        };
-        const done = setTimeout(() => {
-            try {
-                p.kill();
-            } catch {
-                /* gone */
-            }
-            finish();
-        }, 3000);
-        p.once("close", () => {
-            clearTimeout(done);
-            finish();
-        });
-    }
-    if (p) {
-        try {
-            p.stdin?.write("q");
-        } catch {
-            try {
-                p.kill();
-            } catch {
-                /* gone */
-            }
-        }
-    }
-    setTimeout(() => {
-        try {
-            fs.unlinkSync(outPath);
-        } catch {
-            /* ignore */
-        }
-    }, 500);
+function emitStatus(session: CaptureSession, force = false): void {
+    const now = Date.now();
+    if (!force && now - session.lastStatusAt < STATUS_INTERVAL_MS) return;
+    session.lastStatusAt = now;
+    session.callbacks.onStatus?.(statusOf(session, true));
+}
+
+function writeTemporaryWave(pcm: Buffer, purpose: "preview" | "final"): string {
+    const file = path.join(
+        os.tmpdir(),
+        `symposium-voice-${purpose}-${Date.now()}-${Math.random().toString(36).slice(2)}.wav`,
+    );
+    fs.writeFileSync(file, encodePcm16Wave(pcm));
+    return file;
+}
+
+function createCaptureId(): string {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function joinTranscript(left: string, right: string): string {
+    return !left.trim()
+        ? right.trim()
+        : !right.trim()
+          ? left.trim()
+          : `${left.trim()} ${right.trim()}`;
+}
+
+function messageOf(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
+
+function trimError(error: string): string {
+    return error.length <= 800 ? error : error.slice(-800);
 }

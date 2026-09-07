@@ -76,6 +76,7 @@ export function handleControllerSideEffect(
                 setTimeout(repaint, delay);
             }
         } else if (n === "clear_guardrails") {
+            d.sync.clearGuardrails();
             const repaint = () =>
                 void d
                     .getController()

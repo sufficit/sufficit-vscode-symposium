@@ -14,7 +14,10 @@
  * reconstructed via optional-field comparisons scattered across the event
  * handler.
  */
-import type { SessionTerminalStatus } from "../adapters/types";
+import type { AgentEvent, SessionTerminalStatus } from "../adapters/types";
+import type { PendingMessage } from "./controllerQueue";
+
+type TurnErrorEvent = Extract<AgentEvent, { kind: "error" }>;
 
 /** pending = created by dispatch, not yet handed to the backend.
  *  running = the backend has the message (or emitted turn-start).
@@ -47,8 +50,27 @@ export class Turn {
     private _phase: TurnPhase = "pending";
     private _outcome: TurnOutcome | undefined;
     private _attention: SessionTerminalStatus | undefined;
+    /**
+     * The terminal provider error belongs to the turn, not to the retry
+     * controller. `visible` is false while automatic recovery deliberately
+     * defers the raw card. Keeping the event here prevents an internal retry
+     * state mismatch from swallowing the only explanation shown to the user.
+     */
+    private _hiddenError: TurnErrorEvent | undefined;
     private _cancelRequested = false;
     private _endedAt: number | undefined;
+    // A completed turn needs a final assistant response after its last tool.
+    // Without this bit, a provider that simply closes after a tool/result is
+    // indistinguishable from a healthy answer and the UI goes idle silently.
+    private _awaitingFinalResponse = true;
+    // These markers are retained on the durable turn so a replacement
+    // Extension Host can reconstruct the retry safety boundary before it
+    // sees the terminal provider error.
+    private _assistantOutputStarted = false;
+    private _toolActivityStarted = false;
+    /** Exact request snapshot used to re-admit recovery after a host hand-off
+     * or a pre-dispatch failure, before the user row reaches the render log. */
+    private _request: PendingMessage | undefined;
 
     constructor(init: TurnInit) {
         this.id = init.id;
@@ -80,6 +102,26 @@ export class Turn {
 
     get cancelRequested(): boolean {
         return this._cancelRequested;
+    }
+
+    get awaitingFinalResponse(): boolean {
+        return this._awaitingFinalResponse;
+    }
+
+    get assistantOutputStarted(): boolean {
+        return this._assistantOutputStarted;
+    }
+
+    get toolActivityStarted(): boolean {
+        return this._toolActivityStarted;
+    }
+
+    get request(): PendingMessage | undefined {
+        return this._request;
+    }
+
+    setRequest(request: PendingMessage): void {
+        this._request = clonePendingMessage(request);
     }
 
     get durationMs(): number | undefined {
@@ -116,14 +158,31 @@ export class Turn {
 
     /** Sticky; error wins over warning. Legal after end() — it then only
      *  affects the session badge, never `holdsQueue` (outcome is frozen). */
-    recordError(): void {
+    recordError(event?: TurnErrorEvent, visible = true): void {
         this._attention = "error";
+        if (event) this._hiddenError = visible ? undefined : event;
+    }
+
+    takeError(): TurnErrorEvent | undefined {
+        const event = this._hiddenError;
+        this._hiddenError = undefined;
+        return event;
     }
 
     recordWarning(): void {
         if (this._attention !== "error") {
             this._attention = "warning";
         }
+    }
+
+    recordAssistantText(): void {
+        this._assistantOutputStarted = true;
+        this._awaitingFinalResponse = false;
+    }
+
+    recordToolActivity(): void {
+        this._toolActivityStarted = true;
+        this._awaitingFinalResponse = true;
     }
 
     requestCancel(): void {
@@ -156,6 +215,10 @@ export class Turn {
     describe(): string {
         return `${this.id}[${this._phase}]${this._outcome ? `(${this._outcome})` : ""} backend=${this._backendId ?? "none"} attention=${this._attention ?? "none"} origin=${this.origin}`;
     }
+}
+
+function clonePendingMessage(message: PendingMessage): PendingMessage {
+    return { ...message, attachments: [...message.attachments] };
 }
 
 export type TurnEndDecision =

@@ -9,10 +9,19 @@
  */
 export function isTransientErrorMessage(message: string): boolean {
     return (
-        /fetch failed|network error|network request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ECONNABORTED|EPROTO|EPIPE|socket hang up|terminated|aborted|timeout|request timed out|connection refused|connection reset|getaddrinfo|stream ended|unexpected end of|process exited|spawn .* enoent|premature close/i.test(
+        isTransientHttpStatus(message) ||
+        /fetch failed|network error|network request failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH|ECONNABORTED|EPROTO|EPIPE|socket hang up|terminated|aborted|timeout|request timed out|connection refused|connection reset|getaddrinfo|stream ended|unexpected end of|process exited|spawn .* enoent|premature close|503.*(?:upda|maint|atual|manut)/is.test(
             message,
-        ) || isCapacityErrorMessage(message)
+        ) ||
+        isCapacityErrorMessage(message)
     );
+}
+
+/** HTTP failures that are normally safe to retry with the same request. */
+function isTransientHttpStatus(message: string): boolean {
+    const match = /\bHTTP\s+(\d{3})\b/i.exec(message);
+    if (!match) return false;
+    return new Set([408, 425, 429, 500, 502, 503, 504]).has(Number(match[1]));
 }
 
 /**

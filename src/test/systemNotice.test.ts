@@ -13,6 +13,7 @@ import { replayRows, transcriptMessages } from "../application/controllerTranscr
 import { loadControllerHistory } from "../application/controllerHistory";
 import { appendRender } from "../renderLog";
 import type { AgentAdapter } from "../adapters/types";
+import { MISSING_FINAL_RESPONSE_NOTICE } from "../application/finalResponseState";
 
 test("OpenAI guardrail stops are system warnings, not assistant text", () => {
     const event = guardrailStopNotice("Stopped after repeated tool calls.");
@@ -36,6 +37,90 @@ test("system warnings are excluded from the assistant transcript", () => {
     assert.deepEqual(rows, [
         { role: "user", text: "Run the task" },
         { role: "assistant", text: "Working", thinking: undefined },
+    ]);
+});
+
+test("terminal errors survive render-log replay with retry metadata", () => {
+    assert.deepEqual(
+        replayRows([
+            { type: "user", text: "Run the task" },
+            { type: "event", event: { kind: "text", text: "Partial reply" } },
+            {
+                type: "event",
+                event: { kind: "error", message: "fetch failed", retryable: true },
+            },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [
+            { role: "user", text: "Run the task" },
+            { role: "assistant", text: "Partial reply", thinking: undefined },
+            { role: "error", text: "fetch failed", retryable: true },
+        ],
+    );
+});
+
+test("controller history restores a terminal error instead of only its red session status", async () => {
+    const originalHome = process.env.HOME;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-render-error-"));
+    process.env.HOME = path.join(root, "home");
+    fs.mkdirSync(process.env.HOME, { recursive: true });
+    const sessionId = "errored-render-session";
+    const emitted: unknown[] = [];
+    try {
+        appendRender(sessionId, { type: "user", text: "Run the task" });
+        appendRender(sessionId, {
+            type: "event",
+            event: { kind: "text", text: "Partial reply" },
+        });
+        appendRender(sessionId, {
+            type: "event",
+            event: { kind: "error", message: "fetch failed", retryable: true },
+        });
+        appendRender(sessionId, { type: "event", event: { kind: "turn-end" } });
+
+        await loadControllerHistory(
+            { backend: "openai" } as AgentAdapter,
+            { backend: "openai", sessionId, title: "Errored" },
+            (message) => emitted.push(message),
+        );
+
+        assert.deepEqual(emitted, [
+            {
+                type: "history",
+                messages: [
+                    { role: "user", text: "Run the task" },
+                    { role: "assistant", text: "Partial reply" },
+                    { role: "error", text: "fetch failed", retryable: true },
+                ],
+                replace: true,
+            },
+        ]);
+    } finally {
+        if (originalHome === undefined) delete process.env.HOME;
+        else process.env.HOME = originalHome;
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test("history hides a contradictory missing-response warning after terminal TodoWrite", () => {
+    const rows = replayRows([
+        { type: "event", event: { kind: "turn-start" } },
+        { type: "event", event: { kind: "text", text: "Completed successfully." } },
+        { type: "event", event: { kind: "tool-start", toolName: "TodoWrite" } },
+        {
+            type: "event",
+            event: {
+                kind: "status-notice",
+                severity: "warning",
+                terminal: true,
+                text: MISSING_FINAL_RESPONSE_NOTICE,
+            },
+        },
+        { type: "event", event: { kind: "turn-end" } },
+    ]);
+
+    assert.deepEqual(rows, [
+        { role: "assistant", text: "Completed successfully.", thinking: undefined },
     ]);
 });
 
@@ -90,6 +175,36 @@ test("render-log transcript preserves the model and effort for assistant rows", 
     );
 });
 
+test("render-log transcript preserves user timestamps and repairs legacy Claude turns", () => {
+    const submittedAt = Date.parse("2026-08-25T15:46:28.513Z");
+    const answeredAt = Date.parse("2026-08-25T15:46:29.021Z");
+
+    assert.deepEqual(
+        replayRows([
+            { type: "user", text: "Timestamped question", ts: submittedAt },
+            { type: "event", event: { kind: "text", text: "Answer", ts: answeredAt } },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [
+            { role: "user", text: "Timestamped question", ts: submittedAt },
+            { role: "assistant", text: "Answer", thinking: undefined, ts: answeredAt },
+        ],
+    );
+
+    assert.deepEqual(
+        replayRows([
+            { type: "user", text: "Legacy question" },
+            { type: "event", event: { kind: "text", text: "Legacy answer", ts: answeredAt } },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [
+            { role: "user", text: "Legacy question", ts: answeredAt },
+            { role: "assistant", text: "Legacy answer", thinking: undefined, ts: answeredAt },
+        ],
+        "a legacy user row inherits the first real timestamp instead of becoming 1969 or now",
+    );
+});
+
 test("render-log history preserves the provider timestamp for assistant rows", async () => {
     const originalHome = process.env.HOME;
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-render-timestamp-"));
@@ -99,6 +214,10 @@ test("render-log history preserves the provider timestamp for assistant rows", a
     const emitted: unknown[] = [];
     const ts = Date.parse("2026-08-18T12:00:00.000Z");
     try {
+        appendRender(sessionId, {
+            type: "user",
+            text: "Historical question",
+        });
         appendRender(sessionId, {
             type: "event",
             event: {
@@ -119,6 +238,11 @@ test("render-log history preserves the provider timestamp for assistant rows", a
             {
                 type: "history",
                 messages: [
+                    {
+                        role: "user",
+                        text: "Historical question",
+                        ts,
+                    },
                     {
                         role: "assistant",
                         text: "Historical reply",

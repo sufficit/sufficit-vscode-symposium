@@ -20,6 +20,8 @@ export class PeerRenderState {
     private activeTurnId: string | undefined;
     private activeStart: unknown;
     private terminal: SessionTerminalStatus | undefined;
+    private abandonedTurnId: string | undefined;
+    private abandoned = false;
 
     constructor(private readonly writerAlive: (writer: RenderWriter | undefined) => boolean) {}
 
@@ -38,7 +40,11 @@ export class PeerRenderState {
             if (record.writer?.id === ownWriterId) continue;
             this.apply(record, false);
         }
-        if (!this.active || !this.activeWriter || !this.writerAlive(this.activeWriter)) {
+        if (this.active && this.activeWriter && !this.writerAlive(this.activeWriter)) {
+            this.abandonActiveTurn();
+            return undefined;
+        }
+        if (!this.active || !this.activeWriter) {
             this.reset();
             return undefined;
         }
@@ -55,12 +61,17 @@ export class PeerRenderState {
     /** Clears a peer turn whose process disappeared without writing turn-end. */
     refreshLiveness(): boolean {
         if (!this.active || !this.activeWriter || this.writerAlive(this.activeWriter)) return false;
-        this.active = false;
-        this.activeWriter = undefined;
-        this.activeTurnId = undefined;
-        this.activeStart = undefined;
-        this.terminal = "error";
+        this.abandonActiveTurn();
         return true;
+    }
+
+    /** Returns a peer turn that died without a terminal boundary, once. */
+    takeAbandonedTurn(): { logicalTurnId?: string } | undefined {
+        if (this.terminal !== "error" || !this.abandoned) return undefined;
+        const logicalTurnId = this.abandonedTurnId;
+        this.abandoned = false;
+        this.abandonedTurnId = undefined;
+        return logicalTurnId ? { logicalTurnId } : {};
     }
 
     /** A locally-owned turn supersedes any stale peer projection. */
@@ -113,6 +124,18 @@ export class PeerRenderState {
         this.activeTurnId = undefined;
         this.activeStart = undefined;
         this.terminal = undefined;
+        this.abandonedTurnId = undefined;
+        this.abandoned = false;
+    }
+
+    private abandonActiveTurn(): void {
+        this.abandonedTurnId = this.activeTurnId;
+        this.abandoned = true;
+        this.active = false;
+        this.activeWriter = undefined;
+        this.activeTurnId = undefined;
+        this.activeStart = undefined;
+        this.terminal = "error";
     }
 }
 

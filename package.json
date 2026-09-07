@@ -2,7 +2,7 @@
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
     "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.824.2",
+    "version": "2026.907.2",
     "publisher": "sufficit",
     "license": "MIT-0",
     "icon": "media/symposium-icon.png",
@@ -259,6 +259,43 @@
                     "default": 15,
                     "minimum": 0,
                     "description": "Minutes of silence allowed for an explicit retry after a stalled turn. This separate recovery window prevents the Retry action from deterministically failing again at the normal stalled-turn timeout; set to 0 to disable the retry watchdog."
+                },
+                "symposium.transientRetryLimit": {
+                    "type": "number",
+                    "default": 3,
+                    "enum": [
+                        0,
+                        2,
+                        3,
+                        5
+                    ],
+                    "enumDescriptions": [
+                        "Disable automatic retries.",
+                        "Retry transient failures up to 2 times.",
+                        "Retry transient failures up to 3 times (recommended).",
+                        "Retry transient failures up to 5 times."
+                    ],
+                    "description": "Maximum automatic retries for explicitly retryable provider/transport failures. Uses bounded exponential backoff and does not add another user message."
+                },
+                "symposium.transientRetryAfterToolActivity": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Continue automatic recovery when a transient connection failure happens after tool activity. The retry resumes the same logical intent and the recovery status remains UI-only. Disable for workflows whose tools are not idempotent."
+                },
+                "symposium.retryInitialDelayMilliseconds": {
+                    "type": "number",
+                    "default": 1000,
+                    "enum": [
+                        1000,
+                        2000,
+                        5000
+                    ],
+                    "enumDescriptions": [
+                        "Start after 1 second (recommended).",
+                        "Start after 2 seconds.",
+                        "Start after 5 seconds."
+                    ],
+                    "description": "Initial pause before an automatic transient retry. Each subsequent retry doubles the delay, capped at 30 seconds."
                 },
                 "symposium.hub.url": {
                     "type": "string",
@@ -1086,10 +1123,11 @@
         "coverage:changed": "node scripts/check-changed-coverage.mjs",
         "test:extension-host": "npm run compile && node test/extensionHost/run.cjs",
         "smoke:auth-ai": "node scripts/smoke-sufficit-auth.mjs",
+        "smoke:voice": "node scripts/smoke-voice-providers.mjs",
         "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
         "compile": "npm run clean && tsc -p ./ && npm run build:webview && npm run build:pwa && npm run bundle",
         "compile:test": "npm run clean && tsc -p ./ && npm run build:webview",
-        "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --outfile=out/ui/webview.bundle.js && esbuild src/ui/webview/chat.css --bundle --outfile=out/ui/webview.css",
+        "build:webview": "esbuild src/ui/webview/index.ts --bundle --format=iife --target=es2020 --minify-syntax --outfile=out/ui/webview.bundle.js && esbuild src/ui/webview/chat.css --bundle --outfile=out/ui/webview.css",
         "build:pwa": "node scripts/build-pwa.mjs",
         "bundle": "node scripts/bundle.js",
         "bundle:dev": "node scripts/bundle.js --dev",

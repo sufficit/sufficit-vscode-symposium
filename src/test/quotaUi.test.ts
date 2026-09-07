@@ -157,7 +157,8 @@ test("quota redraw preserves the active backend instead of looking up an empty k
 test("chat surface asks only the active adapter usage singleton", () => {
     assert.doesNotMatch(surface, /loadCachedAdapterQuotas/);
     assert.match(surfaceQuota, /const usage = this\.usage/);
-    assert.match(surfaceQuota, /const snapshot = await usage\.read\(force, \{ model \}\)/);
+    assert.match(surfaceQuota, /const snapshot = await withAbortableDeadline/);
+    assert.match(surfaceQuota, /\(\) => usage\.read\(force, \{ model \}\)/);
     assert.match(surfaceQuota, /presetQuotaLoadingEvent\(usage\)/);
     assert.match(surfaceContext, /Reading usage for the selected preset/);
     assert.match(surfaceQuota, /generation === this\.generation/);

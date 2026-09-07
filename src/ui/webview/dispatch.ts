@@ -248,7 +248,12 @@ export function handleHostMessage(payload: unknown): void {
             break;
         }
         case "user": {
-            renderUserTurn(data.text, data.attachments, data.clientMessageId);
+            renderUserTurn(
+                data.text,
+                data.attachments,
+                data.clientMessageId,
+                typeof data.ts === "string" || typeof data.ts === "number" ? data.ts : undefined,
+            );
             break;
         }
         case "attachments-picked": {

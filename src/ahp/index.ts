@@ -13,6 +13,7 @@ export * from "./projectionRuntime";
 export * from "./status";
 export * from "./wireProtocol";
 export * from "./webSocketServer";
+export * from "./feature";
 export * from "./capabilities/registry";
 export * from "./capabilities/changesetChannel";
 export * from "./capabilities/resourceChannel";

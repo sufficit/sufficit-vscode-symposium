@@ -10,8 +10,20 @@ test("all-backends-exhausted 503 has a concise actionable system summary", () =>
 
     assert.match(out.summary, /HTTP 503/);
     assert.match(out.summary, /all configured backends were unavailable/i);
-    assert.match(out.summary, /not retry automatically/i);
+    assert.match(out.summary, /automatic recovery was unavailable or exhausted/i);
     assert.equal(out.detail, raw);
+});
+
+test("503 maintenance HTML is compacted before it reaches the technical details", () => {
+    const raw =
+        "HTTP 503 Service Unavailable <!doctype html><html><head><title>Sufficit AI — atualização em andamento</title><style>body { color: red; }</style></head><body><h1>Voltamos em instantes.</h1><p>Estamos concluindo uma atualização sem perder o endereço que você acessou.</p></body></html>";
+    const out = presentTurnError(raw, true);
+
+    assert.match(out.summary, /HTTP 503/);
+    assert.match(out.detail, /HTTP 503 Service Unavailable/);
+    assert.match(out.detail, /Sufficit AI/);
+    assert.doesNotMatch(out.detail, /doctype|<html|<style|color: red/i);
+    assert.ok(out.detail.length <= 512);
 });
 
 test("403 identifies the required directive and explains the recovery", () => {
@@ -49,6 +61,19 @@ test("unknown terminal errors preserve their technical detail", () => {
     assert.equal(out.detail, "socket closed unexpectedly");
 });
 
+test("a hard quota explains that Retry appears only at the provider reset", () => {
+    const out = presentTurnError(
+        "You've hit your session limit · resets 2:30pm (America/Sao_Paulo)",
+        true,
+        20_000,
+        10_000,
+    );
+
+    assert.match(out.summary, /provider limit is exhausted/i);
+    assert.match(out.summary, /Retry will become available/i);
+    assert.doesNotMatch(out.summary, /automatic recovery was unavailable/i);
+});
+
 // A provider that is out of capacity is the clearest case for Retry: the same
 // request may succeed moments later. It arrives mid-stream, after the gateway
 // already sent 200 + SSE headers, so the HTTP status can no longer say 429/503
@@ -60,6 +85,30 @@ test("capacity and throttling failures are retryable", () => {
         "rate limit exceeded",
         "429 Too Many Requests",
         "Service Unavailable",
+    ]) {
+        assert.equal(isTransientErrorMessage(message), true, message);
+    }
+});
+
+test("HTTP transient statuses are retryable even without a descriptive status text", () => {
+    for (const message of [
+        "HTTP 408",
+        "HTTP 429",
+        "HTTP 500",
+        "HTTP 502",
+        "HTTP 503",
+        "HTTP 504",
+    ]) {
+        assert.equal(isTransientErrorMessage(message), true, message);
+    }
+});
+
+test("503 maintenance/update responses are retryable in English and legacy Portuguese", () => {
+    for (const message of [
+        "503 Service Unavailable — Sufficit AI — update in progress",
+        "HTTP 503 Service Unavailable <html><title>Sufficit AI — maintenance</title></html>",
+        "503 — atualização em andamento",
+        "HTTP 503 while the proxy is updating",
     ]) {
         assert.equal(isTransientErrorMessage(message), true, message);
     }

@@ -10,6 +10,8 @@ import {
     toolResultText,
 } from "../parse";
 import type { AgentEvent } from "../types";
+import { isTransientErrorMessage } from "../transientError";
+import { blockedQuotaRetryAt } from "../quota";
 import { ClaudeTaskTracker } from "./tasks";
 import { parseClaudeQuota } from "./usage";
 
@@ -31,6 +33,8 @@ export class ClaudeEventParser {
     private waitingForBackgroundFollowup = false;
     private observedModel: string | undefined;
     private latestTimestamp: number | undefined;
+    private streamStopReason: string | undefined;
+    private turnFinished = false;
     private readonly tasks = new ClaudeTaskTracker();
 
     constructor(private readonly deps: ParserDeps) {}
@@ -41,11 +45,24 @@ export class ClaudeEventParser {
         this.deferredTurnEnd = undefined;
         this.waitingForBackgroundFollowup = false;
         this.latestTimestamp = undefined;
+        this.streamStopReason = undefined;
+        this.turnFinished = false;
     }
 
     /** Starts a fresh normalized turn without losing the session-level model. */
     beginTurn(): void {
+        // All tool/background bookkeeping is scoped to one prompt. A missing
+        // native tool_result in an older turn must never keep every later turn
+        // marked as active.
+        this.pendingToolIds.clear();
+        this.backgroundTaskIds.clear();
+        this.deferredTurnEnd = undefined;
+        this.waitingForBackgroundFollowup = false;
+        this.streamedText = false;
+        this.streamedThinking = false;
         this.latestTimestamp = undefined;
+        this.streamStopReason = undefined;
+        this.turnFinished = false;
     }
 
     handleLine(line: string, sourceCancelled = false): void {
@@ -65,11 +82,32 @@ export class ClaudeEventParser {
         else if (event.type === "system") this.handleSystem(event);
         else if (event.type === "assistant") this.handleAssistant(event);
         else if (event.type === "user") this.handleUser(event);
-        else if (event.type === "result") this.handleResult(event, sourceCancelled);
+        else if (event.type === "result")
+            this.handleResult(event, sourceCancelled, blockedQuotaRetryAt(quota));
     }
 
     private handleStream(event: Record<string, unknown>): void {
         const stream = record(event.event);
+        if (stream?.type === "message_start") {
+            this.streamStopReason = undefined;
+            return;
+        }
+        if (stream?.type === "message_delta") {
+            const stopReason = record(stream.delta)?.stop_reason;
+            if (typeof stopReason === "string") this.streamStopReason = stopReason;
+            return;
+        }
+        if (stream?.type === "message_stop") {
+            const finished = this.streamStopReason === "end_turn";
+            this.streamStopReason = undefined;
+            // end_turn is Claude's authoritative assistant boundary. A stale
+            // unmatched foreground tool id must not override it; only a
+            // genuinely-running background task may keep the parent open.
+            if (finished && this.backgroundTaskIds.size === 0) {
+                this.finishTurn(this.deferredTurnEnd ?? {});
+            }
+            return;
+        }
         if (stream?.type !== "content_block_delta") return;
         const delta = record(stream.delta);
         if (delta?.type === "text_delta" && typeof delta.text === "string") {
@@ -191,12 +229,30 @@ export class ClaudeEventParser {
         this.finishDeferredToolResult();
     }
 
-    private handleResult(event: Record<string, unknown>, sourceCancelled: boolean): void {
+    private handleResult(
+        event: Record<string, unknown>,
+        sourceCancelled: boolean,
+        retryAt?: number,
+    ): void {
         if (typeof event.session_id === "string") this.deps.setSessionId(event.session_id);
         this.streamedText = false;
         this.streamedThinking = false;
         if (event.is_error && !sourceCancelled) {
-            this.deps.emit({ kind: "error", message: resultError(event) });
+            const message = resultError(event);
+            this.deps.emit({
+                kind: "error",
+                message,
+                retryable: isTransientErrorMessage(message),
+                ...(retryAt !== undefined
+                    ? {
+                          retryable: true,
+                          retryAt,
+                          // A session/account limit can last hours. Keep the
+                          // request under user control and reveal Retry at reset.
+                          automaticRetry: false,
+                      }
+                    : {}),
+            });
         }
         const usage = record(event.usage) ?? record(record(event.message)?.usage);
         if (usage) this.emitUsage(usage);
@@ -204,9 +260,13 @@ export class ClaudeEventParser {
             costUsd: optionalNumber(event.total_cost_usd),
             durationMs: optionalNumber(event.duration_ms),
         };
-        if (this.pendingToolIds.size > 0 || this.backgroundTaskIds.size > 0) {
+        // A result is authoritative for all foreground tools. Claude versions
+        // differ in whether every tool_result is mirrored to stream-json, so
+        // pendingToolIds is diagnostic only at this boundary. Background tasks
+        // are the sole reason a result can be intermediate.
+        if (this.backgroundTaskIds.size > 0) {
             this.deferredTurnEnd = end;
-            if (this.backgroundTaskIds.size > 0) this.waitingForBackgroundFollowup = true;
+            this.waitingForBackgroundFollowup = true;
         } else if (this.waitingForBackgroundFollowup && !this.deferredTurnEnd) {
             // A background task may complete immediately before the parent's
             // intermediate result. Keep the turn open for the task-notification
@@ -227,7 +287,6 @@ export class ClaudeEventParser {
     private finishDeferredToolResult(): void {
         if (
             !this.deferredTurnEnd ||
-            this.pendingToolIds.size > 0 ||
             this.backgroundTaskIds.size > 0 ||
             this.waitingForBackgroundFollowup
         ) {
@@ -237,11 +296,14 @@ export class ClaudeEventParser {
     }
 
     private finishTurn(end: { costUsd?: number; durationMs?: number }): void {
+        if (this.turnFinished) return;
+        this.turnFinished = true;
         this.deps.setTurnActive(false);
         this.deps.emit({ kind: "turn-end", ...end });
         this.deferredTurnEnd = undefined;
         this.waitingForBackgroundFollowup = false;
         this.latestTimestamp = undefined;
+        this.streamStopReason = undefined;
     }
 
     private emitUsage(usage: Record<string, unknown>): void {

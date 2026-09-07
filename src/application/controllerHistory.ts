@@ -69,6 +69,7 @@ function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
                 messages.push({
                     role: "user",
                     text: row.text,
+                    ...(row.ts !== undefined ? { ts: row.ts } : {}),
                 });
             } else if (row.role === "assistant") {
                 // Older render logs have no per-message metadata. Use the
@@ -81,6 +82,13 @@ function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
                     ...(model ? { model } : {}),
                     ...(reasoning ? { reasoning } : {}),
                     ...(row.ts !== undefined ? { ts: row.ts } : {}),
+                });
+            } else if (row.role === "error") {
+                messages.push({
+                    role: "error",
+                    text: row.text,
+                    ...(row.retryable === true ? { retryable: true } : {}),
+                    ...(row.retryAt !== undefined ? { retryAt: row.retryAt } : {}),
                 });
             } else if (row.role === "status-notice") {
                 messages.push({ role: "status-notice", text: row.text, severity: row.severity });

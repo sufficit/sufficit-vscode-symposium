@@ -26,6 +26,10 @@ export class OpenAISessionRuntime {
         );
     }
 
+    setModel(model: string): void {
+        this.options.model = model === "default" ? undefined : model;
+    }
+
     label(id: string): string {
         return id ? (getDiscoveredLabels(this.cfg.baseUrl)?.[id] ?? id) : "";
     }

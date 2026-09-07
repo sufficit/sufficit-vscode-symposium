@@ -41,6 +41,47 @@ test("Claude usage carries the effective model for late UI metadata", () => {
     });
 });
 
+test("Claude marks a transient result error as retryable", () => {
+    const events: AgentEvent[] = [];
+    const instance = parser(events);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "result",
+            is_error: true,
+            result: "fetch failed",
+        }),
+    );
+
+    assert.deepEqual(events[0], {
+        kind: "error",
+        message: "fetch failed",
+        retryable: true,
+    });
+    assert.equal(events.at(-1)?.kind, "turn-end");
+});
+
+test("Claude keeps session-limit result errors manual until reset", () => {
+    const events: AgentEvent[] = [];
+    const instance = parser(events);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "result",
+            is_error: true,
+            result: "You've hit your session limit · resets 2:30pm (America/Sao_Paulo)",
+        }),
+    );
+
+    const error = events.find(
+        (event): event is Extract<AgentEvent, { kind: "error" }> => event.kind === "error",
+    );
+    assert.ok(error);
+    assert.equal(error.retryable, true);
+    assert.equal(error.automaticRetry, false);
+    assert.ok(error.retryAt);
+});
+
 test("Claude live text keeps provider timestamp, model and effort", () => {
     const events: AgentEvent[] = [];
     const timestamp = "2026-08-19T01:27:00.000Z";
@@ -110,6 +151,91 @@ test("Claude starts a new timestamp window for each turn", () => {
         (events[1] as Extract<AgentEvent, { kind: "text" }>).ts,
         Date.parse("2026-08-19T10:00:00.000Z"),
     );
+});
+
+test("Claude ends a turn at the provider message_stop boundary without waiting for result", () => {
+    const events: AgentEvent[] = [];
+    const activeStates: boolean[] = [];
+    const instance = parser(events, "high", activeStates);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "stream_event",
+            event: { type: "message_delta", delta: { stop_reason: "end_turn" } },
+        }),
+    );
+    assert.equal(
+        events.some((event) => event.kind === "turn-end"),
+        false,
+    );
+
+    instance.handleLine(JSON.stringify({ type: "stream_event", event: { type: "message_stop" } }));
+    instance.handleLine(JSON.stringify({ type: "result", duration_ms: 25 }));
+
+    assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    assert.deepEqual(activeStates, [false]);
+});
+
+test("Claude does not end the top-level turn when an intermediate tool message stops", () => {
+    const events: AgentEvent[] = [];
+    const instance = parser(events);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "stream_event",
+            event: { type: "message_delta", delta: { stop_reason: "tool_use" } },
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "stream_event", event: { type: "message_stop" } }));
+
+    assert.equal(
+        events.some((event) => event.kind === "turn-end"),
+        false,
+    );
+});
+
+test("Claude result closes a turn even when the CLI omits a foreground tool_result", () => {
+    const events: AgentEvent[] = [];
+    const activeStates: boolean[] = [];
+    const instance = parser(events, "high", activeStates);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "assistant",
+            message: {
+                content: [{ type: "tool_use", id: "tool-without-result", name: "Read" }],
+            },
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "result", duration_ms: 15 }));
+
+    assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    assert.deepEqual(activeStates, [false]);
+});
+
+test("Claude starts each turn with clean foreground tool bookkeeping", () => {
+    const events: AgentEvent[] = [];
+    const activeStates: boolean[] = [];
+    const instance = parser(events, "high", activeStates);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "assistant",
+            message: { content: [{ type: "tool_use", id: "stale", name: "Read" }] },
+        }),
+    );
+
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "stream_event",
+            event: { type: "message_delta", delta: { stop_reason: "end_turn" } },
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "stream_event", event: { type: "message_stop" } }));
+
+    assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    assert.deepEqual(activeStates, [false]);
 });
 
 test("Claude timestamps each response block from its own provider event", () => {
@@ -217,6 +343,47 @@ test("Claude keeps a parent turn active until its background agent follow-up fin
         reasoning: "xhigh",
         ts: Date.parse("2026-08-19T10:06:00.000Z"),
     });
+    assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
+    assert.deepEqual(activeStates, [false]);
+});
+
+test("Claude closes a completed background follow-up at message_stop without a final result", () => {
+    const events: AgentEvent[] = [];
+    const activeStates: boolean[] = [];
+    const instance = parser(events, "high", activeStates);
+    instance.beginTurn();
+    instance.handleLine(
+        JSON.stringify({
+            type: "system",
+            subtype: "background_tasks_changed",
+            tasks: [{ task_id: "agent-1", task_type: "local_agent" }],
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "result", duration_ms: 100 }));
+    instance.handleLine(
+        JSON.stringify({ type: "system", subtype: "background_tasks_changed", tasks: [] }),
+    );
+    instance.handleLine(
+        JSON.stringify({
+            type: "system",
+            subtype: "task_notification",
+            task_id: "agent-1",
+            status: "completed",
+        }),
+    );
+    assert.equal(
+        events.some((event) => event.kind === "turn-end"),
+        false,
+    );
+
+    instance.handleLine(
+        JSON.stringify({
+            type: "stream_event",
+            event: { type: "message_delta", delta: { stop_reason: "end_turn" } },
+        }),
+    );
+    instance.handleLine(JSON.stringify({ type: "stream_event", event: { type: "message_stop" } }));
+
     assert.equal(events.filter((event) => event.kind === "turn-end").length, 1);
     assert.deepEqual(activeStates, [false]);
 });

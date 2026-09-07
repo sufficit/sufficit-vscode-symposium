@@ -5,7 +5,7 @@ import type { AdapterUsageProvider } from "./quotaTypes";
 
 export type { AgentBackend, SessionInfo, SessionTerminalStatus } from "./sessionInfo";
 export type { AdapterQuotaSnapshot, AdapterUsageProvider, UsageQuotaWindow } from "./quotaTypes";
-export type { AgentEvent, SystemNoticeSeverity, TodoItem } from "./events";
+export type { AgentEvent, SystemNoticeSeverity, TodoItem, TransientRetryNotice } from "./events";
 import type { SystemNoticeSeverity } from "./events";
 
 /** One past message reconstructed from a stored transcript. */
@@ -15,6 +15,10 @@ export interface HistoryMessage {
      *  severity so a replayed warning/error notice renders with the same
      *  visual weight it had live. */
     severity?: SystemNoticeSeverity;
+    /** Whether a replayed terminal error may safely retry the failed message. */
+    retryable?: boolean;
+    /** Earliest Unix timestamp at which Retry may be offered. */
+    retryAt?: number;
     /**
      * Null means the adapter found a turn but produced no text for it (e.g. an
      * image/attachment-only user message with no caption). Each adapter decides
@@ -219,6 +223,10 @@ export interface AgentSession extends EventEmitter {
     setModel?(model: string): void;
     /** Effective model used by the latest backend turn, when available. */
     getModel?(): string;
+    /** Replaces the permission mode for this live session and its next tool call. */
+    setPermission?(permission: string): void;
+    /** Effective permission mode enforced by the live backend session. */
+    getPermission?(): string | undefined;
     /** Interrupt the current turn if the backend supports it. */
     cancel(): void;
     /** Resume a backend-owned pause without adding a user message to the model context. */

@@ -9,7 +9,7 @@ import {
     type AhpProjectionAction,
     type AhpProjectionState,
 } from "./projectionCore";
-
+import { projectStatusNotice } from "./projectStatusNotice";
 export {
     createProjectionState,
     type AhpProjectionAction,
@@ -22,8 +22,9 @@ export function rememberProjectedUser(
     model?: string,
     attachments?: string[],
     id?: string,
+    ts?: number,
 ): void {
-    state.pendingUser = { text, model, attachments, id };
+    state.pendingUser = { text, model, attachments, id, ts };
 }
 
 export function projectAgentEvent(
@@ -51,7 +52,7 @@ export function projectAgentEvent(
             if (event.model) state.model = event.model;
             return projectUsage(state, event);
         case "error":
-            return projectError(state, event.message, event.retryable);
+            return projectError(state, event);
         case "turn-end":
             return endTurn(state, event.durationMs);
         case "status-notice":
@@ -95,7 +96,7 @@ function startTurn(state: AhpProjectionState, logicalTurnId: string): AhpProject
             type: "chat/turnStarted",
             turnId: logicalTurnId,
             queuedMessageId: pending?.id,
-            startedAt: new Date(state.startedAt).toISOString(),
+            startedAt: new Date(pending?.ts ?? state.startedAt).toISOString(),
             message: {
                 text: pending?.text ?? "",
                 origin: { kind: "user" },
@@ -337,14 +338,20 @@ function projectUsage(
 
 function projectError(
     state: AhpProjectionState,
-    message: string,
-    retryable: boolean | undefined,
+    event: Extract<AgentEvent, { kind: "error" }>,
 ): AhpProjectionAction[] {
     if (!state.turnId) return [];
     state.failed = true;
     const action = chatAction("chat/error", state.turnId, {
         duration: elapsed(state),
-        error: { errorType: "agent", message, _meta: { retryable: retryable === true } },
+        error: {
+            errorType: "agent",
+            message: event.message,
+            _meta: {
+                retryable: event.retryable === true,
+                ...(event.retryAt !== undefined ? { retryAt: event.retryAt } : {}),
+            },
+        },
     });
     resetTurn(state);
     return [action, ...activity(undefined)];
@@ -357,35 +364,6 @@ function endTurn(state: AhpProjectionState, duration: number | undefined): AhpPr
     });
     resetTurn(state);
     return [action, ...activity(undefined)];
-}
-
-/**
- * A terminal notice is the reason the turn stopped, so it becomes a durable
- * response part. Projecting it as activity only — which is what every notice
- * used to do — meant the next event overwrote it and the transcript never
- * explained why the turn ended, while the session badge still said it stopped
- * with a warning. Non-terminal notices really are progress chatter (compaction,
- * an auth retry) and stay transient.
- */
-function projectStatusNotice(
-    state: AhpProjectionState,
-    event: Extract<AgentEvent, { kind: "status-notice" }>,
-): AhpProjectionAction[] {
-    if (!event.terminal || !state.turnId) {
-        return activity(event.text);
-    }
-    // Close the open text part so later text starts its own bubble after this.
-    state.textPartId = undefined;
-    return [
-        chatAction("chat/responsePart", state.turnId, {
-            part: {
-                kind: "notice",
-                id: partId(state, "notice"),
-                content: event.text,
-                _meta: { severity: event.severity ?? "info" },
-            },
-        }),
-    ];
 }
 
 function resetTurn(state: AhpProjectionState): void {

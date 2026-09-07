@@ -8,6 +8,56 @@ export interface ErrorPresentation {
     detail: string;
 }
 
+const MAX_TECHNICAL_DETAIL_LENGTH = 512;
+
+function decodeHtmlEntities(value: string): string {
+    return value
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/&#(\d+);/g, (_match, code: string) => {
+            const value = Number(code);
+            return Number.isFinite(value) ? String.fromCodePoint(value) : "";
+        });
+}
+
+/** Keeps gateway maintenance pages out of the conversation while preserving a useful clue. */
+function compactTechnicalDetail(message: unknown): string {
+    const raw = String(message ?? "").trim();
+    if (!raw) return "The request ended without an error detail from the backend.";
+
+    const html = /<!doctype\b|<html\b|<head\b|<body\b|<style\b|<script\b|<\/?[a-z][^>]*>/i.test(
+        raw,
+    );
+    if (!html) {
+        return raw.length > MAX_TECHNICAL_DETAIL_LENGTH
+            ? `${raw.slice(0, MAX_TECHNICAL_DETAIL_LENGTH - 1)}…`
+            : raw;
+    }
+
+    const status = /\bHTTP\s+\d{3}(?:\s+[A-Za-z][^<\n\r]{0,100})?/i.exec(raw)?.[0]?.trim();
+    const title = decodeHtmlEntities(/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(raw)?.[1] || "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const visible = decodeHtmlEntities(
+        raw
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+            .replace(/<[^>]*>/g, " "),
+    )
+        .replace(/\s+/g, " ")
+        .trim();
+    const descriptor = title || visible || "provider returned an HTML error page";
+    const withoutStatus = status ? descriptor.replace(status, "").trim() : descriptor;
+    const result = [status, withoutStatus].filter(Boolean).join(" — ");
+    return result.length > MAX_TECHNICAL_DETAIL_LENGTH
+        ? `${result.slice(0, MAX_TECHNICAL_DETAIL_LENGTH - 1)}…`
+        : result;
+}
+
 function httpStatus(message: string): number | undefined {
     const match = /\bHTTP\s+(\d{3})\b/i.exec(message);
     return match ? Number(match[1]) : undefined;
@@ -38,15 +88,20 @@ function requiredDirectives(message: string): string[] {
  * UI. This is presentation only: the exact error remains available in the
  * expandable technical-details section and on the Retry hand-off.
  */
-export function presentTurnError(message: unknown, retryable?: boolean): ErrorPresentation {
-    const detail =
-        String(message ?? "").trim() ||
-        "The request ended without an error detail from the backend.";
+export function presentTurnError(
+    message: unknown,
+    retryable?: boolean,
+    retryAt?: number,
+    now = Date.now(),
+): ErrorPresentation {
+    const detail = compactTechnicalDetail(message);
     const status = httpStatus(detail);
     const retry =
-        retryable === true
-            ? " You may retry the same message; Symposium will not retry automatically."
-            : " Retry is unavailable for this response; update the request or configuration before sending again.";
+        retryable === true && typeof retryAt === "number" && retryAt > now
+            ? " The provider limit is exhausted. Retry will become available when the stated reset time is reached."
+            : retryable === true
+              ? " Automatic recovery was unavailable or exhausted. You may retry the same message."
+              : " Retry is unavailable for this response; update the request or configuration before sending again.";
 
     if (status === 503 && /ai_backends_exhausted|all ai backends exhausted/i.test(detail)) {
         return {

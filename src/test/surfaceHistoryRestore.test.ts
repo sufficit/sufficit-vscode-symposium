@@ -28,6 +28,7 @@ test("reopening a live controller reprojects history instead of trusting an empt
             return Promise.resolve();
         },
         getModel: () => "",
+        getPermission: () => "manager",
         aiToolsInfo: () => undefined,
         subscribeLive: () => () => undefined,
     };
@@ -80,6 +81,16 @@ test("reopening a live controller reprojects history instead of trusting an empt
     assert.equal(
         posts.some((message) => (message as { type?: string }).type === "history-end"),
         true,
+    );
+    const meta = posts.find((message) => (message as { type?: string }).type === "meta") as {
+        permission?: string;
+        permissionDefault?: string;
+    };
+    assert.equal(meta.permission, "manager", "the picker must show the live controller policy");
+    assert.equal(
+        meta.permissionDefault,
+        "default",
+        "the adapter default remains separately marked",
     );
 });
 

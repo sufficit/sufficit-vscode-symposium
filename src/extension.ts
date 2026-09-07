@@ -45,6 +45,14 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const output = vscode.window.createOutputChannel("Symposium");
     setSymposiumOutput(output);
     context.subscriptions.push(output);
+    // Delay activation evidence until code-server's file-backed logger attaches.
+    const activatedVersion = String(context.extension.packageJSON.version);
+    const activationEvidenceTimer = setTimeout(() => {
+        symposiumLog(`[extension] activated version=${activatedVersion}`);
+    }, 1_500);
+    context.subscriptions.push({
+        dispose: () => clearTimeout(activationEvidenceTimer),
+    });
     void migrateLegacySettings().catch((error) => {
         symposiumLog(
             `[settings] legacy migration failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -69,9 +77,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         adapters.map((adapter) => [adapter.backend, adapter]),
     );
 
-    // Live backend registry: when the user adds/imports/removes a custom backend
-    // (symposium.adapters), rebuild the custom adapters IN PLACE so they're usable
-    // immediately — no window reload. Built-ins stay registered.
+    // Refresh custom adapters in place when settings change; retain built-ins.
     const BUILTIN_BACKENDS = new Set([
         "claude",
         "codex",
@@ -124,9 +130,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
 
     const ahp = registerExtensionAhpRuntime(context, api, symposiumLog);
 
-    // Subagent host: lets the native Sufficit AI backend delegate to other
-    // agent-defs as real sessions (spawn_agent / agent_* tools). Late-bound so
-    // the low-level tool layer never imports the runtime directly.
+    // Late-bound delegation keeps the tool layer independent of the runtime.
     setSubagentHost(
         new SubagentManager(runtime, adapterByBackend, () =>
             vscode.workspace
@@ -136,9 +140,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     );
     context.subscriptions.push({ dispose: () => setSubagentHost(undefined) });
 
-    // Live transcript reader: lets read_session pull a running session's freshest
-    // transcript from its controller before any ledger/store flush. Late-bound so
-    // the tool layer never imports the runtime.
+    // Read live transcripts before disk flush without importing the runtime in tools.
     setLiveTranscriptReader({ read: (id) => runtime.readTranscript(id) });
     context.subscriptions.push({ dispose: () => setLiveTranscriptReader(undefined) });
 
@@ -180,8 +182,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     SufficitAuthProvider.register(context, auth);
     // Hub/MCP requests use the logged-in identity token when available.
     setHubTokenProvider(() => auth.getAccessToken());
-    // The native "Sufficit AI" backend authenticates with the same login token —
-    // so right after login it works with no manual adapter config.
+    // The native backend reuses login credentials without manual adapter setup.
     setOpenAITokenProvider((forceRefresh) => auth.getAccessToken(forceRefresh));
     // Verify the Sufficit AI backend in the background (never blocks the UI):
     // on activation/reload and whenever login state changes. Discovery primes

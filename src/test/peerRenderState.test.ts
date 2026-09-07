@@ -53,12 +53,14 @@ test("peer render state carries a terminal failure only after the turn stops", (
 test("a live peer disappearing mid-turn becomes an error instead of false idle", () => {
     let alive = true;
     const state = new PeerRenderState(() => alive);
-    state.observe({ message: event("turn-start"), writer: peer });
+    state.observe({ message: event("turn-start", { logicalTurnId: "turn-1" }), writer: peer });
 
     alive = false;
     assert.equal(state.refreshLiveness(), true);
     assert.equal(state.busy, false);
     assert.equal(state.attention, "error");
+    assert.deepEqual(state.takeAbandonedTurn(), { logicalTurnId: "turn-1" });
+    assert.equal(state.takeAbandonedTurn(), undefined);
 });
 
 function event(kind: string, extra: Record<string, unknown> = {}): unknown {

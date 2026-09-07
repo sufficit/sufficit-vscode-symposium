@@ -7,7 +7,7 @@
  * Requires `build:webview` to have run first (for out/ui/webview.css).
  */
 import * as esbuild from "esbuild";
-import { cpSync, mkdirSync, existsSync } from "node:fs";
+import { cpSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -24,6 +24,10 @@ const vscodeShimPlugin = {
     },
 };
 
+// `tsc` also emits host-side modules under `out/pwa`. The browser package is a
+// closed bundle, so start from an empty directory to prevent newly added feature
+// namespace modules from leaking into the VSIX as duplicate JavaScript.
+rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
 const cssSrc = path.resolve(root, "out/ui/webview.css");
@@ -55,4 +59,3 @@ const icon = path.resolve(root, "media/symposium.svg");
 if (existsSync(icon)) { cpSync(icon, path.resolve(outDir, "icon.svg")); }
 
 console.log("✅ PWA bundle at out/pwa/app.js (+ webview.css, manifest, sw.js)");
-

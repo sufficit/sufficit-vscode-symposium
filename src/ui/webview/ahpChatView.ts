@@ -25,6 +25,14 @@ import { fillToolResult, renderApprovalRequest, renderTool } from "./tools";
 import { setBusy } from "./state";
 import { setStatus } from "./status";
 import { renderInSlices } from "./renderScheduler";
+import { renderAhpRecoveryStatus } from "./ahpRecoveryView";
+import { asRecord, numberValue, optionalString } from "./ahpValues";
+import { removeRecoveredErrorNotice } from "./ahpRecoveredErrorView";
+import {
+    isEmptyStreamAnchor,
+    isSyntheticControlMessage,
+    reconcileAhpRetryLifecycle,
+} from "./ahpRetryReconciliation";
 
 let renderGeneration = 0;
 let pendingRender: Promise<void> = Promise.resolve();
@@ -102,6 +110,7 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
         renderRejectedSubmission(envelope, chat);
         return;
     }
+    reconcileAhpRetryLifecycle(action);
     switch (action.type) {
         case "chat/turnStarted": {
             const turnMessage = asRecord(action.message);
@@ -114,7 +123,7 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
                     String(turnMessage.text ?? ""),
                     attachmentValues(turnMessage.attachments),
                     optionalString(action.queuedMessageId),
-                    optionalString(action.startedAt) ?? Date.now(),
+                    optionalString(action.startedAt),
                 );
             } else {
                 setBusy(true);
@@ -182,15 +191,23 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
             break;
         case "chat/error": {
             const error = asRecord(action.error);
-            applyEvent({
-                kind: "error",
-                message: String(error.message ?? "Agent error"),
-                retryable: asRecord(error._meta).retryable === true,
-            });
+            const metadata = asRecord(error._meta);
+            applyEvent(
+                {
+                    kind: "error",
+                    message: String(error.message ?? "Agent error"),
+                    retryable: metadata.retryable === true,
+                    retryAt: numberValue(metadata.retryAt),
+                },
+                optionalString(action.turnId),
+            );
             applyEvent({ kind: "turn-end", durationMs: numberValue(action.duration) });
             break;
         }
         case "chat/turnComplete":
+            if (chat) removeRecoveredErrorNotice(chat, String(action.turnId ?? ""));
+            applyEvent({ kind: "turn-end", durationMs: numberValue(action.duration) });
+            break;
         case "chat/turnCancelled":
             applyEvent({ kind: "turn-end", durationMs: numberValue(action.duration) });
             break;
@@ -206,6 +223,9 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
             } as AgentEvent);
             break;
         }
+        case "symposium/recoveryStatus":
+            renderAhpRecoveryStatus(action);
+            break;
         case "chat/turnsLoaded":
             prependTurns(Array.isArray(action.turns) ? (action.turns as Turn[]) : []);
             if (chat) setHasMoreHistory(!!chat.turnsNextCursor);
@@ -228,7 +248,7 @@ function renderTurn(
             turn.message.text,
             attachmentValues(turn.message.attachments),
             optionalString(meta.queuedMessageId),
-            turn.startedAt ?? Date.now(),
+            turn.startedAt,
         );
     }
     const usageModel = optionalString(asRecord(turn.usage).model);
@@ -239,6 +259,8 @@ function renderTurn(
             String(error.message ?? "Agent error"),
             historicalError,
             asRecord(error._meta).retryable === true,
+            numberValue(asRecord(error._meta).retryAt),
+            turn.id,
         );
     }
     if (!active) {
@@ -330,18 +352,6 @@ function prependTurns(turns: Turn[]): void {
     });
 }
 
-function isEmptyStreamAnchor(part: ResponsePart): boolean {
-    const value = part as unknown as Record<string, unknown>;
-    return (
-        (value.kind === "markdown" || value.kind === "reasoning") &&
-        String(value.content ?? "") === ""
-    );
-}
-
-function isSyntheticControlMessage(message: Record<string, unknown>): boolean {
-    return asRecord(message._meta).synthetic === true;
-}
-
 function affectsQueueOrLifecycle(type: string): boolean {
     return (
         type === "chat/turnStarted" ||
@@ -367,18 +377,6 @@ function stringContent(value: unknown): string {
         : typeof record.text === "string"
           ? record.text
           : "";
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function optionalString(value: unknown): string | undefined {
-    return typeof value === "string" ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function severity(value: unknown): "info" | "warning" | "error" {

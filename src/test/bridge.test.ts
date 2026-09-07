@@ -5,6 +5,7 @@ import { isBridgeAuthorized } from "../api/bridgeAuth";
 import { handleBridgeRequest } from "../api/bridgeRequest";
 import { decodeBridgePathSegment } from "../api/bridgeRoutes";
 import { createSymposiumDiscovery, createSymposiumOpenApi } from "../api/discovery";
+import { SYMPOSIUM_FEATURE_VERSIONS } from "../features";
 
 test("bridge rejects query-string credentials", () => {
     const token = "secret-token";
@@ -83,12 +84,15 @@ test("bridge discovery advertises the current AHP and HTTP contracts", () => {
     assert.ok(protocols.ahp.methods.includes("initialize"));
     assert.equal(protocols.http.openapi, "/openapi.json");
     assert.deepEqual(manifest.capabilities, ["symposium.discovery.v1", "symposium.resources.v1"]);
+    assert.equal(manifest.features, SYMPOSIUM_FEATURE_VERSIONS);
 
     const openapi = createSymposiumOpenApi("1.0.0") as {
         openapi: string;
+        info: { "x-symposium-feature-versions": unknown };
         paths: Record<string, unknown>;
     };
     assert.equal(openapi.openapi, "3.1.0");
+    assert.equal(openapi.info["x-symposium-feature-versions"], SYMPOSIUM_FEATURE_VERSIONS);
     assert.ok(openapi.paths["/.well-known/symposium.json"]);
     assert.ok(openapi.paths["/ahp"]);
 });

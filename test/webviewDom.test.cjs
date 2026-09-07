@@ -134,6 +134,93 @@ test("webview DOM renders the effective model and removes sessions absent from h
     harness.dom.window.close();
 });
 
+test("routed effective model does not replace the preset selected for the next request", () => {
+    const harness = createHarness();
+    harness.deliver(
+        meta("alpha", "preset-development", {
+            backend: "openai",
+            backendName: "Sufficit AI",
+            models: ["preset-development", "glm-5.3"],
+            modelLabels: {
+                "preset-development": "Acesso Point - Development",
+                "glm-5.3": "Sufficit - Z.AI Reasoner",
+            },
+        }),
+    );
+    assert.equal(
+        harness.document.querySelector("#modelPicker .lbl").textContent,
+        "Acesso Point - Development",
+    );
+
+    harness.deliver({ type: "event", event: { kind: "model", model: "glm-5.3" } });
+
+    assert.equal(
+        harness.document.querySelector("#modelPicker .lbl").textContent,
+        "Acesso Point - Development",
+    );
+
+    const input = harness.document.querySelector("#input");
+    input.value = "continue with the selected preset";
+    input.dispatchEvent(new harness.dom.window.Event("input"));
+    harness.document.querySelector("#send").click();
+    const sent = harness.sent.findLast((message) => message.type === "send");
+    assert.equal(sent.model, "preset-development");
+    harness.dom.window.close();
+});
+
+test("session rows replace the working indicator immediately after a terminal update", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({
+        type: "sessions",
+        items: [{ sessionId: "alpha", backend: "claude", title: "Alpha", status: "working" }],
+    });
+    assert.ok(harness.document.querySelector(".sessionItem .statusDot .work"));
+
+    harness.deliver({
+        type: "sessions",
+        items: [{ sessionId: "alpha", backend: "claude", title: "Alpha", status: "idle" }],
+    });
+    assert.equal(harness.document.querySelector(".sessionItem .statusDot .work"), null);
+    assert.ok(harness.document.querySelector(".sessionItem .statusDot .idle"));
+    harness.dom.window.close();
+});
+
+test("Markdown links open outside the host without navigating the conversation webview", () => {
+    const harness = createHarness();
+    const url = "https://localhost:26508/service";
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({
+        type: "history",
+        carried: true,
+        messages: [{ role: "assistant", text: `[Open service](${url})` }],
+    });
+    const anchor = harness.document.querySelector(`#log a[href="${url}"]`);
+    assert.ok(anchor);
+    const webviewUrl = harness.dom.window.location.href;
+
+    anchor.click();
+    assert.equal(harness.sent.at(-1).type, "open-link");
+    assert.equal(harness.sent.at(-1).url, url);
+    assert.equal(harness.dom.window.location.href, webviewUrl);
+
+    anchor.dispatchEvent(
+        new harness.dom.window.MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            clientX: 24,
+            clientY: 24,
+        }),
+    );
+    const openLink = harness.document.querySelector("#ctxMenu button.mi");
+    assert.ok(openLink);
+    openLink.click();
+    assert.equal(harness.sent.at(-1).type, "open-link");
+    assert.equal(harness.sent.at(-1).url, url);
+    assert.equal(harness.dom.window.location.href, webviewUrl);
+    harness.dom.window.close();
+});
+
 test("webview DOM distinguishes live usage, non-fatal errors and actionable system notices", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna", { busy: true }));
@@ -163,6 +250,133 @@ test("webview DOM distinguishes live usage, non-fatal errors and actionable syst
     assert.equal(continueButton.textContent, "Continue");
     continueButton.click();
     assert.equal(harness.sent.at(-1).type, "continue");
+    harness.dom.window.close();
+});
+
+test("automatic retry is one visible local-only card with attempt and countdown", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna", { busy: true }));
+    const retryAt = Date.now() + 30_000;
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "status-notice",
+            text: "Retrying automatically",
+            severity: "warning",
+            recovery: {
+                id: "intent-retry",
+                state: "scheduled",
+                attempt: 1,
+                limit: 3,
+                retryAt,
+                reason: "fetch failed",
+            },
+        },
+    });
+
+    let card = harness.document.querySelector('[data-retry-id="intent-retry"]');
+    assert.ok(card);
+    assert.match(card.textContent, /Automatic recovery/);
+    assert.match(card.textContent, /Attempt 1 of 3/);
+    assert.match(card.textContent, /Retrying in (29|30)s/);
+    assert.match(card.textContent, /not sent to the agent/);
+
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "status-notice",
+            text: "Retry running",
+            severity: "warning",
+            recovery: {
+                id: "intent-retry",
+                state: "running",
+                attempt: 1,
+                limit: 3,
+                reason: "fetch failed",
+            },
+        },
+    });
+    card = harness.document.querySelector('[data-retry-id="intent-retry"]');
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice").length, 1);
+    assert.match(card.textContent, /Trying again now/);
+    assert.doesNotMatch(card.textContent, /Retrying in/);
+
+    harness.deliver({
+        type: "event",
+        event: { kind: "text", text: "Recovered response" },
+    });
+    card = harness.document.querySelector('[data-retry-id="intent-retry"]');
+    assert.equal(card.classList.contains("retryStatusNotice--running"), false);
+    assert.equal(card.classList.contains("retryStatusNotice--recovered"), true);
+    assert.match(card.textContent, /Connection recovered/);
+    harness.dom.window.close();
+});
+
+test("503 maintenance HTML stays compact and is never sent as retry context", () => {
+    const harness = createHarness();
+    const raw =
+        "HTTP 503 Service Unavailable <!doctype html><html><head><title>Sufficit AI — atualização em andamento</title><style>body { color: red; }</style></head><body><h1>Voltamos em instantes.</h1></body></html>";
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({
+        type: "user",
+        text: "continue deployment",
+        attachments: [],
+        clientMessageId: "client-503",
+    });
+    harness.deliver({
+        type: "event",
+        event: { kind: "error", message: raw, retryable: true },
+    });
+
+    const details = harness.document.querySelector(".turnErrorDetails pre");
+    assert.ok(details);
+    assert.match(details.textContent, /HTTP 503 Service Unavailable/);
+    assert.match(details.textContent, /Sufficit AI/);
+    assert.doesNotMatch(details.textContent, /doctype|<html|<style|color: red/i);
+    assert.ok(details.textContent.length <= 512);
+
+    harness.document.querySelector(".retryBtn").click();
+    const retry = harness.sent.findLast((message) => message.type === "retry-last-message");
+    assert.ok(retry);
+    assert.doesNotMatch(JSON.stringify(retry), /doctype|<html|<style|color: red/i);
+    assert.match(retry.errorMessage, /HTTP 503 Service Unavailable/);
+    harness.dom.window.close();
+});
+
+test("approved destructive actions replace the danger treatment with a success state", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "tool-start",
+            toolId: "destructive-1",
+            toolName: "shell",
+            detail: "restart service",
+        },
+    });
+    harness.deliver({
+        type: "event",
+        event: {
+            kind: "approval-request",
+            toolId: "destructive-1",
+            toolName: "shell",
+            detail: "restart service",
+            tier: "destructive",
+        },
+    });
+
+    const approval = harness.document.querySelector(".toolApproval");
+    assert.equal(approval.classList.contains("destructive"), true);
+    approval.querySelector(".toolApprovalBtn.accept").click();
+
+    assert.equal(approval.classList.contains("answered"), true);
+    assert.equal(approval.classList.contains("approved"), true);
+    assert.equal(approval.classList.contains("destructive"), false);
+    assert.equal(approval.querySelector(".toolApprovalLabel").textContent, "Approved");
+    assert.equal(harness.sent.at(-1).type, "approval-response");
+    assert.equal(harness.sent.at(-1).toolId, "destructive-1");
+    assert.equal(harness.sent.at(-1).approved, true);
     harness.dom.window.close();
 });
 
@@ -214,6 +428,11 @@ test("webview DOM announces AHP reconciliation and renders a chat snapshot once"
     await new Promise((resolve) => setTimeout(resolve, 120));
     assert.match(harness.document.querySelector("#log").textContent, /AHP question/);
     assert.match(harness.document.querySelector("#log").textContent, /AHP answer/);
+    assert.equal(
+        harness.document.querySelector(".msg.user .msgTime"),
+        null,
+        "an unknown legacy timestamp must not render as the Unix epoch",
+    );
     assert.equal(harness.document.querySelector("#root").classList.contains("loading"), false);
     harness.dom.window.close();
 });
@@ -270,10 +489,27 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
     await new Promise((resolve) => setTimeout(resolve, 30));
 
     harness.deliver({
-        type: "event",
-        event: {
-            kind: "status-notice",
-            text: "Retrying the previous request — no new user message was added.",
+        type: "ahp-frame",
+        frame: {
+            kind: "action",
+            generation: 1,
+            envelope: {
+                channel: resource,
+                serverSeq: 2,
+                origin: undefined,
+                action: {
+                    type: "symposium/recoveryStatus",
+                    content: "Retrying the previous request — no new user message was added.",
+                    severity: "warning",
+                    recovery: {
+                        id: "intent-ahp-retry",
+                        state: "running",
+                        attempt: 1,
+                        limit: 3,
+                        reason: "fetch failed",
+                    },
+                },
+            },
         },
     });
     harness.deliver({
@@ -283,7 +519,7 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
             generation: 1,
             envelope: {
                 channel: resource,
-                serverSeq: 2,
+                serverSeq: 3,
                 origin: undefined,
                 action: {
                     type: "chat/turnStarted",
@@ -300,10 +536,34 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    assert.match(harness.document.querySelector("#log").textContent, /no new user message/);
+    assert.match(harness.document.querySelector("#log").textContent, /Automatic recovery/);
+    assert.match(harness.document.querySelector("#log").textContent, /not sent to the agent/);
     assert.equal(harness.document.querySelectorAll("#log .msg.user").length, 0);
     assert.doesNotMatch(harness.document.querySelector("#log").textContent, /\(no text\)/);
     assert.equal(harness.document.querySelector("#composer").classList.contains("working"), true);
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--running").length, 1);
+
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "action",
+            generation: 1,
+            envelope: {
+                channel: resource,
+                serverSeq: 4,
+                origin: undefined,
+                action: {
+                    type: "chat/responsePart",
+                    turnId: "retry-turn",
+                    part: { kind: "markdown", id: "reply", content: "Recovered live reply" },
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--running").length, 0);
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--recovered").length, 1);
+    assert.match(harness.document.querySelector("#log").textContent, /Connection recovered/);
 
     // The same synthetic marker must remain hidden after an authoritative
     // snapshot rebuild (session switch/reload), while real agent output stays.
@@ -346,6 +606,130 @@ test("AHP retry stays a system operation without a synthetic user bubble", async
     assert.equal(harness.document.querySelectorAll("#log .msg.user").length, 0);
     assert.doesNotMatch(harness.document.querySelector("#log").textContent, /\(no text\)/);
     assert.match(harness.document.querySelector("#log").textContent, /Recovered reply/);
+    harness.dom.window.close();
+});
+
+test("AHP turn completion reconciles a running retry when recovered was missed", async () => {
+    const harness = createHarness();
+    const resource = "ahp-chat:/44444444-4444-5444-8444-444444444444";
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource,
+                fromSeq: 1,
+                state: {
+                    resource,
+                    title: "Retry completion",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [],
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const action = (serverSeq, value) =>
+        harness.deliver({
+            type: "ahp-frame",
+            frame: {
+                kind: "action",
+                generation: 1,
+                envelope: { channel: resource, serverSeq, origin: undefined, action: value },
+            },
+        });
+    action(2, {
+        type: "symposium/recoveryStatus",
+        content: "Retry running",
+        severity: "warning",
+        recovery: {
+            id: "intent-missed-recovered",
+            state: "running",
+            attempt: 1,
+            limit: 3,
+            reason: "fetch failed",
+        },
+    });
+    action(3, {
+        type: "chat/turnStarted",
+        turnId: "retry-turn",
+        startedAt: new Date(1).toISOString(),
+        message: { text: "", origin: { kind: "user" }, _meta: { synthetic: true } },
+    });
+    action(4, { type: "chat/turnComplete", turnId: "retry-turn", duration: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--running").length, 0);
+    assert.equal(harness.document.querySelectorAll(".retryStatusNotice--recovered").length, 1);
+    assert.match(harness.document.querySelector("#log").textContent, /Connection recovered/);
+    harness.dom.window.close();
+});
+
+test("successful AHP retry removes the superseded live error notice", async () => {
+    const harness = createHarness();
+    const resource = "ahp-chat:/33333333-3333-5333-8333-333333333333";
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource,
+                fromSeq: 1,
+                state: {
+                    resource,
+                    title: "Recovered",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [],
+                },
+            },
+        },
+    });
+    const action = (serverSeq, value) =>
+        harness.deliver({
+            type: "ahp-frame",
+            frame: {
+                kind: "action",
+                generation: 1,
+                envelope: { channel: resource, serverSeq, origin: undefined, action: value },
+            },
+        });
+    action(2, {
+        type: "chat/turnStarted",
+        turnId: "failed",
+        startedAt: new Date(1).toISOString(),
+        message: { text: "deploy", origin: { kind: "user" } },
+    });
+    action(3, {
+        type: "chat/error",
+        turnId: "failed",
+        error: { message: "fetch failed", _meta: { retryable: true } },
+    });
+    action(4, {
+        type: "chat/turnStarted",
+        turnId: "retry",
+        startedAt: new Date(2).toISOString(),
+        message: { text: "", origin: { kind: "user" }, _meta: { synthetic: true } },
+    });
+    action(5, {
+        type: "chat/responsePart",
+        turnId: "retry",
+        part: { kind: "markdown", id: "reply", content: "" },
+    });
+    action(6, { type: "chat/delta", turnId: "retry", partId: "reply", content: "Done" });
+    action(7, { type: "chat/turnComplete", turnId: "retry", duration: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    assert.equal(harness.document.querySelectorAll(".turnError").length, 0);
+    assert.match(harness.document.querySelector("#log").textContent, /Done/);
     harness.dom.window.close();
 });
 

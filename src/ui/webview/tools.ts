@@ -352,7 +352,8 @@ export function renderApprovalRequest(
     const actions = document.createElement("span");
     actions.className = "toolApprovalActions";
     const respond = (approved: boolean): void => {
-        bar.classList.add("answered");
+        bar.classList.remove("destructive");
+        bar.classList.add("answered", approved ? "approved" : "denied");
         label.textContent = approved ? "Approved" : "Denied";
         actions.textContent = "";
         postMessage({ type: "approval-response", toolId, approved });

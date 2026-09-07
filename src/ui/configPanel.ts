@@ -15,15 +15,9 @@ import { buildConfigState } from "./configState";
 export type { ConfigPanelDeps, ConfigMessage, ConfigHandlerCtx } from "./configTypes";
 
 /**
- * Dynamic configuration surface: a reusable webview panel that lists the local
- * vendor-neutral agent knowledge (~/.symposium/repo), lets the user edit/test
- * backends, and shows the sync/health of the sufficit-ai memory hub. All
- * reads/writes go through the SymposiumApi facade so the panel and the remote
- * bridge stay in lock-step.
- *
- * The giant `onMessage` switch is split across three sibling handler modules
- * (compression / backends / mcp); this class keeps the small/frequent cases and
- * the shared state machinery.
+ * Reusable settings panel for local knowledge, backends and hub health.
+ * The SymposiumApi facade coordinates shared data with the remote bridge;
+ * sibling handlers own specialized settings, while this class owns panel state.
  */
 export class ConfigPanel {
     private static current: ConfigPanel | undefined;
@@ -196,7 +190,6 @@ export class ConfigPanel {
                 return;
             case "set-pref":
                 if (typeof message.key === "string") {
-                    // Coerce by key: numbers for hops, booleans for autoApprove and voice options.
                     let value: unknown = message.value;
                     const policyPreference = contextPolicyPreference(message.key, message.value);
                     if (policyPreference) {
@@ -209,6 +202,14 @@ export class ConfigPanel {
                         message.key.endsWith("turnRetrySilenceMinutes")
                     ) {
                         value = Math.max(0, Number(message.value) || 0);
+                    } else if (message.key.endsWith("transientRetryLimit")) {
+                        const parsed = Number(message.value);
+                        value = [0, 2, 3, 5].includes(parsed) ? parsed : 3;
+                    } else if (message.key.endsWith("transientRetryAfterToolActivity")) {
+                        value = message.value === "true";
+                    } else if (message.key.endsWith("retryInitialDelayMilliseconds")) {
+                        const parsed = Number(message.value);
+                        value = [1_000, 2_000, 5_000].includes(parsed) ? parsed : 1_000;
                     } else if (message.key.endsWith("noProgressStop")) {
                         value = Math.max(0, Number(message.value) || 0);
                     } else if (message.key.endsWith("autoCompactAt")) {
@@ -219,7 +220,6 @@ export class ConfigPanel {
                         value = Math.max(0, Math.floor(Number(message.value) || 0));
                     } else if (message.key === "chat.tools.global.autoApprove") {
                         value = message.value === "true";
-                        // optIn must be on for the global flag to take effect.
                         await vscode.workspace
                             .getConfiguration()
                             .update(

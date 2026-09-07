@@ -14,6 +14,9 @@ import { createSystemNotice } from "./systemNotice";
 import { t } from "./i18n";
 import { presentTurnError } from "../errorPresentation";
 import { reasoningDefault, reasoningValue } from "./models";
+import type { TransientRetryNotice } from "../../adapters/events";
+import { renderTransientRetryNotice } from "./retryStatusNotice";
+import { appendGatedRetry } from "./retryGate";
 export { renderThinkBlock, streamThinkingDelta } from "./thinking";
 
 // Tracks the Retry bar for the most recent retry click, so it can be
@@ -39,14 +42,21 @@ export function resolvePendingRetry() {
 // that is no longer the last thing that happened (see renderStream.ts's
 // neutralizeSupersededErrors) — its Retry button is omitted, since retrying
 // it now would rewind past everything that already happened after it.
-export function renderError(message: string, historical = false, retryable = false): void {
+export function renderError(
+    message: string,
+    historical = false,
+    retryable = false,
+    retryAt?: number,
+    turnId?: string,
+): void {
     const stick = nearBottom();
     endToolGroup();
     endStream();
     removeDuplicateAssistantError(message);
-    const presentation = presentTurnError(message, retryable);
+    const presentation = presentTurnError(message, retryable, retryAt);
     const el = createSystemNotice(presentation.summary, "error");
     el.classList.add("turnError");
+    if (turnId) el.dataset.turnId = turnId;
     el.dataset.errorStatus = /\bHTTP\s+(\d{3})\b/i.exec(presentation.detail)?.[1] || "unknown";
     if (presentation.detail !== presentation.summary) {
         const content = el.querySelector(".statusNoticeContent");
@@ -67,6 +77,7 @@ export function renderError(message: string, historical = false, retryable = fal
         bar.className = "errActions";
         if (retryable === true) {
             const retry = document.createElement("button");
+            retry.type = "button";
             retry.className = "retryBtn errBtn";
             retry.appendChild(svgIcon("history"));
             retry.appendChild(document.createTextNode(" Retry"));
@@ -76,7 +87,10 @@ export function renderError(message: string, historical = false, retryable = fal
                     type: "retry-last-message",
                     index: lastUser.idx,
                     text: lastUser.text,
-                    errorMessage: message,
+                    // Do not send an entire gateway maintenance page back as
+                    // continuity context when the user retries manually.
+                    errorMessage: presentation.detail,
+                    retryAt,
                 });
                 if (!busy) {
                     setBusy(true);
@@ -88,10 +102,11 @@ export function renderError(message: string, historical = false, retryable = fal
                 retry.appendChild(document.createTextNode(" Retrying…"));
                 pendingRetryBar = bar;
             });
-            bar.appendChild(retry);
+            appendGatedRetry(bar, retry, retryAt);
         }
 
         const edit = document.createElement("button");
+        edit.type = "button";
         edit.className = "retryBtn errBtn";
         edit.appendChild(svgIcon("edit"));
         edit.appendChild(document.createTextNode(" Edit"));
@@ -196,6 +211,7 @@ export function renderStatusNotice(
     anchorIndex?: number,
     severity: "info" | "warning" | "error" = "info",
     action?: "continue-tool-loop",
+    recovery?: TransientRetryNotice,
 ): HTMLDivElement {
     const stick = nearBottom();
     // Close any open tool-action group too: a notice fired mid tool-loop
@@ -203,6 +219,13 @@ export function renderStatusNotice(
     // silently re-attach to the group that was open before this notice.
     endToolGroup();
     endStream();
+    if (recovery) {
+        const rendered = renderTransientRetryNotice(recovery);
+        if (rendered.created) log.appendChild(rendered.element);
+        refreshEmpty();
+        autoScroll(stick);
+        return rendered.element;
+    }
     const noticeAction =
         action === "continue-tool-loop"
             ? {

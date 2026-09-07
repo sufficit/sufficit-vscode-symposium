@@ -1,5 +1,6 @@
 import { buildTurnTools } from "./turnTools";
 import type { TurnRunnerDeps } from "./turnRunnerDeps";
+import { isTransientErrorMessage } from "../transientError";
 
 export interface TurnAccess {
     loginToken: string | null;
@@ -24,7 +25,19 @@ export async function prepareTurnAccess(
         });
         return undefined;
     }
-    if (!deps.model()) await deps.discoverModels(loginToken).catch(() => undefined);
+    if (!deps.model()) {
+        try {
+            await deps.discoverModels(loginToken);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            deps.emit({
+                kind: "error",
+                message,
+                retryable: isTransientErrorMessage(message),
+            });
+            return undefined;
+        }
+    }
     if (!deps.model()) {
         deps.emit({
             kind: "error",

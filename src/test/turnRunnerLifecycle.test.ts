@@ -123,6 +123,40 @@ test("an unexpected provider stream drop becomes a retryable error", async () =>
     }
 });
 
+test("a fetch failure during access preparation becomes a retryable error", async () => {
+    const events: Array<{ kind: string; message?: string; retryable?: boolean }> = [];
+    const runner = new TurnRunner({
+        ...deps((event) => events.push(event)),
+        authToken: () => Promise.reject(new TypeError("fetch failed")),
+    });
+
+    await runner.run();
+
+    const error = events.find((event) => event.kind === "error");
+    assert.ok(error);
+    assert.equal(error.retryable, true);
+    assert.equal(error.message, "fetch failed");
+    assert.equal(events.at(-1)?.kind, "turn-end");
+});
+
+test("a fetch failure during model discovery stays retryable", async () => {
+    const events: Array<{ kind: string; message?: string; retryable?: boolean }> = [];
+    const runnerDeps = deps((event) => events.push(event));
+    const runner = new TurnRunner({
+        ...runnerDeps,
+        model: () => "",
+        discoverModels: () => Promise.reject(new TypeError("fetch failed")),
+    });
+
+    await runner.run();
+
+    const error = events.find((event) => event.kind === "error");
+    assert.ok(error);
+    assert.equal(error.retryable, true);
+    assert.equal(error.message, "fetch failed");
+    assert.equal(events.at(-1)?.kind, "turn-end");
+});
+
 test("main Sufficit turn sends session provenance in body and trusted header", async () => {
     const originalFetch = globalThis.fetch;
     let capturedBody: Record<string, unknown> | undefined;

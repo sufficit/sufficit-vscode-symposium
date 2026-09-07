@@ -62,6 +62,7 @@ export type WebviewToHost =
     | { type: "ready" }
     | { type: "webview-error"; message: string }
     | { type: "set-tools"; tools: unknown[] }
+    | { type: "set-permission"; permission: string }
     | { type: "attach-browser-page" }
     | { type: "account-login" }
     | { type: "account-logout" }
@@ -70,10 +71,17 @@ export type WebviewToHost =
     | { type: "open-active-session" }
     | { type: "open-session-editor"; sessionId: string; backend: string }
     | { type: "paste-image"; mime: string; data: string }
-    | { type: "stt-transcribe"; data: string; mime: string }
-    | { type: "voice-start"; vad?: boolean }
-    | { type: "voice-stop" }
-    | { type: "voice-cancel" }
+    | {
+          type: "stt-transcribe";
+          data: string;
+          mime: string;
+          captureId?: string;
+          purpose?: "preview" | "final";
+      }
+    | { type: "voice-start"; captureId: string; vad?: boolean }
+    | { type: "voice-preview"; captureId: string }
+    | { type: "voice-stop"; captureId: string }
+    | { type: "voice-cancel"; captureId?: string }
     | { type: "drop-file"; name?: string; mime?: string; data?: string }
     | { type: "drop-files"; files: DroppedFilePayload[] }
     | { type: "drop-uris"; uris: string[] }
@@ -97,11 +105,18 @@ export type WebviewToHost =
     | { type: "pick-agent"; backend: string }
     | { type: "install-agent"; backend: string }
     | { type: "restart-from-message"; index: number }
-    | { type: "retry-last-message"; index: number; text: string; errorMessage?: string }
+    | {
+          type: "retry-last-message";
+          index: number;
+          text: string;
+          errorMessage?: string;
+          retryAt?: number;
+      }
     | { type: "load-more-history" }
     | { type: "open-settings" }
     | { type: "inspect"; target: "context" | "request" }
     | { type: "open-file"; path: string }
+    | { type: "open-link"; url: string }
     | { type: "resolve-markdown-image"; id: string; path: string }
     | { type: "reorder-pinned"; ids?: string[] }
     | { type: "file-diff"; path: string }
@@ -196,8 +211,10 @@ export const HOST_MESSAGE_TYPES = [
     "toast",
     "user",
     "voice-recording",
+    "voice-preview-result",
     "voice-silence",
     "voice-speech",
+    "voice-status",
 ] as const;
 
 export type HostMessageType = (typeof HOST_MESSAGE_TYPES)[number];

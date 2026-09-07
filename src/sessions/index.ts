@@ -3,6 +3,8 @@ import { AgentAdapter, SessionInfo } from "../adapters/types";
 import { createSessionRepository } from "./repositoryFactory";
 import { SessionRepository, StoredSession } from "./repository";
 
+export * from "./feature";
+
 export interface SessionIndexOptions {
     storageDir: string;
     adapters: readonly AgentAdapter[];
