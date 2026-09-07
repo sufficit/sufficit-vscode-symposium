@@ -230,7 +230,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
 
     /**
      * Compacts right now if symposium.openai.autoCompactOnTasksComplete
-     * (default true) is on — called once a task_complete/TaskUpdate result
+     * (default false) is on — called once a task_complete/TaskUpdate result
      * reports zero remaining tasks. A different trigger than the compactor's
      * own context-window-percentage check: "the unit of work just finished"
      * rather than "the prompt got big".

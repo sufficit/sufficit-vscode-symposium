@@ -8,16 +8,18 @@ import {
     renormalizeSummary,
 } from "../adapters/openai/compactor";
 import type { ChatMessage } from "../adapters/openai/types";
+import * as ledger from "../ledger";
 
 test("compaction uses configured previews and keeps historical summary out of privileged roles", async (t) => {
-    const ledger = require("../ledger") as typeof import("../ledger");
     t.mock.method(ledger, "appendMessage", () => undefined);
-    t.mock.method(ledger, "commitTurn", async () => undefined);
+    t.mock.method(ledger, "commitTurn", () => Promise.resolve());
     let request = "";
-    t.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+    t.mock.method(globalThis, "fetch", (_url: unknown, init: RequestInit) => {
         request = String(init.body);
-        return new Response(
-            JSON.stringify({ choices: [{ message: { content: "Past investigation only." } }] }),
+        return Promise.resolve(
+            new Response(
+                JSON.stringify({ choices: [{ message: { content: "Past investigation only." } }] }),
+            ),
         );
     });
     const messages: ChatMessage[] = [
@@ -49,7 +51,7 @@ test("compaction uses configured previews and keeps historical summary out of pr
         getLastInputTokens: () => 0,
         model: () => "test",
         contextWindow: () => 100000,
-        authToken: async () => null,
+        authToken: () => Promise.resolve(null),
         headers: () => ({}),
         emit: () => undefined,
         safePersist: () => undefined,

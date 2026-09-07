@@ -1,9 +1,53 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizeContextPolicy, contextPolicyDefaults } from "../adapters/openai/contextPolicy";
+import {
+    normalizeContextPolicy,
+    contextPolicyDefaults,
+    selectRequestHistory,
+} from "../adapters/openai/contextPolicy";
 import { windowMessages } from "../adapters/openai/requestWindow";
 import { dumpToText, type SessionDump } from "../sessionReader";
-import type { ChatMessage } from "../adapters/openai/types";
+import type { ChatMessage, OpenAIAdapterConfig } from "../adapters/openai/types";
+
+test("omission notices identify recoverable history and honor provider roles and opt-out", () => {
+    const messages: ChatMessage[] = [
+        { role: "user", content: "old request" },
+        { role: "assistant", content: "old answer" },
+        { role: "user", content: "cancel the old request" },
+    ];
+    const original = structuredClone(messages);
+    const cfg: OpenAIAdapterConfig = {
+        api: "chat",
+        baseUrl: "https://example.test",
+        model: "test",
+        models: [],
+        headers: {},
+        maxHistoryMessages: 1,
+    };
+    const deps = { cfg, sessionId: "original-session" };
+    const request = selectRequestHistory(messages, 3, deps);
+    assert.equal(request[0].role, "developer");
+    assert.match(String(request[0].content), /1 of 3.*original-session.*read_session/);
+    assert.match(String(request[0].content), /cancellations still apply/);
+    assert.equal(request[1].content, "cancel the old request");
+    assert.equal(
+        selectRequestHistory(messages, 3, {
+            ...deps,
+            cfg: { ...cfg, supportsDeveloperRole: false },
+        })[0].role,
+        "system",
+    );
+    const disabled = selectRequestHistory(messages, 3, {
+        ...deps,
+        cfg: { ...cfg, contextPolicy: { historyNotice: false } },
+    });
+    assert.deepEqual(disabled, [messages[2]]);
+    assert.deepEqual(
+        selectRequestHistory(messages, 3, { ...deps, cfg: { ...cfg, maxHistoryMessages: 0 } }),
+        messages,
+    );
+    assert.deepEqual(messages, original);
+});
 
 test("invalid context settings fall back; valid custom settings survive", () => {
     assert.deepEqual(

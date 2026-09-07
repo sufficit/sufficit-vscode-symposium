@@ -26,7 +26,10 @@ Entrega na branch `feat/context-history-settings`, para revisão, sem publicaç�
 ## Validação
 
 - `npm run compile`: TypeScript, webview, PWA e bundle aprovados.
-- `npx tsc -p .` e `npm run test:unit`: 656 testes aprovados, zero falhas.
+- `npx tsc -p .` e `npm run test:unit`: 658 testes aprovados, zero falhas.
+- `COVERAGE_BASE_SHA=4db304d6711ddda68b04baace7857074f7180dc1 npm run verify`:
+  lint, formatação, typechecks, testes/cobertura, guardrails e build aprovados.
+  Cobertura das linhas alteradas: 97,26% (142/146; mínimo 85%).
 - `npm run check:size`: fontes com até 400 linhas.
 - `npm run check:configscript`: scripts válidos em EN/PT-BR.
 - `git diff --check`: sem problemas de whitespace.
@@ -37,6 +40,12 @@ Entrega na branch `feat/context-history-settings`, para revisão, sem publicaç�
 O teste antigo que esperava remover a última mensagem do usuário foi atualizado
 para o novo contrato, mantendo a verificação dos pares de ferramenta. Testes novos
 cobrem valores inválidos, configuração dinâmica, preservação, resumo e paginação.
+
+A primeira CI remota apontou quatro violações de lint nos mocks do compactador;
+foram corrigidas com import estático e promises explícitas. A checagem com a base
+da PR também revelou cobertura insuficiente; testes do aviso de omissão, leitura
+configurável e preferências de adaptadores personalizados fecharam essa lacuna.
+Entrega: [PR #53](https://github.com/sufficit/sufficit-vscode-symposium/pull/53).
 
 Não houve instalação da extensão. A consulta depende do conteúdo efetivamente
 persistido; não recupera truncamentos antigos. Orçamento total por tokens, busca
