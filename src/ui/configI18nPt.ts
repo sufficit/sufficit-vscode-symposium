@@ -85,7 +85,7 @@ export const CONFIG_PT: Dict = {
         "Não foi possível iniciar — login ou o backend Sufficit AI mudou desde que este painel abriu. Reabra o Config e tente de novo.",
     "config.voice.sufficitDiagnose.needsLogin":
         "Faça login na Sufficit AI na aba Sufficit pra usar isso — precisa de uma sessão de backend Sufficit AI ativa.",
-    "config.tab.compaction": "Compactação",
+    "config.tab.compaction": "Contexto e histórico",
     "config.tab.sync": "Sincronização",
     "config.tab.sufficit": "Sufficit",
     "config.sufficit.section.auth": "Autenticação",

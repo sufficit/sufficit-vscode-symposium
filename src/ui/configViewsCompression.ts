@@ -7,15 +7,28 @@
  * esc()/t()/state/vscode.
  */
 export const configViewsCompression = `
+    function bindContextInputs(main) {
+        main.querySelectorAll("input.pref[type=number]").forEach(el => {
+            el.onchange = () => {
+                if (el.checkValidity()) vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
+                else el.reportValidity();
+            };
+        });
+    }
     function compressionView() {
         const presets = (state && state.compression && state.compression.presets) || [];
         const defaultPresetId = (state && state.compression && state.compression.defaultPresetId) || "none";
         const p = (state && state.prefs) || {};
 
-        const sel = (key, value, opts) =>
-            '<select class="pref" data-key="' + esc(key) + '">' +
+        const sel = (key, value, opts, label) =>
+            '<select class="pref"' + (label ? ' aria-label="' + esc(label) + '"' : '') + ' data-key="' + esc(key) + '">' +
             opts.map(o => '<option value="' + esc(o.v) + '"' + (o.v === value ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") +
             "</select>";
+        const numberInput = (key, value, min, label) =>
+            '<input class="pref" type="number" min="' + min + '" step="1" aria-label="' + esc(label) + '" data-key="' + esc(key) + '" value="' + esc(value) + '">';
+        const policy = p.contextPolicy || {};
+        const policyNumber = (key, fallback) => item(t("config.context." + key), t("config.context." + key + ".desc"),
+            numberInput("symposium.openai.contextPolicy." + key, policy[key] == null ? fallback : policy[key], 1, t("config.context." + key)));
         const item = (name, desc, ctl) =>
             '<div class="pref-item"><div class="meta">' +
                 '<span class="name">' + esc(name) + '</span>' +
@@ -52,8 +65,8 @@ export const configViewsCompression = `
         };
 
         // Auto-compaction settings (merged from old compaction tab)
-        const compactAt = String(p.autoCompactAt != null ? p.autoCompactAt : 0.8);
-        const compactOnTasksComplete = String(p.autoCompactOnTasksComplete !== false);
+        const compactAt = String(p.autoCompactAt != null ? p.autoCompactAt : 0);
+        const compactOnTasksComplete = String(p.autoCompactOnTasksComplete === true);
         const histMsgs = String(p.maxHistoryMessages != null ? p.maxHistoryMessages : 40);
         const timeGapNotice = String(p.timeGapNotice != null ? p.timeGapNotice : "5m");
 
@@ -70,9 +83,17 @@ export const configViewsCompression = `
             ) +
             section(t("config.compaction.section.history"),
                 item(t("config.compaction.maxHistoryMessages.name"), t("config.compaction.maxHistoryMessages.desc"),
-                    sel("symposium.openai.maxHistoryMessages", histMsgs,
-                        [{ v: "0", l: t("config.value.unlimited") }, { v: "20", l: t("config.messages.20") }, { v: "40", l: t("config.messages.40") },
-                         { v: "60", l: t("config.messages.60") }, { v: "100", l: t("config.messages.100") }, { v: "200", l: t("config.messages.200") }]))
+                    numberInput("symposium.openai.maxHistoryMessages", histMsgs, 0, t("config.compaction.maxHistoryMessages.name"))) +
+                item(t("config.context.historyNotice"), t("config.context.historyNotice.desc"),
+                    sel("symposium.openai.contextPolicy.historyNotice", String(policy.historyNotice !== false),
+                        [{ v: "true", l: t("config.value.enabled") }, { v: "false", l: t("config.value.disabled") }], t("config.context.historyNotice"))) +
+                policyNumber("readMaxCharacters", 24000)
+            ) +
+            section(t("config.context.summary"),
+                policyNumber("compactionTailMessages", 6) +
+                policyNumber("summaryTargetTokens", 1500) +
+                policyNumber("summaryToolCharacters", 400) +
+                policyNumber("summaryArgumentCharacters", 80)
             ) +
             section(t("config.compaction.section.timeGap"),
                 item(t("config.compaction.timeGapNotice.name"), t("config.compaction.timeGapNotice.desc"),

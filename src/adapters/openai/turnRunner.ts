@@ -1,10 +1,11 @@
+import { selectRequestHistory } from "./contextPolicy";
 import { ChatMessage } from "./types";
 import { isTransientErrorMessage } from "../transientError";
 import { filterTools } from "../aiTools/defs";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
 import { consumeStream } from "./streamConsume";
-import { windowMessages, isWindowTruncated } from "./requestWindow";
+import { isWindowTruncated } from "./requestWindow";
 import { httpFailureEvent, preflightRequest } from "./turnPreflight";
 import { applyInjectedMessages } from "./turnInjection";
 import { stripSourcePrefix } from "./toolMerge";
@@ -106,10 +107,7 @@ export class TurnRunner {
                 applyInjectedMessages(this.d, messages, logicalTurnId);
                 this.abort = new AbortController();
                 const currentMessages = requestMessages();
-                const windowed = windowMessages(
-                    currentMessages,
-                    this.d.cfg.maxHistoryMessages ?? 40,
-                );
+                const windowed = selectRequestHistory(currentMessages, messages.length, this.d);
                 const anchor =
                     isWindowTruncated(messages, this.d.cfg.maxHistoryMessages ?? 40) || hop >= 3
                         ? this.d.followupAnchor()

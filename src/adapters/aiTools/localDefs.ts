@@ -194,13 +194,20 @@ export const LOCAL_TOOLS: OpenAITool[] = [
                         type: "string",
                         description: "Session GUID. Omit to read the current session.",
                     },
+                    char_offset: {
+                        type: "integer",
+                        minimum: 0,
+                        description:
+                            "Read forward from this character offset in the transcript body (overrides tail). Start at 0; use next_char_offset from the response to recover every page.",
+                    },
                     tail: {
                         type: "integer",
                         description: "Return only the last N messages (default: all).",
                     },
                     max_chars: {
                         type: "integer",
-                        description: "Cap on characters returned (default 24000).",
+                        description:
+                            "Cap on characters returned (default: configured context reading limit).",
                     },
                 },
                 required: [],

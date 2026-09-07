@@ -31,7 +31,7 @@ export interface ContextWindowAssessment {
  * keeps the full array for persistence/ledger.
  */
 export function windowMessages(messages: ChatMessage[], max: number): ChatMessage[] {
-    if (max === 0) {
+    if (!Number.isSafeInteger(max) || max <= 0) {
         return messages;
     }
     const firstUserIdx = messages.findIndex((m) => m.role === "user");
@@ -47,14 +47,16 @@ export function windowMessages(messages: ChatMessage[], max: number): ChatMessag
     // tool result(s) as one structural unit. A plain tail slice can start on a
     // role:"tool" message and orphan it from the assistant call that created
     // it, so the window may grow a little past `max` to keep that unit valid.
-    const tailStart = expandStartToToolBoundary(conv, conv.length - max);
+    const lastUser =
+        conv.length - 1 - [...conv].reverse().findIndex((message) => message.role === "user");
+    const tailStart = expandStartToToolBoundary(conv, Math.min(conv.length - max, lastUser));
     return [...prefix, ...conv.slice(tailStart)];
 }
 
 /** True when the sliding window is dropping older turns (so the raw task /
  *  earlier steps are no longer in the request — when the anchor matters). */
 export function isWindowTruncated(messages: ChatMessage[], max: number): boolean {
-    if (max === 0) {
+    if (!Number.isSafeInteger(max) || max <= 0) {
         return false;
     }
     const firstUserIdx = messages.findIndex((m) => m.role === "user");

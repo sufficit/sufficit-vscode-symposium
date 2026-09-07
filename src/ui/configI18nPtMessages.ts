@@ -4,6 +4,26 @@
 type Dict = Record<string, string>;
 
 export const CONFIG_PT_MESSAGES: Dict = {
+    "config.context.summary": "Resumo opcional — limites",
+    "config.context.historyNotice": "Avisar a IA sobre histórico omitido",
+    "config.context.historyNotice.desc":
+        "Informa o recorte enviado e como consultar o original. O registro completo é preservado. Opções de envio se aplicam aos backends de API; CLIs controlam seu próprio contexto.",
+    "config.context.readMaxCharacters": "Caracteres por consulta ao histórico",
+    "config.context.readMaxCharacters.desc":
+        "Tamanho padrão de cada página retornada por read_session. A ferramenta pode solicitar outro tamanho.",
+    "config.context.compactionTailMessages": "Mensagens mantidas após resumo",
+    "config.context.compactionTailMessages.desc":
+        "Cauda preservada literalmente ao usar compactação. Pares de ferramentas e última mensagem do usuário podem ampliar este limite.",
+    "config.context.summaryTargetTokens": "Meta de tokens do resumo",
+    "config.context.summaryTargetTokens.desc":
+        "Tamanho solicitado ao resumidor; é uma orientação, não um limite rígido de geração.",
+    "config.context.summaryToolCharacters": "Caracteres de resultado no resumo",
+    "config.context.summaryToolCharacters.desc":
+        "Prévia de cada resultado enviada ao resumidor. O resultado original continua no histórico.",
+    "config.context.summaryArgumentCharacters": "Caracteres de argumentos no resumo",
+    "config.context.summaryArgumentCharacters.desc":
+        "Prévia dos argumentos de cada chamada enviada ao resumidor.",
+
     "msg.addMcp.transportPlaceholder": "Selecione o transporte do MCP",
     "msg.addMcp.transport.stdio": "stdio — processo local (comando + argumentos)",
     "msg.addMcp.transport.sse": "SSE — servidor remoto (URL)",
@@ -212,11 +232,11 @@ export const CONFIG_PT_MESSAGES: Dict = {
     "config.compaction.section.auto": "Compactação automática",
     "config.compaction.autoCompactAt.name": "Limiar de compactação automática",
     "config.compaction.autoCompactAt.desc":
-        "Resume os turnos mais antigos em uma nota quando uma requisição atinge esta fração da janela de contexto do modelo. A transcrição completa permanece no registro sem perdas (recuperável via read_session). Desativado = apenas /compact manual.",
+        "Resume turnos antigos nesta fração da janela de contexto. Consulte o original com read_session. Desativado = apenas /compact manual.",
     "config.compaction.autoCompactOnTasksComplete.name":
         "Compactar quando todas as tarefas terminarem",
     "config.compaction.autoCompactOnTasksComplete.desc":
-        "Compacta automaticamente assim que a última tarefa pendente da sessão é concluída (task_complete/TaskUpdate reporta zero pendentes) — um limite natural de fim de trabalho, independente do limiar de janela de contexto acima.",
+        "Resume quando a última tarefa pendente termina, independentemente do limiar acima.",
     "config.value.disabled": "Desativado",
     "config.value.yes": "Sim",
     "config.value.no": "Não",
@@ -229,7 +249,7 @@ export const CONFIG_PT_MESSAGES: Dict = {
     "config.compaction.section.history": "Janela de histórico",
     "config.compaction.maxHistoryMessages.name": "Máximo de mensagens no histórico",
     "config.compaction.maxHistoryMessages.desc":
-        "Máximo de mensagens recentes da conversa enviadas por requisição aos backends compatíveis com OpenAI. Prompts de sistema/desenvolvedor são mantidos à parte. Reduza se sessões longas com muitas ferramentas atingirem os limites de contexto do provedor. Ilimitado = sem corte local.",
+        "Mensagens recentes enviadas às APIs; prompts de sistema/desenvolvedor ficam à parte. A última mensagem do usuário e pares de ferramentas podem exceder este teto. 0 = sem corte local.",
     "config.messages.20": "20 mensagens",
     "config.messages.40": "40 mensagens",
     "config.messages.60": "60 mensagens",

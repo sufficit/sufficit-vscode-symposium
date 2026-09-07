@@ -1,3 +1,4 @@
+import { normalizeContextPolicy } from "../adapters/openai/contextPolicy";
 import * as vscode from "vscode";
 import { readToolCredential } from "../config/agentFrontmatter";
 import { removeLegacySufficitToolImports } from "../config/importResources";
@@ -84,8 +85,9 @@ export async function buildConfigState(deps: ConfigPanelDeps): Promise<unknown> 
             turnRetrySilenceMinutes: root.get<number>("turnRetrySilenceMinutes", 15),
             maxToolHops: openai.get<number>("maxToolHops", 50),
             noProgressStop: openai.get<number>("noProgressStop", 0),
-            autoCompactAt: openai.get<number>("autoCompactAt", 0.8),
-            autoCompactOnTasksComplete: openai.get<boolean>("autoCompactOnTasksComplete", true),
+            contextPolicy: normalizeContextPolicy(openai.get("contextPolicy")),
+            autoCompactAt: openai.get<number>("autoCompactAt", 0),
+            autoCompactOnTasksComplete: openai.get<boolean>("autoCompactOnTasksComplete", false),
             maxHistoryMessages: openai.get<number>("maxHistoryMessages", 40),
             timeGapNotice: openai.get<string>("timeGapNotice", "5m"),
             devMode: chat.get<boolean>("devMode", false),

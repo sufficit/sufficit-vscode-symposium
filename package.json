@@ -297,18 +297,19 @@
                 },
                 "symposium.openai.autoCompactAt": {
                     "type": "number",
-                    "default": 0.8,
+                    "default": 0,
                     "description": "Auto-compact the conversation when a request reaches this fraction (0–1) of the model's context window: older turns are summarized into one note (full transcript stays in the lossless ledger; tool outputs recoverable via read_session) so the live context shrinks. 0 disables auto-compaction (manual /compact still works)."
                 },
                 "symposium.openai.autoCompactOnTasksComplete": {
                     "type": "boolean",
-                    "default": true,
+                    "default": false,
                     "description": "Auto-compact the conversation the moment the last pending session task is completed (task_complete/TaskUpdate reports zero remaining) — a natural end-of-work boundary, independent of the context-window percentage above."
                 },
                 "symposium.openai.maxHistoryMessages": {
-                    "type": "number",
+                    "type": "integer",
                     "default": 40,
-                    "description": "Max recent conversation messages sent to OpenAI-compatible backends per request. System/developer prompts are preserved separately. Lower this when long tool-heavy sessions hit provider context limits; 0 disables local trimming."
+                    "description": "Max recent conversation messages sent to OpenAI-compatible backends per request. System/developer prompts are preserved separately. Lower this when long tool-heavy sessions hit provider context limits; 0 disables local trimming.",
+                    "minimum": 0
                 },
                 "symposium.openai.timeGapNotice": {
                     "type": "string",
@@ -1026,6 +1027,50 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Cache session metadata in memory for instant startup. Shows RAM usage in Preferences."
+                },
+                "symposium.openai.contextPolicy": {
+                    "type": "object",
+                    "default": {
+                        "historyNotice": true,
+                        "compactionTailMessages": 6,
+                        "summaryTargetTokens": 1500,
+                        "summaryToolCharacters": 400,
+                        "summaryArgumentCharacters": 80,
+                        "readMaxCharacters": 24000
+                    },
+                    "additionalProperties": false,
+                    "description": "Context selection and optional summary policy. Never changes saved ledger history. Applies to API backends; CLI backends manage their own context.",
+                    "properties": {
+                        "historyNotice": {
+                            "type": "boolean",
+                            "default": true
+                        },
+                        "compactionTailMessages": {
+                            "type": "integer",
+                            "default": 6,
+                            "minimum": 1
+                        },
+                        "summaryTargetTokens": {
+                            "type": "integer",
+                            "default": 1500,
+                            "minimum": 1
+                        },
+                        "summaryToolCharacters": {
+                            "type": "integer",
+                            "default": 400,
+                            "minimum": 1
+                        },
+                        "summaryArgumentCharacters": {
+                            "type": "integer",
+                            "default": 80,
+                            "minimum": 1
+                        },
+                        "readMaxCharacters": {
+                            "type": "integer",
+                            "default": 24000,
+                            "minimum": 1
+                        }
+                    }
                 }
             }
         }

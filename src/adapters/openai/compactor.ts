@@ -1,3 +1,4 @@
+import { normalizeContextPolicy } from "./contextPolicy";
 import { ChatMessage, OpenAIAdapterConfig } from "./types";
 import { contentText, toResponsesInput } from "./transform";
 import { expandStartToToolBoundary } from "./toolHistory";
@@ -171,7 +172,9 @@ export class Compactor {
         // reads as a system event, not as something the model said.
         const note = (t: string) => this.d.emit({ kind: "status-notice", text: t });
         try {
-            const keepTurns = 6;
+            const keepTurns = normalizeContextPolicy(
+                this.d.cfg.contextPolicy,
+            ).compactionTailMessages;
             const messages = this.d.getMessages();
             const firstUserIdx = messages.findIndex((m) => m.role === "user");
             if (firstUserIdx === -1) {
@@ -188,8 +191,8 @@ export class Compactor {
                 }
                 return false;
             }
-            // Idempotent: a prior summary lives in the prefix region (developer/
-            // system, before the first user msg). Pull it out and re-fold it into
+            // Idempotent: a prior summary lives before the first user message.
+            // Pull it out and re-fold it into
             // the new summary instead of letting summaries stack. Tolerant of both
             // the legacy prefix ("[Summary so far ...") and the current reference-
             // only prefix, so sessions already compacted under the old wording are
@@ -215,11 +218,7 @@ export class Compactor {
                 }
                 return false; // fail-safe
             }
-            // Hardening: renormalize the model's summary so an imperative
-            // "next actions" / "resume exactly" phrasing or a disallowed heading
-            // can never reach the model as authoritative context. The summary is
-            // REFERENCE ONLY by contract; this enforces it regardless of what the
-            // model wrote.
+            // Normalize historical headings; role separation below keeps summary text non-privileged.
             const summary = renormalizeSummary(raw);
             // Preserve at least the last real user message in the verbatim tail:
             // the latest user message is the anchor of the active task, so it must
@@ -230,13 +229,9 @@ export class Compactor {
                     tail.unshift(lastUser);
                 }
             }
-            // The summary is REFERENCE ONLY (historical background), so it must
-            // NOT use the high-authority `developer` channel that would outrank the
-            // latest real user message on providers that weight developer above
-            // user. Always use `system` — a low-authority context channel — so the
-            // text's "reference only" contract and the role channel agree (defect 3.1).
+            // Historical content has no instruction authority. Keep trusted prompts separate.
             const synthetic: ChatMessage = {
-                role: "system",
+                role: "assistant",
                 content: `${SUMMARY_PREFIX}${SUMMARY_BODY_INTRO}\n\n${summary}`,
             };
             const folded = middle.length;
@@ -302,7 +297,7 @@ export class Compactor {
                 "## Blockers — unresolved problems encountered\n" +
                 "## Decisions — choices made and their rationale\n" +
                 "## Relevant Files — paths touched or relevant\n\n" +
-                "Write a dense markdown summary (≤ ~1500 tokens). Anchor 'Historical Task Snapshot' in the LAST real user message of the span being summarized.";
+                `Write a dense markdown summary (≤ ~${normalizeContextPolicy(this.d.cfg.contextPolicy).summaryTargetTokens} tokens). Anchor 'Historical Task Snapshot' in the LAST real user message of the span being summarized.`;
             const sys = this.d.cfg.supportsDeveloperRole !== false ? "developer" : "system";
             const reqMessages: ChatMessage[] = [
                 { role: sys as ChatMessage["role"], content: instruction },
@@ -382,10 +377,15 @@ export class Compactor {
         for (const m of messages) {
             const c = contentText(m.content);
             if (m.role === "tool") {
-                out.push(`[tool result${m.name ? " " + m.name : ""}] ${c.slice(0, 400)}`);
+                out.push(
+                    `[tool result${m.name ? " " + m.name : ""}] ${c.slice(0, normalizeContextPolicy(this.d.cfg.contextPolicy).summaryToolCharacters)}`,
+                );
             } else if (m.role === "assistant") {
                 const calls = (m.tool_calls ?? [])
-                    .map((t) => `${t.function.name}(${(t.function.arguments || "").slice(0, 80)})`)
+                    .map(
+                        (t) =>
+                            `${t.function.name}(${(t.function.arguments || "").slice(0, normalizeContextPolicy(this.d.cfg.contextPolicy).summaryArgumentCharacters)})`,
+                    )
                     .join(", ");
                 out.push(`[assistant] ${c}${calls ? "\n  tools: " + calls : ""}`);
             } else {

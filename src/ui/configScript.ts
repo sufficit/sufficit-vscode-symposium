@@ -106,9 +106,9 @@ export function renderConfigScript(dict: Record<string, string>): string {
             main.querySelectorAll("select.pref").forEach(el => {
                 el.onchange = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
             });
-            // Free-text prefs (e.g. system instruction): save on blur / Ctrl+Enter.
+            bindContextInputs(main);
             main.querySelectorAll("textarea.pref-text").forEach(el => {
-                const save = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
+                const save = () => { if (el.checkValidity()) vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value }); else el.reportValidity(); };
                 el.onblur = save;
                 el.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); save(); } };
             });
@@ -141,7 +141,7 @@ export function renderConfigScript(dict: Record<string, string>): string {
                 el.onchange = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
             });
             main.querySelectorAll("input.pref-input").forEach(el => {
-                const save = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
+                const save = () => { if (el.checkValidity()) vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value }); else el.reportValidity(); };
                 el.onblur = save;
                 el.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } };
             });
@@ -286,7 +286,7 @@ export function renderConfigScript(dict: Record<string, string>): string {
         if (active === "sufficit") {
             main.innerHTML = page(sufficitView());
             main.querySelectorAll("textarea.pref-text").forEach(el => {
-                const save = () => vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value });
+                const save = () => { if (el.checkValidity()) vscode.postMessage({ type: "set-pref", key: el.getAttribute("data-key"), value: el.value }); else el.reportValidity(); };
                 el.onblur = save;
                 el.onkeydown = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); save(); } };
             });

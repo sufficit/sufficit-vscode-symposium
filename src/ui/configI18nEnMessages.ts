@@ -4,6 +4,26 @@
 type Dict = Record<string, string>;
 
 export const CONFIG_EN_MESSAGES: Dict = {
+    "config.context.summary": "Optional summary limits",
+    "config.context.historyNotice": "Tell the AI about omitted history",
+    "config.context.historyNotice.desc":
+        "Reports the selected window and how to recover the original. Full history remains stored. Sending options apply to API backends; CLIs manage their own context.",
+    "config.context.readMaxCharacters": "Characters per history read",
+    "config.context.readMaxCharacters.desc":
+        "Default page size returned by read_session. The tool can request a different size.",
+    "config.context.compactionTailMessages": "Messages retained after summary",
+    "config.context.compactionTailMessages.desc":
+        "Verbatim tail retained by compaction. Tool pairs and the latest user message can expand this limit.",
+    "config.context.summaryTargetTokens": "Summary token target",
+    "config.context.summaryTargetTokens.desc":
+        "Requested summary size; guidance rather than a hard generation limit.",
+    "config.context.summaryToolCharacters": "Tool result characters in summary",
+    "config.context.summaryToolCharacters.desc":
+        "Preview of each result sent to the summarizer. The original stays in history.",
+    "config.context.summaryArgumentCharacters": "Tool argument characters in summary",
+    "config.context.summaryArgumentCharacters.desc":
+        "Preview of each call’s arguments sent to the summarizer.",
+
     "msg.addMcp.transportPlaceholder": "Select the MCP transport",
     "msg.addMcp.transport.stdio": "stdio — local process (command + args)",
     "msg.addMcp.transport.sse": "SSE — remote server (URL)",
@@ -208,10 +228,10 @@ export const CONFIG_EN_MESSAGES: Dict = {
     "config.compaction.section.auto": "Auto-compaction",
     "config.compaction.autoCompactAt.name": "Auto-compact threshold",
     "config.compaction.autoCompactAt.desc":
-        "Summarize older turns into one note when a request reaches this fraction of the model's context window. The full transcript stays in the lossless ledger (recoverable via read_session). Disabled = only manual /compact.",
+        "Summarize older turns at this fraction of the context window. Recover the original with read_session. Disabled = manual /compact only.",
     "config.compaction.autoCompactOnTasksComplete.name": "Compact when all tasks are done",
     "config.compaction.autoCompactOnTasksComplete.desc":
-        "Auto-compact the moment the last pending session task is completed (task_complete/TaskUpdate reports zero remaining) — a natural end-of-work boundary, independent of the context-window threshold above.",
+        "Summarize when the last pending task finishes, regardless of the threshold above.",
     "config.value.enabled": "Enabled",
     "config.value.disabled": "Disabled",
     "config.value.yes": "Yes",
@@ -225,7 +245,7 @@ export const CONFIG_EN_MESSAGES: Dict = {
     "config.compaction.section.history": "History window",
     "config.compaction.maxHistoryMessages.name": "Max history messages",
     "config.compaction.maxHistoryMessages.desc":
-        "Max recent conversation messages sent per request to OpenAI-compatible backends. System/developer prompts are kept separately. Lower this if long tool-heavy sessions hit provider context limits. Unlimited = no local trimming.",
+        "Recent messages sent to API backends; system/developer prompts are separate. Latest user message and tool pairs may exceed this cap. 0 = no local trimming.",
     "config.messages.20": "20 messages",
     "config.messages.40": "40 messages",
     "config.messages.60": "60 messages",

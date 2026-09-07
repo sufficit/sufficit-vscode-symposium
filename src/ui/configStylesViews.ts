@@ -71,6 +71,7 @@ export const configStylesViews = /* css */ `
     .pref-item .name { font-weight: 600; display: block; margin-bottom: 3px; }
     .pref-item .desc { opacity: .68; font-size: .9em; line-height: 1.5; white-space: normal; }
     .pref-item .ctl { justify-self: end; width: 100%; }
+    .pref-item input.pref { width: 100%; min-width: 0; box-sizing: border-box; min-height: 32px; }
     .pref-item select.pref { width: 100%; cursor: pointer; min-height: 32px; }
     .pref-item .ctl .vscode-input, .pref-item .ctl .vscode-select { width: 100%; min-height: 32px; }
     .vscode-field { display: flex; align-items: center; gap: 4px; }
