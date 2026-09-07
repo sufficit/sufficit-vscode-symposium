@@ -9,6 +9,60 @@ import {
 } from "../adapters/openai/compactor";
 import type { ChatMessage } from "../adapters/openai/types";
 
+test("compaction uses configured previews and keeps historical summary out of privileged roles", async (t) => {
+    const ledger = require("../ledger") as typeof import("../ledger");
+    t.mock.method(ledger, "appendMessage", () => undefined);
+    t.mock.method(ledger, "commitTurn", async () => undefined);
+    let request = "";
+    t.mock.method(globalThis, "fetch", async (_url: unknown, init: RequestInit) => {
+        request = String(init.body);
+        return new Response(
+            JSON.stringify({ choices: [{ message: { content: "Past investigation only." } }] }),
+        );
+    });
+    const messages: ChatMessage[] = [
+        { role: "system", content: "trusted app prompt" },
+        { role: "user", content: "old task" },
+        { role: "assistant", content: "old answer" },
+        { role: "tool", content: "RESULT-".repeat(100) },
+        { role: "user", content: "new task" },
+        { role: "assistant", content: "answer" },
+        { role: "user", content: "stop now" },
+        { role: "assistant", content: "stopped" },
+    ];
+    const compactor = new Compactor({
+        cfg: {
+            api: "chat",
+            baseUrl: "https://example.test",
+            model: "test",
+            models: [],
+            headers: {},
+            contextPolicy: {
+                compactionTailMessages: 2,
+                summaryToolCharacters: 8,
+                summaryTargetTokens: 321,
+            },
+        },
+        sessionId: "fixture",
+        getMessages: () => messages,
+        getTurnNo: () => 1,
+        getLastInputTokens: () => 0,
+        model: () => "test",
+        contextWindow: () => 100000,
+        authToken: async () => null,
+        headers: () => ({}),
+        emit: () => undefined,
+        safePersist: () => undefined,
+    });
+    assert.equal(await compactor.compact("manual"), true);
+    assert.ok(request.includes("321 tokens"));
+    assert.ok(!request.includes("RESULT-".repeat(10)));
+    const summary = messages.find((message) => String(message.content).startsWith(SUMMARY_PREFIX));
+    assert.equal(summary?.role, "assistant");
+    assert.equal(messages.at(-2)?.content, "stop now");
+    assert.equal(messages[0].content, "trusted app prompt");
+});
+
 // --- Regressão entrega 0B: compactação é REFERENCE ONLY, não executável ---
 // O defeito: um summary imperativo ("Immediate next actions", pseudo tool calls)
 // era promovido a contexto `developer` e continuava comandando o agente após o
@@ -158,6 +212,8 @@ test("compaction request carries session provenance but opts out of memory learn
     try {
         assert.equal(await compactor.compact("auto"), false);
         assert.equal(capturedBody?.session_id, "compaction-session");
+        const rendered = JSON.stringify(capturedBody?.messages);
+        assert.ok(rendered.includes("1500 tokens"));
         assert.equal(capturedHeaders?.get("X-Symposium-Session-Id"), "compaction-session");
         assert.equal(capturedHeaders?.get("X-Sufficit-Memory-Learning"), "off");
     } finally {

@@ -236,7 +236,7 @@ export class OpenAISession extends EventEmitter implements AgentSession {
      * rather than "the prompt got big".
      */
     private async compactOnTasksComplete(): Promise<void> {
-        if (this.cfg.autoCompactOnTasksComplete === false) {
+        if (this.cfg.autoCompactOnTasksComplete !== true) {
             return;
         }
         await this.compactor.compact("auto");

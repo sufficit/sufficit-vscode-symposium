@@ -1,3 +1,4 @@
+import { normalizeContextPolicy } from "../openai/contextPolicy";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
@@ -62,7 +63,13 @@ function readSessionTool(args: Record<string, unknown>, ctx: ToolContext): strin
         return JSON.stringify({ error: "no session id (none provided and no current session)" });
     const options = {
         tail: typeof args.tail === "number" ? args.tail : undefined,
-        maxChars: typeof args.max_chars === "number" ? args.max_chars : undefined,
+        maxChars:
+            typeof args.max_chars === "number"
+                ? args.max_chars
+                : normalizeContextPolicy(
+                      vscode.workspace.getConfiguration("symposium.openai").get("contextPolicy"),
+                  ).readMaxCharacters,
+        offset: typeof args.char_offset === "number" ? args.char_offset : undefined,
     };
     const disk = readSession(id);
     const live = getLiveTranscriptReader()?.read(id);

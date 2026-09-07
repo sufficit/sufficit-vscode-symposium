@@ -4,6 +4,26 @@
 type Dict = Record<string, string>;
 
 export const CONFIG_PT_MESSAGES: Dict = {
+    "config.context.summary": "Resumo opcional — limites",
+    "config.context.historyNotice": "Avisar a IA sobre histórico omitido",
+    "config.context.historyNotice.desc":
+        "Informa o recorte enviado e como consultar o original. O registro completo é preservado. Opções de envio se aplicam aos backends de API; CLIs controlam seu próprio contexto.",
+    "config.context.readMaxCharacters": "Caracteres por consulta ao histórico",
+    "config.context.readMaxCharacters.desc":
+        "Tamanho padrão de cada página retornada por read_session. A ferramenta pode solicitar outro tamanho.",
+    "config.context.compactionTailMessages": "Mensagens mantidas após resumo",
+    "config.context.compactionTailMessages.desc":
+        "Cauda preservada literalmente ao usar compactação. Pares de ferramentas e última mensagem do usuário podem ampliar este limite.",
+    "config.context.summaryTargetTokens": "Meta de tokens do resumo",
+    "config.context.summaryTargetTokens.desc":
+        "Tamanho solicitado ao resumidor; é uma orientação, não um limite rígido de geração.",
+    "config.context.summaryToolCharacters": "Caracteres de resultado no resumo",
+    "config.context.summaryToolCharacters.desc":
+        "Prévia de cada resultado enviada ao resumidor. O resultado original continua no histórico.",
+    "config.context.summaryArgumentCharacters": "Caracteres de argumentos no resumo",
+    "config.context.summaryArgumentCharacters.desc":
+        "Prévia dos argumentos de cada chamada enviada ao resumidor.",
+
     "msg.addMcp.transportPlaceholder": "Selecione o transporte do MCP",
     "msg.addMcp.transport.stdio": "stdio — processo local (comando + argumentos)",
     "msg.addMcp.transport.sse": "SSE — servidor remoto (URL)",

@@ -104,9 +104,28 @@ export function openaiConfig(context: vscode.ExtensionContext): OpenAIAdapterCon
             vscode.workspace.getConfiguration("symposium.hub").get<string>("token", ""),
         maxToolHops: config.get<number>("maxToolHops", 50),
         noProgressStop: config.get<number>("noProgressStop", 0),
-        autoCompactAt: config.get<number>("autoCompactAt", 0.8),
-        autoCompactOnTasksComplete: config.get<boolean>("autoCompactOnTasksComplete", true),
-        maxHistoryMessages: config.get<number>("maxHistoryMessages", 40),
+        get contextPolicy() {
+            return vscode.workspace
+                .getConfiguration("symposium.openai")
+                .get<
+                    Partial<import("../adapters/openai/contextPolicy").ContextPolicy>
+                >("contextPolicy");
+        },
+        get autoCompactAt() {
+            return vscode.workspace
+                .getConfiguration("symposium.openai")
+                .get<number>("autoCompactAt", 0);
+        },
+        get autoCompactOnTasksComplete() {
+            return vscode.workspace
+                .getConfiguration("symposium.openai")
+                .get<boolean>("autoCompactOnTasksComplete", false);
+        },
+        get maxHistoryMessages() {
+            return vscode.workspace
+                .getConfiguration("symposium.openai")
+                .get<number>("maxHistoryMessages", 40);
+        },
         shellExecution: config.get<ShellExecutionMode>("shellExecution", "silent"),
         timeGapNotice: config.get<string>("timeGapNotice", "5m"),
         permissionMode: config.get<string>("permissionMode", "admin"),
@@ -259,15 +278,28 @@ export function buildCustomAdapters(
                     noProgressStop: vscode.workspace
                         .getConfiguration("symposium.openai")
                         .get<number>("noProgressStop", 0),
-                    autoCompactAt: vscode.workspace
-                        .getConfiguration("symposium.openai")
-                        .get<number>("autoCompactAt", 0.8),
-                    autoCompactOnTasksComplete: vscode.workspace
-                        .getConfiguration("symposium.openai")
-                        .get<boolean>("autoCompactOnTasksComplete", true),
-                    maxHistoryMessages: vscode.workspace
-                        .getConfiguration("symposium.openai")
-                        .get<number>("maxHistoryMessages", 40),
+                    get contextPolicy() {
+                        return vscode.workspace
+                            .getConfiguration("symposium.openai")
+                            .get<
+                                Partial<import("../adapters/openai/contextPolicy").ContextPolicy>
+                            >("contextPolicy");
+                    },
+                    get autoCompactAt() {
+                        return vscode.workspace
+                            .getConfiguration("symposium.openai")
+                            .get<number>("autoCompactAt", 0);
+                    },
+                    get autoCompactOnTasksComplete() {
+                        return vscode.workspace
+                            .getConfiguration("symposium.openai")
+                            .get<boolean>("autoCompactOnTasksComplete", false);
+                    },
+                    get maxHistoryMessages() {
+                        return vscode.workspace
+                            .getConfiguration("symposium.openai")
+                            .get<number>("maxHistoryMessages", 40);
+                    },
                     shellExecution: vscode.workspace
                         .getConfiguration("symposium.openai")
                         .get<ShellExecutionMode>("shellExecution", "silent"),

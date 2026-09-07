@@ -4,6 +4,26 @@
 type Dict = Record<string, string>;
 
 export const CONFIG_EN_MESSAGES: Dict = {
+    "config.context.summary": "Optional summary limits",
+    "config.context.historyNotice": "Tell the AI about omitted history",
+    "config.context.historyNotice.desc":
+        "Reports the selected window and how to recover the original. Full history remains stored. Sending options apply to API backends; CLIs manage their own context.",
+    "config.context.readMaxCharacters": "Characters per history read",
+    "config.context.readMaxCharacters.desc":
+        "Default page size returned by read_session. The tool can request a different size.",
+    "config.context.compactionTailMessages": "Messages retained after summary",
+    "config.context.compactionTailMessages.desc":
+        "Verbatim tail retained by compaction. Tool pairs and the latest user message can expand this limit.",
+    "config.context.summaryTargetTokens": "Summary token target",
+    "config.context.summaryTargetTokens.desc":
+        "Requested summary size; guidance rather than a hard generation limit.",
+    "config.context.summaryToolCharacters": "Tool result characters in summary",
+    "config.context.summaryToolCharacters.desc":
+        "Preview of each result sent to the summarizer. The original stays in history.",
+    "config.context.summaryArgumentCharacters": "Tool argument characters in summary",
+    "config.context.summaryArgumentCharacters.desc":
+        "Preview of each call’s arguments sent to the summarizer.",
+
     "msg.addMcp.transportPlaceholder": "Select the MCP transport",
     "msg.addMcp.transport.stdio": "stdio — local process (command + args)",
     "msg.addMcp.transport.sse": "SSE — remote server (URL)",

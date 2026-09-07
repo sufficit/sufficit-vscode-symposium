@@ -216,10 +216,14 @@ export function readSession(id: string, options: { homeDir?: string } = {}): Ses
 }
 
 /** Renders a session dump as compact text for a tool result. */
-export function dumpToText(dump: SessionDump, opts?: { maxChars?: number; tail?: number }): string {
-    const max = opts?.maxChars ?? 24000;
+export function dumpToText(
+    dump: SessionDump,
+    opts?: { maxChars?: number; tail?: number; offset?: number },
+): string {
+    const max =
+        Number.isSafeInteger(opts?.maxChars) && opts!.maxChars! > 0 ? opts!.maxChars! : 24000;
     let msgs = dump.messages;
-    if (opts?.tail && opts.tail > 0 && msgs.length > opts.tail) {
+    if (opts?.offset === undefined && opts?.tail && opts.tail > 0 && msgs.length > opts.tail) {
         msgs = msgs.slice(-opts.tail);
     }
     const header =
@@ -229,5 +233,12 @@ export function dumpToText(dump: SessionDump, opts?: { maxChars?: number; tail?:
         (msgs.length !== dump.count ? ` (showing last ${msgs.length})` : "");
     const body = msgs.map((m) => `[${m.role}]${m.at ? " " + m.at : ""}\n${m.text}`).join("\n\n");
     const out = header + "\n\n" + body;
-    return out.length > max ? out.slice(out.length - max) : out;
+    if (opts?.offset !== undefined) {
+        const offset = Number.isSafeInteger(opts.offset) && opts.offset >= 0 ? opts.offset : 0;
+        const end = Math.min(body.length, offset + max);
+        return `${header}\nchar_offset=${offset}; next_char_offset=${end < body.length ? end : "end"}\n\n${body.slice(offset, end)}`;
+    }
+    return out.length > max
+        ? `${header}\nEarlier characters omitted. Use char_offset=0 and follow next_char_offset to read all pages.\n\n${out.slice(out.length - max)}`
+        : out;
 }

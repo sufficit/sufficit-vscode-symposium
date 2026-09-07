@@ -1,3 +1,4 @@
+import { contextPolicyPreference } from "./configContextPolicy";
 import * as vscode from "vscode";
 import { ensureScaffold, rootDir } from "../config/root";
 import { renderConfigHtml } from "./configHtml";
@@ -197,7 +198,11 @@ export class ConfigPanel {
                 if (typeof message.key === "string") {
                     // Coerce by key: numbers for hops, booleans for autoApprove and voice options.
                     let value: unknown = message.value;
-                    if (message.key.endsWith("maxToolHops")) {
+                    const policyPreference = contextPolicyPreference(message.key, message.value);
+                    if (policyPreference) {
+                        message.key = policyPreference.key;
+                        value = policyPreference.value;
+                    } else if (message.key.endsWith("maxToolHops")) {
                         value = Math.max(1, Number(message.value) || 50);
                     } else if (
                         message.key.endsWith("turnSilenceMinutes") ||
@@ -211,7 +216,7 @@ export class ConfigPanel {
                     } else if (message.key.endsWith("autoCompactOnTasksComplete")) {
                         value = message.value === "true";
                     } else if (message.key.endsWith("maxHistoryMessages")) {
-                        value = Math.max(0, Number(message.value) || 0);
+                        value = Math.max(0, Math.floor(Number(message.value) || 0));
                     } else if (message.key === "chat.tools.global.autoApprove") {
                         value = message.value === "true";
                         // optIn must be on for the global flag to take effect.

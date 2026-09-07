@@ -223,7 +223,7 @@ test("windowMessages keeps tool results paired with the assistant call that prod
 
     assert.deepEqual(
         windowed.map((m) => (m.role === "tool" ? `tool:${m.tool_call_id}` : m.role)),
-        ["system", "assistant", "tool:call_keep", "assistant"],
+        ["system", "user", "assistant", "tool:call_keep", "assistant"],
     );
     assert.deepEqual(findToolHistoryIssues(windowed), []);
 });
