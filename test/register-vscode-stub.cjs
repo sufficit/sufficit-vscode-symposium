@@ -14,6 +14,7 @@ const configuration = {
 
 const disposable = () => ({ dispose() {} });
 const vscodeStub = {
+    UIKind: { Desktop: 1, Web: 2 },
     ConfigurationTarget: { Global: 1, Workspace: 2, WorkspaceFolder: 3 },
     Disposable: class {
         dispose() {}
