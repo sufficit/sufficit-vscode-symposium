@@ -179,6 +179,10 @@ session id and can be reopened from the sessions list.
 | Extension repository | <https://github.com/sufficit/sufficit-vscode-symposium> |
 | VS Code Marketplace | <https://marketplace.visualstudio.com/items?itemName=sufficit.sufficit-vscode-symposium> |
 
+## Authentication browser
+
+[Device Flow browser lifecycle](docs/DEVICE-FLOW-BROWSER.md) describes the Identity launcher, popup completion and manual fallbacks.
+
 ## Development
 
 ```bash

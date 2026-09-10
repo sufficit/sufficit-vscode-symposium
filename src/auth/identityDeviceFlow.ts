@@ -1,3 +1,4 @@
+import { deviceBrowserUrl } from "./identityDeviceBrowser";
 import { OAuthTokenResponse } from "./identityTokenManager";
 import { isTransientOAuthStatus, OAuthHttpError, parseOAuthJson } from "./oauthHttp";
 
@@ -40,7 +41,8 @@ export async function presentDeviceAuthorization(
     device: DeviceAuthorization,
     showUrlModal: (url: string, userCode: string) => Promise<void>,
 ): Promise<void> {
-    const url = device.verification_uri_complete ?? device.verification_uri ?? "";
+    const verificationUri = device.verification_uri_complete ?? device.verification_uri ?? "";
+    const url = deviceBrowserUrl(verificationUri, device.user_code);
     if (vscode.env.uiKind === vscode.UIKind.Web) {
         let opened = false;
         try {
