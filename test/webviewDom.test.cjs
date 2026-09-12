@@ -756,3 +756,37 @@ test("held queue stays visibly paused while new messages remain direct", () => {
     assert.match(harness.document.querySelector("#send").title, /paused queue stays unchanged/);
     harness.dom.window.close();
 });
+
+test("mermaid fences render a diagram card when closed and stay source-only while streaming", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    const diagram = 'flowchart TD\n    UI["UI"] --> Controle["Controle"]';
+    harness.deliver({
+        type: "history",
+        carried: true,
+        messages: [
+            { role: "assistant", text: "```mermaid\n" + diagram + "\n```" },
+            { role: "assistant", text: "```mermaid\n" + diagram },
+            { role: "assistant", text: "```js\nconst x = 1;\n```" },
+        ],
+    });
+
+    // A CLOSED fence becomes exactly one diagram card carrying the source.
+    const cards = harness.document.querySelectorAll("#log .codeblock.mmdCard");
+    assert.equal(cards.length, 1);
+    const holder = cards[0].querySelector(".mmd");
+    assert.ok(holder);
+    assert.equal(holder.dataset.mermaidSource, diagram);
+    // The harness never loads the external renderer (no network), so the card
+    // must stay on its highlighted-source fallback: no ready class, pre shown.
+    assert.equal(cards[0].classList.contains("mmdReady"), false);
+    assert.ok(cards[0].querySelector("pre:not([hidden])"));
+
+    // An UNTERMINATED fence (mid-stream) and a non-mermaid fence stay plain
+    // code blocks — no premature diagram cards.
+    const blocks = harness.document.querySelectorAll("#log .codeblock");
+    assert.equal(blocks.length, 3);
+    assert.equal(blocks[1].classList.contains("mmdCard"), false);
+    assert.equal(blocks[2].classList.contains("mmdCard"), false);
+    harness.dom.window.close();
+});

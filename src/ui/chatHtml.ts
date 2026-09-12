@@ -151,8 +151,11 @@ export function chatBodyMarkup(version?: string): string {
  */
 export function renderHtml(version?: string): string {
     // Nonce required by VSCode 1.90+ webview CSP enforcement (unsafe-inline alone is blocked).
+    // The pinned, integrity-checked mermaid renderer is the ONE external script
+    // allowed: it never enters the VSIX (size budget) and stays optional — if
+    // the CDN is unreachable the diagram falls back to highlighted source.
     const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
-    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';`;
+    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;`;
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
