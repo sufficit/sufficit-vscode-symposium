@@ -51,6 +51,8 @@ export interface AhpProjectionDiagnostic {
 export interface AhpProjectionOptions {
     restored?: AhpRuntimeExport;
     persistence?: AhpPersistence;
+    /** User's archived-session truth (bare native ids) for flag seeding. */
+    archivedIds?: () => readonly string[];
     replayCapacity?: number;
     maxDiagnostics?: number;
     /** Reports a mismatch immediately; the periodic dump buries and truncates it. */
@@ -186,6 +188,7 @@ export class AhpProjectionRuntime {
                 nativeSessionId: info.sessionId,
                 title: info.title,
                 cwd: info.cwd,
+                archived: (this.options.archivedIds?.() ?? []).includes(info.sessionId),
             });
         }
         // Seed from any restored snapshot so queuedMessages/steeringMessage
@@ -235,11 +238,9 @@ export class AhpProjectionRuntime {
             if (message.type === "queue" && Array.isArray(message.items)) {
                 const items = message.items as PendingMessage[];
                 record.queueLength = items.length;
-                // Re-seed from the live chat state first. Restored state and
-                // older/reconnecting clients may carry pending ids that
-                // projectQueue never issued, so its diff would not otherwise
-                // remove them. The host queue stays authoritative over every
-                // pending row, whoever created it.
+                // Re-seed from the live chat state: restored/older clients may
+                // carry pending ids projectQueue never issued; the host queue
+                // stays authoritative over every pending row (E3).
                 seedQueueProjection(
                     record.queue,
                     this.runtime.snapshot(record.handle.chatResource).state as ChatState,

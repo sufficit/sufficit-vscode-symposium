@@ -1,6 +1,11 @@
 import * as vscode from "vscode";
 import type { SymposiumApi } from "../api/symposiumApi";
-import { AhpPersistence, AhpProjectionRuntime, type AhpHostRuntime } from "../ahp";
+import {
+    AhpPersistence,
+    AhpProjectionRuntime,
+    reconcileArchivedSessions,
+    type AhpHostRuntime,
+} from "../ahp";
 
 export interface ExtensionAhpRuntime {
     runtime(): AhpHostRuntime;
@@ -30,12 +35,14 @@ export function registerExtensionAhpRuntime(
         {
             restored: persistence.load(),
             persistence,
+            archivedIds: api.sessions.archivedIds,
             onDiagnostic: (message) => log(`[ahp] ${message}`),
         },
     );
     projectionRef.current = projection;
     const sync = () => {
         projection.sync();
+        reconcileArchivedSessions(projection.runtime, new Set(api.sessions.archivedIds()));
         if (vscode.workspace.getConfiguration("symposium.ahp").get("diagnostics", false)) {
             log(`[ahp] projection diagnostics ${projection.developerDump()}`);
         }

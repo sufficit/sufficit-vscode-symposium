@@ -114,6 +114,23 @@ export class SessionStore {
         await this.memento.update(ARCHIVED_KEY, [...this.archived]);
     }
 
+    /** Archive flag by bare session id, for callers without a SessionInfo. */
+    setArchivedBySessionId(sessionId: string, archived: boolean): boolean {
+        const id = toGuid(sessionId);
+        if (archived) {
+            this.archived.add(id);
+        } else {
+            this.archived.delete(id);
+        }
+        void this.memento.update(ARCHIVED_KEY, [...this.archived]);
+        return true;
+    }
+
+    /** All archived session ids (bare GUIDs). */
+    archivedIdList(): string[] {
+        return [...this.archived];
+    }
+
     isPinned(info: SessionInfo): boolean {
         return this.pinned.includes(this.key(info));
     }

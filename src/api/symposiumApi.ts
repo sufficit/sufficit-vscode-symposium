@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { AgentAdapter, SessionStartOptions } from "../adapters/types";
 import { LiveSessions } from "../sessions/runtime";
+import type { SessionStore } from "../sessions/store";
 import type { SessionStatus } from "../adapters/sessionInfo";
 import {
     createResource,
@@ -68,6 +69,13 @@ export interface SymposiumApi {
         list(): ApiSessionInfo[];
         /** Live status for a session id. */
         status(id: string): SessionStatus | undefined;
+        /**
+         * Persists the archived flag for a session. Accepts a bare session
+         * id (GUID) or a registry address. Returns true when stored.
+         */
+        setArchived(id: string, archived: boolean): boolean;
+        /** All archived session ids (bare GUIDs), from the user's store. */
+        archivedIds(): string[];
         /**
          * Starts a new headless session on a backend. Returns an address (the
          * registry key) usable by in-process control and AHP projection immediately, before
@@ -180,6 +188,11 @@ export interface SymposiumApiDeps {
     adapters: AgentAdapter[];
     /** Fires whenever the live session set or status changes. */
     onSessionsChanged: vscode.Event<void>;
+    /**
+     * User metadata store (custom titles, archived ids). Optional so tests can
+     * build the facade without a Memento; archive calls then no-op.
+     */
+    store?: SessionStore;
 }
 
 export const API_VERSION = API_FEATURE_VERSION;
@@ -225,6 +238,9 @@ export function createSymposiumApi(deps: SymposiumApiDeps): SymposiumApi {
         sessions: {
             list: () => deps.live.liveInfos(),
             status: (id) => deps.live.statusFor(id),
+            setArchived: (id, archived) =>
+                deps.store?.setArchivedBySessionId(id, archived) ?? false,
+            archivedIds: () => deps.store?.archivedIdList() ?? [],
             create: async (backend, options) => {
                 const adapter = adapterByBackend.get(backend);
                 if (!adapter) {

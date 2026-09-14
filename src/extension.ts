@@ -107,8 +107,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     );
 
     const store = new SessionStore(context.globalState);
-    // Forward-declared so the runtime can trigger a (debounced) sessions
-    // refresh whenever an agent starts/stops working.
+    // Forward-declared so the runtime can trigger a (debounced) sessions refresh when agents start/stop.
     let notifyStatus = () => {};
     const runtime = new LiveSessions(createVscodeApplicationPorts(context), () => notifyStatus());
     context.subscriptions.push({ dispose: () => runtime.disposeAll() });
@@ -121,13 +120,13 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         live: runtime,
         adapters,
         onSessionsChanged: sessionsChanged.event,
+        store,
     });
 
     const ahp = registerExtensionAhpRuntime(context, api, symposiumLog);
 
-    // Subagent host: lets the native Sufficit AI backend delegate to other
-    // agent-defs as real sessions (spawn_agent / agent_* tools). Late-bound so
-    // the low-level tool layer never imports the runtime directly.
+    // Subagent host: the native Sufficit AI backend delegates to other agent-defs as real
+    // sessions (spawn_agent / agent_* tools). Late-bound so tools never import the runtime.
     setSubagentHost(
         new SubagentManager(runtime, adapterByBackend, () =>
             vscode.workspace
@@ -137,9 +136,8 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     );
     context.subscriptions.push({ dispose: () => setSubagentHost(undefined) });
 
-    // Live transcript reader: lets read_session pull a running session's freshest
-    // transcript from its controller before any ledger/store flush. Late-bound so
-    // the tool layer never imports the runtime.
+    // Live transcript reader: lets read_session pull a running session's freshest transcript
+    // from its controller before any ledger/store flush. Late-bound so tools never import it.
     setLiveTranscriptReader({ read: (id) => runtime.readTranscript(id) });
     context.subscriptions.push({ dispose: () => setLiveTranscriptReader(undefined) });
 
@@ -337,8 +335,10 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const refreshAll = () => {
         void chatView.refreshSessions();
         ChatPanel.refreshSessions();
+        // Reconcile archive/pin flags into the AHP projection now, not on the next status sync.
+        ahp.sync();
         // Re-push session titles to active surfaces so the chat header updates
-        // when a session is renamed (not just the sessions list row).
+        // on rename, not just the sessions list row.
         ChatPanel.reMetaActive();
         chatView.reMetaActive();
     };

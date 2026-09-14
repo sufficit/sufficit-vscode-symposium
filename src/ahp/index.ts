@@ -8,6 +8,7 @@ export * from "./messagePortTransport";
 export * from "./persistence";
 export * from "./projectAgentEvent";
 export * from "./projectControllerState";
+export * from "./projectionArchive";
 export * from "./restoredState";
 export * from "./projectionRuntime";
 export * from "./status";

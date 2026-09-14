@@ -21,6 +21,7 @@ const CLIENT_ACTIONS = new Set([
     "session/activeClientSet",
     "session/activeClientRemoved",
     "session/configChanged",
+    "session/isArchivedChanged",
 ]);
 
 export function isAllowedAhpClientAction(type: string): boolean {
@@ -36,10 +37,17 @@ export function routeAhpClientAction(
 ): string | undefined {
     const type = typeof action.type === "string" ? action.type : "";
     if (!isAllowedAhpClientAction(type)) return "client action is not allowed";
-    if (type === "chat/draftChanged" || type.startsWith("session/")) return undefined;
+    if (type === "chat/draftChanged") return undefined;
     const handle = runtime.findSession(resource);
     if (!handle) return "session not found";
     const nativeId = handle.nativeSessionId;
+    if (type === "session/isArchivedChanged") {
+        return typeof action.isArchived === "boolean" &&
+            api.sessions.setArchived(nativeId, action.isArchived)
+            ? undefined
+            : "session archive flag was not stored";
+    }
+    if (type.startsWith("session/")) return undefined;
     if (type === "chat/turnCancelled") {
         return api.sessions.interrupt(nativeId) ? undefined : "session is not live";
     }

@@ -120,9 +120,23 @@ export function routePwaAhp(message: WebviewToHost): boolean {
         case "open-session":
             void openPwaAhpSession(message.sessionId);
             return true;
-        case "session-action":
-            if (message.action === "open") void openPwaAhpSession(message.sessionId);
-            return message.action === "open";
+        case "session-action": {
+            if (message.action === "open") {
+                void openPwaAhpSession(message.sessionId);
+                return true;
+            }
+            // Archive/unarchive must reach the host (persisted SessionStore);
+            // before this the action was dropped and the row kept reappearing.
+            if (message.action === "archive" || message.action === "unarchive") {
+                const target = findSession(message.sessionId);
+                if (target) {
+                    client.setSessionArchived(target.resource, message.action === "archive");
+                    void refreshPwaAhpSessions();
+                }
+                return true;
+            }
+            return false;
+        }
         case "refresh-sessions":
             void refreshPwaAhpSessions();
             return true;

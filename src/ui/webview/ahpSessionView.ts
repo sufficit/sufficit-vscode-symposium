@@ -1,4 +1,5 @@
 import type { SessionState, SessionSummary } from "@microsoft/agent-host-protocol";
+import { isArchivedStatus } from "../../ahp/status";
 import { nativeSessionId } from "../../ahp/client/state";
 import { applyMeta } from "./meta";
 import { renderSessions } from "./sessions";
@@ -52,6 +53,9 @@ function summaryItem(item: SessionSummary): SessionListItem {
         title: item.title,
         cwd: filePath(item.workingDirectory),
         status: activityStatus(item.status),
+        // Without this the archived bit is dropped and the row keeps showing
+        // in remote/PWA lists even after the user archives it.
+        archived: isArchivedStatus(item.status),
         terminalStatus: symposium?.terminalStatus,
         resource: item.resource,
     };

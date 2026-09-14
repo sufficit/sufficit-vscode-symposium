@@ -147,6 +147,13 @@ export class BrowserAhpClient {
         for (const id of ids) this.removeQueued(chat, id);
     }
 
+    setSessionArchived(session: URI, archived: boolean): void {
+        this.requireClient().dispatch(session, {
+            type: "session/isArchivedChanged",
+            isArchived: archived,
+        } as StateAction);
+    }
+
     pendingMessage(chat: URI, id: string): BrowserPendingMessage | undefined {
         const state = this.state.chats.get(chat);
         const pending =
