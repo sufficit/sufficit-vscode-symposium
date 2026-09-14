@@ -138,6 +138,8 @@ export class OpenAISession extends EventEmitter implements AgentSession {
             led: (role, content, extra) => this.led(role, content, extra),
             maybeAutoCompact: (observedInputTokens) =>
                 this.compactor.maybeAutoCompact(observedInputTokens),
+            compactForOverflow: (observedInputTokens) =>
+                this.compactor.compactForOverflow(observedInputTokens),
             compactOnTasksComplete: () => this.compactOnTasksComplete(),
             requestApproval: (toolId, toolName, detail, tier) =>
                 this.requestApproval(toolId, toolName, detail, tier),

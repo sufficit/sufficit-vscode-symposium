@@ -228,6 +228,38 @@ test("windowMessages keeps tool results paired with the assistant call that prod
     assert.deepEqual(findToolHistoryIssues(windowed), []);
 });
 
+test("windowMessages caps a long agentic tail instead of reaching back to the last user", () => {
+    // One user message followed by hundreds of tool hops: reaching back to the
+    // last user message would drag the whole span in and void `max`, which is
+    // how a request grows past the model's context window.
+    const messages: ChatMessage[] = [
+        { role: "system", content: "system" },
+        { role: "user", content: "the active task" },
+    ];
+    for (let i = 0; i < 100; i++) {
+        messages.push({
+            role: "assistant",
+            content: null,
+            tool_calls: [
+                { id: `call_${i}`, type: "function", function: { name: "shell", arguments: "{}" } },
+            ],
+        });
+        messages.push({ role: "tool", tool_call_id: `call_${i}`, name: "shell", content: "out" });
+    }
+
+    const windowed = windowMessages(messages, 10);
+
+    // system prefix + pinned user anchor + a bounded tail (tool pairing may add one).
+    assert.ok(windowed.length <= 13, `window must stay bounded, got ${windowed.length}`);
+    assert.equal(windowed[0].role, "system");
+    assert.equal(windowed[1].content, "the active task");
+    // The latest user message stays live even though it scrolled far out of tail.
+    assert.equal(windowed.filter((m) => m.role === "user").length, 1);
+    assert.deepEqual(findToolHistoryIssues(windowed), []);
+    // Saved history is never mutated by windowing.
+    assert.equal(messages.length, 202);
+});
+
 test("request preflight compacts before an estimated context overflow", () => {
     const observed = assessContextWindow(339_000, 195_000, 0.8);
     assert.equal(observed.shouldCompact, true);
@@ -253,6 +285,14 @@ test("request preflight compacts before an estimated context overflow", () => {
     assert.ok(preflightAt >= 0, "the turn loop must run the preflight");
     assert.ok(dispatchAt > preflightAt, "compaction guard must run before the HTTP request");
     assert.match(source, /Request not sent: the local input estimate reaches or exceeds/);
+
+    // An overflowing request must attempt a last-resort fold even when the
+    // preemptive threshold is disabled, so the session can never dead-end with
+    // every retry rebuilding the same oversized request.
+    const overflowAt = source.indexOf("compactForOverflow(estimate.inputTokens)");
+    const refusalAt = source.indexOf("Request not sent: the local input estimate");
+    assert.ok(overflowAt >= 0, "an overflowing request must try an emergency compaction");
+    assert.ok(overflowAt < refusalAt, "the emergency fold must run before refusing to send");
 });
 
 test("materializeToolSafeHistory folds orphan tool results without mutating saved history", () => {

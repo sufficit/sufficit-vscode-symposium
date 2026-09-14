@@ -88,6 +88,73 @@ test("automatic compaction waits for new messages after a fold", () => {
     assert.equal(hasNewMessagesSinceCompaction(8, 9), true);
 });
 
+// --- Regressão: sessão travada quando o request não cabe na janela ---
+// O defeito: com autoCompactAt=0 (default) o preflight recusava enviar e a
+// sessão morria ("Retry is unavailable"), porque toda retentativa reconstruía
+// exatamente o mesmo request grande demais. O threshold só desliga a
+// compactação PREVENTIVA; o estouro real precisa dobrar mesmo assim.
+
+test("overflow compaction folds even when the preemptive threshold is disabled", async (t) => {
+    t.mock.method(ledger, "appendMessage", () => undefined);
+    t.mock.method(ledger, "commitTurn", () => Promise.resolve());
+    t.mock.method(globalThis, "fetch", () =>
+        Promise.resolve(
+            new Response(JSON.stringify({ choices: [{ message: { content: "Past work." } }] })),
+        ),
+    );
+    const messages: ChatMessage[] = [
+        { role: "system", content: "trusted app prompt" },
+        { role: "user", content: "old task" },
+        { role: "assistant", content: "old answer" },
+        { role: "user", content: "current task" },
+        { role: "assistant", content: "answer" },
+        { role: "user", content: "keep going" },
+        { role: "assistant", content: "working" },
+    ];
+    const notices: string[] = [];
+    const compactor = new Compactor({
+        cfg: {
+            api: "chat",
+            baseUrl: "https://example.test",
+            model: "test",
+            models: [],
+            headers: {},
+            // Preemptive auto-compaction explicitly OFF — the default.
+            autoCompactAt: 0,
+            contextPolicy: { compactionTailMessages: 2 },
+        },
+        sessionId: "fixture",
+        getMessages: () => messages,
+        getTurnNo: () => 1,
+        getLastInputTokens: () => 0,
+        model: () => "test",
+        contextWindow: () => 272000,
+        authToken: () => Promise.resolve(null),
+        headers: () => ({}),
+        emit: (event) => {
+            if (event.kind === "status-notice") notices.push(String(event.text));
+        },
+        safePersist: () => undefined,
+    });
+
+    // The threshold path stays inert with autoCompactAt=0 ...
+    assert.equal(await compactor.maybeAutoCompact(276_212), false);
+    // ... but a request that does not fit at all must still fold.
+    assert.equal(await compactor.compactForOverflow(276_212), true);
+    assert.ok(
+        messages.some((m) => String(m.content).startsWith(SUMMARY_PREFIX)),
+        "overflow compaction must install the reference-only summary",
+    );
+    assert.ok(
+        notices.some((n) => /would not fit/i.test(n)),
+        "the user must be told why the emergency fold happened",
+    );
+
+    // Guard against an infinite preflight loop: with no new messages since the
+    // fold, a second attempt must decline instead of folding forever.
+    assert.equal(await compactor.compactForOverflow(276_212), false);
+});
+
 test("renormalizeSummary rewrites forbidden active/imperative headings into historical ones", () => {
     const input = [
         "## Active Task",

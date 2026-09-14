@@ -47,10 +47,20 @@ export function windowMessages(messages: ChatMessage[], max: number): ChatMessag
     // tool result(s) as one structural unit. A plain tail slice can start on a
     // role:"tool" message and orphan it from the assistant call that created
     // it, so the window may grow a little past `max` to keep that unit valid.
+    const tailStart = expandStartToToolBoundary(conv, conv.length - max);
     const lastUser =
         conv.length - 1 - [...conv].reverse().findIndex((message) => message.role === "user");
-    const tailStart = expandStartToToolBoundary(conv, Math.min(conv.length - max, lastUser));
-    return [...prefix, ...conv.slice(tailStart)];
+    if (lastUser >= tailStart) {
+        return [...prefix, ...conv.slice(tailStart)];
+    }
+    // The latest user message is the anchor of the active task, so it must stay
+    // in the request even when it has scrolled past the tail. It is PINNED as a
+    // single message instead of extending the slice back to it: in a long
+    // agentic turn (hundreds of tool hops since the user last spoke) reaching
+    // back would drag the whole span in and silently void `max`, which is
+    // exactly how a request grows past the model's context window. The elided
+    // middle is still recoverable through read_session.
+    return [...prefix, conv[lastUser], ...conv.slice(tailStart)];
 }
 
 /** True when the sliding window is dropping older turns (so the raw task /

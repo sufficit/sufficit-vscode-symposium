@@ -66,6 +66,7 @@ function deps(emit: (event: Parameters<TurnRunnerDeps["emit"]>[0]) => void): Tur
         safePersist: () => undefined,
         led: () => undefined,
         maybeAutoCompact: () => Promise.resolve(false),
+        compactForOverflow: () => Promise.resolve(false),
         compactOnTasksComplete: () => Promise.resolve(),
         requestApproval: () => Promise.resolve(false),
     };
