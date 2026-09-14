@@ -9,3 +9,5 @@ tmp_*.png
 .claude/
 .codex/
 **/*.token
+# Worktrees (padrao): arvores de trabalho em <repo>/.worktrees/
+**/.worktrees/
