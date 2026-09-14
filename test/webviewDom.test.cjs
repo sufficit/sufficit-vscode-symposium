@@ -437,6 +437,73 @@ test("webview DOM announces AHP reconciliation and renders a chat snapshot once"
     harness.dom.window.close();
 });
 
+test("webview DOM restores a persisted tool row with its file and diff metadata", async () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource: "ahp-chat:/11111111-1111-5111-8111-111111111111",
+                fromSeq: 1,
+                state: {
+                    resource: "ahp-chat:/11111111-1111-5111-8111-111111111111",
+                    title: "Alpha",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [
+                        {
+                            id: "turn-tool",
+                            startedAt: new Date(1).toISOString(),
+                            duration: 1,
+                            state: "complete",
+                            message: { text: "Inspect", origin: { kind: "user" } },
+                            responseParts: [
+                                {
+                                    kind: "toolCall",
+                                    toolCall: {
+                                        toolCallId: "tool-1",
+                                        toolName: "read_file",
+                                        displayName: "read_file",
+                                        invocationMessage: "/workspace/README.md",
+                                        toolInput: '{"path":"/workspace/README.md"}',
+                                        content: [{ type: "text", text: "contents" }],
+                                        status: "completed",
+                                        _meta: {
+                                            symposium: {
+                                                path: "/workspace/README.md",
+                                                added: 2,
+                                                removed: 1,
+                                                diff: [{ old: "before", new: "after" }],
+                                            },
+                                        },
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const row = harness.document.querySelector(".toolrow");
+    assert.ok(row);
+    assert.match(row.textContent, /Read/);
+    assert.match(row.textContent, /README\.md/);
+    assert.match(row.textContent, /\+2/);
+    assert.match(row.textContent, /-1/);
+    row.click();
+    assert.match(harness.document.querySelector(".toolbody").textContent, /before/);
+    assert.match(harness.document.querySelector(".toolbody").textContent, /after/);
+    assert.match(harness.document.querySelector(".toolbody").textContent, /contents/);
+    harness.dom.window.close();
+});
+
 test("Retry sends stable visible text together with the AHP row index", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna", { busy: false }));

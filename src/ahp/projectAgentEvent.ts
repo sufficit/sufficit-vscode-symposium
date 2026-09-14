@@ -214,6 +214,7 @@ function projectToolStart(
                 added: event.added,
                 removed: event.removed,
                 todos: event.todos,
+                diff: event.diff,
             }),
         }),
         chatAction("chat/toolCallReady", state.turnId, {

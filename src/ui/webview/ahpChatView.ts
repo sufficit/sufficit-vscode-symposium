@@ -6,7 +6,7 @@ import {
     isPendingQueueHeld,
     selectPendingMessages,
 } from "../../ahp/client/chatSelectors";
-import { toolTodosFromMetadata } from "../../ahp/toolMetadata";
+import { toolDisplayMetadata, toolTodosFromMetadata } from "../../ahp/toolMetadata";
 import { readAssistantMetadata } from "../../ahp/assistantMetadata";
 import { applyEvent } from "./events";
 import { renderQueueView, renderUserTurn, resetConversationView } from "./conversationView";
@@ -304,7 +304,7 @@ function renderPart(part: ResponsePart, fallbackModel?: string): void {
     renderTool(name, stringContent(tool.intention ?? tool.invocationMessage), {
         toolId: id,
         input: optionalString(tool.toolInput),
-        todos: toolTodosFromMetadata(tool._meta),
+        ...toolDisplayMetadata(tool._meta),
     });
     const output = contentText(tool.content) || contentText(asRecord(tool.result).content);
     if (output) fillToolResult(id, output, isToolFinished(tool.status));
