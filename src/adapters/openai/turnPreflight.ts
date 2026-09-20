@@ -32,14 +32,17 @@ export async function preflightRequest(
         return { kind: "retry-hop" };
     }
     if (contextAssessment.exceedsWindow) {
+        // The request does not fit at all. Fold once even when autoCompactAt is
+        // 0: that setting only disables *preemptive* compaction, and treating it
+        // as "refuse and dead-end" leaves the session unable to continue, since
+        // every retry rebuilds the very same oversized request.
+        if (await deps.compactForOverflow(estimate.inputTokens)) {
+            return { kind: "retry-hop" };
+        }
         const diagnostic = requestEstimateDiagnostic(estimate, deps.contextWindow());
-        const autoState =
-            (deps.cfg.autoCompactAt ?? 0) > 0
-                ? "Automatic compaction could not reduce it enough."
-                : "Automatic compaction is disabled.";
         deps.emit({
             kind: "error",
-            message: `Request not sent: the local input estimate reaches or exceeds this model's context window. ${autoState} Reduce the current message or attachments, lower symposium.openai.maxHistoryMessages, choose a compression preset, or select a model with a larger context window.\n${diagnostic}`,
+            message: `Request not sent: the local input estimate reaches or exceeds this model's context window. Compaction could not reduce it enough. Reduce the current message or attachments, lower symposium.openai.maxHistoryMessages, choose a compression preset, or select a model with a larger context window.\n${diagnostic}`,
             retryable: false,
         });
         return { kind: "stop" };

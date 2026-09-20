@@ -437,6 +437,73 @@ test("webview DOM announces AHP reconciliation and renders a chat snapshot once"
     harness.dom.window.close();
 });
 
+test("webview DOM restores a persisted tool row with its file and diff metadata", async () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource: "ahp-chat:/11111111-1111-5111-8111-111111111111",
+                fromSeq: 1,
+                state: {
+                    resource: "ahp-chat:/11111111-1111-5111-8111-111111111111",
+                    title: "Alpha",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [
+                        {
+                            id: "turn-tool",
+                            startedAt: new Date(1).toISOString(),
+                            duration: 1,
+                            state: "complete",
+                            message: { text: "Inspect", origin: { kind: "user" } },
+                            responseParts: [
+                                {
+                                    kind: "toolCall",
+                                    toolCall: {
+                                        toolCallId: "tool-1",
+                                        toolName: "read_file",
+                                        displayName: "read_file",
+                                        invocationMessage: "/workspace/README.md",
+                                        toolInput: '{"path":"/workspace/README.md"}',
+                                        content: [{ type: "text", text: "contents" }],
+                                        status: "completed",
+                                        _meta: {
+                                            symposium: {
+                                                path: "/workspace/README.md",
+                                                added: 2,
+                                                removed: 1,
+                                                diff: [{ old: "before", new: "after" }],
+                                            },
+                                        },
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    const row = harness.document.querySelector(".toolrow");
+    assert.ok(row);
+    assert.match(row.textContent, /Read/);
+    assert.match(row.textContent, /README\.md/);
+    assert.match(row.textContent, /\+2/);
+    assert.match(row.textContent, /-1/);
+    row.click();
+    assert.match(harness.document.querySelector(".toolbody").textContent, /before/);
+    assert.match(harness.document.querySelector(".toolbody").textContent, /after/);
+    assert.match(harness.document.querySelector(".toolbody").textContent, /contents/);
+    harness.dom.window.close();
+});
+
 test("Retry sends stable visible text together with the AHP row index", () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna", { busy: false }));
@@ -754,5 +821,39 @@ test("held queue stays visibly paused while new messages remain direct", () => {
     harness.document.querySelector("#input").value = "new direct request";
     harness.document.querySelector("#input").dispatchEvent(new harness.dom.window.Event("input"));
     assert.match(harness.document.querySelector("#send").title, /paused queue stays unchanged/);
+    harness.dom.window.close();
+});
+
+test("mermaid fences render a diagram card when closed and stay source-only while streaming", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    const diagram = 'flowchart TD\n    UI["UI"] --> Controle["Controle"]';
+    harness.deliver({
+        type: "history",
+        carried: true,
+        messages: [
+            { role: "assistant", text: "```mermaid\n" + diagram + "\n```" },
+            { role: "assistant", text: "```mermaid\n" + diagram },
+            { role: "assistant", text: "```js\nconst x = 1;\n```" },
+        ],
+    });
+
+    // A CLOSED fence becomes exactly one diagram card carrying the source.
+    const cards = harness.document.querySelectorAll("#log .codeblock.mmdCard");
+    assert.equal(cards.length, 1);
+    const holder = cards[0].querySelector(".mmd");
+    assert.ok(holder);
+    assert.equal(holder.dataset.mermaidSource, diagram);
+    // The harness never loads the external renderer (no network), so the card
+    // must stay on its highlighted-source fallback: no ready class, pre shown.
+    assert.equal(cards[0].classList.contains("mmdReady"), false);
+    assert.ok(cards[0].querySelector("pre:not([hidden])"));
+
+    // An UNTERMINATED fence (mid-stream) and a non-mermaid fence stay plain
+    // code blocks — no premature diagram cards.
+    const blocks = harness.document.querySelectorAll("#log .codeblock");
+    assert.equal(blocks.length, 3);
+    assert.equal(blocks[1].classList.contains("mmdCard"), false);
+    assert.equal(blocks[2].classList.contains("mmdCard"), false);
     harness.dom.window.close();
 });

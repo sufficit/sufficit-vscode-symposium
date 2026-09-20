@@ -39,3 +39,29 @@ export function toolTodosFromMetadata(meta: unknown): TodoItem[] | undefined {
     }
     return todos;
 }
+
+/** Visual fields carried by a native tool row through the AHP boundary. */
+export function toolDisplayMetadata(meta: unknown): {
+    path?: string;
+    added?: number;
+    removed?: number;
+    todos?: TodoItem[];
+    diff?: { old: string; new: string }[];
+} {
+    const value = record(record(meta).symposium);
+    const diff = Array.isArray(value.diff)
+        ? value.diff.flatMap((candidate) => {
+              const item = record(candidate);
+              return typeof item.old === "string" && typeof item.new === "string"
+                  ? [{ old: item.old, new: item.new }]
+                  : [];
+          })
+        : undefined;
+    return {
+        ...(typeof value.path === "string" ? { path: value.path } : {}),
+        ...(typeof value.added === "number" ? { added: value.added } : {}),
+        ...(typeof value.removed === "number" ? { removed: value.removed } : {}),
+        ...(toolTodosFromMetadata(meta) ? { todos: toolTodosFromMetadata(meta) } : {}),
+        ...(diff?.length ? { diff } : {}),
+    };
+}

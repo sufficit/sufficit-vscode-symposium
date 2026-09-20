@@ -42,6 +42,12 @@ export interface TurnRunnerDeps {
     safePersist: () => void;
     led: (role: string, content: unknown, extra?: Record<string, unknown>) => void;
     maybeAutoCompact: (observedInputTokens?: number) => Promise<boolean>;
+    /**
+     * Last-resort fold used when the preflight estimate does not fit the window
+     * at all. Independent of the autoCompactAt threshold so a session with
+     * auto-compaction disabled can still recover instead of dead-ending.
+     */
+    compactForOverflow: (observedInputTokens: number) => Promise<boolean>;
     compactOnTasksComplete: () => Promise<void>;
     requestApproval: (
         toolId: string,

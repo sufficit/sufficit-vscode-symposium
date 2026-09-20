@@ -83,6 +83,8 @@ function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
                     ...(reasoning ? { reasoning } : {}),
                     ...(row.ts !== undefined ? { ts: row.ts } : {}),
                 });
+            } else if (row.role === "tool") {
+                messages.push({ ...row });
             } else if (row.role === "error") {
                 messages.push({
                     role: "error",

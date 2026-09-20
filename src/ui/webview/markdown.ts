@@ -1,6 +1,7 @@
 // Extracted from the chat webview client. Pure DOM/string helpers (no shared state).
 import { postMessage } from "./vscode";
 import { codeBlock, tagBlock, codexTagStart } from "./markdownCode";
+import { mermaidBlock } from "./mermaid";
 import { bindMarkdownTarget } from "./markdownLinks";
 export { copyText } from "./markdownCode";
 import {
@@ -41,17 +42,28 @@ export function renderMarkdown(container: HTMLElement, src: string): void {
             const lang = fence[1] || "";
             const buf: string[] = [];
             i++;
+            let closed = false;
             while (i < lines.length && !/^```\s*$/.test(lines[i])) {
                 buf.push(lines[i]);
                 i++;
             }
-            i++; // skip closing fence
+            if (i < lines.length) {
+                i++; // skip closing fence
+                closed = true;
+            }
             // A todo/plan fence is surfaced in the pinned Plan panel — don't
             // also render it raw in the message (avoids duplicated grey blocks).
             const lg = lang.toLowerCase();
-            if (lg !== "todo" && lg !== "plan" && lg !== "tasks") {
-                container.appendChild(codeBlock(lang, buf.join("\n")));
+            if (lg === "todo" || lg === "plan" || lg === "tasks") {
+                continue;
             }
+            // A CLOSED mermaid fence renders as a diagram card; an unterminated
+            // one (still streaming) stays a plain highlighted source block.
+            container.appendChild(
+                lg === "mermaid" && closed
+                    ? mermaidBlock(buf.join("\n"))
+                    : codeBlock(lang, buf.join("\n")),
+            );
             continue;
         }
         const h = line.match(/^(#{1,6})\s+(.*)$/);

@@ -96,6 +96,7 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
                         added: message.added,
                         removed: message.removed,
                         todos: message.todos,
+                        diff: message.diff,
                     }),
                 },
             });

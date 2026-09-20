@@ -1,4 +1,13 @@
-# Message-lifecycle hardening — 2026-08-10
+# Message-lifecycle hardening
+
+Status: **Completed**
+Date: 2026-08-10 → 2026-08-11
+
+Retired plan: `docs/plans/20260810-message-lifecycle-hardening.md`, kept below
+in full because it records a user-reported symptom that recurred four times
+and the reasoning that ended it.
+
+---
 
 ## Symptom (recurring, user-reported 4×)
 

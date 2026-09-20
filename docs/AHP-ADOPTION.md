@@ -191,7 +191,7 @@ enablement and advertised capability gates:
 
 Legacy transport retirement completed after the editor/sidebar and PWA clients
 remained released across the required compatibility window. See the completed
-[retirement plan](plans/PLAN-AHP-legacy-transport-retirement.md).
+[retirement record](activities/20260811-ahp-legacy-transport-retired.md).
 
 ### State-authority hardening — 2026-08-11
 

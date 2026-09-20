@@ -1,6 +1,12 @@
 /** Transcript projection from application render events. */
 import { legacyGuardrailStopNotice } from "../adapters/openai/turnNotices";
 import { withoutContradictoryFinalResponseWarnings } from "./finalResponseState";
+import {
+    ReplayToolTracker,
+    replayToolRow,
+    visibleReplayToolRow,
+    type ReplayToolRow,
+} from "./controllerReplayTools";
 
 /**
  * Reconstructs the visible conversation (user prompts + assistant replies) from
@@ -138,6 +144,7 @@ export function transcriptMessagesUpTo(log: unknown[], index: number): Transcrip
 
 export type ReplayRow =
     | TranscriptRow
+    | ReplayToolRow
     | { role: "error"; text: string; retryable?: boolean; retryAt?: number }
     | { role: "status-notice"; text: string; severity?: "info" | "warning" | "error" };
 
@@ -158,6 +165,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
     let assistantModel: string | undefined;
     let assistantReasoning: string | undefined;
     let assistantTs: number | undefined;
+    const replayTools = new ReplayToolTracker();
     const flushAssistant = () => {
         const text = assistantBuf.trim();
         const thinking = thinkingBuf.trim();
@@ -205,6 +213,15 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                 model?: unknown;
                 reasoning?: unknown;
                 ts?: unknown;
+                toolName?: unknown;
+                detail?: unknown;
+                input?: unknown;
+                result?: unknown;
+                added?: unknown;
+                removed?: unknown;
+                todos?: unknown;
+                path?: unknown;
+                diff?: unknown;
             }>) {
                 const text = typeof h?.text === "string" ? h.text : "";
                 const thinking = typeof h?.thinking === "string" ? h.thinking : undefined;
@@ -245,6 +262,8 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                             ? { severity }
                             : {}),
                     });
+                } else if (h?.role === "tool") {
+                    rows.push(replayToolRow(h as Parameters<typeof replayToolRow>[0]));
                 }
             }
         } else if (message?.type === "user") {
@@ -295,17 +314,22 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                         : {}),
                 });
             }
-        } else if (
-            message?.type === "event" &&
-            (message.event?.kind === "tool-start" || message.event?.kind === "session")
-        ) {
+        } else if (message?.type === "event" && message.event?.kind === "tool-start") {
+            flushAssistant();
+            rows.push(replayTools.start(message.event));
+        } else if (message?.type === "event" && message.event?.kind === "tool-output") {
+            replayTools.output(message.event);
+        } else if (message?.type === "event" && message.event?.kind === "tool-end") {
+            const synthesized = replayTools.end(message.event);
+            if (synthesized) rows.push(synthesized);
+        } else if (message?.type === "event" && message.event?.kind === "session") {
             flushAssistant();
         } else if (message?.type === "event" && message.event?.kind === "turn-start") {
             // No-op: just a delimiter, handled by flush on turn-end.
         }
     }
     flushAssistant();
-    return rows;
+    return rows.filter((row) => row.role !== "tool" || visibleReplayToolRow(row));
 }
 
 /** Plain text representation (user/assistant only, no thinking). */
