@@ -14,7 +14,7 @@ import {
 } from "../ahp";
 
 /**
- * Invariant suite for docs/plans/20260810-message-lifecycle-hardening.md.
+ * Invariant suite for docs/activities/20260811-message-lifecycle-hardening.md.
  *
  * Composes the real pipeline pieces (projectAgentEvent / projectQueue →
  * chatReducer → direct ChatState selectors) end-to-end without DOM, to

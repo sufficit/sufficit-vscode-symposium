@@ -14,7 +14,7 @@ import {
 import { historyTurns } from "../ahp/historyProjection";
 
 /**
- * Recovery-path invariants for docs/plans/20260810-message-lifecycle-hardening.md
+ * Recovery-path invariants for docs/activities/20260811-message-lifecycle-hardening.md
  * (E1/E2/E3): a mid-turn steer must land in the live turn's response stream,
  * a stale pendingUser slot must never leak into an unrelated later turn, and
  * a restored/preserved queue projection must be able to clean up rows it

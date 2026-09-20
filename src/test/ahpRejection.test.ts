@@ -6,7 +6,7 @@ import { pendingRemovalKind } from "../ahp/messagePortTransport";
 
 /**
  * Regression suite for the rejected-envelope defects in
- * docs/plans/20260810-message-lifecycle-hardening.md (D1-D6): a client
+ * docs/activities/20260811-message-lifecycle-hardening.md (D1-D6): a client
  * action the host rejects must never mutate the direct ChatState mirror.
  */
 

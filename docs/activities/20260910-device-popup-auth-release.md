@@ -1,4 +1,14 @@
-# Symposium: fechamento da autenticação, integração e publicação
+# Device-flow popup authentication: integration and release
+
+Status: **Completed** (client activation waits on a window reload by the user,
+which is not code)
+Date: 2026-09-10
+
+Retired plan: `PLAN-device-popup-release.md`, kept below in full because it is the execution
+record -- validation counts, PR numbers, workflow runs and the host PIDs that
+were deliberately left alone while busy.
+
+---
 
 1. [concluído] Preparar branches e contrato de abertura compatível entre Symposium e Identity.
 2. [concluído] Implementar launcher de mesma origem no Identity e integrar a URL no Device Flow do Symposium.

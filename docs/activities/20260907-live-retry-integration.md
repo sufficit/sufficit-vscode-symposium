@@ -1,5 +1,15 @@
 # Live retry integration
 
+Status: **Completed** (client activation waits on a window reload by the user,
+which is not code)
+Date: 2026-09-07
+
+Retired plan: `PLAN-live-retry.md`, kept below in full because it is the execution
+record -- validation counts, PR numbers, workflow runs and the host PIDs that
+were deliberately left alone while busy.
+
+---
+
 Objective: normal adapter error + turn-end must schedule bounded automatic retry,
 with UI-only attempt/countdown notices, preserving the request and cancellation.
 

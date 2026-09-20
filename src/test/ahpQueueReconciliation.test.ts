@@ -9,7 +9,7 @@ import { isPendingQueueHeld } from "../ahp/client/chatSelectors";
 import { chatReducer } from "../ahp/chatReducer";
 
 /**
- * Regression suite for FIX A (docs/plans/20260810-message-lifecycle-hardening.md):
+ * Regression suite for FIX A (docs/activities/20260811-message-lifecycle-hardening.md):
  * the AHP projection attaches via subscribeLive and may be restoring a ChatState
  * persisted across a restart whose queuedMessages/steeringMessage rows the
  * host queue no longer has. Live observers previously got no replay, so
