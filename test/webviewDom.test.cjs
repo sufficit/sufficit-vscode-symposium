@@ -530,6 +530,29 @@ test("Retry sends stable visible text together with the AHP row index", () => {
     harness.dom.window.close();
 });
 
+test("host busy rollback clears a Retry button that never started a turn", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({
+        type: "user",
+        text: "retry this request",
+        attachments: [],
+        clientMessageId: "client-retry-rollback",
+    });
+    harness.deliver({
+        type: "event",
+        event: { kind: "error", message: "fetch failed", retryable: true },
+    });
+
+    harness.document.querySelector(".retryBtn").click();
+    assert.match(harness.document.querySelector(".errActions").textContent, /Retrying/);
+
+    harness.deliver({ type: "busy", busy: false });
+
+    assert.equal(harness.document.querySelector(".errActions"), null);
+    harness.dom.window.close();
+});
+
 test("AHP retry stays a system operation without a synthetic user bubble", async () => {
     const harness = createHarness();
     const resource = "ahp-chat:/22222222-2222-5222-8222-222222222222";

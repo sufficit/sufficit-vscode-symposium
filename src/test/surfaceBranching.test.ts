@@ -16,26 +16,27 @@ function depsFor(
 }
 
 test("plain retry resends the interrupted message with its timeout reason", () => {
-    let handled: WebviewToHost | undefined;
+    let handled: Record<string, unknown> | undefined;
     const posted: unknown[] = [];
     const controller = {
         transcriptMessages: () => [{ role: "user", text: "run the complete build" }],
+        client: {
+            sendMessage: (message: Record<string, unknown>) => {
+                handled = message;
+            },
+        },
     };
     const deps = {
         getController: () => controller,
         post: (message: unknown) => {
             posted.push(message);
         },
-        dispatchAhp: (message: WebviewToHost) => {
-            handled = message;
-            return true;
-        },
+        dispatchAhp: () => assert.fail("Retry must use the selected controller"),
     } as unknown as SurfaceDialoguesDeps;
     const reason = "Turn ended automatically: no activity from the agent for 5 minutes.";
 
     retryLastMessage(deps, 0, reason);
 
-    assert.equal(handled?.type, "send");
     assert.equal(handled?.text, "run the complete build");
     assert.equal(handled?.interruptedBy, reason);
     assert.equal(handled?.retryOf, "retry");
@@ -52,40 +53,43 @@ test("plain retry resends the interrupted message with its timeout reason", () =
 });
 
 test("plain retry never promotes a provider maintenance page into chat or agent context", () => {
-    let handled: WebviewToHost | undefined;
+    let handled: Record<string, unknown> | undefined;
     const posted: unknown[] = [];
     const deps = {
         getController: () => ({
             transcriptMessages: () => [{ role: "user", text: "continue deployment" }],
+            client: {
+                sendMessage: (message: Record<string, unknown>) => {
+                    handled = message;
+                },
+            },
         }),
         post: (message: unknown) => posted.push(message),
-        dispatchAhp: (message: WebviewToHost) => {
-            handled = message;
-            return true;
-        },
+        dispatchAhp: () => assert.fail("Retry must use the selected controller"),
     } as unknown as SurfaceDialoguesDeps;
     const maintenancePage =
         "HTTP 503 Service Unavailable <!doctype html><html><head><style>body { color: red; }</style></head><body>maintenance</body></html>";
 
     retryLastMessage(deps, 0, maintenancePage);
 
-    assert.equal(handled?.type, "send");
     assert.equal(handled?.interruptedBy, "HTTP 503 Service Unavailable");
     assert.doesNotMatch(JSON.stringify(posted), /doctype|<html|<style|color: red/i);
     assert.match(JSON.stringify(posted), /HTTP 503 Service Unavailable/);
 });
 
 test("plain retry keeps a compact 503 continuity reason", () => {
-    let handled: WebviewToHost | undefined;
+    let handled: Record<string, unknown> | undefined;
     const deps = {
         getController: () => ({
             transcriptMessages: () => [{ role: "user", text: "continue deployment" }],
+            client: {
+                sendMessage: (message: Record<string, unknown>) => {
+                    handled = message;
+                },
+            },
         }),
         post: () => undefined,
-        dispatchAhp: (message: WebviewToHost) => {
-            handled = message;
-            return true;
-        },
+        dispatchAhp: () => assert.fail("Retry must use the selected controller"),
     } as unknown as SurfaceDialoguesDeps;
 
     retryLastMessage(
@@ -94,13 +98,12 @@ test("plain retry keeps a compact 503 continuity reason", () => {
         "HTTP 503 Service Unavailable <!doctype html><html><body>maintenance</body></html>",
     );
 
-    assert.equal(handled?.type, "send");
     assert.equal(handled?.interruptedBy, "HTTP 503 Service Unavailable");
     assert.ok((handled?.interruptedBy || "").length < 100);
 });
 
 test("plain retry survives AHP row-index drift by matching the visible user text", () => {
-    let handled: WebviewToHost | undefined;
+    let handled: Record<string, unknown> | undefined;
     const posted: unknown[] = [];
     const controller = {
         transcriptMessages: () => [
@@ -108,19 +111,20 @@ test("plain retry survives AHP row-index drift by matching the visible user text
             { role: "user", text: "retry this exact request" },
             { role: "assistant", text: "failed response" },
         ],
+        client: {
+            sendMessage: (message: Record<string, unknown>) => {
+                handled = message;
+            },
+        },
     };
     const deps = {
         getController: () => controller,
         post: (message: unknown) => posted.push(message),
-        dispatchAhp: (message: WebviewToHost) => {
-            handled = message;
-            return true;
-        },
+        dispatchAhp: () => assert.fail("Retry must use the selected controller"),
     } as unknown as SurfaceDialoguesDeps;
 
     retryLastMessage(deps, 0, "stalled", "retry this exact request");
 
-    assert.equal(handled?.type, "send");
     assert.equal(handled?.text, "retry this exact request");
     assert.equal(handled?.retryOf, "retry");
     assert.deepEqual(posted, [
@@ -133,6 +137,55 @@ test("plain retry survives AHP row-index drift by matching the visible user text
             },
         },
     ]);
+});
+
+test("plain retry dispatches through the selected controller instead of resolving it through AHP", () => {
+    const sent: Array<{ message: unknown; mode: unknown }> = [];
+    const controller = {
+        transcriptMessages: () => [{ role: "user", text: "resume the failed deployment" }],
+        client: {
+            sendMessage: (message: unknown, mode: unknown) => sent.push({ message, mode }),
+        },
+    };
+    const deps = {
+        getController: () => controller,
+        post: () => undefined,
+        dispatchAhp: () => assert.fail("a local Retry already has the authoritative controller"),
+    } as unknown as SurfaceDialoguesDeps;
+
+    retryLastMessage(deps, 0, "fetch failed", "resume the failed deployment");
+
+    assert.deepEqual(sent, [
+        {
+            message: {
+                text: "resume the failed deployment",
+                attachments: [],
+                interruptedBy: "fetch failed",
+                retryOf: "retry",
+            },
+            mode: "send",
+        },
+    ]);
+});
+
+test("plain retry uses the visible request when restored controller rows lag behind AHP", () => {
+    let sent: { text?: string } | undefined;
+    const deps = {
+        getController: () => ({
+            transcriptMessages: () => [],
+            client: {
+                sendMessage: (message: { text?: string }) => {
+                    sent = message;
+                },
+            },
+        }),
+        post: () => undefined,
+        dispatchAhp: () => assert.fail("Retry must not disappear into a stale AHP binding"),
+    } as unknown as SurfaceDialoguesDeps;
+
+    retryLastMessage(deps, 47, "fetch failed", "request still visible in the restored chat");
+
+    assert.equal(sent?.text, "request still visible in the restored chat");
 });
 
 test("editResend retries unchanged Claude text in the same session", () => {

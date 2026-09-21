@@ -80,17 +80,22 @@ export function retryLastMessage(
     index: number,
     errorMessage?: string,
     expectedText?: string,
-): void {
+): boolean {
     const from = d.getController();
     if (!from || !Number.isInteger(index) || index < 0) {
-        return;
+        return false;
     }
     const transcriptMessages = from.transcriptMessages();
     const target = resolveRetryTarget(transcriptMessages, index, expectedText);
-    if (!target) {
-        return;
-    }
-    const { message: original, index: adjustedIndex } = target;
+    // The visible row is authoritative for this local user action. A restored
+    // AHP snapshot can be ahead of the controller's bounded render buffer, so
+    // rejecting an otherwise valid Retry merely because that row is absent
+    // leaves the browser stuck in "Retrying…" with no host turn. This text has
+    // the same trust boundary as a normal composer submission.
+    const visibleText = expectedText?.trim() ? expectedText : undefined;
+    const originalText = target?.message.text ?? visibleText;
+    if (!originalText) return false;
+    const adjustedIndex = target?.index ?? index;
     // Tell the model WHY it's being nudged to continue — otherwise a bare
     // resend looks like the user just said "continue" for no reason. Passed
     // in from the webview's click (not captured host-side): an in-memory
@@ -120,13 +125,22 @@ export function retryLastMessage(
     // backend id. The adapter uses presence to preserve the dangling user row;
     // it still allocates a fresh backend turn id for every attempt.
     const retryOf = from.lastTurnId ?? "retry";
-    dispatchAhp(d, {
-        type: "send",
-        text: original.text,
-        mode: "send",
-        interruptedBy,
-        retryOf,
-    } as WebviewToHost);
+    // This surface already owns the exact controller selected by the user.
+    // Routing back through AHP performs a second native-id lookup which can be
+    // stale after restoring a persisted session; the action is then echoed as
+    // rejected while handleMessage still reports it as handled. Dispatch via
+    // the controller's host-authoritative command boundary instead. Its render
+    // events continue to flow through the AHP projection normally.
+    from.client.sendMessage(
+        {
+            text: originalText,
+            attachments: [],
+            interruptedBy,
+            retryOf,
+        },
+        "send",
+    );
+    return true;
 }
 
 /** Resolves a Retry against stable message content first. AHP snapshot replay

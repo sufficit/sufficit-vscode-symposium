@@ -13,5 +13,11 @@ export function handleSurfaceRetry(
         });
         return;
     }
-    deps.dialogues.retryLastMessage(message.index, message.errorMessage, message.text);
+    if (!deps.dialogues.retryLastMessage(message.index, message.errorMessage, message.text)) {
+        deps.post({ type: "busy", busy: false });
+        deps.post({
+            type: "toast",
+            text: "Retry could not be started. Reopen the session and try again.",
+        });
+    }
 }

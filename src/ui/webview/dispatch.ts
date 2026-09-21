@@ -4,7 +4,7 @@ import { clearComposer, renderChips, saveCurrentComposerDraft, setBrowserOpen } 
 import { resizeInput } from "./inputSizing";
 import { applyMeta } from "./meta";
 import { applyEvent } from "./events";
-import { message, renderThinkBlock } from "./messages";
+import { message, renderThinkBlock, resolvePendingRetry } from "./messages";
 import { renderTool } from "./tools";
 import { renderChangedFiles, renderGuardrails, renderTasks, setChangedItems } from "./panels";
 import { setLang } from "./i18n";
@@ -280,6 +280,10 @@ export function handleHostMessage(payload: unknown): void {
         case "busy": {
             // Host-driven busy state correction (e.g. after render-log replay).
             setBusy(!!data.busy);
+            // A false correction after an optimistic Retry means no turn is
+            // active (or it already ended without another progress event).
+            // Never leave the disabled "Retrying…" action stranded.
+            if (!data.busy) resolvePendingRetry();
             setStatus();
             resizeInput();
             break;

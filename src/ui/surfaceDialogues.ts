@@ -62,7 +62,7 @@ export class SurfaceDialogues {
      * Plain retry after a transient failure: resends the same text to the
      * CURRENT session, no branching. Implemented in surfaceBranching.ts.
      */
-    retryLastMessage(index: number, errorMessage?: string, expectedText?: string): void {
+    retryLastMessage(index: number, errorMessage?: string, expectedText?: string): boolean {
         return retryLastMessage(this.d, index, errorMessage, expectedText);
     }
 
