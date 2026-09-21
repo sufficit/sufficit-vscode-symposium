@@ -72,10 +72,10 @@ for (const entry of missing) failures.push(`required packaged path is missing: $
 for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`);
 
 const budgets = new Map([
-    // Reuniting main's Gemini discovery/context controls with develop's
-    // published recovery and voice features measures 837.2 KiB. Keep 840 KiB
-    // explicit for this combined release and retain the independent 1 MiB archive cap.
-    ["extension/out/extension.js", 840 * 1024],
+    // Codex/Astra activity normalization (reasoning summaries, correlated tool
+    // results, file details and turn timing) brings the host bundle to 843.8 KiB.
+    // Keep 848 KiB explicit and retain the independent 1 MiB archive cap.
+    ["extension/out/extension.js", 848 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

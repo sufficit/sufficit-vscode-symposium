@@ -82,6 +82,12 @@ do turno não chegavam à interface com informação suficiente.
   tamanho, inventário de complexidade, guardrails de engenharia/arquitetura e
   bundles.
 - `git diff --check`: passou.
+- O primeiro CI remoto (`35639175920`) passou código/testes/Extension Host, mas
+  revelou que o host bundle de 843,8 KiB excedia o teto histórico de 840 KiB.
+  O orçamento explícito foi atualizado para 848 KiB, mantendo pouca folga e o
+  teto independente de 1 MiB para o arquivo VSIX completo.
+- `npm run verify:package`: passou após o ajuste; allowlist com 41 arquivos,
+  host bundle de 843,8 KiB e VSIX de 521.012 bytes.
 
 ## Referências entregues
 
@@ -90,6 +96,7 @@ do turno não chegavam à interface com informação suficiente.
 - `src/adapters/codex/session.ts`
 - `src/test/codexEventParser.test.ts`
 - `src/test/codexSession.test.ts`
+- `scripts/check-vsix.mjs`
 - Branch de integração: `develop`.
 
 ## Limitações e próximos passos
