@@ -52,6 +52,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
      *  controller's TurnTracker can correlate them (and reject a stale
      *  straggler from a superseded turn by id, not just by busy-state). */
     private currentTurnId: string | undefined;
+    private turnStartedAt: number | undefined;
     private effectiveModel: string;
     private vscodeMcpServers: Record<string, { command: string; args: string[] }>;
     private readonly parser: CodexEventParser;
@@ -109,7 +110,14 @@ export class CodexSession extends EventEmitter implements AgentSession {
             return;
         }
         this.turnEndEmitted = true;
-        this.emit("event", { kind: "turn-end", logicalTurnId: this.currentTurnId });
+        const durationMs =
+            this.turnStartedAt === undefined ? undefined : Date.now() - this.turnStartedAt;
+        this.turnStartedAt = undefined;
+        this.emit("event", {
+            kind: "turn-end",
+            logicalTurnId: this.currentTurnId,
+            ...(durationMs === undefined ? {} : { durationMs }),
+        });
     }
 
     send(text: string): void {
@@ -227,6 +235,8 @@ export class CodexSession extends EventEmitter implements AgentSession {
         this.reportedError = false;
         this.turnEndEmitted = false;
         this.currentTurnId = `${this.sessionId ?? "codex"}/turn-${sequence}`;
+        this.turnStartedAt = Date.now();
+        this.parser.beginTurn();
         this.emit("event", { kind: "turn-start", logicalTurnId: this.currentTurnId });
 
         const rl = readline.createInterface({ input: child.stdout! });
@@ -263,6 +273,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
             if (this.disposed) {
                 return;
             }
+            this.parser.flushPendingMessage(code === 0 ? "text" : "thinking");
             if (!this.cancelled && code !== 0 && code !== null && !this.reportedError) {
                 const detail = stderr.trim().split("\n").slice(-2).join(" ");
                 this.emit("event", {

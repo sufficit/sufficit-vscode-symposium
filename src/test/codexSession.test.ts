@@ -10,6 +10,7 @@ import {
 } from "../adapters/codex/codexMcpConfig";
 import { CodexSession, codexModelArgs, codexPromptArgs } from "../adapters/codex/session";
 import { looksInjected } from "../adapters/codex/transcript";
+import type { AgentEvent } from "../adapters/types";
 import { buildReasoningMenuOptions } from "../ui/reasoningOptions";
 
 test("HTTP MCP wrapper reads URL and headers from mcp.json at runtime", () => {
@@ -177,6 +178,36 @@ test("Codex reads fresh and resumed prompts from stdin instead of argv", () => {
 
     const oversizedHandoff = "x".repeat(2_000_000);
     assert.ok(!codexPromptArgs(undefined).includes(oversizedHandoff));
+});
+
+test("Codex reports locally measured turn duration", () => {
+    const session = new CodexSession(
+        {
+            executable: "codex",
+            model: "gpt-6-astra",
+            reasoning: "default",
+            approvalPolicy: "admin",
+            sandboxMode: "danger-full-access",
+        },
+        { cwd: process.cwd(), model: "gpt-6-astra" },
+    );
+    const events: AgentEvent[] = [];
+    session.on("event", (event) => events.push(event as AgentEvent));
+    const internals = session as unknown as {
+        currentTurnId: string;
+        turnStartedAt: number;
+        emitTurnEnd(): void;
+    };
+    internals.currentTurnId = "astra/turn-1";
+    internals.turnStartedAt = Date.now() - 25;
+
+    internals.emitTurnEnd();
+
+    const end = events[0] as Extract<AgentEvent, { kind: "turn-end" }>;
+    assert.equal(end.kind, "turn-end");
+    assert.equal(end.logicalTurnId, "astra/turn-1");
+    assert.ok((end.durationMs ?? 0) >= 25);
+    session.dispose();
 });
 
 test("Codex transcript ignores injected operational messages as session titles", () => {

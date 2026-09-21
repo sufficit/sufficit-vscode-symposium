@@ -4,6 +4,13 @@ import { parseNativeTodos } from "../todos";
 import { isTransientErrorMessage } from "../transientError";
 import type { AgentEvent } from "../types";
 import { codexUsage } from "./usage";
+import {
+    codexItemId,
+    codexItemText,
+    codexItemType,
+    codexToolEnd,
+    codexToolStart,
+} from "./itemParser";
 
 interface ParserDeps {
     /** Effective model for the live turn ("" until the backend reports one). */
@@ -29,8 +36,31 @@ interface ParserDeps {
  */
 export class CodexEventParser {
     private lastContextWindow: number | undefined;
+    private pendingAgentMessage: string | undefined;
+    private readonly startedTools = new Set<string>();
 
     constructor(private readonly deps: ParserDeps) {}
+
+    beginTurn(): void {
+        this.pendingAgentMessage = undefined;
+        this.startedTools.clear();
+    }
+
+    flushPendingMessage(kind: "text" | "thinking"): void {
+        const text = this.pendingAgentMessage;
+        this.pendingAgentMessage = undefined;
+        if (!text) return;
+        if (kind === "thinking") {
+            this.deps.emit({ kind, text });
+        } else {
+            this.deps.emit({
+                kind,
+                text,
+                model: this.deps.model() || undefined,
+                reasoning: this.deps.reasoning(),
+            });
+        }
+    }
 
     handleLine(line: string): void {
         if (!line.trim()) {
@@ -76,12 +106,14 @@ export class CodexEventParser {
                 this.handleTurnContext(event);
                 break;
             case "turn.completed":
+                this.flushPendingMessage("text");
                 // turn.completed may carry { usage: {...} }. Emit usage (if any)
                 // BEFORE turn-end so the meter reflects the final totals.
                 this.emitUsage(event);
                 this.deps.emitTurnEnd();
                 break;
             case "turn.failed":
+                this.flushPendingMessage("thinking");
                 this.handleTurnFailed(event);
                 break;
             case "error":
@@ -95,15 +127,11 @@ export class CodexEventParser {
             typeof event.item === "object" && event.item !== null
                 ? (event.item as Record<string, unknown>)
                 : {};
-        const itemType =
-            typeof item.type === "string"
-                ? item.type
-                : typeof item.item_type === "string"
-                  ? item.item_type
-                  : undefined;
+        const itemType = codexItemType(item);
         // Codex's plan/todo updates (e.g. update_plan / todo_list).
         const todos = parseNativeTodos(itemType ?? "", item);
         if (todos) {
+            this.flushPendingMessage("thinking");
             this.deps.emit({
                 kind: "tool-start",
                 toolName: "TodoWrite",
@@ -112,42 +140,37 @@ export class CodexEventParser {
             });
             return;
         }
-        if (event.type !== "item.completed") {
-            if (itemType === "command_execution" && typeof item.command === "string") {
-                this.deps.emit({
-                    kind: "tool-start",
-                    toolName: "exec",
-                    detail: item.command,
-                });
-            }
+        if (itemType === "agent_message" && event.type === "item.completed") {
+            const text = codexItemText(item);
+            if (!text) return;
+            // `codex exec --json` omits the app-server `phase` field. Hold one
+            // message so a following tool can classify it as public progress,
+            // while the last message of the turn remains the final answer.
+            this.flushPendingMessage("thinking");
+            this.pendingAgentMessage = text;
             return;
         }
-        if (itemType === "agent_message" && typeof item.text === "string") {
-            this.deps.emit({
-                kind: "text",
-                text: item.text,
-                model: this.deps.model() || undefined,
-                reasoning: this.deps.reasoning(),
-            });
-        } else if (itemType === "reasoning" && typeof item.text === "string") {
-            this.deps.emit({
-                kind: "text",
-                text: item.text,
-                model: this.deps.model() || undefined,
-                reasoning: this.deps.reasoning(),
-            });
-        } else if (itemType === "command_execution" && typeof item.command === "string") {
-            this.deps.emit({
-                kind: "tool-end",
-                toolName: "exec",
-                detail: item.command,
-            });
-        } else if (
-            itemType === "file_change" ||
-            itemType === "mcp_tool_call" ||
-            itemType === "web_search"
-        ) {
-            this.deps.emit({ kind: "tool-end", toolName: itemType });
+        if (itemType === "reasoning" && event.type === "item.completed") {
+            this.flushPendingMessage("thinking");
+            const text = codexItemText(item);
+            if (text) this.deps.emit({ kind: "thinking", text });
+            return;
+        }
+        const start = codexToolStart(item);
+        const end = event.type === "item.completed" ? codexToolEnd(item) : undefined;
+        if (!start && !end) return;
+        this.flushPendingMessage("thinking");
+        const id = codexItemId(item);
+        const toolKey =
+            id ??
+            `${itemType ?? "tool"}:${start?.toolName ?? end?.toolName}:${start?.detail ?? end?.detail ?? ""}`;
+        if (start && (event.type !== "item.completed" || !this.startedTools.has(toolKey))) {
+            this.deps.emit(start);
+            this.startedTools.add(toolKey);
+        }
+        if (end) {
+            this.deps.emit(end);
+            this.startedTools.delete(toolKey);
         }
     }
 
