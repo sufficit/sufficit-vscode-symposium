@@ -73,9 +73,11 @@ for (const entry of forbidden) failures.push(`forbidden packaged path: ${entry}`
 
 const budgets = new Map([
     // Codex/Astra activity normalization (reasoning summaries, correlated tool
-    // results, file details and turn timing) brings the host bundle to 843.8 KiB.
-    // Keep 848 KiB explicit and retain the independent 1 MiB archive cap.
-    ["extension/out/extension.js", 848 * 1024],
+    // results, file details and turn timing) brought the host bundle to 843.8
+    // KiB; jev between-turns context pruning (scorer client, pair extraction
+    // and prune strategy) pushes it to 856.8 KiB. Keep 864 KiB explicit and
+    // retain the independent 1 MiB archive cap.
+    ["extension/out/extension.js", 864 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
