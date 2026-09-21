@@ -1024,6 +1024,65 @@
                     "default": false,
                     "description": "Developer Mode: show visible zone identifier badges on every major UI section of the chat surface (for development/inspection)."
                 },
+                "symposium.jev.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Prune obsolete tool-call results between turns using the Sufficit AI jev scoring endpoint (Sufficit AI backend only). The full history stays in the session ledger."
+                },
+                "symposium.jev.endpointUrl": {
+                    "type": "string",
+                    "default": "https://ai.sufficit.com.br/jev/v1/score",
+                    "description": "Jev score endpoint. The default targets the Sufficit AI gateway; changing it enables the feature for custom endpoints too."
+                },
+                "symposium.jev.presetId": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Explicit jev preset id (blank = the context's default jev preset)."
+                },
+                "symposium.jev.model": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Model override for jev scoring (blank = the preset backend's own model)."
+                },
+                "symposium.jev.keepThreshold": {
+                    "type": "number",
+                    "default": 0.5,
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Noul probability at or above which a tool call/result is kept."
+                },
+                "symposium.jev.preserveRecentMessages": {
+                    "type": "number",
+                    "default": 6,
+                    "minimum": 0,
+                    "description": "Messages at the tail whose tool pairs are never pruned."
+                },
+                "symposium.jev.truncateHeadChars": {
+                    "type": "number",
+                    "default": 300,
+                    "minimum": 0,
+                    "description": "Characters kept when truncating a prunable tool result."
+                },
+                "symposium.jev.minReductionRatio": {
+                    "type": "number",
+                    "default": 0.25,
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Minimum character reduction for a jev prune to apply (kept as-is when the reduction is smaller)."
+                },
+                "symposium.jev.cooldownMinutes": {
+                    "type": "number",
+                    "default": 5,
+                    "minimum": 0,
+                    "description": "Minutes between jev prune attempts, applied or not."
+                },
+                "symposium.jev.triggerPressure": {
+                    "type": "number",
+                    "default": 0.8,
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Context pressure (last prompt tokens / window) that triggers a jev prune attempt after a turn ends."
+                },
                 "symposium.compression.defaultPresetId": {
                     "type": "string",
                     "default": "none",

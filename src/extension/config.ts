@@ -7,6 +7,7 @@ import { CodexAdapterConfig } from "../adapters/codex";
 import { CopilotAdapterConfig } from "../adapters/copilot";
 import { OpenAIAdapter, OpenAIAdapterConfig } from "../adapters/openai";
 import type { ShellExecutionMode } from "../adapters/aiTools/types";
+import type { JevSettings } from "../adapters/openai/jev/types";
 import { symposiumLog } from "./log";
 
 /**
@@ -129,6 +130,23 @@ export function openaiConfig(context: vscode.ExtensionContext): OpenAIAdapterCon
         shellExecution: config.get<ShellExecutionMode>("shellExecution", "silent"),
         timeGapNotice: config.get<string>("timeGapNotice", "5m"),
         permissionMode: config.get<string>("permissionMode", "admin"),
+        // Jev between-turns pruning reads live settings at each attempt
+        // (Sufficit AI backend only — see jev/betweenTurns gating).
+        get jev(): Partial<JevSettings> {
+            const jev = vscode.workspace.getConfiguration("symposium.jev");
+            return {
+                enabled: jev.get<boolean>("enabled", true),
+                endpointUrl: jev.get<string>("endpointUrl", ""),
+                presetId: jev.get<string>("presetId", ""),
+                model: jev.get<string>("model", ""),
+                keepThreshold: jev.get<number>("keepThreshold", 0.5),
+                preserveRecentMessages: jev.get<number>("preserveRecentMessages", 6),
+                truncateHeadChars: jev.get<number>("truncateHeadChars", 300),
+                minReductionRatio: jev.get<number>("minReductionRatio", 0.25),
+                cooldownMinutes: jev.get<number>("cooldownMinutes", 5),
+                triggerPressure: jev.get<number>("triggerPressure", 0.8),
+            };
+        },
         log: symposiumLog,
     };
 }

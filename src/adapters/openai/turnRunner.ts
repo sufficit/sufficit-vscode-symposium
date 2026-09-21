@@ -9,6 +9,7 @@ import { isWindowTruncated } from "./requestWindow";
 import { httpFailureEvent, preflightRequest } from "./turnPreflight";
 import { applyInjectedMessages } from "./turnInjection";
 import { stripSourcePrefix } from "./toolMerge";
+import { settleAutoCompactAndJev } from "./jev/wiring";
 import { findToolHistoryIssues, materializeToolSafeHistory } from "./toolHistory";
 import { makeAttemptId } from "./turnId";
 import { emitTurnUsage } from "./turnUsage";
@@ -388,7 +389,7 @@ export class TurnRunner {
             this.d.sessionId,
             `turn ${this.d.getTurnNo()} (${logicalTurnId}) — user→assistant (model=${this.d.model()})`,
         );
-        void this.d.maybeAutoCompact();
+        settleAutoCompactAndJev(this.d);
         if (this.pendingTasksCompact) {
             this.pendingTasksCompact = false;
             void this.d.compactOnTasksComplete();

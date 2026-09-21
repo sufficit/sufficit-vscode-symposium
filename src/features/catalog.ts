@@ -4,6 +4,7 @@ import { CLAUDE_ADAPTER_FEATURE } from "../adapters/claude/feature";
 import { CODEX_ADAPTER_FEATURE } from "../adapters/codex/feature";
 import { COPILOT_ADAPTER_FEATURE } from "../adapters/copilot/feature";
 import { OPENAI_ADAPTER_FEATURE } from "../adapters/openai/feature";
+import { JEV_FEATURE } from "../adapters/openai/jev/feature";
 import { AHP_FEATURE } from "../ahp/feature";
 import { CHANGESETS_FEATURE } from "../ahp/capabilities/changesets/feature";
 import { CLIENT_TOOLS_FEATURE } from "../ahp/capabilities/clientTools/feature";
@@ -41,6 +42,7 @@ export const SYMPOSIUM_FEATURES = Object.freeze([
     COMPRESSION_FEATURE,
     CONFIGURATION_FEATURE,
     CUSTOMIZATIONS_FEATURE,
+    JEV_FEATURE,
     PWA_FEATURE,
     RECOVERY_FEATURE,
     RELAY_FEATURE,

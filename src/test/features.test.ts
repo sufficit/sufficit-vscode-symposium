@@ -24,7 +24,7 @@ import {
 } from "../features";
 
 test("feature catalog exposes one frozen semantic version per namespace", () => {
-    assert.equal(SYMPOSIUM_FEATURES.length, 25);
+    assert.equal(SYMPOSIUM_FEATURES.length, 26);
     assert.equal(Object.isFrozen(SYMPOSIUM_FEATURES), true);
     assert.equal(Object.isFrozen(SYMPOSIUM_FEATURE_VERSIONS), true);
 

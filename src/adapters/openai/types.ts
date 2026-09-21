@@ -1,4 +1,5 @@
 import type { ShellExecutionMode } from "../aiTools/types";
+import type { JevSettings } from "./jev/types";
 
 /** OpenAI tool call as streamed/accumulated from chat completions deltas. */
 export interface ToolCall {
@@ -126,5 +127,10 @@ export interface OpenAIAdapterConfig {
     timeGapNotice?: string;
     /** Unified permission mode default: "admin" (default) | "manager" | "user" | "plan". */
     permissionMode?: string;
+    /**
+     * Jev between-turns pruning settings (Sufficit AI backend only).
+     * Absent = the jev feature is off for this adapter (custom endpoints).
+     */
+    jev?: Partial<JevSettings>;
     log?: (message: string) => void;
 }

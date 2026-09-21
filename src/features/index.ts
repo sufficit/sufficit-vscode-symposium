@@ -6,6 +6,7 @@ export * from "../adapters/claude/feature";
 export * from "../adapters/codex/feature";
 export * from "../adapters/copilot/feature";
 export * from "../adapters/openai/feature";
+export * from "../adapters/openai/jev/feature";
 export * from "../ahp/feature";
 export * from "../ahp/capabilities/changesets/feature";
 export * from "../ahp/capabilities/clientTools/feature";
