@@ -1,7 +1,6 @@
 import { selectRequestHistory } from "./contextPolicy";
 import { ChatMessage } from "./types";
 import { isTransientErrorMessage } from "../transientError";
-import { filterTools } from "../aiTools/defs";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
 import { consumeStream } from "./streamConsume";
@@ -31,6 +30,7 @@ import { executeToolCallBatch } from "./turnToolBatch";
 import { TurnCompression } from "./turnCompression";
 import { prepareTurnAccess } from "./turnAccess";
 import { RunSequence } from "./runSequence";
+import { TurnToolAvailability } from "./turnToolAvailability";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
@@ -96,9 +96,9 @@ export class TurnRunner {
             const maxHops = Math.min(softCap, HARD_CAP);
             let hitCap = !unlimited; // cleared when the model finishes on its own
             let toolHistoryMaterializationNoticeEmitted = false;
-            const repeatedCalls = new RepeatedToolCallGuard(
-                activeRepeatedToolCallFingerprint(messages),
-            );
+            const blockedFingerprint = activeRepeatedToolCallFingerprint(messages);
+            const repeatedCalls = new RepeatedToolCallGuard(blockedFingerprint);
+            const availableTools = new TurnToolAvailability(messages, blockedFingerprint);
             const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
             let noTextHops = 0;
             for (let hop = 0; hop < maxHops; hop++) {
@@ -142,14 +142,12 @@ export class TurnRunner {
                           session_id: this.d.sessionId,
                           stream_options: { include_usage: true },
                       };
-                const allow = this.d.options.aiTools;
-                const toolList = filterTools<{ function?: { name: string }; name?: string }>(
-                    finalTools as { function?: { name: string }; name?: string }[],
-                    allow,
-                );
+                const toolList = availableTools.filter(finalTools, this.d.options.aiTools);
                 if (toolList.length > 0) {
                     body.tools = toolList;
                     body.tool_choice = "auto";
+                } else {
+                    body.tool_choice = "none";
                 }
                 if (effort && effort !== "default") {
                     if (responses) {
@@ -341,6 +339,7 @@ export class TurnRunner {
                     this.d.led(feedback.role, feedback.content, { kind: "guardrail-feedback" });
                     this.d.safePersist();
                     if (repeatDecision.kind === "recover") {
+                        availableTools.block(toolCalls);
                         this.d.emit(
                             repeatedToolCallRecoveryNotice(toolNames, repeatDecision.attempt),
                         );
@@ -351,6 +350,7 @@ export class TurnRunner {
                     hitCap = false;
                     break;
                 }
+                availableTools.clear();
                 this.pendingTasksCompact =
                     (await executeToolCallBatch({
                         deps: this.d,
