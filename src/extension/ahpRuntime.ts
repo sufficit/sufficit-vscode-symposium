@@ -1,6 +1,11 @@
 import * as vscode from "vscode";
 import type { SymposiumApi } from "../api/symposiumApi";
-import { AhpPersistence, AhpProjectionRuntime, type AhpHostRuntime } from "../ahp";
+import {
+    AhpPersistence,
+    AhpProjectionRuntime,
+    DiagnosticThrottle,
+    type AhpHostRuntime,
+} from "../ahp";
 
 export interface ExtensionAhpRuntime {
     runtime(): AhpHostRuntime;
@@ -34,18 +39,27 @@ export function registerExtensionAhpRuntime(
         },
     );
     projectionRef.current = projection;
+    const diagnosticThrottle = new DiagnosticThrottle();
+    const logDiagnostics = (force = false) => {
+        if (!vscode.workspace.getConfiguration("symposium.ahp").get("diagnostics", false)) return;
+        const dump = projection.developerDump();
+        if (diagnosticThrottle.shouldEmit(dump, force)) {
+            log(`[ahp] projection diagnostics ${dump}`);
+        }
+    };
     const sync = () => {
         projection.sync();
-        if (vscode.workspace.getConfiguration("symposium.ahp").get("diagnostics", false)) {
-            log(`[ahp] projection diagnostics ${projection.developerDump()}`);
-        }
+        logDiagnostics();
     };
     context.subscriptions.push(api.onSessionsChanged(sync), {
         dispose: () => projection.dispose(),
     });
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration("symposium.ahp.diagnostics")) sync();
+            if (event.affectsConfiguration("symposium.ahp.diagnostics")) {
+                projection.sync();
+                logDiagnostics(true);
+            }
         }),
     );
     sync();

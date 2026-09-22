@@ -10,6 +10,31 @@ function sseResponse(): Response {
     );
 }
 
+function toolCallResponse(id: string): Response {
+    const payload = JSON.stringify({
+        choices: [
+            {
+                delta: {
+                    tool_calls: [
+                        {
+                            index: 0,
+                            id,
+                            type: "function",
+                            function: {
+                                name: "read_file",
+                                arguments: JSON.stringify({ path: "package.json" }),
+                            },
+                        },
+                    ],
+                },
+            },
+        ],
+    });
+    return new Response(`data: ${payload}\n\ndata: [DONE]\n\n`, {
+        headers: { "content-type": "text/event-stream" },
+    });
+}
+
 function interruptedResponse(): Response {
     const body = {
         getReader: () => ({
@@ -118,6 +143,43 @@ test("an unexpected provider stream drop becomes a retryable error", async () =>
         assert.ok(error);
         assert.equal(error.retryable, true);
         assert.match(error.message || "", /connection interrupted/i);
+        assert.equal(events.at(-1)?.kind, "turn-end");
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test("a repeated tool call is skipped and the same turn recovers to a final answer", async () => {
+    const originalFetch = globalThis.fetch;
+    let requests = 0;
+    const events: Array<{ kind: string; text?: string; terminal?: boolean }> = [];
+    globalThis.fetch = (() => {
+        requests++;
+        return Promise.resolve(
+            requests <= 3 ? toolCallResponse(`call-${requests}`) : sseResponse(),
+        );
+    }) as typeof fetch;
+
+    try {
+        const runnerDeps = deps((event) => events.push(event));
+        const runner = new TurnRunner(runnerDeps);
+        await runner.run();
+
+        assert.equal(requests, 4);
+        assert.equal(events.filter((event) => event.kind === "tool-start").length, 2);
+        const recovery = events.find(
+            (event) => event.kind === "status-notice" && event.text?.includes("recovery 1 of 2"),
+        );
+        assert.ok(recovery);
+        assert.equal(recovery.terminal, undefined);
+        assert.equal(
+            runnerDeps
+                .getMessages()
+                .some(
+                    (message) => message.role === "assistant" && message.content === "replacement",
+                ),
+            true,
+        );
         assert.equal(events.at(-1)?.kind, "turn-end");
     } finally {
         globalThis.fetch = originalFetch;

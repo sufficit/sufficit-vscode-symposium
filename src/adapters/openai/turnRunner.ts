@@ -15,11 +15,11 @@ import { makeAttemptId } from "./turnId";
 import { emitTurnUsage } from "./turnUsage";
 import {
     activeRepeatedToolCallFingerprint,
-    appendRepeatedToolCallFeedback,
+    appendRepeatedToolCallDecisionFeedback,
     guardrailStopNotice,
-    repeatedToolCallCountWithoutProgress,
+    RepeatedToolCallGuard,
+    repeatedToolCallRecoveryNotice,
     repeatedToolCallStopNotice,
-    toolCallBatchFingerprint,
     toolHistoryMaterializationNotice,
     toolHistoryPairingNotice,
     toolHopLimitNotice,
@@ -96,8 +96,9 @@ export class TurnRunner {
             const maxHops = Math.min(softCap, HARD_CAP);
             let hitCap = !unlimited; // cleared when the model finishes on its own
             let toolHistoryMaterializationNoticeEmitted = false;
-            const recentCalls: string[] = [];
-            let blockedRepeatFingerprint = activeRepeatedToolCallFingerprint(messages);
+            const repeatedCalls = new RepeatedToolCallGuard(
+                activeRepeatedToolCallFingerprint(messages),
+            );
             const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
             let noTextHops = 0;
             for (let hop = 0; hop < maxHops; hop++) {
@@ -327,30 +328,29 @@ export class TurnRunner {
                 const sig = toolCalls
                     .map((tc) => `${tc.function.name}:${tc.function.arguments}`)
                     .join("|");
-                const repeatsPreviouslyBlockedCall =
-                    blockedRepeatFingerprint === toolCallBatchFingerprint(sig);
-                const repeatCount = repeatsPreviouslyBlockedCall
-                    ? undefined
-                    : repeatedToolCallCountWithoutProgress(recentCalls, sig);
-                if (repeatsPreviouslyBlockedCall || repeatCount !== undefined) {
-                    if (!repeatsPreviouslyBlockedCall) {
-                        const feedback = appendRepeatedToolCallFeedback(
-                            messages,
-                            sig,
-                            toolCalls.map((tc) => stripSourcePrefix(tc.function.name)),
-                            this.d.cfg.supportsDeveloperRole !== false,
-                            repeatCount,
-                        );
-                        this.d.led(feedback.role, feedback.content, { kind: "guardrail-feedback" });
-                        this.d.safePersist();
-                    }
-                    this.d.emit(
-                        repeatedToolCallStopNotice(repeatsPreviouslyBlockedCall, repeatCount),
+                const repeatDecision = repeatedCalls.evaluate(sig);
+                if (repeatDecision.kind !== "execute") {
+                    const toolNames = toolCalls.map((tc) => stripSourcePrefix(tc.function.name));
+                    const feedback = appendRepeatedToolCallDecisionFeedback(
+                        messages,
+                        sig,
+                        toolNames,
+                        this.d.cfg.supportsDeveloperRole !== false,
+                        repeatDecision,
                     );
+                    this.d.led(feedback.role, feedback.content, { kind: "guardrail-feedback" });
+                    this.d.safePersist();
+                    if (repeatDecision.kind === "recover") {
+                        this.d.emit(
+                            repeatedToolCallRecoveryNotice(toolNames, repeatDecision.attempt),
+                        );
+                        noTextHops = 0;
+                        continue;
+                    }
+                    this.d.emit(repeatedToolCallStopNotice(repeatDecision.attempt));
                     hitCap = false;
                     break;
                 }
-                blockedRepeatFingerprint = undefined;
                 this.pendingTasksCompact =
                     (await executeToolCallBatch({
                         deps: this.d,

@@ -15,6 +15,13 @@ import {
     stringArray,
 } from "./projectionRuntimeValues";
 import {
+    serializeProjectionDiagnostics,
+    type AhpProjectionDiagnostic,
+    type AhpProjectionDiagnostics,
+} from "./projectionDiagnostics";
+export { serializeProjectionDiagnostics } from "./projectionDiagnostics";
+export type { AhpProjectionDiagnostic, AhpProjectionDiagnostics } from "./projectionDiagnostics";
+import {
     createProjectionState,
     projectAgentEvent,
     projectInjectedUser,
@@ -39,13 +46,6 @@ export interface AhpProjectionSessionInfo {
 export interface AhpProjectionSource {
     list(): AhpProjectionSessionInfo[];
     follow(id: string, observer: (message: unknown) => void): (() => void) | undefined;
-}
-
-export interface AhpProjectionDiagnostic {
-    category: "transcript" | "status" | "queue" | "approval" | "projection";
-    session: string;
-    sequence: number;
-    detail: string;
 }
 
 export interface AhpProjectionOptions {
@@ -157,15 +157,15 @@ export class AhpProjectionRuntime {
         this.options.persistence?.maybeSave(this.runtime);
     }
 
-    diagnostics(): { counts: Record<string, number>; recent: AhpProjectionDiagnostic[] } {
+    diagnostics(): AhpProjectionDiagnostics {
         return {
             counts: Object.fromEntries(this.counts),
             recent: this.recent.map((item) => ({ ...item })),
         };
     }
 
-    developerDump(): string {
-        return redact(JSON.stringify(this.diagnostics()));
+    developerDump(maxRecent = 8): string {
+        return serializeProjectionDiagnostics(this.diagnostics(), maxRecent);
     }
 
     dispose(): void {

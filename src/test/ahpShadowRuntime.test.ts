@@ -3,9 +3,29 @@ import test from "node:test";
 import type { ChatState, SessionState } from "@microsoft/agent-host-protocol";
 import {
     AhpProjectionRuntime,
+    serializeProjectionDiagnostics,
     type AhpProjectionSessionInfo,
     type AhpProjectionSource,
 } from "../ahp";
+
+test("AHP developer diagnostics retain counts but only the newest requested sample", () => {
+    const recent = Array.from({ length: 12 }, (_, sequence) => ({
+        category: "transcript" as const,
+        session: `openai:${sequence}`,
+        sequence,
+        detail: `expected=${sequence};actual=${sequence + 1}`,
+    }));
+
+    const dump = JSON.parse(
+        serializeProjectionDiagnostics({ counts: { transcript: 12 }, recent }, 3),
+    ) as { counts: Record<string, number>; recent: typeof recent };
+
+    assert.deepEqual(dump.counts, { transcript: 12 });
+    assert.deepEqual(
+        dump.recent.map((item) => item.sequence),
+        [9, 10, 11],
+    );
+});
 
 class FakeSource implements AhpProjectionSource {
     sessions: AhpProjectionSessionInfo[] = [

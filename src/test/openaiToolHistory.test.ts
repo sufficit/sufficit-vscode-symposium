@@ -9,7 +9,10 @@ import {
     appendToolFailureRecoveryFeedback,
     CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT,
     REPEAT_TOOL_CALL_LIMIT,
+    REPEATED_TOOL_CALL_RECOVERY_LIMIT,
+    RepeatedToolCallGuard,
     repeatedToolCallCountWithoutProgress,
+    repeatedToolCallRecoveryNotice,
     repeatedToolCallWithoutProgress,
     toolCallBatchFingerprint,
 } from "../adapters/openai/turnNotices";
@@ -64,6 +67,52 @@ test("repeated tool-call guard stops three identical consecutive calls", () => {
         CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT,
     );
     assert.deepEqual(recent, Array(CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT).fill(signature));
+});
+
+test("repeated tool-call guard recovers twice before stopping an insistent model", () => {
+    const guard = new RepeatedToolCallGuard();
+    const signature = 'read_file:{"path":"/repo/file.ts"}';
+
+    assert.equal(guard.evaluate(signature).kind, "execute");
+    assert.equal(guard.evaluate(signature).kind, "execute");
+    const firstRecovery = guard.evaluate(signature);
+    assert.deepEqual(firstRecovery, {
+        kind: "recover",
+        attempt: 1,
+        repeatCount: CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT,
+        previouslyBlocked: false,
+    });
+    assert.equal(guard.evaluate(signature).kind, "recover");
+    const stopped = guard.evaluate(signature);
+    assert.deepEqual(stopped, {
+        kind: "stop",
+        attempt: REPEATED_TOOL_CALL_RECOVERY_LIMIT + 1,
+        repeatCount: CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT,
+        previouslyBlocked: true,
+    });
+});
+
+test("repeated tool-call carry-over can recover and resets after different progress", () => {
+    const signature = 'read_file:{"path":"/repo/file.ts"}';
+    const guard = new RepeatedToolCallGuard(toolCallBatchFingerprint(signature));
+
+    assert.deepEqual(guard.evaluate(signature), {
+        kind: "recover",
+        attempt: 1,
+        repeatCount: undefined,
+        previouslyBlocked: true,
+    });
+    assert.equal(guard.evaluate('edit_file:{"path":"/repo/file.ts"}').kind, "execute");
+    assert.equal(guard.evaluate(signature).kind, "execute");
+});
+
+test("repeated tool-call recovery notice remains non-terminal and actionable", () => {
+    const notice = repeatedToolCallRecoveryNotice(["read_file", "read_file"], 1);
+
+    assert.equal(notice.kind, "status-notice");
+    assert.equal(notice.terminal, undefined);
+    assert.match(notice.text, /Skipped a repeated read_file request/);
+    assert.match(notice.text, /recovery 1 of 2/);
 });
 
 test("repeated tool-call guard catches an interleaved A/B loop", () => {
