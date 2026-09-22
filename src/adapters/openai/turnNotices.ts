@@ -4,6 +4,8 @@ import type { MaterializedToolHistory, ToolHistoryIssue } from "./toolHistory";
 
 /** Number of identical tool-call batches allowed before stopping the turn. */
 export const REPEAT_TOOL_CALL_LIMIT = 6;
+/** A consecutive identical batch has stronger evidence of a stalled loop. */
+export const CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT = 3;
 
 const TOOL_LOOP_GUARDRAIL_PREFIX = "[Symposium tool-loop guardrail:";
 
@@ -23,12 +25,33 @@ export function repeatedToolCallWithoutProgress(
     signature: string,
     limit = REPEAT_TOOL_CALL_LIMIT,
 ): boolean {
+    return repeatedToolCallCountWithoutProgress(recentCalls, signature, limit) !== undefined;
+}
+
+/**
+ * Records one batch and returns the repeat count that tripped the guardrail.
+ * Three consecutive identical calls stop early; interleaved reuse retains the
+ * wider six-occurrence window so legitimate read/edit/read workflows survive.
+ */
+export function repeatedToolCallCountWithoutProgress(
+    recentCalls: string[],
+    signature: string,
+    limit = REPEAT_TOOL_CALL_LIMIT,
+    consecutiveLimit = CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT,
+): number | undefined {
     recentCalls.push(signature);
     const windowSize = limit * 2;
     if (recentCalls.length > windowSize) {
         recentCalls.splice(0, recentCalls.length - windowSize);
     }
-    return recentCalls.filter((call) => call === signature).length >= limit;
+    let consecutive = 0;
+    for (let index = recentCalls.length - 1; index >= 0; index--) {
+        if (recentCalls[index] !== signature) break;
+        consecutive++;
+    }
+    if (consecutive >= consecutiveLimit) return consecutive;
+    const occurrences = recentCalls.filter((call) => call === signature).length;
+    return occurrences >= limit ? occurrences : undefined;
 }
 
 /** Stable opaque identity for a tool-call batch; arguments never enter the feedback text. */
@@ -62,6 +85,18 @@ export function appendRepeatedToolCallFeedback(
     };
     messages.push(feedback);
     return feedback;
+}
+
+/** Builds the user-facing stop notice for a repeated or carried-over tool loop. */
+export function repeatedToolCallStopNotice(
+    repeatsPreviouslyBlockedCall: boolean,
+    repeatCount?: number,
+): AgentEvent {
+    return guardrailStopNotice(
+        repeatsPreviouslyBlockedCall
+            ? "Stopped because the model repeated a tool call that was already blocked in the previous turn."
+            : `Stopped because the model repeated the same tool call ${repeatCount ?? REPEAT_TOOL_CALL_LIMIT} times without progress.`,
+    );
 }
 
 /**

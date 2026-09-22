@@ -36,6 +36,10 @@ export type AhpReconnectResult = AhpReconnectReplay | AhpReconnectSnapshot;
 export interface AhpStateStoreOptions {
     /** Number of recent envelopes retained for reconnect replay. */
     replayCapacity?: number;
+    /** Serialized byte budget shared by retained reconnect envelopes. */
+    replayByteCapacity?: number;
+    /** Maximum serialized size of one replayable envelope. */
+    replayActionByteCapacity?: number;
     /** Reports a failed subscriber without letting it break other clients. */
     onListenerError?: (error: unknown, envelope: ActionEnvelope) => void;
 }
@@ -52,10 +56,13 @@ export class AhpStateStore {
     private readonly channels = new Map<URI, RegisteredChannel>();
     private readonly listeners = new Map<URI, Set<(envelope: ActionEnvelope) => void>>();
     private readonly replayCapacity: number;
+    private readonly replayByteCapacity: number;
+    private readonly replayActionByteCapacity: number;
     private readonly onListenerError:
         | ((error: unknown, envelope: ActionEnvelope) => void)
         | undefined;
     private readonly replayBuffer: ActionEnvelope[] = [];
+    private replayBytes = 0;
     private sequence = 0;
 
     constructor(options: AhpStateStoreOptions = {}) {
@@ -63,7 +70,17 @@ export class AhpStateStore {
         if (!Number.isSafeInteger(requested) || requested < 0) {
             throw new RangeError("replayCapacity must be a non-negative safe integer");
         }
+        const replayByteCapacity = options.replayByteCapacity ?? 1024 * 1024;
+        if (!Number.isSafeInteger(replayByteCapacity) || replayByteCapacity <= 0) {
+            throw new RangeError("replayByteCapacity must be a positive safe integer");
+        }
+        const replayActionByteCapacity = options.replayActionByteCapacity ?? 256 * 1024;
+        if (!Number.isSafeInteger(replayActionByteCapacity) || replayActionByteCapacity <= 0) {
+            throw new RangeError("replayActionByteCapacity must be a positive safe integer");
+        }
         this.replayCapacity = requested;
+        this.replayByteCapacity = replayByteCapacity;
+        this.replayActionByteCapacity = replayActionByteCapacity;
         this.onListenerError = options.onListenerError;
     }
 
@@ -143,7 +160,8 @@ export class AhpStateStore {
         }
         let removed = 0;
         while (this.replayBuffer.length > 0 && this.replayBuffer[0].serverSeq < keepServerSeq) {
-            this.replayBuffer.shift();
+            const discarded = this.replayBuffer.shift();
+            if (discarded) this.replayBytes -= envelopeBytes(discarded);
             removed++;
         }
         return removed;
@@ -166,11 +184,9 @@ export class AhpStateStore {
             previous = envelope.serverSeq;
         }
         this.sequence = serverSeq;
-        this.replayBuffer.splice(
-            0,
-            this.replayBuffer.length,
-            ...retained.slice(-this.replayCapacity),
-        );
+        this.replayBuffer.splice(0, this.replayBuffer.length);
+        this.replayBytes = 0;
+        for (const envelope of retained) this.remember(envelope);
     }
 
     /**
@@ -261,9 +277,32 @@ export class AhpStateStore {
         if (this.replayCapacity === 0) {
             return;
         }
-        this.replayBuffer.push(envelope);
-        if (this.replayBuffer.length > this.replayCapacity) {
-            this.replayBuffer.splice(0, this.replayBuffer.length - this.replayCapacity);
+        const bytes = envelopeBytes(envelope);
+        if (bytes > this.replayActionByteCapacity || bytes > this.replayByteCapacity) {
+            // This accepted action is already reflected in the authoritative
+            // channel snapshot. Clear the older tail and omit the oversized
+            // envelope so reconnects from before this sequence fall back to a
+            // snapshot instead of replaying across a gap.
+            this.replayBuffer.splice(0, this.replayBuffer.length);
+            this.replayBytes = 0;
+            return;
         }
+        this.replayBuffer.push(envelope);
+        this.replayBytes += bytes;
+        while (
+            this.replayBuffer.length > this.replayCapacity ||
+            this.replayBytes > this.replayByteCapacity
+        ) {
+            const discarded = this.replayBuffer.shift();
+            if (discarded) this.replayBytes -= envelopeBytes(discarded);
+        }
+    }
+}
+
+function envelopeBytes(envelope: ActionEnvelope): number {
+    try {
+        return Buffer.byteLength(JSON.stringify(envelope));
+    } catch {
+        return Number.POSITIVE_INFINITY;
     }
 }

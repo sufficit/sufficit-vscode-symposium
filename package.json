@@ -624,9 +624,9 @@
                 },
                 "symposium.ahp.compactEveryActions": {
                     "type": "number",
-                    "default": 250,
+                    "default": 1000,
                     "minimum": 1,
-                    "markdownDescription": "How many accepted AHP actions must accumulate between persistence writes. Lower values save more often (safer crash recovery, more disk I/O); higher values defer the write. Does not control auto-compaction; see `symposium.ahp.autoCompact`."
+                    "markdownDescription": "How many accepted AHP actions must accumulate between persistence writes. Lower values save more often but serialize the shared reconnect cache more frequently on the Extension Host thread; higher values defer the write. The authoritative session history is stored separately. Does not control auto-compaction; see `symposium.ahp.autoCompact`."
                 },
                 "symposium.ahp.autoCompact": {
                     "type": "boolean",

@@ -60,7 +60,7 @@ export class AhpPersistence {
         this.file = path.join(this.directory, "state.json");
         this.maxBytes = positive(options.maxBytes, 32 * 1024 * 1024);
         this.maxSessionBytes = positive(options.maxSessionBytes, 8 * 1024 * 1024);
-        this.compactEveryActions = positive(options.compactEveryActions, 250);
+        this.compactEveryActions = positive(options.compactEveryActions, 1_000);
         this.autoCompact = options.autoCompact ?? true;
     }
 
@@ -72,8 +72,11 @@ export class AhpPersistence {
                 throw new Error("AHP persistence exceeds total byte limit");
             const parsed = JSON.parse(fs.readFileSync(this.file, "utf8")) as unknown;
             const envelope = validateEnvelope(parsed, this.maxSessionBytes);
-            this.lastSavedSequence = envelope.runtime.serverSeq;
-            return envelope.runtime;
+            const runtime = this.autoCompact
+                ? compactHistoricalSnapshots(envelope.runtime, this.compactionLimits())
+                : envelope.runtime;
+            this.lastSavedSequence = runtime.serverSeq;
+            return runtime;
         } catch (error) {
             this.quarantine(error);
             return undefined;

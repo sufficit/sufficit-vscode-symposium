@@ -1,5 +1,7 @@
 import { withoutContradictoryFinalResponseWarnings } from "./finalResponseState";
 
+const MAX_BUFFERED_MESSAGES = 5_000;
+
 /** Application-owned persisted render event stream.
  *
  * Keeps a bounded log for transcript/persistence purposes and fans new events
@@ -34,7 +36,9 @@ export class RenderStream {
         const sanitized = neutralizeSupersededErrors(
             dropOrphanTurnStart(withoutContradictoryFinalResponseWarnings(messages)),
         );
-        for (const m of sanitized) {
+        const available = Math.max(0, MAX_BUFFERED_MESSAGES - this.log.length);
+        const firstRetained = Math.max(0, sanitized.length - available);
+        for (const m of sanitized.slice(firstRetained)) {
             this.log.push(m);
         }
         return this.log.length;
@@ -81,7 +85,7 @@ export class RenderStream {
 
     private bufferAndFanOut(message: unknown): void {
         this.log.push(message);
-        if (this.log.length > 5000) {
+        if (this.log.length > MAX_BUFFERED_MESSAGES) {
             this.log.shift();
         }
         for (const observer of this.observers) {

@@ -7,7 +7,9 @@ import {
     activeRepeatedToolCallFingerprint,
     appendRepeatedToolCallFeedback,
     appendToolFailureRecoveryFeedback,
+    CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT,
     REPEAT_TOOL_CALL_LIMIT,
+    repeatedToolCallCountWithoutProgress,
     repeatedToolCallWithoutProgress,
     toolCallBatchFingerprint,
 } from "../adapters/openai/turnNotices";
@@ -50,19 +52,18 @@ test("materializeToolSafeHistory supplies a request-only result for missing tool
     assert.deepEqual(findToolHistoryIssues(materialized.messages), []);
 });
 
-test("repeated tool-call guard stops before an unmatched tool call is persisted", () => {
+test("repeated tool-call guard stops three identical consecutive calls", () => {
     const recent: string[] = [];
     const signature = 'read_file:{"path":"/repo/file.ts"}';
 
-    for (let i = 1; i < REPEAT_TOOL_CALL_LIMIT; i++) {
-        assert.equal(
-            repeatedToolCallWithoutProgress(recent, signature),
-            false,
-            `call ${i} must remain executable`,
-        );
+    for (let i = 1; i < CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT; i++) {
+        assert.equal(repeatedToolCallCountWithoutProgress(recent, signature), undefined);
     }
-    assert.equal(repeatedToolCallWithoutProgress(recent, signature), true);
-    assert.deepEqual(recent, Array(REPEAT_TOOL_CALL_LIMIT).fill(signature));
+    assert.equal(
+        repeatedToolCallCountWithoutProgress(recent, signature),
+        CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT,
+    );
+    assert.deepEqual(recent, Array(CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT).fill(signature));
 });
 
 test("repeated tool-call guard catches an interleaved A/B loop", () => {

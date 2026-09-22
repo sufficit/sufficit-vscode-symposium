@@ -308,6 +308,13 @@ test("AHP persistence compacts aggregate history when many sessions exceed the t
         const restored = persistence.load();
 
         assert.ok(restored, diagnostics.join("\n"));
+        const snapshotBaseBytes = Buffer.byteLength(
+            JSON.stringify({ ...restored, retainedActions: [] }),
+        );
+        assert.ok(
+            snapshotBaseBytes <= 30_000,
+            `expected aggregate snapshot cache at or below 25% target, got ${snapshotBaseBytes}`,
+        );
         assert.ok(
             diagnostics.some((message) => message.includes("historical turn")),
             `expected aggregate history compaction, got: ${JSON.stringify(diagnostics)}`,

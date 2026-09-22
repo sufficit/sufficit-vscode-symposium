@@ -19,7 +19,7 @@ export function registerExtensionAhpRuntime(
     const persistence = new AhpPersistence(context.globalStorageUri.fsPath, {
         maxBytes: config.get<number>("maxBytes", 33_554_432),
         maxSessionBytes: config.get<number>("maxSessionBytes", 8_388_608),
-        compactEveryActions: config.get<number>("compactEveryActions", 250),
+        compactEveryActions: config.get<number>("compactEveryActions", 1_000),
         autoCompact: config.get<boolean>("autoCompact", true),
         snapshotResources: (resources) =>
             projectionRef.current?.runtime.snapshots(resources).snapshots ?? [],

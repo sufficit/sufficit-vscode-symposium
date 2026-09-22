@@ -17,8 +17,8 @@ import {
     activeRepeatedToolCallFingerprint,
     appendRepeatedToolCallFeedback,
     guardrailStopNotice,
-    REPEAT_TOOL_CALL_LIMIT,
-    repeatedToolCallWithoutProgress,
+    repeatedToolCallCountWithoutProgress,
+    repeatedToolCallStopNotice,
     toolCallBatchFingerprint,
     toolHistoryMaterializationNotice,
     toolHistoryPairingNotice,
@@ -329,24 +329,23 @@ export class TurnRunner {
                     .join("|");
                 const repeatsPreviouslyBlockedCall =
                     blockedRepeatFingerprint === toolCallBatchFingerprint(sig);
-                if (
-                    repeatsPreviouslyBlockedCall ||
-                    repeatedToolCallWithoutProgress(recentCalls, sig)
-                ) {
+                const repeatCount = repeatsPreviouslyBlockedCall
+                    ? undefined
+                    : repeatedToolCallCountWithoutProgress(recentCalls, sig);
+                if (repeatsPreviouslyBlockedCall || repeatCount !== undefined) {
                     if (!repeatsPreviouslyBlockedCall) {
                         const feedback = appendRepeatedToolCallFeedback(
                             messages,
                             sig,
                             toolCalls.map((tc) => stripSourcePrefix(tc.function.name)),
                             this.d.cfg.supportsDeveloperRole !== false,
+                            repeatCount,
                         );
                         this.d.led(feedback.role, feedback.content, { kind: "guardrail-feedback" });
                         this.d.safePersist();
                     }
                     this.d.emit(
-                        guardrailStopNotice(
-                            `Stopped because the model repeated the same tool call ${REPEAT_TOOL_CALL_LIMIT} times without progress.`,
-                        ),
+                        repeatedToolCallStopNotice(repeatsPreviouslyBlockedCall, repeatCount),
                     );
                     hitCap = false;
                     break;
