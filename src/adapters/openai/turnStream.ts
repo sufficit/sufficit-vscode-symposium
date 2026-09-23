@@ -16,7 +16,8 @@ export function startStreamWaitNotice(
             waiting = false;
             emit({
                 kind: "status-notice",
-                text: "Still waiting for Sufficit AI to respond (30+ seconds). The turn is active; completed tool results are saved.",
+                text: "Sufficit AI has not responded for over 30 seconds. This turn is still active; completed tool results are saved.",
+                transcript: true,
             });
         }
     }, WAIT_NOTICE_MS);

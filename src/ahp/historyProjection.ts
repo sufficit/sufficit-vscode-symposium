@@ -16,6 +16,7 @@ import { resumeHistoricalTurn } from "./recoveredError";
 const MESSAGE_USER = "user" as MessageKind.User;
 const PART_MARKDOWN = "markdown" as ResponsePartKind.Markdown;
 const PART_REASONING = "reasoning" as ResponsePartKind.Reasoning;
+const PART_NOTICE = "notice" as ResponsePartKind;
 const PART_TOOL_CALL = "toolCall" as ResponsePartKind.ToolCall;
 const TOOL_COMPLETED = "completed" as ToolCallStatus.Completed;
 const TOOL_NOT_NEEDED = "not-needed" as ToolCallConfirmationReason.NotNeeded;
@@ -100,6 +101,13 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
                     }),
                 },
             });
+        } else if (message.role === "status-notice") {
+            turn.responseParts.push({
+                kind: PART_NOTICE,
+                id: `history-${index + 1}-notice`,
+                content: message.text ?? "",
+                _meta: { severity: message.severity ?? "info" },
+            } as unknown as ResponsePart);
         } else if (message.role === "error") {
             turn.state = TURN_ERROR;
             turn.error = {

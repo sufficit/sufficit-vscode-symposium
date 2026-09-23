@@ -149,8 +149,8 @@ export type ReplayRow =
     | { role: "status-notice"; text: string; severity?: "info" | "warning" | "error" };
 
 /**
- * Same walk as transcriptMessages, but also keeps terminal status-notices
- * (warnings/errors that paused or ended a turn) as their own rows, in their
+ * Same walk as transcriptMessages, but also keeps terminal or explicitly
+ * visible status-notices as their own rows, in their
  * original position relative to the surrounding conversation. transcriptMessages
  * deliberately drops these (it feeds retry/handoff seed text, where they'd be
  * noise) — this is for full visual redisplay on reopen, where dropping a
@@ -198,6 +198,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
             model?: string;
             reasoning?: string;
             terminal?: boolean;
+            transcript?: boolean;
             severity?: "info" | "warning" | "error";
             retryable?: boolean;
             retryAt?: number;
@@ -295,7 +296,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
             flushAssistant();
         } else if (message?.type === "event" && message.event?.kind === "status-notice") {
             flushAssistant();
-            if (message.event.terminal && message.event.text) {
+            if ((message.event.terminal || message.event.transcript) && message.event.text) {
                 rows.push({
                     role: "status-notice",
                     text: message.event.text,

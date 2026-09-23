@@ -106,3 +106,30 @@ test("AHP history carries restored tool display metadata to the existing rendere
         diff: [{ old: "before", new: "after" }],
     });
 });
+
+test("render-log replay keeps an explicitly visible nonterminal wait notice", () => {
+    assert.deepEqual(
+        replayRows([
+            { type: "user", text: "Do the work" },
+            {
+                type: "event",
+                event: {
+                    kind: "status-notice",
+                    text: "Sufficit AI has not responded for over 30 seconds.",
+                    transcript: true,
+                },
+            },
+            { type: "event", event: { kind: "text", text: "Done" } },
+            { type: "event", event: { kind: "turn-end" } },
+        ]),
+        [
+            { role: "user", text: "Do the work" },
+            {
+                role: "status-notice",
+                text: "Sufficit AI has not responded for over 30 seconds.",
+                severity: undefined,
+            },
+            { role: "assistant", text: "Done", thinking: undefined },
+        ],
+    );
+});

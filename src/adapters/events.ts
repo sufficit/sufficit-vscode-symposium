@@ -45,6 +45,8 @@ export type AgentEvent =
           severity?: SystemNoticeSeverity;
           anchorIndex?: number;
           terminal?: boolean;
+          /** Show this nonterminal notice in the chat and preserve it on reopen. */
+          transcript?: boolean;
           action?: "continue-tool-loop";
           /** Operational recovery state. System-authored and excluded from transcripts. */
           recovery?: TransientRetryNotice;

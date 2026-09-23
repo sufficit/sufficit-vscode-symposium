@@ -35,7 +35,7 @@ test("a successful but empty Responses stream is an explicit retryable error", a
 });
 
 test("silent provider wait emits one notice and stops when output arrives", () => {
-    const events: Array<{ kind: string; text?: string }> = [];
+    const events: Array<{ kind: string; text?: string; transcript?: boolean }> = [];
     let fire: (() => void) | undefined;
     const schedule = ((callback: () => void) => {
         fire = callback;
@@ -49,7 +49,8 @@ test("silent provider wait emits one notice and stops when output arrives", () =
     fire?.();
     fire?.();
     assert.equal(events.length, 1);
-    assert.match(events[0].text ?? "", /Still waiting for Sufficit AI/);
+    assert.match(events[0].text ?? "", /Sufficit AI has not responded/);
+    assert.equal(events[0].transcript, true);
     wait.progress();
     fire?.();
     assert.equal(events.length, 1);
