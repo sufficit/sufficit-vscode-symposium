@@ -11,3 +11,6 @@ tmp_*.png
 **/*.token
 # Worktrees (padrao): arvores de trabalho em <repo>/.worktrees/
 **/.worktrees/
+
+# python bytecode
+**/__pycache__/
