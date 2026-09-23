@@ -3,7 +3,7 @@ import { ChatMessage } from "./types";
 import { isTransientErrorMessage } from "../transientError";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
-import { consumeStream } from "./streamConsume";
+import { readTurnStream, startStreamWaitNotice } from "./turnStream";
 import { isWindowTruncated } from "./requestWindow";
 import { httpFailureEvent, preflightRequest } from "./turnPreflight";
 import { applyInjectedMessages } from "./turnInjection";
@@ -101,6 +101,7 @@ export class TurnRunner {
             const availableTools = new TurnToolAvailability(messages, blockedFingerprint);
             const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
             let noTextHops = 0;
+            let toolActivityStarted = false;
             for (let hop = 0; hop < maxHops; hop++) {
                 if (this.cancelled || !isCurrentRun()) {
                     hitCap = false;
@@ -184,62 +185,46 @@ export class TurnRunner {
                     headers["X-Symposium-Session-Id"] = this.d.sessionId;
                     return fetch(url, { method: "POST", headers, body: bodyJson, signal });
                 };
-                let res = await post(loginToken);
-                if (shouldRefreshNativeAuthorization(res.status, noExplicitAuth, loginToken)) {
-                    const refreshedToken = await this.d.authToken(true);
-                    if (refreshedToken) {
-                        // Drain the rejected response before reusing the pooled
-                        // connection. The model request was not dispatched on
-                        // 401/403, so this single retry cannot duplicate a turn.
-                        await res.arrayBuffer().catch(() => undefined);
-                        this.d.emit({
-                            kind: "status-notice",
-                            text: "Sufficit AI authorization refreshed; retrying once.",
-                        });
-                        loginToken = refreshedToken;
-                        res = await post(loginToken);
-                    }
-                }
-                const responseStartedAt = Date.now();
-                if (!res.ok || !res.body) {
-                    this.d.emit(await httpFailureEvent(this.d, res, estimate));
-                    hitCap = false;
-                    break;
-                }
+                const wait = startStreamWaitNotice(this.d.emit);
                 const m = this.d.model();
-                const { text, reasoning, toolCalls, aborted, interruption, usage } =
-                    await consumeStream(
-                        res.body,
-                        m,
-                        { requestStartedAt, responseStartedAt },
+                let streamResult: Awaited<ReturnType<typeof readTurnStream>>;
+                try {
+                    let res = await post(loginToken);
+                    if (shouldRefreshNativeAuthorization(res.status, noExplicitAuth, loginToken)) {
+                        const refreshedToken = await this.d.authToken(true);
+                        if (refreshedToken) {
+                            // A 401/403 was not dispatched, so this auth retry cannot duplicate a turn.
+                            await res.arrayBuffer().catch(() => undefined);
+                            this.d.emit({
+                                kind: "status-notice",
+                                text: "Sufficit AI authorization refreshed; retrying once.",
+                            });
+                            loginToken = refreshedToken;
+                            res = await post(loginToken);
+                        }
+                    }
+                    const responseStartedAt = Date.now();
+                    if (!res.ok || !res.body) {
+                        this.d.emit(await httpFailureEvent(this.d, res, estimate));
+                        hitCap = false;
+                        break;
+                    }
+                    streamResult = await readTurnStream({
+                        deps: this.d,
+                        stream: res.body,
+                        model: m,
+                        effort,
                         responses,
-                        {
-                            onText: (delta) =>
-                                this.d.emit({
-                                    kind: "text",
-                                    text: delta,
-                                    model: m,
-                                    modelLabel: this.d.label(m),
-                                    reasoning: effort,
-                                    ts: responseStartedAt,
-                                }),
-                            onReasoning: (delta) => this.d.emit({ kind: "thinking", text: delta }),
-                            // Classify: a mid-stream provider failure (the gateway
-                            // already sent 200 + SSE headers, so the status can no
-                            // longer carry 429/503) was emitted with no retryable
-                            // flag at all, which reads as "Retry is unavailable" —
-                            // even for "model is at capacity", which is precisely
-                            // the case worth retrying.
-                            onError: (message) =>
-                                this.d.emit({
-                                    kind: "error",
-                                    message,
-                                    retryable: isTransientErrorMessage(message),
-                                }),
-                            onStatusNotice: (notice) =>
-                                this.d.emit({ kind: "status-notice", text: notice }),
-                        },
-                    );
+                        requestStartedAt,
+                        responseStartedAt,
+                        safeToRetry: !toolActivityStarted,
+                        wait,
+                    });
+                } finally {
+                    wait.stop();
+                }
+                const { text, toolCalls, aborted, interruption, usage, providerError } =
+                    streamResult;
 
                 if (usage) {
                     emitTurnUsage(this.d, usage);
@@ -247,6 +232,15 @@ export class TurnRunner {
 
                 if (interruption?.kind === "transport" && !this.cancelled) {
                     this.d.emit(transportInterruptionNotice(interruption.message));
+                }
+
+                if (providerError) {
+                    if (text.trim()) {
+                        messages.push({ role: "assistant", content: text, model: m });
+                        this.d.led("assistant", text);
+                    }
+                    hitCap = false;
+                    break;
                 }
 
                 await this.d.maybeAutoCompact();
@@ -279,20 +273,23 @@ export class TurnRunner {
                 }
 
                 if (toolCalls.length === 0) {
+                    if (!text.trim()) {
+                        this.d.emit({
+                            kind: "error",
+                            message: toolActivityStarted
+                                ? "Sufficit AI returned no answer or tool call. Completed tool results are saved; send Continue to resume safely."
+                                : "Sufficit AI returned no answer or tool call. Retry the turn or choose another model.",
+                            retryable: !toolActivityStarted,
+                        });
+                        hitCap = false;
+                        break;
+                    }
                     messages.push({
                         role: "assistant",
-                        content: text || "",
+                        content: text,
                         model: this.d.model(),
                     });
-                    if (text) {
-                        this.d.led("assistant", text);
-                    }
-                    if (!text.trim() && !reasoning.trim()) {
-                        this.d.emit({
-                            kind: "status-notice",
-                            text: "The model returned an empty response (no content). Try resending, a different model, or a lower reasoning effort.",
-                        });
-                    }
+                    this.d.led("assistant", text);
                     hitCap = false;
                     break;
                 }
@@ -360,6 +357,7 @@ export class TurnRunner {
                         text,
                         abortSignal: this.abort?.signal,
                     })) || this.pendingTasksCompact;
+                toolActivityStarted = true;
                 // loop again so the model can use the tool results
             }
             if (hitCap) {

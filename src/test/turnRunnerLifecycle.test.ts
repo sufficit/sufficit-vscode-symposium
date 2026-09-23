@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TurnRunner, type TurnRunnerDeps } from "../adapters/openai/turnRunner";
-import type { ChatMessage } from "../adapters/openai/types";
 import { appendRepeatedToolCallFeedback } from "../adapters/openai/turnNotices";
+import { createRunnerDeps as deps } from "./openaiRunnerFixture";
 
 function sseResponse(): Response {
     return new Response(
@@ -62,6 +62,13 @@ function responsesTextResponse(): Response {
     );
 }
 
+function responsesErrorResponse(): Response {
+    return new Response(
+        'data: {"error":{"message":"responses timed out.","type":"server_error","code":"request_timeout"}}\n\ndata: [DONE]\n\n',
+        { headers: { "content-type": "text/event-stream" } },
+    );
+}
+
 function interruptedResponse(): Response {
     const body = {
         getReader: () => ({
@@ -75,53 +82,6 @@ function interruptedResponse(): Response {
         statusText: "OK",
         body,
     } as Response;
-}
-
-function deps(emit: (event: Parameters<TurnRunnerDeps["emit"]>[0]) => void): TurnRunnerDeps {
-    const messages: ChatMessage[] = [{ role: "user", content: "prompt" }];
-    let turn = 0;
-    return {
-        cfg: {
-            api: "chat",
-            baseUrl: "http://symposium.test/v1",
-            model: "test-model",
-            models: ["test-model"],
-            headers: {},
-            apiKey: "test-token",
-        },
-        options: { cwd: process.cwd() },
-        sessionId: "lifecycle-test",
-        backend: "openai",
-        hub: { configured: () => false } as TurnRunnerDeps["hub"],
-        getMessages: () => messages,
-        getProgress: () => [],
-        bumpTurnNo: () => undefined,
-        bumpTurn: () => `lifecycle-test/turn-${++turn}`,
-        resumeTurn: () => `lifecycle-test/turn-${++turn}`,
-        getResumeTurnId: () => undefined,
-        getTurnNo: () => turn,
-        getLogicalTurnId: () => `lifecycle-test/turn-${turn}`,
-        getIntentId: () => undefined,
-        getLastInputTokens: () => 0,
-        setLastInputTokens: () => undefined,
-        emit,
-        model: () => "test-model",
-        label: (id) => id,
-        contextWindow: () => 100_000,
-        headers: () => ({ authorization: "Bearer test-token" }),
-        authToken: () => Promise.resolve("test-token"),
-        discoverModels: () => Promise.resolve(),
-        followupAnchor: () => undefined,
-        emitRequestEstimate: () => undefined,
-        shellExecutionMode: () => "silent",
-        resolveToolPath: () => undefined,
-        safePersist: () => undefined,
-        led: () => undefined,
-        maybeAutoCompact: () => Promise.resolve(false),
-        compactForOverflow: () => Promise.resolve(false),
-        compactOnTasksComplete: () => Promise.resolve(),
-        requestApproval: () => Promise.resolve(false),
-    };
 }
 
 test("an aborted OpenAI run cannot emit turn-end after its replacement", async () => {
@@ -321,6 +281,43 @@ test("an allowlist containing only the blocked tool requests no tool calls", asy
 
         assert.equal(body.tools, undefined);
         assert.equal(body.tool_choice, "none");
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test("Responses SSE failure after a tool is visible without recording an empty assistant reply", async () => {
+    const originalFetch = globalThis.fetch;
+    let requests = 0;
+    const events: Array<{ kind: string; message?: string; retryable?: boolean }> = [];
+    globalThis.fetch = (() => {
+        requests++;
+        return Promise.resolve(
+            requests === 1 ? responsesToolCallResponse("call-1") : responsesErrorResponse(),
+        );
+    }) as typeof fetch;
+
+    try {
+        const runnerDeps = deps((event) => events.push(event));
+        runnerDeps.cfg.api = "responses";
+        await new TurnRunner(runnerDeps).run();
+
+        assert.equal(requests, 2);
+        const error = events.find((event) => event.kind === "error");
+        assert.match(error?.message ?? "", /responses timed out/);
+        assert.match(error?.message ?? "", /send Continue/);
+        assert.equal(error?.retryable, false);
+        assert.equal(
+            runnerDeps
+                .getMessages()
+                .some(
+                    (message) =>
+                        message.role === "assistant" &&
+                        !message.content &&
+                        !message.tool_calls?.length,
+                ),
+            false,
+        );
     } finally {
         globalThis.fetch = originalFetch;
     }

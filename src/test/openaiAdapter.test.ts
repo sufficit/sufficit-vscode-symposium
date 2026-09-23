@@ -72,6 +72,35 @@ test("consumeStream surfaces responses-API reasoning_text delta as thinking", as
     assert.equal(out.text, "answer");
 });
 
+test("consumeStream reports the gateway's OpenAI error envelope in Responses SSE", async () => {
+    const errors: Array<{ message: string; type?: string; code?: string }> = [];
+    const body =
+        'data: {"error":{"message":"responses timed out.","type":"server_error","code":"request_timeout"}}\n\n' +
+        "data: [DONE]\n\n";
+    const out = await consumeStream(sseStream(body), "m", timing, true, {
+        onText: () => {},
+        onError: (message, details) => errors.push({ message, ...details }),
+    });
+    assert.equal(out.text, "");
+    assert.deepEqual(errors, [
+        { message: "responses timed out.", type: "server_error", code: "request_timeout" },
+    ]);
+});
+
+test("consumeStream surfaces Responses gateway status while waiting for output", async () => {
+    const notices: string[] = [];
+    await consumeStream(
+        sseStream(
+            'data: {"type":"response.status","message":"Provider is warming up"}\n\ndata: [DONE]\n\n',
+        ),
+        "m",
+        timing,
+        true,
+        { onText: () => {}, onError: () => {}, onStatusNotice: (notice) => notices.push(notice) },
+    );
+    assert.deepEqual(notices, ["Provider is warming up"]);
+});
+
 test("consumeStream reports an unexpected transport interruption", async () => {
     const out = await consumeStream(interruptedStream(), "m", timing, false, {
         onText: () => {},

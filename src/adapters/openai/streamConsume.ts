@@ -12,7 +12,7 @@ export interface ConsumeCallbacks {
     /** A streamed reasoning/thinking delta (reasoning-channel models). Optional. */
     onReasoning?: (delta: string) => void;
     /** A streamed error event from the provider. */
-    onError: (message: string) => void;
+    onError: (message: string, details?: { type?: string; code?: string }) => void;
     /** A transient, non-content status notice (e.g. "image transcribed"). Optional. */
     onStatusNotice?: (notice: string) => void;
 }
@@ -140,6 +140,20 @@ export async function consumeStream(
                     if (typeof json?.model === "string" && json.model) {
                         effectiveModel = json.model;
                     }
+                    const streamError = json?.error ?? json?.response?.error;
+                    if (streamError) {
+                        const message =
+                            typeof streamError === "string"
+                                ? streamError
+                                : typeof streamError.message === "string"
+                                  ? streamError.message
+                                  : "stream error";
+                        cb.onError(message, {
+                            type: streamError.type,
+                            code: streamError.code,
+                        });
+                        continue;
+                    }
                     if (responses) {
                         const ty = json?.type;
                         if (typeof json?.response?.model === "string" && json.response.model) {
@@ -156,6 +170,12 @@ export async function consumeStream(
                             markDelta();
                             reasoning += json.delta;
                             cb.onReasoning?.(json.delta);
+                        } else if (
+                            ty === "response.status" &&
+                            typeof json.message === "string" &&
+                            json.message.trim()
+                        ) {
+                            cb.onStatusNotice?.(json.message.trim());
                         } else if (
                             ty === "response.output_item.added" &&
                             json?.item?.type === "function_call"
@@ -228,10 +248,6 @@ export async function consumeStream(
                     // the HTTP status — it arrives as its own `data:` line carrying the
                     // real OpenAI-shaped error envelope instead. Without this the failure
                     // was indistinguishable from a normal, silent "stop" finish.
-                    if (json?.error) {
-                        cb.onError(String(json.error?.message ?? "stream error"));
-                        continue;
-                    }
                     // Final usage chunk (stream_options.include_usage): choices is
                     // empty and `usage` carries the turn's token totals.
                     if (json?.usage) {
