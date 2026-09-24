@@ -207,6 +207,7 @@ export const HOST_MESSAGE_TYPES = [
     "stt-error",
     "stt-result",
     "tasks",
+    "todos-snapshot",
     "title-update",
     "toast",
     "user",

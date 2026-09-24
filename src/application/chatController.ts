@@ -205,6 +205,7 @@ export class ChatController {
         return this.session?.getModel?.() || this.options.model || "";
     }
     getReasoning = (): string => this.options.reasoning || "";
+    currentTodos = () => this.live.todos;
     setPermission(permission: string): void {
         this.options.permission = permission;
         this.session?.setPermission?.(permission);
@@ -227,7 +228,6 @@ export class ChatController {
             .map((r) => `${r.role === "user" ? "user" : "assistant"}: ${r.text}`)
             .join("\n\n");
     }
-
     getSession(): AgentSession | undefined {
         return this.session;
     }
@@ -248,7 +248,6 @@ export class ChatController {
     private emit(message: unknown): void {
         this.stream.emit(message);
     }
-
     aiToolsInfo(): { available: string[]; enabled: string[] } | undefined {
         return this.session?.aiTools?.();
     }
@@ -258,6 +257,7 @@ export class ChatController {
     seedRenderLog(): boolean {
         const restored = this.renderPersistence.restore(this.options.resumeSessionId);
         this.live.hydrateTodosFromMessages(this.renderPersistence.stream.messages);
+        if (restored.todos !== undefined) this.live.setTodos(restored.todos);
         this.queue.restore(restored.pending);
         if (restored.pending.length > 0) {
             this.queue.hold();

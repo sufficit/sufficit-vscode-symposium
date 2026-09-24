@@ -43,6 +43,14 @@ export interface RenderLogSnapshot {
     cursor: number;
 }
 
+/** One complete, newest-first page boundary in the append-only visual log. */
+export interface RenderLogPage extends RenderLogSnapshot {
+    /** Byte offset for the next older page, or undefined at the beginning. */
+    nextCursor?: number;
+}
+
+const HISTORY_PAGE_BYTES = 1024 * 1024;
+
 export interface FollowRenderOptions {
     /** Rows written by this controller are skipped when the shared file is tailed. */
     writerId?: string;
@@ -127,6 +135,105 @@ export function readRenderSnapshot(sessionId: string): RenderLogSnapshot {
         records: parsed.records,
         cursor: parsed.consumedBytes,
     };
+}
+
+/**
+ * Reads only the recent portion of a visual transcript. Pages begin at a user
+ * row, so replaying a page never begins halfway through a tool call or an
+ * assistant's streamed answer. Large individual turns can exceed the target
+ * size; in that case the whole turn is retained rather than silently lost.
+ *
+ * `endByte` is the previous page's `nextCursor`. Byte offsets, not message
+ * indexes, keep older pages stable while a peer appends new records.
+ */
+export function readRenderPage(
+    sessionId: string,
+    endByte?: number,
+    options: { pageBytes?: number } = {},
+): RenderLogPage {
+    const empty: RenderLogPage = { messages: [], records: [], cursor: 0 };
+    if (!sessionId) return empty;
+    let fd: number | undefined;
+    try {
+        fd = fs.openSync(renderFile(sessionId), "r");
+        const size = fs.fstatSync(fd).size;
+        let end = endByte === undefined ? size : Math.min(Math.max(0, endByte), size);
+        if (end === 0) return empty;
+        let windowBytes = Math.max(1024, options.pageBytes ?? HISTORY_PAGE_BYTES);
+        while (true) {
+            const start = Math.max(0, end - windowBytes);
+            const raw = Buffer.allocUnsafe(end - start);
+            const bytesRead = fs.readSync(fd, raw, 0, raw.length, start);
+            let complete = raw.subarray(0, bytesRead);
+            // A writer may have an unfinished final line. Leave it for the
+            // follower rather than projecting a partial JSON object.
+            let validTrailingLine = false;
+            let trailingRecord: RenderLogRecord | undefined;
+            if (endByte === undefined && complete.length && complete.at(-1) !== 0x0a) {
+                const lastNewline = complete.lastIndexOf(0x0a);
+                const trailing: RenderLogRecord[] = [];
+                validTrailingLine = parseLine(complete.subarray(lastNewline + 1), trailing);
+                trailingRecord = trailing[0];
+                if (validTrailingLine) {
+                    // Legacy files may end in a complete row without '\n'.
+                    // The offset still points after that valid JSON object.
+                } else {
+                    if (lastNewline < 0) {
+                        if (start === 0) return empty;
+                        windowBytes *= 2;
+                        continue;
+                    }
+                    end = start + lastNewline + 1;
+                    complete = complete.subarray(0, lastNewline + 1);
+                }
+            }
+            let firstComplete = 0;
+            if (start > 0) {
+                const newline = complete.indexOf(0x0a);
+                if (newline < 0) {
+                    windowBytes *= 2;
+                    continue;
+                }
+                firstComplete = newline + 1;
+            }
+            const rows: Array<{ offset: number; record: RenderLogRecord }> = [];
+            for (
+                let position = firstComplete, newline = complete.indexOf(0x0a, position);
+                newline >= 0;
+                position = newline + 1, newline = complete.indexOf(0x0a, position)
+            ) {
+                const parsed: RenderLogRecord[] = [];
+                parseLine(complete.subarray(position, newline), parsed);
+                if (parsed.length) rows.push({ offset: start + position, record: parsed[0] });
+            }
+            if (validTrailingLine && trailingRecord) {
+                const lastNewline = complete.lastIndexOf(0x0a);
+                rows.push({ offset: start + lastNewline + 1, record: trailingRecord });
+            }
+            const boundary = rows.findIndex(({ record }) => isHistoryBoundary(record.message));
+            if (boundary < 0 && start > 0) {
+                windowBytes *= 2;
+                continue;
+            }
+            const selected = rows.slice(boundary < 0 ? 0 : boundary);
+            const nextCursor = selected[0]?.offset ?? (start === 0 ? 0 : start + firstComplete);
+            const records = selected.map(({ record }) => record);
+            return {
+                messages: records.map((record) => record.message),
+                records,
+                cursor: end,
+                nextCursor: nextCursor || undefined,
+            };
+        }
+    } catch {
+        return empty;
+    } finally {
+        if (fd !== undefined) fs.closeSync(fd);
+    }
+}
+function isHistoryBoundary(message: unknown): boolean {
+    const type = (message as { type?: unknown } | null)?.type;
+    return type === "user" || type === "history";
 }
 
 /**

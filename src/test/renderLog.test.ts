@@ -4,11 +4,16 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { ledgerDir } from "../ledger";
+import { loadControllerHistory } from "../application/controllerHistory";
+import { seedRenderLog } from "../application/controllerPersist";
+import { RenderStream } from "../application/renderStream";
+import type { AgentAdapter } from "../adapters/types";
 import {
     appendRender,
     followRender,
     hasRender,
     readRender,
+    readRenderPage,
     readRenderSnapshot,
 } from "../renderLog";
 
@@ -53,6 +58,141 @@ test("render log unwraps writer metadata while preserving legacy rows", () => {
         assert.equal(snapshot.records[1].authoritative, true);
         assert.equal(
             snapshot.cursor,
+            fs.statSync(path.join(ledgerDir(sessionId), "render.jsonl")).size,
+        );
+    });
+});
+
+test("visual history pages backwards on user boundaries without duplicates", () => {
+    withIsolatedHome(() => {
+        const sessionId = "render-pages";
+        for (let turn = 0; turn < 8; turn++) {
+            appendRender(sessionId, { type: "user", text: `prompt ${turn}` });
+            appendRender(sessionId, {
+                type: "event",
+                event: { kind: "text", text: `answer ${turn} ${"x".repeat(350)}` },
+            });
+            appendRender(sessionId, { type: "event", event: { kind: "turn-end" } });
+        }
+        const pages = [];
+        let cursor: number | undefined;
+        do {
+            const page = readRenderPage(sessionId, cursor, { pageBytes: 1024 });
+            assert.equal((page.messages[0] as { type?: string }).type, "user");
+            pages.unshift(page.messages);
+            cursor = page.nextCursor;
+        } while (cursor !== undefined);
+        assert.deepEqual(pages.flat(), readRender(sessionId));
+        assert.ok(pages.length > 1);
+    });
+});
+
+test("visual history excludes an unfinished JSONL tail and follows it when completed", () => {
+    withIsolatedHome(() => {
+        const sessionId = "render-page-partial";
+        appendRender(sessionId, { type: "user", text: "first" });
+        const file = path.join(ledgerDir(sessionId), "render.jsonl");
+        fs.appendFileSync(file, '{"type":"user","text":"second"');
+        const page = readRenderPage(sessionId);
+        assert.deepEqual(page.messages, [{ type: "user", text: "first" }]);
+        assert.equal(page.cursor, Buffer.byteLength('{"type":"user","text":"first"}\n'));
+        fs.appendFileSync(file, "}\n");
+        assert.deepEqual(readRenderPage(sessionId).messages.at(-1), {
+            type: "user",
+            text: "second",
+        });
+    });
+});
+
+test("visual history retains a valid final JSONL row without a newline", () => {
+    withIsolatedHome(() => {
+        const sessionId = "render-page-no-newline";
+        appendRender(sessionId, { type: "user", text: "first" });
+        const file = path.join(ledgerDir(sessionId), "render.jsonl");
+        fs.appendFileSync(file, '{"type":"user","text":"second"}');
+        const page = readRenderPage(sessionId);
+        assert.equal(page.messages.length, 2);
+        assert.equal(page.cursor, fs.statSync(file).size);
+    });
+});
+
+test("controller keeps visual pagination on the render log instead of switching adapters", async () => {
+    await withIsolatedHome(async () => {
+        const sessionId = "render-controller-pages";
+        for (let turn = 0; turn < 6; turn++) {
+            appendRender(sessionId, { type: "user", text: `prompt ${turn}` });
+            appendRender(sessionId, {
+                type: "event",
+                event: { kind: "text", text: `answer ${turn} ${"x".repeat(240_000)}` },
+            });
+            appendRender(sessionId, { type: "event", event: { kind: "turn-end" } });
+        }
+        const emitted: Array<{
+            messages: Array<{ role: string; text: string }>;
+            replace: boolean;
+        }> = [];
+        const adapter = {
+            backend: "test",
+            history: () => assert.fail("visual pages must not use the native adapter"),
+        } as unknown as AgentAdapter;
+        let cursor: string | undefined;
+        do {
+            cursor = await loadControllerHistory(
+                adapter,
+                { backend: "test", sessionId, title: "Paged" },
+                (message) => emitted.push(message as (typeof emitted)[number]),
+                cursor,
+            );
+        } while (cursor);
+        assert.ok(emitted.length > 1);
+        assert.equal(emitted[0].replace, true);
+        assert.ok(emitted.slice(1).every((page) => page.replace === false));
+        assert.equal(emitted[0].messages.at(-1)?.text.startsWith("answer 5"), true);
+        assert.deepEqual(
+            emitted
+                .slice()
+                .reverse()
+                .flatMap((page) =>
+                    page.messages.filter((row) => row.role === "user").map((row) => row.text),
+                ),
+            Array.from({ length: 6 }, (_, turn) => `prompt ${turn}`),
+        );
+    });
+});
+
+test("tail-only restore recovers the latest queue and plan from older pages", () => {
+    withIsolatedHome(() => {
+        const sessionId = "render-restore-state";
+        const todos = [{ content: "Finish tests", status: "in_progress" as const }];
+        appendRender(sessionId, { type: "event", event: { kind: "tool-end", todos } });
+        appendRender(sessionId, {
+            type: "queue",
+            items: [
+                { id: 1, clientMessageId: "sent", text: "send me", attachments: [] },
+                { id: 2, clientMessageId: "waiting", text: "wait for me", attachments: [] },
+            ],
+        });
+        appendRender(sessionId, { type: "user", text: "send me", clientMessageId: "sent" });
+        for (let turn = 0; turn < 6; turn++) {
+            appendRender(sessionId, { type: "user", text: `prompt ${turn}` });
+            appendRender(sessionId, {
+                type: "event",
+                event: { kind: "text", text: "x".repeat(240_000) },
+            });
+            appendRender(sessionId, { type: "event", event: { kind: "turn-end" } });
+        }
+        const stream = new RenderStream();
+        const state = { count: 0 };
+        const restored = seedRenderLog({ sessionId: () => sessionId, stream, state }, sessionId);
+        assert.equal(restored.seeded, true);
+        assert.deepEqual(restored.todos, todos);
+        assert.deepEqual(
+            restored.pending.map((item) => item.clientMessageId),
+            ["waiting"],
+        );
+        assert.ok(stream.messages.length < readRender(sessionId).length);
+        assert.equal(
+            restored.cursor,
             fs.statSync(path.join(ledgerDir(sessionId), "render.jsonl")).size,
         );
     });

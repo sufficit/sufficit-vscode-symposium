@@ -437,6 +437,116 @@ test("webview DOM announces AHP reconciliation and renders a chat snapshot once"
     harness.dom.window.close();
 });
 
+test("historical AHP hydration paints the settled plan without replaying completion timers", async () => {
+    const harness = createHarness();
+    let completionTimers = 0;
+    const schedule = harness.dom.window.setTimeout.bind(harness.dom.window);
+    harness.dom.window.setTimeout = (callback, delay, ...args) => {
+        if (delay === 5200) {
+            completionTimers++;
+            return 0;
+        }
+        return schedule(callback, delay, ...args);
+    };
+    harness.deliver(meta("hydration", "luna"));
+    harness.deliver({ type: "ahp-frame", frame: { kind: "reset", generation: 1 } });
+    harness.deliver({
+        type: "ahp-frame",
+        frame: {
+            kind: "snapshot",
+            generation: 1,
+            snapshot: {
+                resource: "ahp-chat:/11111111-1111-5111-8111-111111111111",
+                fromSeq: 1,
+                state: {
+                    resource: "ahp-chat:/11111111-1111-5111-8111-111111111111",
+                    title: "Hydration",
+                    status: 1,
+                    modifiedAt: new Date(0).toISOString(),
+                    turns: [
+                        {
+                            id: "old-turn",
+                            startedAt: new Date(0).toISOString(),
+                            duration: 1,
+                            state: "complete",
+                            message: { text: "Old question", origin: { kind: "user" } },
+                            responseParts: [
+                                {
+                                    kind: "toolCall",
+                                    toolCall: {
+                                        toolCallId: "old-todo",
+                                        toolName: "TodoWrite",
+                                        displayName: "TodoWrite",
+                                        status: "completed",
+                                        content: [],
+                                        _meta: {
+                                            symposium: {
+                                                todos: [
+                                                    {
+                                                        content: "Obsolete step",
+                                                        status: "completed",
+                                                    },
+                                                ],
+                                            },
+                                        },
+                                    },
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+    });
+    await new Promise((resolve) => schedule(resolve, 100));
+    assert.doesNotMatch(harness.document.querySelector("#plan").textContent, /Obsolete step/);
+    harness.deliver({
+        type: "todos-snapshot",
+        todos: [
+            { content: "Finished step", status: "completed" },
+            { content: "Current step", status: "in_progress" },
+        ],
+    });
+    assert.match(harness.document.querySelector("#plan").textContent, /Current step/);
+    assert.doesNotMatch(harness.document.querySelector("#plan").textContent, /Finished step/);
+    harness.deliver({
+        type: "tasks",
+        project: "hydration",
+        items: [
+            { id: "done", title: "Old memory task", done: true, ts: Date.now() },
+            { id: "open", title: "Current memory task", done: false, ts: Date.now() },
+        ],
+    });
+    assert.equal(completionTimers, 0);
+    assert.match(harness.document.querySelector("#tasks").textContent, /Current memory task/);
+    assert.doesNotMatch(harness.document.querySelector("#tasks").textContent, /Old memory task/);
+    harness.deliver(meta("hydration", "luna"));
+    harness.deliver({
+        type: "tasks",
+        project: "hydration",
+        items: [{ id: "open", title: "Current memory task", done: true, ts: Date.now() }],
+    });
+    assert.equal(completionTimers, 0, "reopening the same session must settle past completions");
+    harness.dom.window.close();
+});
+
+test("scroll-up history can request a second older page after the first response", async () => {
+    const harness = createHarness();
+    harness.deliver(meta("paged", "luna"));
+    const log = harness.document.querySelector("#log");
+    harness.deliver({ type: "history", messages: [], nextCursor: "render:2000" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    log.scrollTop = 0;
+    log.dispatchEvent(new harness.dom.window.Event("scroll"));
+    assert.equal(harness.sent.filter((message) => message.type === "load-more-history").length, 1);
+    harness.deliver({ type: "history", messages: [], nextCursor: "render:1000" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    log.scrollTop = 0;
+    log.dispatchEvent(new harness.dom.window.Event("scroll"));
+    assert.equal(harness.sent.filter((message) => message.type === "load-more-history").length, 2);
+    harness.dom.window.close();
+});
+
 test("webview DOM restores a persisted tool row with its file and diff metadata", async () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));

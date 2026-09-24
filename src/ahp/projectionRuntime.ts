@@ -103,12 +103,7 @@ export class AhpProjectionRuntime {
         this.options.persistence?.maybeSave(this.runtime);
     }
 
-    /**
-     * Re-attaches the projection observer for a controller whose persisted render
-     * log was seeded. Preserves any turns already loaded into the AHP runtime
-     * (e.g. from a prior lazy-loading pass) so reopening a session does not
-     * discard the scroll-up history the user already waited for.
-     */
+    /** Reattaches a seeded projection without discarding already paged turns. */
     rebuild(provider: string, nativeSessionId: string): void {
         const key = sessionKey(provider, nativeSessionId);
         const current = this.records.get(key);
@@ -250,7 +245,10 @@ export class AhpProjectionRuntime {
                 return;
             }
             if (message.type === "history" && Array.isArray(message.messages)) {
-                const turns = historyTurns(message.messages as HistoryMessage[]);
+                const turns = historyTurns(
+                    message.messages as HistoryMessage[],
+                    optionalString(message.pageId),
+                );
                 this.runtime.dispatch(record.handle.chatResource, {
                     type: "chat/turnsLoaded",
                     turns,

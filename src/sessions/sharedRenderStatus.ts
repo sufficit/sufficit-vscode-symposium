@@ -7,7 +7,7 @@ import {
 } from "../application/renderSessionOwnership";
 import {
     followRender,
-    readRenderSnapshot,
+    readRenderPage,
     type FollowRenderOptions,
     type RenderLogRecord,
     type RenderWriter,
@@ -115,7 +115,7 @@ export class SharedRenderStatusRegistry {
         if (current?.ownerKey === ownerKey && current.stop) return;
         current?.stop?.();
 
-        const snapshot = readRenderSnapshot(sessionId);
+        const snapshot = readRenderPage(sessionId);
         const peer = new PeerRenderState((writer) => this.ownership.alive(writer));
         peer.restore(snapshot.records, this.writer.id);
         const entry: SharedEntry = {

@@ -21,17 +21,22 @@ export async function loadControllerHistory(
     emit: (message: unknown) => void,
     cursor?: string,
 ): Promise<string | undefined> {
-    // The first page (no cursor): prefer the render log when it has content.
-    // Paginated (cursor set) loads fall through to the adapter, which pages the
-    // native JSONL for older turns beyond what the render log captured.
-    if (!cursor) {
-        const hasRenderLog = renderLog.hasRender(info.sessionId);
-        if (hasRenderLog) {
-            const messages = historyFromRenderLog(info);
-            if (messages.length > 0) {
-                emit({ type: "history", messages, replace: true });
-                return undefined;
-            }
+    // Render-log cursors stay on the lossless visual source. Falling through to
+    // native JSONL on page two duplicated turns and dropped tool/diff rows.
+    const renderOffset = cursor?.startsWith("r:") ? Number(cursor.slice("r:".length)) : undefined;
+    if ((!cursor && renderLog.hasRender(info.sessionId)) || renderOffset !== undefined) {
+        const page = renderLog.readRenderPage(info.sessionId, renderOffset);
+        const messages = historyFromRenderLog(info, page.messages);
+        if (messages.length > 0 || renderOffset !== undefined) {
+            const nextCursor = page.nextCursor ? `r:${page.nextCursor}` : undefined;
+            emit({
+                type: "history",
+                messages,
+                replace: cursor === undefined,
+                ...(cursor ? { pageId: cursor } : {}),
+                ...(nextCursor ? { nextCursor } : {}),
+            });
+            return nextCursor;
         }
     }
     if (!adapter.history) {
@@ -43,6 +48,7 @@ export async function loadControllerHistory(
             type: "history",
             messages: page.messages,
             replace: cursor === undefined,
+            ...(cursor ? { pageId: cursor } : {}),
             ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
         });
         return page.nextCursor;
@@ -59,9 +65,8 @@ export async function loadControllerHistory(
 }
 
 /** Converts the Symposium render log into HistoryMessages (lossless). */
-function historyFromRenderLog(info: SessionInfo): HistoryMessage[] {
+function historyFromRenderLog(info: SessionInfo, log: unknown[]): HistoryMessage[] {
     try {
-        const log = renderLog.readRender(info.sessionId);
         const rows = replayRows(log);
         const messages: HistoryMessage[] = [];
         for (const row of rows) {

@@ -51,11 +51,12 @@ export function renderUserTurn(
     attachmentPaths: readonly string[] = [],
     clientMessageId?: string,
     timestamp?: string | number,
+    historical = false,
 ): HTMLElement {
     endStream();
     markMessageDispatched(clientMessageId);
     const element = confirmOptimisticMessage(clientMessageId) || message("user", text, timestamp);
-    armStickyUserMessage(element);
+    if (!historical) armStickyUserMessage(element);
     if (attachmentPaths.length) {
         const list = document.createElement("div");
         list.className = "msgAtts";
@@ -77,9 +78,11 @@ export function renderUserTurn(
         }
         element.appendChild(list);
     }
-    setBusy(true);
-    setStatus();
-    resizeInput();
+    if (!historical) {
+        setBusy(true);
+        setStatus();
+        resizeInput();
+    }
     return element;
 }
 

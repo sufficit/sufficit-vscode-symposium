@@ -131,7 +131,7 @@ export class ControllerRenderPersistence {
 
     private ensureFollowing(sessionId: string): void {
         if (this.followedSessionId === sessionId && this.stopFollower) return;
-        const cursor = renderLog.readRenderSnapshot(sessionId).cursor;
+        const cursor = renderLog.readRenderPage(sessionId).cursor;
         this.follow(sessionId, cursor);
     }
 

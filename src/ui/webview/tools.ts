@@ -19,6 +19,7 @@ interface ToolOptions {
     path?: string;
     diff?: Array<{ old: string; new: string }>;
     toolId?: string;
+    historical?: boolean;
 }
 interface ToolRow {
     showResult: (text: string, replace?: boolean) => void;
@@ -160,7 +161,7 @@ export function renderTool(
     opts = opts || {};
     // A plan/todo update renders as the evolving checklist panel, not a row.
     if (opts.todos) {
-        renderTodos(opts.todos);
+        if (!opts.historical) renderTodos(opts.todos);
         return null;
     }
     // Skip an empty tool row: some backends (responses-API function_call)

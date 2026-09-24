@@ -3,6 +3,8 @@ import * as renderLog from "../renderLog";
 import type { RenderLogRecord, RenderWriter } from "../renderLog";
 import { RenderStream } from "./renderStream";
 import { PendingMessage, recoverPersistedQueue } from "./controllerQueue";
+import type { TodoItem } from "../adapters/types";
+import { todoSnapshotFromRenderMessage } from "./todoState";
 
 /** Mutable render-log persistence state owned by the controller. */
 export interface PersistState {
@@ -26,6 +28,7 @@ export interface PersistContext {
 export interface RestoredRenderLog {
     seeded: boolean;
     pending: PendingMessage[];
+    todos?: TodoItem[];
     records: RenderLogRecord[];
     cursor: number;
 }
@@ -73,9 +76,12 @@ export function seedRenderLog(
     if (!resumeSessionId || !renderLog.hasRender(resumeSessionId)) {
         return { seeded: false, pending: [], records: [], cursor: 0 };
     }
-    const snapshot = renderLog.readRenderSnapshot(resumeSessionId);
+    // The complete JSONL remains on disk for scroll-up pagination. Replaying
+    // it here would hydrate thousands of obsolete states before the current
+    // one, even though RenderStream itself retains only its last 5000 rows.
+    const snapshot = renderLog.readRenderPage(resumeSessionId);
     const persisted = snapshot.messages;
-    const pending = recoverPersistedQueue(persisted);
+    const { pending, todos } = recoverCurrentState(resumeSessionId, snapshot);
     // A final canonical snapshot overwrites stale queue cards during replay.
     // It is intentionally not appended to disk; it is re-derived on each seed.
     // Whether it was "waiting for a turn" or "held after a failure" isn't
@@ -89,7 +95,42 @@ export function seedRenderLog(
     return {
         seeded: true,
         pending,
+        todos,
         records: snapshot.records,
         cursor: snapshot.cursor,
+    };
+}
+
+/**
+ * Queue and plan are full-state snapshots, not a visual transcript page. Find
+ * their last records by walking older pages without replaying those pages into
+ * the stream/UI. User rows after the last queue snapshot consume matching
+ * legacy pending messages when a final empty queue row was never persisted.
+ */
+function recoverCurrentState(
+    sessionId: string,
+    recent: renderLog.RenderLogPage,
+): { pending: PendingMessage[]; todos?: TodoItem[] } {
+    let todos: TodoItem[] | undefined;
+    let queue: unknown;
+    const usersAfterQueue: unknown[] = [];
+    let page = recent;
+    while (true) {
+        for (let index = page.messages.length - 1; index >= 0; index--) {
+            const message = page.messages[index];
+            if (todos === undefined) todos = todoSnapshotFromRenderMessage(message);
+            if (queue === undefined) {
+                const value = message as { type?: unknown; items?: unknown } | null;
+                if (value?.type === "queue" && Array.isArray(value.items)) queue = message;
+                else if (value?.type === "user") usersAfterQueue.push(message);
+            }
+        }
+        if ((queue !== undefined && todos !== undefined) || !page.nextCursor) break;
+        page = renderLog.readRenderPage(sessionId, page.nextCursor);
+    }
+    return {
+        pending:
+            queue === undefined ? [] : recoverPersistedQueue([queue, ...usersAfterQueue.reverse()]),
+        todos,
     };
 }

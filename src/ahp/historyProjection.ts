@@ -40,7 +40,8 @@ export function mergeExpectedTurns(
     return history.replace === true ? next : [...next, ...current];
 }
 
-export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
+export function historyTurns(messages: HistoryMessage[], pageId = ""): ChatState["turns"] {
+    const prefix = pageId ? `${pageId}-` : "";
     const turns: ChatState["turns"] = [];
     let current: ChatState["turns"][number] | undefined;
     const flush = () => {
@@ -51,16 +52,16 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
     for (const [index, message] of messages.entries()) {
         if (message.role === "user") {
             flush();
-            current = historyTurn(index, message.text ?? "", message.ts);
+            current = historyTurn(index, message.text ?? "", message.ts, prefix);
             continue;
         }
-        const turn = (current ??= historyTurn(index, "", message.ts));
+        const turn = (current ??= historyTurn(index, "", message.ts, prefix));
         inheritTurnTimestamp(turn, message.ts);
         if (message.role === "assistant") {
             resumeHistoricalTurn(turn);
             turn.responseParts.push({
                 kind: PART_MARKDOWN,
-                id: `history-${index + 1}-text`,
+                id: `${prefix}history-${index + 1}-text`,
                 content: message.text ?? "",
                 _meta: assistantMetadata({
                     ts: message.ts,
@@ -72,7 +73,7 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             resumeHistoricalTurn(turn);
             turn.responseParts.push({
                 kind: PART_REASONING,
-                id: `history-${index + 1}-reasoning`,
+                id: `${prefix}history-${index + 1}-reasoning`,
                 content: message.text ?? "",
             });
         } else if (message.role === "tool") {
@@ -80,7 +81,7 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
             turn.responseParts.push({
                 kind: PART_TOOL_CALL,
                 toolCall: {
-                    toolCallId: `history-${index + 1}-tool`,
+                    toolCallId: `${prefix}history-${index + 1}-tool`,
                     toolName: message.toolName ?? "tool",
                     displayName: message.toolName ?? "Tool",
                     invocationMessage: message.detail ?? "Tool call",
@@ -104,7 +105,7 @@ export function historyTurns(messages: HistoryMessage[]): ChatState["turns"] {
         } else if (message.role === "status-notice") {
             turn.responseParts.push({
                 kind: PART_NOTICE,
-                id: `history-${index + 1}-notice`,
+                id: `${prefix}history-${index + 1}-notice`,
                 content: message.text ?? "",
                 _meta: { severity: message.severity ?? "info" },
             } as unknown as ResponsePart);
@@ -128,9 +129,10 @@ function historyTurn(
     index: number,
     text: string,
     timestamp: number | undefined,
+    prefix: string,
 ): ChatState["turns"][number] {
     return {
-        id: `history-${index + 1}`,
+        id: `${prefix}history-${index + 1}`,
         startedAt: new Date(timestamp ?? 0).toISOString(),
         duration: 0,
         state: TURN_COMPLETE,
