@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { buildHeaders, shouldRefreshNativeAuthorization } from "../adapters/openai/httpAuth";
 import { OpenAIAdapterConfig } from "../adapters/openai/types";
 import { buildPkceAuthorizationUrl, identityRedirectUri } from "../auth/identityOAuth";
+import { fallbackAccessTokenAfterRefreshFailure } from "../auth/sharedIdentitySession";
 
 const adapterConfig: OpenAIAdapterConfig = {
     api: "responses",
@@ -70,6 +71,28 @@ test("native Sufficit auth refreshes once for 401 and directive-related 403 resp
     assert.equal(shouldRefreshNativeAuthorization(403, false, "token"), false);
     assert.equal(shouldRefreshNativeAuthorization(403, true, null), false);
     assert.equal(shouldRefreshNativeAuthorization(500, true, "token"), false);
+});
+
+test("a failed forced refresh cannot reuse the rejected token", () => {
+    const previous = {
+        accessToken: "rejected-token",
+        refreshToken: "refresh-v1",
+        expiresAtMs: 100_000,
+    };
+    assert.equal(fallbackAccessTokenAfterRefreshFailure(previous, previous, true, 1_000), null);
+    assert.equal(
+        fallbackAccessTokenAfterRefreshFailure(previous, previous, false, 1_000),
+        "rejected-token",
+    );
+    assert.equal(
+        fallbackAccessTokenAfterRefreshFailure(
+            previous,
+            { ...previous, accessToken: "rotated-token" },
+            true,
+            1_000,
+        ),
+        "rotated-token",
+    );
 });
 
 test("desktop PKCE arms the callback before opening and awaiting the browser flow", () => {

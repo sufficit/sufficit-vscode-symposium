@@ -54,6 +54,7 @@ export async function httpFailureEvent(
     deps: TurnRunnerDeps,
     res: Response,
     estimate: RequestEstimate,
+    toolActivityStarted = false,
 ): Promise<AgentEvent> {
     const detail = await res.text().catch(() => "");
     const requiredDirective = res.headers.get("x-sufficit-required-directive");
@@ -61,11 +62,15 @@ export async function httpFailureEvent(
         ? `\nX-Sufficit-Required-Directive: ${requiredDirective}`
         : "";
     const diagnostic = requestEstimateDiagnostic(estimate, deps.contextWindow());
-    const retryable = res.status >= 500 || res.status === 429 || res.status === 408;
+    const retryable =
+        !toolActivityStarted && (res.status >= 500 || res.status === 429 || res.status === 408);
+    const recoveryHint = toolActivityStarted
+        ? "\nCompleted tool results are saved; send Continue to resume safely instead of resending the original request."
+        : "";
     return {
         kind: "error",
         message:
-            `HTTP ${res.status} ${res.statusText} ${detail}${permissionDetail}\n${diagnostic}`.trim(),
+            `HTTP ${res.status} ${res.statusText} ${detail}${permissionDetail}\n${diagnostic}${recoveryHint}`.trim(),
         retryable,
     };
 }

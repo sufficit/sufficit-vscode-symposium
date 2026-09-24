@@ -192,7 +192,7 @@ export class TurnRunner {
                     let res = await post(loginToken);
                     if (shouldRefreshNativeAuthorization(res.status, noExplicitAuth, loginToken)) {
                         const refreshedToken = await this.d.authToken(true);
-                        if (refreshedToken) {
+                        if (refreshedToken && refreshedToken !== loginToken) {
                             // A 401/403 was not dispatched, so this auth retry cannot duplicate a turn.
                             await res.arrayBuffer().catch(() => undefined);
                             this.d.emit({
@@ -201,11 +201,18 @@ export class TurnRunner {
                             });
                             loginToken = refreshedToken;
                             res = await post(loginToken);
+                        } else {
+                            this.d.emit({
+                                kind: "status-notice",
+                                text: "Sufficit AI authorization could not be refreshed. Sign in again to continue.",
+                            });
                         }
                     }
                     const responseStartedAt = Date.now();
                     if (!res.ok || !res.body) {
-                        this.d.emit(await httpFailureEvent(this.d, res, estimate));
+                        this.d.emit(
+                            await httpFailureEvent(this.d, res, estimate, toolActivityStarted),
+                        );
                         hitCap = false;
                         break;
                     }
@@ -225,11 +232,9 @@ export class TurnRunner {
                 }
                 const { text, toolCalls, aborted, interruption, usage, providerError } =
                     streamResult;
-
                 if (usage) {
                     emitTurnUsage(this.d, usage);
                 }
-
                 if (interruption?.kind === "transport" && !this.cancelled) {
                     this.d.emit(transportInterruptionNotice(interruption.message));
                 }
@@ -244,7 +249,6 @@ export class TurnRunner {
                 }
 
                 await this.d.maybeAutoCompact();
-
                 if (aborted) {
                     if (toolCalls.length > 0) {
                         messages.push({

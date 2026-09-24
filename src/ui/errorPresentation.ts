@@ -96,12 +96,14 @@ export function presentTurnError(
 ): ErrorPresentation {
     const detail = compactTechnicalDetail(message);
     const status = httpStatus(detail);
-    const retry =
-        retryable === true && typeof retryAt === "number" && retryAt > now
-            ? " The provider limit is exhausted. Retry will become available when the stated reset time is reached."
-            : retryable === true
-              ? " Automatic recovery was unavailable or exhausted. You may retry the same message."
-              : " Retry is unavailable for this response; update the request or configuration before sending again.";
+    const completedTools = /Completed tool results are saved/i.test(String(message ?? ""));
+    const retry = completedTools
+        ? ' Completed tool results are saved; send "Continue" to resume instead of resending the original request.'
+        : retryable === true && typeof retryAt === "number" && retryAt > now
+          ? " The provider limit is exhausted. Retry will become available when the stated reset time is reached."
+          : retryable === true
+            ? " Automatic recovery was unavailable or exhausted. You may retry the same message."
+            : " Retry is unavailable for this response; update the request or configuration before sending again.";
 
     if (status === 503 && /ai_backends_exhausted|all ai backends exhausted/i.test(detail)) {
         return {
@@ -126,7 +128,10 @@ export function presentTurnError(
     if (status === 401) {
         return {
             summary:
-                "Authentication was rejected by the provider (HTTP 401). Sign in again before resending the message.",
+                "Authentication was rejected by the provider (HTTP 401). Sign in again" +
+                (completedTools
+                    ? ', then send "Continue"; do not resend the original request.'
+                    : " before resending the message."),
             detail,
         };
     }
@@ -142,7 +147,9 @@ export function presentTurnError(
             summary:
                 "Your account is signed in, but it does not have permission for this request (HTTP 403)." +
                 permission +
-                " Ask an administrator to grant access, then resend the message.",
+                (completedTools
+                    ? ' Ask an administrator to grant access, then send "Continue"; do not resend the original request.'
+                    : " Ask an administrator to grant access, then resend the message."),
             detail,
         };
     }

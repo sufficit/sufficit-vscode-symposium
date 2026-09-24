@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { SharedIdentityTokenStore, sharedIdentityTokenStore } from "./tokenStore";
 import {
+    fallbackAccessTokenAfterRefreshFailure,
     parseStoredTokens,
     sameStoredTokenVersion,
     SharedIdentitySession,
@@ -138,8 +139,23 @@ export class IdentityTokenManager {
         // Another code-server window may have completed a rotating refresh
         // while this request was waiting. Never erase that newer shared token.
         const latest = await this.readTokens();
-        if (latest && this.hasCurrentScopes(latest) && Date.now() < latest.expiresAtMs) {
-            return latest.accessToken;
+        const fallback = fallbackAccessTokenAfterRefreshFailure(
+            tokens,
+            latest && this.hasCurrentScopes(latest) ? latest : undefined,
+            forceRefresh,
+        );
+        if (fallback) {
+            return fallback;
+        }
+        // A forced refresh follows a provider rejection. Its old, unexpired
+        // token is not a recovery result, even if the OAuth refresh failed.
+        if (
+            forceRefresh &&
+            latest &&
+            this.hasCurrentScopes(latest) &&
+            Date.now() < latest.expiresAtMs
+        ) {
+            return null;
         }
         await this.clearExpiredSession(tokens);
         return null;
