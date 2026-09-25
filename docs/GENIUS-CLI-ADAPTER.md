@@ -4,7 +4,7 @@ Symposium can use the installed `genius` command as a conversation backend. The 
 
 ## Setup
 
-Install a Genius CLI that supports `GENIUS_CLI_ACCESS_TOKEN` and confirm it with `genius --version --json`. Sign in to Sufficit Identity in Symposium, then choose **Genius** when creating a dialogue. Symposium supplies its current bearer to each `genius exec` child. Genius applies that bearer only to the command, including when a resident service executes it through the same-user pipe. The bearer is not saved in Genius state or printed in JSONL. `genius auth status` still reports Genius's own device enrollment, which can remain signed out. If Symposium is signed out, Genius falls back to its own enrollment; `genius auth login` is available for standalone CLI use. The adapter uses the same Genius sessions and context as the service or desktop app under the current OS account.
+Install a Genius CLI that supports `GENIUS_CLI_ACCESS_TOKEN` and confirm it with `genius --version --json`. Sign in to Sufficit Identity in Symposium, then choose **Genius** when creating a dialogue. A separate Genius login is unnecessary for this workflow. Genius uses its own enrolled identity when present; otherwise it uses the current Symposium bearer. Symposium refreshes and supplies that bearer to each `genius exec` child because access tokens expire. The resident service receives it through the same-user pipe. The bearer is not saved in Genius state or printed in JSONL. `genius auth status` reports only Genius's own enrollment, so it can say signed out while Genius dialogues in Symposium work. `genius auth login` remains available for standalone CLI use. The adapter uses the same Genius sessions and context as the service or desktop app under the current OS account.
 
 Settings:
 
