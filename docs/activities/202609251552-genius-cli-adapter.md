@@ -25,4 +25,4 @@ The adapter exclusively invokes the CLI. It does not call Genius's loopback HTTP
 
 ## Delivery
 
-Implementation branch: `feat/genius-cli-adapter`. Release publication and installation are separate from this reviewed implementation.
+Implementation branch: `feat/genius-cli-adapter`, review [PR #60](https://github.com/sufficit/sufficit-vscode-symposium/pull/60). The remote Build VSIX check passed, including Extension Host integration and VSIX validation. The generated `2026.925.2` VSIX was installed in local VS Code and `code --list-extensions --show-versions` confirmed that version. Already running Extension Hosts continue using their loaded version until their window is reloaded. Merge into `develop`, release publication and remote code-server installation remain separate from this reviewed implementation.
