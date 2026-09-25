@@ -75,10 +75,10 @@ const budgets = new Map([
     // Codex/Astra activity normalization (reasoning summaries, correlated tool
     // results, file details and turn timing) brought the host bundle to 843.8
     // KiB; jev between-turns context pruning (scorer client, pair extraction
-    // and prune strategy) pushes it to 856.8 KiB. The Genius CLI adapter
-    // adds native session discovery, streaming and process lifecycle; its
-    // verified host bundle is 871.8 KiB. Keep 880 KiB explicit and retain
-    // the independent 1 MiB archive cap.
+    // and prune strategy) pushes it to 856.8 KiB. Recent-history recovery
+    // adds under 0.1 KiB. The Genius CLI adapter adds native session
+    // discovery, streaming and process lifecycle; its verified host bundle
+    // is 873.3 KiB. Keep 880 KiB explicit and retain the 1 MiB archive cap.
     ["extension/out/extension.js", 880 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],

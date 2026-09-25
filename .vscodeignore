@@ -15,6 +15,8 @@ ARCHITECTURE.md
 docs/**
 PLAN-*.md
 .vscode/**
+**/.worktrees/**
+*.vsix
 .github/**
 .vsce*.token
 *.token
