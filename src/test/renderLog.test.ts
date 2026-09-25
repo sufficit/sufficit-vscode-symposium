@@ -5,9 +5,11 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { ledgerDir } from "../ledger";
 import { loadControllerHistory } from "../application/controllerHistory";
+import { ChatController } from "../application/chatController";
 import { seedRenderLog } from "../application/controllerPersist";
 import { RenderStream } from "../application/renderStream";
 import type { AgentAdapter } from "../adapters/types";
+import type { ApplicationPorts } from "../application/ports";
 import {
     appendRender,
     followRender,
@@ -87,6 +89,41 @@ test("visual history pages backwards on user boundaries without duplicates", () 
     });
 });
 
+test("legacy scroll-up pages cannot displace the latest durable turn", async () => {
+    await withIsolatedHome(() => {
+        const sessionId = "render-legacy-scroll-page";
+        for (let turn = 0; turn < 4; turn++) {
+            appendRender(sessionId, { type: "user", text: `prompt ${turn}` });
+            appendRender(sessionId, {
+                type: "event",
+                event: { kind: "text", text: `answer ${turn}` },
+            });
+            appendRender(sessionId, { type: "event", event: { kind: "turn-end" } });
+        }
+        // Old builds appended an older page after the newest answer. A small
+        // recent-read window then returned only this stale history envelope.
+        appendRender(sessionId, {
+            type: "history",
+            replace: false,
+            pageId: "r:older",
+            messages: [{ role: "assistant", text: `old answer ${"x".repeat(2_000)}` }],
+        });
+        const page = readRenderPage(sessionId, undefined, { pageBytes: 1024 });
+        const lastUser = page.messages
+            .filter((message) => (message as { type?: string }).type === "user")
+            .at(-1) as { text?: string } | undefined;
+        assert.equal(lastUser?.text, "prompt 3");
+        assert.equal(
+            page.messages.some((message) => (message as { type?: string }).type === "history"),
+            false,
+        );
+        assert.equal(
+            (page.messages.at(-1) as { event?: { kind?: string } }).event?.kind,
+            "turn-end",
+        );
+    });
+});
+
 test("visual history excludes an unfinished JSONL tail and follows it when completed", () => {
     withIsolatedHome(() => {
         const sessionId = "render-page-partial";
@@ -157,6 +194,45 @@ test("controller keeps visual pagination on the render log instead of switching 
                 ),
             Array.from({ length: 6 }, (_, turn) => `prompt ${turn}`),
         );
+    });
+});
+
+test("controller delivers older pages without appending them to the recent ledger", async () => {
+    await withIsolatedHome(async () => {
+        const sessionId = "render-transient-scroll-page";
+        for (let turn = 0; turn < 6; turn++) {
+            appendRender(sessionId, { type: "user", text: `prompt ${turn}` });
+            appendRender(sessionId, {
+                type: "event",
+                event: { kind: "text", text: `answer ${turn} ${"x".repeat(240_000)}` },
+            });
+            appendRender(sessionId, { type: "event", event: { kind: "turn-end" } });
+        }
+        const info = { backend: "test", sessionId, title: "Paged" };
+        const adapter = {
+            backend: "test",
+            history: () => assert.fail("visual pages must not use the native adapter"),
+        } as unknown as AgentAdapter;
+        const controller = new ChatController(
+            adapter,
+            { cwd: "/workspace", resumeSessionId: sessionId },
+            {} as ApplicationPorts,
+        );
+        try {
+            const received: unknown[] = [];
+            controller.subscribeLive((message) => received.push(message));
+            await controller.loadHistory(info, true);
+            const before = readRenderSnapshot(sessionId).cursor;
+            await controller.loadMoreHistory();
+            assert.equal(readRenderSnapshot(sessionId).cursor, before);
+            assert.equal(
+                received.filter((message) => (message as { type?: string }).type === "history")
+                    .length,
+                2,
+            );
+        } finally {
+            controller.dispose();
+        }
     });
 });
 

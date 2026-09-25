@@ -75,9 +75,10 @@ const budgets = new Map([
     // Codex/Astra activity normalization (reasoning summaries, correlated tool
     // results, file details and turn timing) brought the host bundle to 843.8
     // KiB; jev between-turns context pruning (scorer client, pair extraction
-    // and prune strategy) pushes it to 856.8 KiB. Keep 864 KiB explicit and
-    // retain the independent 1 MiB archive cap.
-    ["extension/out/extension.js", 864 * 1024],
+    // and prune strategy) pushes it to 856.8 KiB. Recent-history recovery adds
+    // under 0.1 KiB over the prior 864 KiB ceiling; keep a narrow 865 KiB
+    // budget and retain the independent 1 MiB archive cap.
+    ["extension/out/extension.js", 865 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

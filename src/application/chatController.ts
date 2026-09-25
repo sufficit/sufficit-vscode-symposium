@@ -267,7 +267,6 @@ export class ChatController {
 
     private historyInfo?: SessionInfo;
     private historyCursor?: string;
-
     async loadHistory(info: SessionInfo, transient = false): Promise<void> {
         this.historyInfo = info;
         this.historyCursor = undefined;
@@ -285,7 +284,8 @@ export class ChatController {
         this.historyCursor = await loadControllerHistory(
             this.adapter,
             this.historyInfo,
-            (message) => this.emit(message),
+            // Scroll-up pages are read-side projections, not new ledger events.
+            (message) => this.stream.notify(message),
             cursor,
         );
     }

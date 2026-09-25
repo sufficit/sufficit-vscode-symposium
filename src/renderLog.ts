@@ -2,19 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { ledgerDir } from "./ledger";
 
-/**
- * Per-session render-log persistence.
- *
- * The chat view is a stream of render messages (the exact objects the webview
- * consumes: text deltas, tool rows + diffs, status notices, panels, thinking
- * blocks, …) buffered in `RenderStream.log`. The ledger only stores role+content
- * messages, so reopening a session used to rebuild a lossy, text-only view.
- *
- * This module persists the full render stream alongside the ledger
- * (`~/.symposium/ledger/<id>/render.jsonl`, one JSON message per line) so a
- * reopened session replays the exact visual it last had — every graphical item
- * included. Append-only and local, mirroring the ledger.
- */
+/** Append-only per-session visual stream at ~/.symposium/ledger/<id>/render.jsonl. */
 
 /** Per-message cap: a single oversized payload (e.g. a huge diff) is truncated
  *  with a marker rather than bloating the file unbounded. */
@@ -204,9 +192,15 @@ export function readRenderPage(
             ) {
                 const parsed: RenderLogRecord[] = [];
                 parseLine(complete.subarray(position, newline), parsed);
-                if (parsed.length) rows.push({ offset: start + position, record: parsed[0] });
+                if (parsed.length && !isObsoleteHistoryPage(parsed[0].message)) {
+                    rows.push({ offset: start + position, record: parsed[0] });
+                }
             }
-            if (validTrailingLine && trailingRecord) {
+            if (
+                validTrailingLine &&
+                trailingRecord &&
+                !isObsoleteHistoryPage(trailingRecord.message)
+            ) {
                 const lastNewline = complete.lastIndexOf(0x0a);
                 rows.push({ offset: start + lastNewline + 1, record: trailingRecord });
             }
@@ -234,6 +228,11 @@ export function readRenderPage(
 function isHistoryBoundary(message: unknown): boolean {
     const type = (message as { type?: unknown } | null)?.type;
     return type === "user" || type === "history";
+}
+/** Skip old scroll-up pages without changing their append-only ledger bytes. */
+function isObsoleteHistoryPage(message: unknown): boolean {
+    const value = message as { type?: unknown; replace?: unknown } | null;
+    return value?.type === "history" && value.replace === false;
 }
 
 /**
