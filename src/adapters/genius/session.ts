@@ -13,6 +13,11 @@ export interface GeniusAdapterConfig {
     tokenProvider?: () => Promise<string | null>;
 }
 
+function explicitPreset(value: string): string {
+    const preset = value.trim();
+    return preset.toLowerCase() === "default" ? "" : preset;
+}
+
 /** Runs one `genius exec --stdin --json` child for each turn. Genius owns context. */
 export class GeniusSession extends EventEmitter implements AgentSession {
     readonly backend = "genius";
@@ -31,11 +36,11 @@ export class GeniusSession extends EventEmitter implements AgentSession {
     ) {
         super();
         this.sessionId = options.resumeSessionId;
-        this.presetId = options.model || config.model;
+        this.presetId = explicitPreset(options.model || config.model);
     }
 
     setModel(model: string): void {
-        this.presetId = model === "default" ? this.config.model : model;
+        this.presetId = explicitPreset(model === "default" ? this.config.model : model);
     }
 
     getModel(): string {

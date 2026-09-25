@@ -123,7 +123,9 @@ export class GeniusAdapter implements AgentAdapter {
                             ? entry.title
                             : "Genius session",
                     model:
-                        typeof entry.presetId === "string" && entry.presetId
+                        typeof entry.presetId === "string" &&
+                        entry.presetId &&
+                        entry.presetId !== "default"
                             ? entry.presetId
                             : undefined,
                 },

@@ -9,7 +9,7 @@ Install a Genius CLI that supports `GENIUS_CLI_ACCESS_TOKEN` and confirm it with
 Settings:
 
 - `symposium.genius.executable`: executable name or path, default `genius`.
-- `symposium.genius.model`: optional Genius preset ID passed as `--preset`. Empty uses Genius's default preset. Symposium's shared model field represents a preset ID for this backend.
+- `symposium.genius.model`: optional Genius preset ID passed as `--preset`. Empty or the UI's `default` selection uses Genius's server-managed default; only an explicit preset is passed to the CLI. Symposium's shared model field represents a preset ID for this backend.
 - `symposium.genius.env`: optional environment for CLI processes, for example `GENIUS_STATE_ROOT` in an isolated installation. Symposium owns `GENIUS_CLI_ACCESS_TOKEN` for each turn; configuring that key here does not override the current login.
 
 On Windows, the default executable resolves to the native CLI installed beside `genius.cmd` in `%LOCALAPPDATA%\Programs\SufficitAIGenius`. You can also set the executable to an explicit native service path or to the installed `genius.cmd` path. The adapter invokes the native executable directly so JSONL output and cancellation remain available without a shell.
