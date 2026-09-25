@@ -1,0 +1,216 @@
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import test from "node:test";
+import { GeniusAdapter } from "../adapters/genius/adapter";
+import { GeniusEventParser } from "../adapters/genius/eventParser";
+import { resolveGeniusExecutable } from "../adapters/genius/executable";
+import type { AgentEvent, AgentSession } from "../adapters/types";
+
+const fakeCli = path.resolve(__dirname, "../../test/fixtures/fake-genius-cli.cjs");
+const sessionId = "11111111-2222-4333-8444-555555555555";
+
+test("Genius resolves the native Windows CLI behind the installed wrapper", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-genius-windows-"));
+    try {
+        const install = path.join(root, "Programs", "SufficitAIGenius");
+        const installed = path.join(install, "service", "Sufficit.AI.Genius.Service.exe");
+        fs.mkdirSync(path.dirname(installed), { recursive: true });
+        fs.writeFileSync(installed, "");
+        assert.equal(resolveGeniusExecutable("genius", "win32", { LOCALAPPDATA: root }), installed);
+        assert.equal(resolveGeniusExecutable(path.join(install, "genius.cmd"), "win32"), installed);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+function collectTurn(
+    session: AgentSession,
+    prompt: string,
+    images?: string[],
+): Promise<AgentEvent[]> {
+    return new Promise((resolve, reject) => {
+        const events: AgentEvent[] = [];
+        const timer = setTimeout(() => reject(new Error("Genius turn timed out")), 5000);
+        const onEvent = (event: AgentEvent) => {
+            events.push(event);
+            if (event.kind === "turn-end") {
+                clearTimeout(timer);
+                session.off("event", onEvent);
+                resolve(events);
+            }
+        };
+        session.on("event", onEvent);
+        session.send(prompt, images, undefined, "intent-1");
+    });
+}
+
+test("Genius parser streams markdown once and keeps reasoning and tools distinct", () => {
+    const events: AgentEvent[] = [];
+    const ids: string[] = [];
+    const parser = new GeniusEventParser({
+        session: (id) => ids.push(id),
+        emit: (event) => events.push(event),
+    });
+    const frame = (actionType: string, action: object) =>
+        JSON.stringify({
+            type: "event",
+            schemaVersion: 1,
+            actionType,
+            action,
+        });
+    parser.handleLine(JSON.stringify({ type: "session", schemaVersion: 1, sessionId }));
+    parser.handleLine(frame("chat/responsePart", { partId: "md", kind: "Markdown" }));
+    parser.handleLine(frame("chat/responsePart", { partId: "tool", kind: "ToolCall" }));
+    parser.handleLine(frame("chat/delta", { partId: "tool", content: 'shell({"cmd":"pwd"})' }));
+    parser.handleLine(frame("chat/delta", { partId: "md", content: "Answer" }));
+    parser.handleLine(frame("chat/reasoning", { partId: "rz", content: "Thinking" }));
+    parser.handleLine(frame("chat/delta", { partId: "tool", content: " → done" }));
+    parser.handleLine(
+        frame("chat/usage", { usage: { inputTokens: 7, outputTokens: 3, cachedTokens: 2 } }),
+    );
+    parser.handleLine(
+        JSON.stringify({
+            type: "result",
+            schemaVersion: 1,
+            sessionId,
+            status: "completed",
+            answer: "Answer",
+            error: null,
+        }),
+    );
+
+    assert.deepEqual(ids, [sessionId]);
+    assert.deepEqual(
+        events.filter((event) => event.kind === "text"),
+        [{ kind: "text", text: "Answer" }],
+    );
+    assert.ok(events.some((event) => event.kind === "thinking" && event.text === "Thinking"));
+    assert.ok(events.some((event) => event.kind === "tool-start" && event.toolName === "shell"));
+    assert.ok(events.some((event) => event.kind === "tool-end" && event.result === "done"));
+    assert.ok(events.some((event) => event.kind === "usage" && event.inputTokens === 7));
+});
+
+test("Genius adapter discovers sessions and resumes context through the CLI UUID", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-genius-test-"));
+    const trace = path.join(root, "calls.jsonl");
+    const adapter = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "requested-preset",
+        env: { FAKE_GENIUS_TRACE: trace },
+    }));
+    try {
+        assert.deepEqual(await adapter.available(), { ok: true, version: "0.125.2" });
+        assert.equal(adapter.usage.backend, "genius");
+        const listed = await adapter.listSessions();
+        assert.equal(listed.length, 1);
+        assert.equal(listed[0].sessionId, sessionId);
+        assert.equal(listed[0].model, "test-preset");
+
+        const session = adapter.start({ cwd: root });
+        try {
+            const first = await collectTurn(session, "First prompt");
+            assert.equal(first[0].kind, "turn-start");
+            assert.ok(
+                first.some((event) => event.kind === "session" && event.sessionId === sessionId),
+            );
+            assert.deepEqual(
+                first.filter((event) => event.kind === "text"),
+                [{ kind: "text", text: "Hello from Genius" }],
+            );
+            assert.ok(first.some((event) => event.kind === "usage" && event.cacheRead === 2));
+            assert.equal(session.sessionId, sessionId);
+            assert.equal((await collectTurn(session, "Second prompt")).at(-1)?.kind, "turn-end");
+        } finally {
+            session.dispose();
+        }
+
+        const calls = fs
+            .readFileSync(trace, "utf8")
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as { args: string[]; prompt: string });
+        assert.deepEqual(
+            calls.map((call) => call.prompt),
+            ["First prompt", "Second prompt"],
+        );
+        assert.deepEqual(calls[0].args.slice(0, 3), ["exec", "--stdin", "--json"]);
+        assert.ok(!calls[0].args.includes("--resume"));
+        assert.ok(calls[0].args.includes("requested-preset"));
+        assert.deepEqual(calls[1].args.slice(3, 5), ["--resume", sessionId]);
+
+        const reopened = adapter.start({ cwd: root, resumeSessionId: sessionId });
+        try {
+            await collectTurn(reopened, "Reopened prompt");
+        } finally {
+            reopened.dispose();
+        }
+        const last = JSON.parse(fs.readFileSync(trace, "utf8").trim().split("\n").at(-1)!) as {
+            args: string[];
+        };
+        assert.ok(last.args.includes("--resume"));
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test("Genius cancellation ends the turn without reporting a CLI failure", async () => {
+    const adapter = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_MODE: "wait" },
+    }));
+    const session = adapter.start({ cwd: process.cwd() });
+    try {
+        const events: AgentEvent[] = [];
+        await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(
+                () => reject(new Error("Genius cancellation timed out")),
+                5000,
+            );
+            session.on("event", (event: AgentEvent) => {
+                events.push(event);
+                if (event.kind === "session") session.cancel();
+                if (event.kind === "turn-end") {
+                    clearTimeout(timer);
+                    resolve();
+                }
+            });
+            session.send("Wait");
+        });
+        assert.equal(events.at(-1)?.kind, "turn-end");
+        assert.equal(
+            events.some((event) => event.kind === "error"),
+            false,
+        );
+    } finally {
+        session.dispose();
+    }
+});
+
+test("Genius reports deleted sessions and unsupported attachments explicitly", async () => {
+    const adapter = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_MODE: "missing" },
+    }));
+    const session = adapter.start({ cwd: process.cwd(), resumeSessionId: sessionId });
+    try {
+        const missing = await collectTurn(session, "Hello");
+        assert.ok(
+            missing.some(
+                (event) => event.kind === "error" && event.message.includes("start a new chat"),
+            ),
+        );
+        assert.equal(session.sessionId, sessionId);
+        const image = await collectTurn(session, "Look", ["/tmp/image.png"]);
+        assert.ok(
+            image.some(
+                (event) => event.kind === "error" && event.message.includes("image attachments"),
+            ),
+        );
+    } finally {
+        session.dispose();
+    }
+});

@@ -4,6 +4,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { ClaudeAdapterConfig } from "../adapters/claude";
 import { CodexAdapterConfig } from "../adapters/codex";
+import type { GeniusAdapterConfig } from "../adapters/genius/session";
 import { CopilotAdapterConfig } from "../adapters/copilot";
 import { OpenAIAdapter, OpenAIAdapterConfig } from "../adapters/openai";
 import type { ShellExecutionMode } from "../adapters/aiTools/types";
@@ -64,6 +65,15 @@ export function codexConfig(): CodexAdapterConfig {
             {},
         ),
         log: symposiumLog,
+    };
+}
+
+export function geniusConfig(): GeniusAdapterConfig {
+    const config = vscode.workspace.getConfiguration("symposium.genius");
+    return {
+        executable: config.get<string>("executable", "genius"),
+        model: config.get<string>("model", ""),
+        env: config.get<Record<string, string>>("env", {}),
     };
 }
 
@@ -163,7 +173,7 @@ export interface CustomAdapterDef {
     supportsDeveloperRole?: boolean;
 }
 
-const BUILTIN_MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
+const BUILTIN_MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "genius", "openai"]);
 
 /** Reads the user's extra OpenAI-compatible adapters (symposium.adapters). */
 export function customAdapterDefs(): CustomAdapterDef[] {

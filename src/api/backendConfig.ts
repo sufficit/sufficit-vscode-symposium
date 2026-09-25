@@ -62,11 +62,11 @@ export interface BackendsApi {
 }
 
 /** CLI-backed backends whose executable + model live in settings. */
-const CLI_BACKENDS = new Set(["claude", "codex", "copilot"]);
+const CLI_BACKENDS = new Set(["claude", "codex", "copilot", "genius"]);
 /** Backends whose model is editable via symposium.<backend>.model. */
-const MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
+const MODEL_BACKENDS = new Set(["claude", "codex", "copilot", "genius", "openai"]);
 /** Built-in backends; anything else is a user-defined custom endpoint. */
-const BUILTIN_BACKENDS = new Set(["claude", "codex", "copilot", "openai"]);
+const BUILTIN_BACKENDS = new Set(["claude", "codex", "copilot", "genius", "openai"]);
 
 function isModelEditable(backend: string): boolean {
     return MODEL_BACKENDS.has(backend);

@@ -1,8 +1,8 @@
 {
     "name": "sufficit-vscode-symposium",
     "displayName": "Sufficit Symposium",
-    "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, GitHub Copilot CLI) side by side inside VS Code.",
-    "version": "2026.925.1",
+    "description": "Symposium (συμπόσιον) — host and conduct dialogue sessions with multiple AI agents (Claude Code, Codex CLI, Genius CLI, GitHub Copilot CLI) side by side inside VS Code.",
+    "version": "2026.925.2",
     "publisher": "sufficit",
     "license": "MIT-0",
     "icon": "media/symposium-icon.png",
@@ -22,6 +22,7 @@
         "chat",
         "claude",
         "codex",
+        "genius",
         "copilot",
         "code-server"
     ],
@@ -840,6 +841,21 @@
                     ],
                     "default": "default",
                     "description": "Default reasoning effort for Codex terminal sessions (codex -c model_reasoning_effort). 'default' omits it."
+                },
+                "symposium.genius.executable": {
+                    "type": "string",
+                    "default": "genius",
+                    "description": "Path to the Genius CLI executable. Symposium invokes the CLI JSONL protocol, not the local HTTP API."
+                },
+                "symposium.genius.model": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Genius preset ID passed to genius exec --preset. Empty uses the Genius default preset."
+                },
+                "symposium.genius.env": {
+                    "type": "object",
+                    "default": {},
+                    "description": "Environment variables passed to Genius CLI processes."
                 },
                 "symposium.copilot.executable": {
                     "type": "string",
