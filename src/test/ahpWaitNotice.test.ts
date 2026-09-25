@@ -4,7 +4,7 @@ import { createProjectionState, projectAgentEvent } from "../ahp";
 import { historyTurns } from "../ahp/historyProjection";
 
 test("an explicitly visible wait notice appears in live and reopened AHP chat", () => {
-    const notice = "Sufficit AI has not responded for over 30 seconds.";
+    const notice = "No visible update from Sufficit AI for over 30 seconds.";
     const state = createProjectionState();
     projectAgentEvent(state, { kind: "turn-start", logicalTurnId: "turn-1" });
     const actions = projectAgentEvent(state, {

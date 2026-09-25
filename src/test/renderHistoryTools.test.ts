@@ -115,7 +115,7 @@ test("render-log replay keeps an explicitly visible nonterminal wait notice", ()
                 type: "event",
                 event: {
                     kind: "status-notice",
-                    text: "Sufficit AI has not responded for over 30 seconds.",
+                    text: "No visible update from Sufficit AI for over 30 seconds.",
                     transcript: true,
                 },
             },
@@ -126,7 +126,7 @@ test("render-log replay keeps an explicitly visible nonterminal wait notice", ()
             { role: "user", text: "Do the work" },
             {
                 role: "status-notice",
-                text: "Sufficit AI has not responded for over 30 seconds.",
+                text: "No visible update from Sufficit AI for over 30 seconds.",
                 severity: undefined,
             },
             { role: "assistant", text: "Done", thinking: undefined },
