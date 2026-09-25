@@ -11,6 +11,7 @@ export interface GeniusAdapterConfig {
     model: string;
     env?: Record<string, string>;
     tokenProvider?: () => Promise<string | null>;
+    contextWindows?: Record<string, number>;
 }
 
 function explicitPreset(value: string): string {
@@ -119,6 +120,9 @@ export class GeniusSession extends EventEmitter implements AgentSession {
         });
         this.current = child;
         const parser = new GeniusEventParser({
+            contextWindow: (model) =>
+                this.config.contextWindows?.[model || ""] ??
+                this.config.contextWindows?.[this.presetId],
             session: (id, presetId) => {
                 if (this.current !== child) return;
                 if (this.sessionId && this.sessionId !== id) {

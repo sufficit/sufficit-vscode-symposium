@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { EmptyAdapterUsage } from "../quotaCache";
+import { resolveSufficitMcpToken } from "../sufficitMcp";
 import type { AgentAdapter, AgentSession, SessionInfo, SessionStartOptions } from "../types";
 import { resolveGeniusExecutable } from "./executable";
 import { GeniusSession, type GeniusAdapterConfig } from "./session";
@@ -20,10 +21,17 @@ function isUuid(value: unknown): value is string {
 }
 
 /** Bounded CLI command; prompts always use the streaming GeniusSession. */
-function queryCli(config: GeniusAdapterConfig, args: string[]): Promise<CliResponse> {
+function queryCli(
+    config: GeniusAdapterConfig,
+    args: string[],
+    accessToken?: string | null,
+): Promise<CliResponse> {
     return new Promise((resolve, reject) => {
+        const env = { ...process.env, ...config.env };
+        delete env.GENIUS_CLI_ACCESS_TOKEN;
+        if (accessToken) env.GENIUS_CLI_ACCESS_TOKEN = accessToken;
         const child = spawn(resolveGeniusExecutable(config.executable), args, {
-            env: { ...process.env, ...config.env },
+            env,
             stdio: ["ignore", "pipe", "pipe"],
         });
         let stdout = "";
@@ -85,6 +93,9 @@ export class GeniusAdapter implements AgentAdapter {
         "Genius",
         "Genius CLI does not expose account quota windows.",
     );
+    private discoveredModels: string[] = [];
+    private discoveredLabels: Record<string, string> = {};
+    private readonly contextWindows: Record<string, number> = {};
 
     constructor(private readonly getConfig: () => GeniusAdapterConfig) {}
 
@@ -159,12 +170,68 @@ export class GeniusAdapter implements AgentAdapter {
     }
 
     start(options: SessionStartOptions): AgentSession {
-        return new GeniusSession(this.getConfig(), options);
+        return new GeniusSession(
+            { ...this.getConfig(), contextWindows: this.contextWindows },
+            options,
+        );
     }
 
     models(): string[] {
         const configured = this.getConfig().model;
-        return configured ? [configured] : [];
+        return [
+            ...new Set([
+                "default",
+                ...(configured && configured !== "default" ? [configured] : []),
+                ...this.discoveredModels,
+            ]),
+        ];
+    }
+
+    modelLabels(): Record<string, string> {
+        return { ...this.discoveredLabels };
+    }
+
+    async refreshModels(
+        force = false,
+    ): Promise<{ models: string[]; labels: Record<string, string> }> {
+        try {
+            const config = this.getConfig();
+            const token = await (config.tokenProvider ?? resolveSufficitMcpToken)();
+            const response = await queryCli(config, ["models", "--json"], token);
+            if (
+                response.type !== "models" ||
+                response.status !== "ok" ||
+                !Array.isArray(response.data?.models)
+            )
+                throw new Error("Genius CLI returned an invalid models response");
+            const models: string[] = [];
+            const labels: Record<string, string> = {};
+            const windows: Record<string, number> = {};
+            for (const raw of response.data.models) {
+                if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+                const entry = raw as Record<string, unknown>;
+                if (typeof entry.id !== "string" || !entry.id.trim()) continue;
+                models.push(entry.id);
+                if (typeof entry.title === "string" && entry.title.trim())
+                    labels[entry.id] = entry.title;
+                if (
+                    typeof entry.contextLength === "number" &&
+                    Number.isFinite(entry.contextLength) &&
+                    entry.contextLength > 0
+                )
+                    windows[entry.id] = entry.contextLength;
+            }
+            const defaultId = response.data.defaultPresetId;
+            if (typeof defaultId === "string" && windows[defaultId])
+                windows.default = windows[defaultId];
+            this.discoveredModels = models;
+            this.discoveredLabels = labels;
+            for (const key of Object.keys(this.contextWindows)) delete this.contextWindows[key];
+            Object.assign(this.contextWindows, windows);
+        } catch (error) {
+            if (force) throw error;
+        }
+        return { models: this.models(), labels: this.modelLabels() };
     }
 
     hasNativeTodo(): boolean {

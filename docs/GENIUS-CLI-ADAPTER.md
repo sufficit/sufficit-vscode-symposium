@@ -16,6 +16,14 @@ On Windows, the default executable resolves to the native CLI installed beside `
 
 The adapter discovers existing sessions with `genius sessions --json`. The Symposium Delete action calls `genius delete UUID --json` and clears its local session record only after Genius confirms deletion. If a session was deleted in Genius outside Symposium, the next resumed turn reports that it is gone and keeps the old UUID visible; it never silently creates another conversation. Start a new Symposium dialogue to create a new Genius session.
 
+The model picker refreshes through `genius models --json` with the same
+per-command delegated bearer as chat turns. It shows chat-capable preset names
+and keeps **default** as the server-managed choice. Context usage is based on
+Genius's streamed token counts and the selected preset's catalog window; for
+the server-managed default, the effective model reported with usage selects
+the catalog window. If Genius does not report a matching context length, the
+context percentage remains unavailable instead of using an estimate.
+
 ## Stream mapping
 
 Genius schemaVersion 1 `session` records provide the native UUID and preset. `chat/responsePart` identifies Markdown, reasoning and tool parts. Markdown `chat/delta` becomes live assistant text; `chat/reasoning` becomes thinking; tool parts become tool rows; `chat/usage` updates token counts. The final `result.answer` is rendered only when no Markdown delta was streamed, avoiding duplicate answers. CLI errors become visible Symposium errors. Cancelling a turn sends SIGINT to its child process and ends the Symposium turn without reporting the expected exit as a failure.

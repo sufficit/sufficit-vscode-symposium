@@ -19,6 +19,7 @@ function number(value: unknown): number | undefined {
 export interface GeniusParserCallbacks {
     session(id: string, presetId?: string): void;
     emit(event: AgentEvent): void;
+    contextWindow?: (model?: string) => number | undefined;
 }
 
 /** Converts Genius CLI schemaVersion 1 JSONL into Symposium's live event contract. */
@@ -108,12 +109,15 @@ export class GeniusEventParser {
         }
         if (type === "chat/usage") {
             const usage = object(action.usage);
+            const model = string(usage.model);
             this.callbacks.emit({
                 kind: "usage",
                 inputTokens: number(usage.inputTokens),
                 outputTokens: number(usage.outputTokens),
                 reasoningTokens: number(usage.reasoningTokens),
                 cacheRead: number(usage.cachedTokens),
+                contextWindow: this.callbacks.contextWindow?.(model),
+                model,
             });
         }
     }

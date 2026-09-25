@@ -25,6 +25,15 @@ if (args.includes("--version")) {
             sessions: [{ type: "session", schemaVersion: 1, sessionId: id, title: "Genius test", presetId: "test-preset" }],
         }));
     }
+} else if (args[0] === "models") {
+    if (process.env.FAKE_GENIUS_TRACE) {
+        fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args,
+            authToken: process.env.GENIUS_CLI_ACCESS_TOKEN ?? null })}\n`);
+    }
+    write(envelope("models", "ok", { models: [
+        { id: "test-preset", title: "Test preset", contextLength: 128000 },
+        { id: "unknown-window", title: "Unknown window", contextLength: null },
+    ] }));
 } else if (args[0] === "delete") {
     if (process.env.FAKE_GENIUS_TRACE) {
         fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args })}\n`);
@@ -65,7 +74,8 @@ if (args.includes("--version")) {
         write({ type: "event", schemaVersion: 1, sessionId: id, seq: 2,
             actionType: "chat/delta", action: { partId: "p1", content: "Hello from Genius" } });
         write({ type: "event", schemaVersion: 1, sessionId: id, seq: 3,
-            actionType: "chat/usage", action: { usage: { inputTokens: 9, outputTokens: 3, cachedTokens: 2 } } });
+            actionType: "chat/usage", action: { usage: { inputTokens: 9, outputTokens: 3, cachedTokens: 2,
+                model: "test-preset" } } });
         write({ type: "result", schemaVersion: 1, sessionId: id,
             status: "completed", answer: "Hello from Genius", error: null });
     });
