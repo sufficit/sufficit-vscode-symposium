@@ -214,3 +214,52 @@ test("Genius reports deleted sessions and unsupported attachments explicitly", a
         session.dispose();
     }
 });
+
+test("Genius availability reports missing executables and unsupported CLI protocols", async () => {
+    const missing = new GeniusAdapter(() => ({
+        executable: path.join(os.tmpdir(), "missing-genius-executable"),
+        model: "",
+    }));
+    const absent = await missing.available();
+    assert.equal(absent.ok, false);
+    assert.match(absent.error ?? "", /ENOENT/);
+
+    for (const mode of ["invalid_json", "old_protocol"]) {
+        const adapter = new GeniusAdapter(() => ({
+            executable: fakeCli,
+            model: "",
+            env: { FAKE_GENIUS_MODE: mode },
+        }));
+        const status = await adapter.available();
+        assert.equal(status.ok, false);
+        assert.match(status.error ?? "", /invalid JSON|protocol version/);
+    }
+});
+
+test("Genius session discovery filters malformed records and preserves cached sessions on CLI errors", async () => {
+    const mixed = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_MODE: "mixed_sessions" },
+    }));
+    const listed = await mixed.listSessions();
+    assert.deepEqual(
+        listed.map((session) => session.sessionId),
+        [sessionId],
+    );
+    assert.equal(listed[0].title, "Genius session");
+    assert.equal(listed[0].model, undefined);
+
+    const cached = [{ ...listed[0], title: "Old title", updatedAt: new Date("2026-09-25") }];
+    const refreshed = await mixed.listSessionsIncremental(cached);
+    assert.equal(refreshed[0].title, "Genius session");
+    assert.equal(refreshed[0].updatedAt, cached[0].updatedAt);
+
+    const invalid = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_MODE: "invalid_sessions" },
+    }));
+    await assert.rejects(invalid.listSessions(), /invalid sessions response/);
+    assert.deepEqual(await invalid.listSessionsIncremental(cached), cached);
+});

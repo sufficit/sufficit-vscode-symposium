@@ -18,7 +18,8 @@ The adapter exclusively invokes the CLI. It does not call Genius's loopback HTTP
 ## Validation
 
 - `npm run verify:package` passed, including type checks, lint, tests, architecture and engineering guardrails, VSIX packaging and archive validation. The VSIX contains 41 files and is about 519 KiB.
-- Focused parser, process, resume, cancellation, deleted-session, Windows executable and shared adapter contract tests passed.
+- Focused parser, process, resume, cancellation, deleted-session, Windows executable, CLI failure-path and shared adapter contract tests passed.
+- The PR's first CI run exposed a changed-line coverage gate that the original local run skipped because `COVERAGE_BASE_SHA` was unset. Tests for missing executables, invalid JSON, unsupported protocol versions and malformed session listings raised changed-line coverage from 82.58% to 86.52% (462/534); the full `verify:package` gate then passed with the CI base SHA set.
 - A live smoke through the compiled Symposium adapter and installed Genius 0.125.3, using isolated `GENIUS_STATE_ROOT` and the `echo` backend, passed two turns with one UUID, streamed text and usage, and session discovery.
 - `git diff --check` passed. The repository's 201 existing advisory complexity targets remain; the new Genius modules did not add any.
 

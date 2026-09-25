@@ -8,11 +8,23 @@ const write = (record) => process.stdout.write(`${JSON.stringify(record)}\n`);
 const envelope = (type, status, data) => ({ schemaVersion: 1, type, status, data, error: null });
 
 if (args.includes("--version")) {
-    write(envelope("version", "ok", { version: "0.125.2" }));
+    if (process.env.FAKE_GENIUS_MODE === "invalid_json") {
+        process.stdout.write("not JSON\n");
+    } else if (process.env.FAKE_GENIUS_MODE === "old_protocol") {
+        write({ ...envelope("version", "ok", { version: "0.1" }), schemaVersion: 2 });
+    } else {
+        write(envelope("version", "ok", { version: "0.125.2" }));
+    }
 } else if (args[0] === "sessions") {
-    write(envelope("sessions", "ok", {
-        sessions: [{ type: "session", schemaVersion: 1, sessionId: id, title: "Genius test", presetId: "test-preset" }],
-    }));
+    if (process.env.FAKE_GENIUS_MODE === "invalid_sessions") {
+        write(envelope("sessions", "ok", { sessions: "invalid" }));
+    } else if (process.env.FAKE_GENIUS_MODE === "mixed_sessions") {
+        write(envelope("sessions", "ok", { sessions: [null, { sessionId: "invalid" }, { sessionId: id }] }));
+    } else {
+        write(envelope("sessions", "ok", {
+            sessions: [{ type: "session", schemaVersion: 1, sessionId: id, title: "Genius test", presetId: "test-preset" }],
+        }));
+    }
 } else if (args[0] === "exec") {
     let prompt = "";
     process.stdin.setEncoding("utf8");
