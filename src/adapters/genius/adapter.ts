@@ -19,7 +19,7 @@ function isUuid(value: unknown): value is string {
     );
 }
 
-/** Bounded read-only CLI probe; prompts always use the streaming GeniusSession. */
+/** Bounded CLI command; prompts always use the streaming GeniusSession. */
 function queryCli(config: GeniusAdapterConfig, args: string[]): Promise<CliResponse> {
     return new Promise((resolve, reject) => {
         const child = spawn(resolveGeniusExecutable(config.executable), args, {
@@ -141,6 +141,18 @@ export class GeniusAdapter implements AgentAdapter {
             }));
         } catch {
             return [...cached];
+        }
+    }
+
+    async deleteSession(info: SessionInfo): Promise<void> {
+        if (!isUuid(info.sessionId)) throw new Error("Genius session ID is not a valid UUID.");
+        const response = await queryCli(this.getConfig(), ["delete", info.sessionId, "--json"]);
+        if (
+            response.type !== "session/deleted" ||
+            response.status !== "completed" ||
+            response.data?.sessionId !== info.sessionId
+        ) {
+            throw new Error("Genius CLI did not confirm session deletion");
         }
     }
 

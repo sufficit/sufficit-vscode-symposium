@@ -356,3 +356,31 @@ test("Genius session discovery filters malformed records and preserves cached se
     await assert.rejects(invalid.listSessions(), /invalid sessions response/);
     assert.deepEqual(await invalid.listSessionsIncremental(cached), cached);
 });
+
+test("Genius deletes a session only after the native CLI confirms it", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-genius-delete-"));
+    const trace = path.join(root, "calls.jsonl");
+    const config: { executable: string; model: string; env: Record<string, string> } = {
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_TRACE: trace },
+    };
+    const adapter = new GeniusAdapter(() => config);
+    const info = { backend: "genius", backendName: "Genius", sessionId, title: "Test" };
+    try {
+        await adapter.deleteSession(info);
+        const call = JSON.parse(fs.readFileSync(trace, "utf8").trim()) as { args: string[] };
+        assert.deepEqual(call.args, ["delete", sessionId, "--json"]);
+        await assert.rejects(
+            adapter.deleteSession({ ...info, sessionId: "invalid" }),
+            /valid UUID/,
+        );
+
+        config.env.FAKE_GENIUS_MODE = "missing";
+        await assert.rejects(adapter.deleteSession(info), /was not found/);
+        config.env.FAKE_GENIUS_MODE = "invalid_delete_response";
+        await assert.rejects(adapter.deleteSession(info), /did not confirm/);
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});

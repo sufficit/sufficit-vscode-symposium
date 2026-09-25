@@ -25,6 +25,19 @@ if (args.includes("--version")) {
             sessions: [{ type: "session", schemaVersion: 1, sessionId: id, title: "Genius test", presetId: "test-preset" }],
         }));
     }
+} else if (args[0] === "delete") {
+    if (process.env.FAKE_GENIUS_TRACE) {
+        fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args })}\n`);
+    }
+    if (process.env.FAKE_GENIUS_MODE === "missing") {
+        write({ ...envelope("error", "failed", { code: "session_not_found", sessionId: args[1] }),
+            error: `Genius session ${args[1]} was not found` });
+        process.exitCode = 1;
+    } else if (process.env.FAKE_GENIUS_MODE === "invalid_delete_response") {
+        write(envelope("session/stopped", "completed", { sessionId: args[1] }));
+    } else {
+        write(envelope("session/deleted", "completed", { sessionId: args[1] }));
+    }
 } else if (args[0] === "exec") {
     let prompt = "";
     process.stdin.setEncoding("utf8");

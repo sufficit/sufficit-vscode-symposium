@@ -1,0 +1,5 @@
+# Genius session deletion in Symposium — 2026.925.4
+
+Issue [#61](https://github.com/sufficit/sufficit-vscode-symposium/issues/61) fixes the Delete action showing “Deleting genius sessions is not supported.” The Genius adapter now calls `genius delete UUID --json` and requires a matching `session/deleted` confirmation. The existing Delete flow removes Symposium's local transcript and ledger only after that confirmation. Failure keeps the local record for retry. The confirmation copy describes Genius's session deletion without promising that separately created files are removed.
+
+The fake CLI tests cover confirmation, invalid IDs, missing sessions, and unexpected responses. The Genius native command has direct and resident integration tests in [Genius PR #993](https://github.com/sufficit/sufficit-ai-genius/pull/993), tracked by [issue #994](https://github.com/sufficit/sufficit-ai-genius/issues/994). `COVERAGE_BASE_SHA=$(git merge-base origin/develop HEAD) npm run verify:package` passed. The verified `2026.925.4` VSIX was installed on the development code-server. Reload an open code-server window to activate the updated extension.

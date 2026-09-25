@@ -14,7 +14,7 @@ Settings:
 
 On Windows, the default executable resolves to the native CLI installed beside `genius.cmd` in `%LOCALAPPDATA%\Programs\SufficitAIGenius`. You can also set the executable to an explicit native service path or to the installed `genius.cmd` path. The adapter invokes the native executable directly so JSONL output and cancellation remain available without a shell.
 
-The adapter discovers existing sessions with `genius sessions --json`. If a session was deleted in Genius, the next resumed turn reports that it is gone and keeps the old UUID visible; it never silently creates another conversation. Start a new Symposium dialogue to create a new Genius session.
+The adapter discovers existing sessions with `genius sessions --json`. The Symposium Delete action calls `genius delete UUID --json` and clears its local session record only after Genius confirms deletion. If a session was deleted in Genius outside Symposium, the next resumed turn reports that it is gone and keeps the old UUID visible; it never silently creates another conversation. Start a new Symposium dialogue to create a new Genius session.
 
 ## Stream mapping
 
@@ -22,4 +22,4 @@ Genius schemaVersion 1 `session` records provide the native UUID and preset. `ch
 
 ## Current CLI limits
 
-`genius exec` accepts text only. Symposium reports an explicit error if a message includes an image. The Genius CLI does not yet expose transcript history or permanent session deletion as commands, so the adapter does not read Genius state files to imitate them. Symposium keeps its own visible transcript for dialogues started there; an older session discovered from Genius may initially show no prior messages even though Genius retains its full context when resumed. The terminal mirror/watch mode also requires a CLI transcript-follow command and is not offered for Genius yet.
+`genius exec` accepts text only. Symposium reports an explicit error if a message includes an image. The Genius CLI does not yet expose transcript history, so the adapter does not read Genius state files to imitate it. Symposium keeps its own visible transcript for dialogues started there; an older session discovered from Genius may initially show no prior messages even though Genius retains its full context when resumed. The terminal mirror/watch mode also requires a CLI transcript-follow command and is not offered for Genius yet.
