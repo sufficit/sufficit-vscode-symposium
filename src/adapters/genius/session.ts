@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import * as readline from "node:readline";
 import type { AgentEvent, AgentSession, SessionStartOptions } from "../types";
+import { resolveSufficitMcpToken } from "../sufficitMcp";
 import { GeniusEventParser } from "./eventParser";
 import { resolveGeniusExecutable } from "./executable";
 
@@ -9,6 +10,7 @@ export interface GeniusAdapterConfig {
     executable: string;
     model: string;
     env?: Record<string, string>;
+    tokenProvider?: () => Promise<string | null>;
 }
 
 /** Runs one `genius exec --stdin --json` child for each turn. Genius owns context. */
@@ -53,6 +55,8 @@ export class GeniusSession extends EventEmitter implements AgentSession {
             this.current.kill("SIGINT");
             this.current = undefined;
             if (previousTurn) this.emitTurnEnd(previousTurn);
+        } else if (this.currentTurnId) {
+            this.emitTurnEnd(this.currentTurnId);
         }
         const turnId =
             retryOf && retryOf !== "retry"
@@ -79,12 +83,33 @@ export class GeniusSession extends EventEmitter implements AgentSession {
             return;
         }
 
+        void this.startTurn(text, turnId);
+    }
+
+    private async startTurn(text: string, turnId: string): Promise<void> {
+        let token: string | null;
+        try {
+            token = await (this.config.tokenProvider ?? resolveSufficitMcpToken)();
+        } catch (error) {
+            if (this.currentTurnId === turnId && !this.disposed && !this.cancelled) {
+                this.failTurn(
+                    `Genius authentication failed: ${error instanceof Error ? error.message : String(error)}`,
+                    turnId,
+                );
+            }
+            return;
+        }
+        if (this.disposed || this.cancelled || this.currentTurnId !== turnId) return;
+
         const args = ["exec", "--stdin", "--json"];
         if (this.sessionId) args.push("--resume", this.sessionId);
         if (this.presetId) args.push("--preset", this.presetId);
+        const env = { ...process.env, ...this.config.env, ...this.options.env };
+        delete env.GENIUS_CLI_ACCESS_TOKEN;
+        if (token) env.GENIUS_CLI_ACCESS_TOKEN = token;
         const child = spawn(resolveGeniusExecutable(this.config.executable), args, {
             cwd: this.options.cwd,
-            env: { ...process.env, ...this.config.env, ...this.options.env },
+            env,
             stdio: ["pipe", "pipe", "pipe"],
         });
         this.current = child;
@@ -153,9 +178,10 @@ export class GeniusSession extends EventEmitter implements AgentSession {
     }
 
     cancel(): void {
-        if (!this.current) return;
+        if (!this.currentTurnId) return;
         this.cancelled = true;
-        this.current.kill("SIGINT");
+        if (this.current) this.current.kill("SIGINT");
+        else this.emitTurnEnd(this.currentTurnId);
     }
 
     dispose(): void {

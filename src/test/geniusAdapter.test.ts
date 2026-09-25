@@ -155,6 +155,99 @@ test("Genius adapter discovers sessions and resumes context through the CLI UUID
     }
 });
 
+test("Genius passes a fresh Symposium bearer only to the current CLI child", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-genius-auth-"));
+    const trace = path.join(root, "calls.jsonl");
+    let nextToken = 0;
+    const adapter = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_TRACE: trace },
+        tokenProvider: () => Promise.resolve(`delegated-${++nextToken}`),
+    }));
+    const session = adapter.start({ cwd: root });
+    try {
+        await collectTurn(session, "First");
+        await collectTurn(session, "Second");
+        const calls = fs
+            .readFileSync(trace, "utf8")
+            .trim()
+            .split("\n")
+            .map(
+                (line) =>
+                    JSON.parse(line) as {
+                        args: string[];
+                        prompt: string;
+                        authToken: string | null;
+                    },
+            );
+        assert.deepEqual(
+            calls.map((call) => call.authToken),
+            ["delegated-1", "delegated-2"],
+        );
+        assert.ok(calls.every((call) => !call.args.some((arg) => arg.includes("delegated-"))));
+    } finally {
+        session.dispose();
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test("Genius does not start a CLI child after cancellation during authentication", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-genius-cancel-auth-"));
+    const trace = path.join(root, "calls.jsonl");
+    let release!: (token: string) => void;
+    const adapter = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_TRACE: trace },
+        tokenProvider: () =>
+            new Promise<string>((resolve) => {
+                release = resolve;
+            }),
+    }));
+    const session = adapter.start({ cwd: root });
+    try {
+        const ended = new Promise<void>((resolve) => {
+            session.on("event", (event: AgentEvent) => {
+                if (event.kind === "turn-end") resolve();
+            });
+        });
+        session.send("Cancelled");
+        session.cancel();
+        await ended;
+        release("late-token");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        assert.equal(fs.existsSync(trace), false);
+    } finally {
+        session.dispose();
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+test("Genius reports token lookup failures without starting the CLI", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-genius-auth-error-"));
+    const trace = path.join(root, "calls.jsonl");
+    const adapter = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_TRACE: trace },
+        tokenProvider: () => Promise.reject(new Error("identity unavailable")),
+    }));
+    const session = adapter.start({ cwd: root });
+    try {
+        const events = await collectTurn(session, "Hello");
+        assert.ok(
+            events.some(
+                (event) => event.kind === "error" && event.message.includes("identity unavailable"),
+            ),
+        );
+        assert.equal(fs.existsSync(trace), false);
+    } finally {
+        session.dispose();
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
 test("Genius cancellation ends the turn without reporting a CLI failure", async () => {
     const adapter = new GeniusAdapter(() => ({
         executable: fakeCli,

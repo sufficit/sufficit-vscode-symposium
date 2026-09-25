@@ -4,13 +4,13 @@ Symposium can use the installed `genius` command as a conversation backend. The 
 
 ## Setup
 
-Install Genius CLI and sign in with `genius auth login`. Confirm the installation with `genius --version --json` and `genius auth status --json`. Then choose **Genius** when creating a Symposium dialogue. The adapter uses the same Genius state as the service or desktop app under the current OS account.
+Install a Genius CLI that supports `GENIUS_CLI_ACCESS_TOKEN` and confirm it with `genius --version --json`. Sign in to Sufficit Identity in Symposium, then choose **Genius** when creating a dialogue. Symposium supplies its current bearer to each `genius exec` child. Genius applies that bearer only to the command, including when a resident service executes it through the same-user pipe. The bearer is not saved in Genius state or printed in JSONL. `genius auth status` still reports Genius's own device enrollment, which can remain signed out. If Symposium is signed out, Genius falls back to its own enrollment; `genius auth login` is available for standalone CLI use. The adapter uses the same Genius sessions and context as the service or desktop app under the current OS account.
 
 Settings:
 
 - `symposium.genius.executable`: executable name or path, default `genius`.
 - `symposium.genius.model`: optional Genius preset ID passed as `--preset`. Empty uses Genius's default preset. Symposium's shared model field represents a preset ID for this backend.
-- `symposium.genius.env`: optional environment for CLI processes, for example `GENIUS_STATE_ROOT` in an isolated installation.
+- `symposium.genius.env`: optional environment for CLI processes, for example `GENIUS_STATE_ROOT` in an isolated installation. Symposium owns `GENIUS_CLI_ACCESS_TOKEN` for each turn; configuring that key here does not override the current login.
 
 On Windows, the default executable resolves to the native CLI installed beside `genius.cmd` in `%LOCALAPPDATA%\Programs\SufficitAIGenius`. You can also set the executable to an explicit native service path or to the installed `genius.cmd` path. The adapter invokes the native executable directly so JSONL output and cancellation remain available without a shell.
 
