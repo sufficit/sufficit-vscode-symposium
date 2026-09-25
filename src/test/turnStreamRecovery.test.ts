@@ -49,7 +49,7 @@ test("silent provider wait emits one notice and stops when output arrives", () =
     fire?.();
     fire?.();
     assert.equal(events.length, 1);
-    assert.match(events[0].text ?? "", /Sufficit AI has not responded/);
+    assert.match(events[0].text ?? "", /No visible update from Sufficit AI for over 30 seconds/);
     assert.equal(events[0].transcript, true);
     wait.progress();
     fire?.();
