@@ -12,9 +12,9 @@ Show what each Genius tool call is doing in the Symposium action row. Catalog se
 
 ## Checkpoints
 
-- [ ] **Current:** Define safe summaries from the existing argument shapes and add regression cases.
-- [ ] Implement concise detail and path metadata in the Genius event parser.
-- [ ] Run focused and package validation, record an activity note, and remove this plan.
+- [x] Define safe summaries from the existing argument shapes and add regression cases. The four new cases fail against the current parser because it emits no `detail`.
+- [x] Implement concise detail in the Genius event parser. The four regression cases now pass.
+- [ ] **Current:** Run focused and package validation, record an activity note, and remove this plan.
 - [ ] Deliver through PR, merge after CI, and install the updated VSIX locally and on development code-server.
 
 ## Decision
@@ -23,4 +23,4 @@ Derive display-only summaries in the Symposium Genius adapter, leaving the compl
 
 ## Validation
 
-Pending.
+The four focused tests fail against the original parser and pass after the change. Initial lint exposed a control-character regex rule, which was replaced with a character-code check. The first full package run passed 857 tests and all checks except the VSIX host bundle budget: 903,065 bytes versus 902,144. Raised the explicit budget to 883 KiB for the measured 881.9 KiB bundle; package verification must be repeated after staging the new source file so changed-line coverage sees it.

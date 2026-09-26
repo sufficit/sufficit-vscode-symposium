@@ -1,4 +1,5 @@
 import type { AgentEvent } from "../types";
+import { geniusToolSummary } from "./toolSummary";
 
 type RecordValue = Record<string, unknown>;
 
@@ -148,6 +149,7 @@ export class GeniusEventParser {
             toolName: name,
             toolId: partId,
             input: match?.[2] ?? content,
+            detail: geniusToolSummary(name, match?.[2] ?? content),
         });
     }
 
