@@ -59,7 +59,7 @@ export interface ServerManifest {
     description?: string;
     version?: string;
     source?: string;
-    transport?: "stdio" | "sse" | "builtin";
+    transport?: "stdio" | "sse" | "http" | "builtin";
     command?: string;
     args?: string[];
     env?: Record<string, string>;

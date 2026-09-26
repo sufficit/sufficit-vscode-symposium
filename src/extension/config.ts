@@ -10,6 +10,8 @@ import { OpenAIAdapter, OpenAIAdapterConfig } from "../adapters/openai";
 import type { ShellExecutionMode } from "../adapters/aiTools/types";
 import type { JevSettings } from "../adapters/openai/jev/types";
 import { symposiumLog } from "./log";
+import { listServers } from "../config/servers";
+import { geniusMcpServers } from "../adapters/genius/mcpConfig";
 
 /**
  * Working directory for a new session: the workspace folder, else the active
@@ -74,6 +76,7 @@ export function geniusConfig(): GeniusAdapterConfig {
         executable: config.get<string>("executable", "genius"),
         model: config.get<string>("model", ""),
         env: config.get<Record<string, string>>("env", {}),
+        mcpServers: () => geniusMcpServers(listServers()),
     };
 }
 

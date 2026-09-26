@@ -5,6 +5,7 @@ import type { AgentEvent, AgentSession, SessionStartOptions } from "../types";
 import { resolveSufficitMcpToken } from "../sufficitMcp";
 import { GeniusEventParser } from "./eventParser";
 import { resolveGeniusExecutable } from "./executable";
+import type { GeniusMcpServer } from "./mcpConfig";
 
 export interface GeniusAdapterConfig {
     executable: string;
@@ -12,6 +13,7 @@ export interface GeniusAdapterConfig {
     env?: Record<string, string>;
     tokenProvider?: () => Promise<string | null>;
     contextWindows?: Record<string, number>;
+    mcpServers?: () => GeniusMcpServer[];
 }
 
 function explicitPreset(value: string): string {
@@ -112,7 +114,22 @@ export class GeniusSession extends EventEmitter implements AgentSession {
         if (this.presetId) args.push("--preset", this.presetId);
         const env = { ...process.env, ...this.config.env, ...this.options.env };
         delete env.GENIUS_CLI_ACCESS_TOKEN;
+        delete env.GENIUS_CLI_MCP_SERVERS_JSON;
         if (token) env.GENIUS_CLI_ACCESS_TOKEN = token;
+        try {
+            const servers = (this.config.mcpServers?.() ?? []).map((server) =>
+                server.transport === "stdio"
+                    ? { ...server, workingDirectory: this.options.cwd }
+                    : server,
+            );
+            if (servers.length > 0) env.GENIUS_CLI_MCP_SERVERS_JSON = JSON.stringify(servers);
+        } catch (error) {
+            this.failTurn(
+                `Genius MCP configuration failed: ${error instanceof Error ? error.message : String(error)}`,
+                turnId,
+            );
+            return;
+        }
         const child = spawn(resolveGeniusExecutable(this.config.executable), args, {
             cwd: this.options.cwd,
             env,

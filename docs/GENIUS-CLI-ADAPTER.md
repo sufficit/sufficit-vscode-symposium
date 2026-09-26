@@ -10,7 +10,7 @@ Settings:
 
 - `symposium.genius.executable`: executable name or path, default `genius`.
 - `symposium.genius.model`: optional Genius preset ID passed as `--preset`. Empty or the UI's `default` selection uses Genius's server-managed default; only an explicit preset is passed to the CLI. Symposium's shared model field represents a preset ID for this backend.
-- `symposium.genius.env`: optional environment for CLI processes, for example `GENIUS_STATE_ROOT` in an isolated installation. Symposium owns `GENIUS_CLI_ACCESS_TOKEN` for each turn; configuring that key here does not override the current login.
+- `symposium.genius.env`: optional environment for CLI processes, for example `GENIUS_STATE_ROOT` in an isolated installation. Symposium owns `GENIUS_CLI_ACCESS_TOKEN` and `GENIUS_CLI_MCP_SERVERS_JSON` for each turn; configuring those keys here does not override the current login or MCP repository.
 
 On Windows, the default executable resolves to the native CLI installed beside `genius.cmd` in `%LOCALAPPDATA%\Programs\SufficitAIGenius`. You can also set the executable to an explicit native service path or to the installed `genius.cmd` path. The adapter invokes the native executable directly so JSONL output and cancellation remain available without a shell.
 
@@ -23,6 +23,18 @@ Genius's streamed token counts and the selected preset's catalog window; for
 the server-managed default, the effective model reported with usage selects
 the catalog window. If Genius does not report a matching context length, the
 context percentage remains unavailable instead of using an estimate.
+
+For each turn, Symposium reads its managed MCP server repository and passes
+external stdio or HTTP server definitions to the Genius CLI as a transient
+declaration. The built-in Sufficit MCP servers remain owned by Genius. The
+CLI forwards the declaration through its resident pipe and extends the
+current Genius session's lazy tool catalog; it does not attach all schemas
+to the model prompt. Stdio servers run under the Genius service account with
+the dialogue workspace as their working directory. Definitions and credentials
+remain in the child and service process memory for the turn. The optional
+`tool/catalog` JSONL record reports the connected servers and projected tool
+names without credentials. A server that fails to connect contributes no
+tools to that turn.
 
 ## Stream mapping
 

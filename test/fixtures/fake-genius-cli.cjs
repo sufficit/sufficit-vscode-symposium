@@ -54,7 +54,8 @@ if (args.includes("--version")) {
     process.stdin.on("end", () => {
         if (process.env.FAKE_GENIUS_TRACE) {
             fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args, prompt,
-                authToken: process.env.GENIUS_CLI_ACCESS_TOKEN ?? null })}\n`);
+                authToken: process.env.GENIUS_CLI_ACCESS_TOKEN ?? null,
+                mcpServers: process.env.GENIUS_CLI_MCP_SERVERS_JSON ?? null })}\n`);
         }
         if (process.env.FAKE_GENIUS_MODE === "missing") {
             write(envelope("error", "failed", {

@@ -29,6 +29,7 @@ function queryCli(
     return new Promise((resolve, reject) => {
         const env = { ...process.env, ...config.env };
         delete env.GENIUS_CLI_ACCESS_TOKEN;
+        delete env.GENIUS_CLI_MCP_SERVERS_JSON;
         if (accessToken) env.GENIUS_CLI_ACCESS_TOKEN = accessToken;
         const child = spawn(resolveGeniusExecutable(config.executable), args, {
             env,
