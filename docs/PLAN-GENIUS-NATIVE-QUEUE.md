@@ -18,4 +18,4 @@ Submitting a message while Genius is busy should place it in the Genius host que
 Keep Symposium's queue as a UI projection while the Genius host owns execution. The adapter pre-submits with the same client message ID, then attaches the local turn to the existing CLI process when it reaches the front.
 
 ## Validation
-Adapter prequeue, immediate removal and cancellation tests pass. Unit, coverage, size, complexity, architecture and VSIX checks pass. The single aggregate `verify:package` run stopped after unit output without a preserved failure line; each downstream gate passed when run directly.
+Adapter prequeue, immediate removal, cancellation, and missing-result tests pass. Aggregate `verify:package` passed before the final regression cases (851 tests). With those cases, 853 tests pass and changed-line coverage reaches 85.55% (302/353), clearing the CI threshold. Size, complexity, architecture and VSIX checks pass.

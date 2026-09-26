@@ -73,6 +73,7 @@ if (args.includes("--version")) {
             return;
         }
         write({ type: "session", schemaVersion: 1, sessionId: id, presetId: "test-preset" });
+        if (process.env.FAKE_GENIUS_MODE === "no_result") return;
         if (process.env.FAKE_GENIUS_MODE === "queued") {
             write({ type: "queued", schemaVersion: 1, sessionId: id,
                 clientMessageId: input.clientMessageId, pendingMessageId: id });

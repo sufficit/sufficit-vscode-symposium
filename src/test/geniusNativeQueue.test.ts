@@ -21,7 +21,7 @@ test("Genius prequeues once and replays the same native turn when Symposium disp
     const session = adapter.start({ cwd: root, resumeSessionId: sessionId });
     try {
         session.prequeue?.("Queued prompt", ["Host guidance"], "queue-1");
-        await new Promise((resolve) => setTimeout(resolve, 120));
+        await waitForCalls(trace, 1);
         const events = await new Promise<AgentEvent[]>((resolve, reject) => {
             const collected: AgentEvent[] = [];
             const timeout = setTimeout(() => reject(new Error("Queued turn timed out")), 5000);
@@ -42,11 +42,7 @@ test("Genius prequeues once and replays the same native turn when Symposium disp
             );
         });
         assert.equal(events.filter((event) => event.kind === "text").length, 1);
-        const calls = fs
-            .readFileSync(trace, "utf8")
-            .trim()
-            .split("\n")
-            .map((line) => JSON.parse(line));
+        const calls = await waitForCalls(trace, 1);
         assert.equal(calls.length, 1);
         assert.equal(calls[0].clientMessageId, "queue-1");
         assert.deepEqual(calls[0].instructions, ["Host guidance"]);
@@ -69,16 +65,60 @@ test("removing an immediately queued message waits for native acceptance", async
     try {
         session.prequeue?.("Discard me", [], "remove-1");
         session.removePrequeued?.("remove-1");
-        await new Promise((resolve) => setTimeout(resolve, 180));
-        const calls = fs
-            .readFileSync(trace, "utf8")
-            .trim()
-            .split("\n")
-            .map((line) => JSON.parse(line));
+        const calls = await waitForCalls(trace, 2);
         assert.equal(calls[0].clientMessageId, "remove-1");
         assert.deepEqual(calls[1].args.slice(0, 2), ["queue", "remove"]);
     } finally {
         session.dispose();
         fs.rmSync(root, { recursive: true, force: true });
+    }
+});
+
+async function waitForCalls(
+    trace: string,
+    count: number,
+): Promise<Array<{ args: string[]; clientMessageId?: string; instructions?: string[] }>> {
+    for (let attempt = 0; attempt < 100; attempt++) {
+        if (fs.existsSync(trace)) {
+            const calls = fs
+                .readFileSync(trace, "utf8")
+                .trim()
+                .split("\n")
+                .map((line) => JSON.parse(line));
+            if (calls.length >= count) return calls;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`Expected ${count} Genius CLI call(s)`);
+}
+
+test("a queued CLI that exits without a result reports a visible turn error", async () => {
+    const adapter = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "test-preset",
+        env: { FAKE_GENIUS_MODE: "no_result" },
+        tokenProvider: () => Promise.resolve(null),
+    }));
+    const session = adapter.start({ cwd: process.cwd(), resumeSessionId: sessionId });
+    try {
+        const events = await new Promise<AgentEvent[]>((resolve, reject) => {
+            const collected: AgentEvent[] = [];
+            const timeout = setTimeout(() => reject(new Error("CLI turn timed out")), 5000);
+            session.on("event", (event: AgentEvent) => {
+                collected.push(event);
+                if (event.kind === "turn-end") {
+                    clearTimeout(timeout);
+                    resolve(collected);
+                }
+            });
+            session.send("Prompt", [], [], "intent", undefined, "no-result-1");
+        });
+        assert.ok(
+            events.some(
+                (event) => event.kind === "error" && event.message.includes("without a result"),
+            ),
+        );
+    } finally {
+        session.dispose();
     }
 });

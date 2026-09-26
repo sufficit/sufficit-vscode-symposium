@@ -14,7 +14,7 @@ While a Genius turn was running, Symposium stored new messages only in its local
 ## Validation and delivery
 
 - Focused adapter, removal and cancellation tests passed.
-- `npm run verify:package` passed: 851 tests, no failures; VSIX guardrails passed (41 files, 533,893 bytes).
+- `npm run verify:package` passed before the final regression cases: 851 tests, no failures; VSIX guardrails passed (41 files, 533,893 bytes). With those cases, 853 tests pass and CI changed-line coverage reaches 85.55% (302/353).
 - Companion Genius issue #1018 and CLI version 0.130.1. Installation and PR references are recorded in the delivery discussion.
 
 ## Limits
