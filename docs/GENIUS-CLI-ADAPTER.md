@@ -2,6 +2,8 @@
 
 Symposium can use the installed `genius` command as a conversation backend. The adapter starts one `genius exec --input-json --json` process per turn, reads JSONL from stdout, and sends the next turn with `--resume <session UUID>`. Genius owns the conversation context and its compaction. Symposium does not replay previous messages to Genius and does not call the loopback HTTP API.
 
+When a running Genius turn receives another message, Symposium submits it to the Genius host queue immediately with a stable client message ID. The pending item appears in Genius Desktop while the active turn continues. Symposium keeps a local projection for its Queued panel, then attaches to the already submitted CLI process when the item reaches the front. Editing or clearing a pending item removes it from the host queue, and Send next promotes it there. A removal in Genius Desktop also clears the local pending row. A queued image is left for normal dispatch, which reports Genius's existing unsupported-attachment error.
+
 The CLI input is a JSON object with `schemaVersion: 1`, the user's `prompt`, and an `instructions` array. Symposium's host guidance goes into Genius's developer prompt for the turn rather than appearing as a user message. Genius rebuilds that layer on each turn, so Symposium resends its session guidance while the actual user prompt remains clean in Genius chat history. This requires a Genius CLI with `--input-json` support; older installs must be updated before using this adapter version.
 
 ## Setup
@@ -46,7 +48,7 @@ tools to that turn.
 
 ## Stream mapping
 
-Genius schemaVersion 1 `session` records provide the native UUID and preset. `chat/responsePart` identifies Markdown, reasoning and tool parts. Markdown `chat/delta` becomes live assistant text; `chat/reasoning` becomes thinking; tool parts become tool rows; `chat/usage` updates token counts. The final `result.answer` is rendered only when no Markdown delta was streamed, avoiding duplicate answers. CLI errors become visible Symposium errors. Cancelling a turn sends SIGINT to its child process and ends the Symposium turn without reporting the expected exit as a failure.
+Genius schemaVersion 1 `session` records provide the native UUID and preset. `chat/responsePart` identifies Markdown, reasoning and tool parts. Markdown `chat/delta` becomes live assistant text; `chat/reasoning` becomes thinking; tool parts become tool rows; `chat/usage` updates token counts. The final `result.answer` is rendered only when no Markdown delta was streamed, avoiding duplicate answers. CLI errors become visible Symposium errors. Cancelling a turn requests `genius stop` before closing the CLI child, so the resident host stops the same turn.
 
 ## Current CLI limits
 

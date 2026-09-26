@@ -21,11 +21,27 @@ function explicitPreset(value: string): string {
     return preset.toLowerCase() === "default" ? "" : preset;
 }
 
+interface ExecProcess {
+    child: ChildProcessWithoutNullStreams;
+    parser: GeniusEventParser;
+    clientMessageId?: string;
+    buffered: AgentEvent[];
+    activeTurnId?: string;
+    finished: boolean;
+    exitCode: number | null;
+    stderr: string;
+    accepted: Promise<void>;
+    confirmAccepted(): void;
+    sawQueued: boolean;
+}
+
 /** Runs one `genius exec --input-json --json` child for each turn. Genius owns context. */
 export class GeniusSession extends EventEmitter implements AgentSession {
     readonly backend = "genius";
     sessionId: string | undefined;
     private current: ChildProcessWithoutNullStreams | undefined;
+    private currentProcess: ExecProcess | undefined;
+    private readonly prequeued = new Map<string, Promise<ExecProcess>>();
     private currentTurnId: string | undefined;
     private sequence = 0;
     private disposed = false;
@@ -56,12 +72,14 @@ export class GeniusSession extends EventEmitter implements AgentSession {
         preamble?: string[],
         intentId?: string,
         retryOf?: string,
+        clientMessageId?: string,
     ): void {
         if (this.disposed) return;
         if (this.current) {
             const previousTurn = this.currentTurnId;
-            this.current.kill("SIGINT");
+            this.stopHostTurn();
             this.current = undefined;
+            this.currentProcess = undefined;
             if (previousTurn) this.emitTurnEnd(previousTurn);
         } else if (this.currentTurnId) {
             this.emitTurnEnd(this.currentTurnId);
@@ -91,127 +109,278 @@ export class GeniusSession extends EventEmitter implements AgentSession {
             return;
         }
 
-        void this.startTurn(text, preamble ?? [], turnId);
+        const queued = clientMessageId && this.prequeued.get(clientMessageId);
+        if (queued) {
+            void queued
+                .then((process) => {
+                    if (this.disposed || this.currentTurnId !== turnId) return;
+                    this.prequeued.delete(clientMessageId);
+                    this.activate(process, turnId);
+                })
+                .catch((error) => this.failTurn(String(error), turnId));
+        } else {
+            void this.startTurn(text, preamble ?? [], turnId, clientMessageId);
+        }
+    }
+    prequeue(text: string, preamble: string[], clientMessageId: string, model?: string): void {
+        if (this.disposed || !this.sessionId || this.prequeued.has(clientMessageId)) return;
+        const promise = this.launchExec(
+            text,
+            preamble,
+            clientMessageId,
+            explicitPreset(model || this.presetId),
+        );
+        this.prequeued.set(clientMessageId, promise);
+        void promise.catch((error) => {
+            this.prequeued.delete(clientMessageId);
+            this.emit("native-queue-error", clientMessageId, String(error));
+        });
+    }
+    removePrequeued(clientMessageId: string): void {
+        void this.queueCommand("remove", clientMessageId);
     }
 
-    private async startTurn(text: string, instructions: string[], turnId: string): Promise<void> {
-        let token: string | null;
-        try {
-            token = await (this.config.tokenProvider ?? resolveSufficitMcpToken)();
-        } catch (error) {
-            if (this.currentTurnId === turnId && !this.disposed && !this.cancelled) {
-                this.failTurn(
-                    `Genius authentication failed: ${error instanceof Error ? error.message : String(error)}`,
-                    turnId,
-                );
-            }
-            return;
-        }
-        if (this.disposed || this.cancelled || this.currentTurnId !== turnId) return;
+    promotePrequeued(clientMessageId: string): void {
+        void this.queueCommand("promote", clientMessageId);
+    }
 
+    private async startTurn(
+        text: string,
+        instructions: string[],
+        turnId: string,
+        clientMessageId?: string,
+    ): Promise<void> {
+        try {
+            const process = await this.launchExec(
+                text,
+                instructions,
+                clientMessageId,
+                this.presetId,
+            );
+            if (this.disposed || this.cancelled || this.currentTurnId !== turnId) {
+                process.child.kill("SIGTERM");
+                return;
+            }
+            this.activate(process, turnId);
+        } catch (error) {
+            if (this.currentTurnId === turnId && !this.disposed)
+                this.failTurn(`Genius CLI could not start: ${String(error)}`, turnId);
+        }
+    }
+
+    private async launchExec(
+        text: string,
+        instructions: string[],
+        clientMessageId: string | undefined,
+        presetId: string,
+    ): Promise<ExecProcess> {
+        const token = await (this.config.tokenProvider ?? resolveSufficitMcpToken)();
         const args = ["exec", "--input-json", "--json"];
         if (this.sessionId) args.push("--resume", this.sessionId);
-        if (this.presetId) args.push("--preset", this.presetId);
+        if (presetId) args.push("--preset", presetId);
         const env = { ...process.env, ...this.config.env, ...this.options.env };
         delete env.GENIUS_CLI_ACCESS_TOKEN;
         delete env.GENIUS_CLI_MCP_SERVERS_JSON;
         if (token) env.GENIUS_CLI_ACCESS_TOKEN = token;
-        try {
-            const servers = (this.config.mcpServers?.() ?? []).map((server) =>
-                server.transport === "stdio"
-                    ? { ...server, workingDirectory: this.options.cwd }
-                    : server,
-            );
-            if (servers.length > 0) env.GENIUS_CLI_MCP_SERVERS_JSON = JSON.stringify(servers);
-        } catch (error) {
-            this.failTurn(
-                `Genius MCP configuration failed: ${error instanceof Error ? error.message : String(error)}`,
-                turnId,
-            );
-            return;
-        }
+        const servers = (this.config.mcpServers?.() ?? []).map((server) =>
+            server.transport === "stdio"
+                ? { ...server, workingDirectory: this.options.cwd }
+                : server,
+        );
+        if (servers.length > 0) env.GENIUS_CLI_MCP_SERVERS_JSON = JSON.stringify(servers);
         const child = spawn(resolveGeniusExecutable(this.config.executable), args, {
             cwd: this.options.cwd,
             env,
             stdio: ["pipe", "pipe", "pipe"],
         });
-        this.current = child;
-        const parser = new GeniusEventParser({
+        let confirmAccepted!: () => void;
+        const accepted = new Promise<void>((resolve) => {
+            confirmAccepted = resolve;
+        });
+        const running: ExecProcess = {
+            child,
+            parser: undefined!,
+            clientMessageId,
+            buffered: [],
+            finished: false,
+            exitCode: null,
+            stderr: "",
+            accepted,
+            confirmAccepted,
+            sawQueued: false,
+        };
+        const deliver = (event: AgentEvent) => {
+            if (running.activeTurnId && !this.cancelled && this.currentProcess === running)
+                this.emit("event", event);
+            else running.buffered.push(event);
+        };
+        running.parser = new GeniusEventParser({
             contextWindow: (model) =>
-                this.config.contextWindows?.[model || ""] ??
-                this.config.contextWindows?.[this.presetId],
-            session: (id, presetId) => {
-                if (this.current !== child) return;
+                this.config.contextWindows?.[model || ""] ?? this.config.contextWindows?.[presetId],
+            session: (id, reportedPreset) => {
                 if (this.sessionId && this.sessionId !== id) {
-                    this.failTurn("Genius CLI resumed a different session.", turnId);
+                    deliver({
+                        kind: "error",
+                        message: "Genius CLI resumed a different session.",
+                        retryable: false,
+                    });
                     child.kill("SIGTERM");
                     return;
                 }
                 this.sessionId = id;
-                if (presetId) this.presetId = presetId;
-                this.emit("event", {
+                if (reportedPreset) this.presetId = reportedPreset;
+                deliver({
                     kind: "session",
                     sessionId: id,
-                    model: this.presetId || undefined,
-                } satisfies AgentEvent);
+                    model: reportedPreset || presetId || undefined,
+                });
             },
-            emit: (event) => {
-                if (this.current === child && !this.cancelled) this.emit("event", event);
-            },
+            emit: deliver,
         });
         const lines = readline.createInterface({ input: child.stdout });
         lines.on("line", (line) => {
-            if (this.current !== child || this.cancelled) return;
             try {
-                parser.handleLine(line);
+                const record = JSON.parse(line) as { type?: string };
+                if (record.type === "queued") {
+                    running.sawQueued = true;
+                    running.confirmAccepted();
+                }
+                running.parser.handleLine(line);
             } catch (error) {
-                this.failTurn(error instanceof Error ? error.message : String(error), turnId);
+                deliver({ kind: "error", message: String(error), retryable: false });
                 child.kill("SIGTERM");
             }
         });
-        let stderr = "";
         child.stderr.on("data", (chunk) => {
-            stderr = (stderr + String(chunk)).slice(-2000);
+            running.stderr = (running.stderr + String(chunk)).slice(-2000);
         });
         child.stdin.on("error", () => undefined);
-        child.stdin.end(JSON.stringify({ schemaVersion: 1, prompt: text, instructions }));
+        child.stdin.end(
+            JSON.stringify({ schemaVersion: 1, prompt: text, instructions, clientMessageId }),
+        );
         child.on("error", (error) => {
-            if (this.current !== child) return;
-            this.failTurn(`Genius CLI could not start: ${error.message}`, turnId);
+            deliver({
+                kind: "error",
+                message: `Genius CLI could not start: ${error.message}`,
+                retryable: false,
+            });
         });
         child.on("close", (code) => {
-            if (this.current !== child) return;
-            this.current = undefined;
-            if (this.disposed) return;
-            if (!this.cancelled && !this.reportedError && !parser.sawError) {
-                if (code !== 0) {
-                    this.emit("event", {
-                        kind: "error",
-                        message: `Genius CLI exited with code ${code}: ${stderr.trim() || "no diagnostics"}`,
-                        retryable: false,
-                    } satisfies AgentEvent);
-                } else if (!parser.sawResult) {
-                    this.emit("event", {
-                        kind: "error",
-                        message: "Genius CLI ended without a result record.",
-                        retryable: false,
-                    } satisfies AgentEvent);
-                }
+            running.confirmAccepted();
+            running.finished = true;
+            running.exitCode = code;
+            if (running.activeTurnId) this.finish(running);
+            else if (running.parser.removed && clientMessageId) {
+                this.prequeued.delete(clientMessageId);
+                this.emit("native-queue-removed", clientMessageId);
             }
-            this.cancelled = false;
-            this.emitTurnEnd(turnId);
+        });
+        return running;
+    }
+
+    private activate(running: ExecProcess, turnId: string): void {
+        this.current = running.child;
+        this.currentProcess = running;
+        running.activeTurnId = turnId;
+        for (const event of running.buffered) this.emit("event", event);
+        running.buffered.length = 0;
+        if (running.finished) this.finish(running);
+    }
+
+    private finish(running: ExecProcess): void {
+        if (this.currentProcess !== running || !running.activeTurnId) return;
+        this.current = undefined;
+        this.currentProcess = undefined;
+        if (this.disposed) return;
+        if (!this.cancelled && !this.reportedError && !running.parser.sawError) {
+            if (running.exitCode !== 0) {
+                this.emit("event", {
+                    kind: "error",
+                    message: `Genius CLI exited with code ${running.exitCode}: ${running.stderr.trim() || "no diagnostics"}`,
+                    retryable: false,
+                } satisfies AgentEvent);
+            } else if (!running.parser.sawResult) {
+                this.emit("event", {
+                    kind: "error",
+                    message: "Genius CLI ended without a result record.",
+                    retryable: false,
+                } satisfies AgentEvent);
+            }
+        }
+        this.cancelled = false;
+        this.emitTurnEnd(running.activeTurnId);
+    }
+
+    private async queueCommand(
+        action: "remove" | "promote",
+        clientMessageId: string,
+    ): Promise<void> {
+        const pending = this.prequeued.get(clientMessageId);
+        if (!this.sessionId || !pending) return;
+        let running: ExecProcess;
+        try {
+            running = await pending;
+        } catch {
+            return;
+        }
+        await running.accepted;
+        if (!running.sawQueued) return;
+        const child = spawn(
+            resolveGeniusExecutable(this.config.executable),
+            ["queue", action, this.sessionId, clientMessageId, "--json"],
+            {
+                cwd: this.options.cwd,
+                env: { ...process.env, ...this.config.env, ...this.options.env },
+                stdio: ["ignore", "pipe", "pipe"],
+            },
+        );
+        let result = "";
+        child.stdout.on("data", (chunk) => {
+            result += String(chunk);
+        });
+        child.stderr.resume();
+        child.on("error", (error) =>
+            this.emit("native-queue-error", clientMessageId, error.message),
+        );
+        child.on("close", (code) => {
+            if (code !== 0)
+                this.emit(
+                    "native-queue-error",
+                    clientMessageId,
+                    `${action} failed: ${result.trim() || `CLI exit ${code}`}`,
+                );
         });
     }
 
     cancel(): void {
         if (!this.currentTurnId) return;
         this.cancelled = true;
-        if (this.current) this.current.kill("SIGINT");
+        if (this.current) this.stopHostTurn();
         else this.emitTurnEnd(this.currentTurnId);
+    }
+
+    private stopHostTurn(): void {
+        const target = this.current;
+        if (!this.sessionId) {
+            target?.kill("SIGINT");
+            return;
+        }
+        const child = spawn(
+            resolveGeniusExecutable(this.config.executable),
+            ["stop", this.sessionId, "--json"],
+            {
+                cwd: this.options.cwd,
+                env: { ...process.env, ...this.config.env, ...this.options.env },
+                stdio: "ignore",
+            },
+        );
+        child.on("error", () => target?.kill("SIGINT"));
+        child.on("close", () => target?.kill("SIGINT"));
     }
 
     dispose(): void {
         this.disposed = true;
+        for (const id of this.prequeued.keys()) this.removePrequeued(id);
         this.current?.kill("SIGTERM");
         this.current = undefined;
         this.removeAllListeners();

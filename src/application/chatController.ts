@@ -130,6 +130,7 @@ export class ChatController {
             getSession: () => this.session,
             setSession: (session) => {
                 this.session = session;
+                this.runner.watchNativeQueue(session);
             },
             reloadGuardrails: () => this.reloadGuardrails(),
             reloadTasks: () => this.reloadTasks(),
@@ -312,13 +313,12 @@ export class ChatController {
             turns: this.live.turns,
             createIntentId: () => this.ports.ids.create(),
             emit: (message) => this.emit(message),
+            onQueued: (message) => this.runner.prequeueNative(message),
         });
     }
-
     private emitQueue(): void {
         this.emit(createQueueSnapshot(this.queue, this.isBusy));
     }
-
     private dispatchOwned(message: PendingMessage, options: QueueDispatchOptions = {}): void {
         if (!this.renderPersistence.canDispatch()) {
             this.queue.unshift(message);
@@ -328,7 +328,6 @@ export class ChatController {
         }
         void this.runner.dispatch(message, options);
     }
-
     private onExternalRenderMessage(message: unknown, record: RenderLogRecord): boolean | void {
         this.live.hydrateTodosFromMessage(message);
         return reconcilePeerQueue(message, record, {
