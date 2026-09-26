@@ -15,6 +15,13 @@ import {
     stringArray,
 } from "./projectionRuntimeValues";
 import {
+    serializeProjectionDiagnostics,
+    type AhpProjectionDiagnostic,
+    type AhpProjectionDiagnostics,
+} from "./projectionDiagnostics";
+export { serializeProjectionDiagnostics } from "./projectionDiagnostics";
+export type { AhpProjectionDiagnostic, AhpProjectionDiagnostics } from "./projectionDiagnostics";
+import {
     createProjectionState,
     projectAgentEvent,
     projectInjectedUser,
@@ -39,13 +46,6 @@ export interface AhpProjectionSessionInfo {
 export interface AhpProjectionSource {
     list(): AhpProjectionSessionInfo[];
     follow(id: string, observer: (message: unknown) => void): (() => void) | undefined;
-}
-
-export interface AhpProjectionDiagnostic {
-    category: "transcript" | "status" | "queue" | "approval" | "projection";
-    session: string;
-    sequence: number;
-    detail: string;
 }
 
 export interface AhpProjectionOptions {
@@ -103,12 +103,7 @@ export class AhpProjectionRuntime {
         this.options.persistence?.maybeSave(this.runtime);
     }
 
-    /**
-     * Re-attaches the projection observer for a controller whose persisted render
-     * log was seeded. Preserves any turns already loaded into the AHP runtime
-     * (e.g. from a prior lazy-loading pass) so reopening a session does not
-     * discard the scroll-up history the user already waited for.
-     */
+    /** Reattaches a seeded projection without discarding already paged turns. */
     rebuild(provider: string, nativeSessionId: string): void {
         const key = sessionKey(provider, nativeSessionId);
         const current = this.records.get(key);
@@ -157,15 +152,15 @@ export class AhpProjectionRuntime {
         this.options.persistence?.maybeSave(this.runtime);
     }
 
-    diagnostics(): { counts: Record<string, number>; recent: AhpProjectionDiagnostic[] } {
+    diagnostics(): AhpProjectionDiagnostics {
         return {
             counts: Object.fromEntries(this.counts),
             recent: this.recent.map((item) => ({ ...item })),
         };
     }
 
-    developerDump(): string {
-        return redact(JSON.stringify(this.diagnostics()));
+    developerDump(maxRecent = 8): string {
+        return serializeProjectionDiagnostics(this.diagnostics(), maxRecent);
     }
 
     dispose(): void {
@@ -250,7 +245,10 @@ export class AhpProjectionRuntime {
                 return;
             }
             if (message.type === "history" && Array.isArray(message.messages)) {
-                const turns = historyTurns(message.messages as HistoryMessage[]);
+                const turns = historyTurns(
+                    message.messages as HistoryMessage[],
+                    optionalString(message.pageId),
+                );
                 this.runtime.dispatch(record.handle.chatResource, {
                     type: "chat/turnsLoaded",
                     turns,

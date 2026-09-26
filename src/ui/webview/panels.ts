@@ -84,8 +84,19 @@ function dismissAll(key: string, todos: TodoItem[]): void {
     }
 }
 // A TodoWrite carries the full current list; just store it for this session.
-export function renderTodos(todos: TodoItem[]): void {
+export function renderTodos(todos: TodoItem[], settled = false): void {
     const key = wsKey;
+    if (settled) {
+        // A restored plan is already at its final state. Completed steps must
+        // not replay their five-second acknowledgement timer on every reopen.
+        const removed = dismissedSet(key);
+        const before = removed.size;
+        for (const todo of todos) {
+            if (todo.status === "completed") removed.add(todoId(todo));
+        }
+        if (removed.size !== before) persistDismissed(removed);
+        planCompleting[key]?.clear();
+    }
     const visible = visibleTodos(todos);
     const prevDone = planPrevDone[key] || (planPrevDone[key] = new Set());
     const completing = planCompleting[key] || (planCompleting[key] = new Set());

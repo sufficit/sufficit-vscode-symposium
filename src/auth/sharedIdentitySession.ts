@@ -28,6 +28,23 @@ export function sameStoredTokenVersion(
     );
 }
 
+/** Reuse an unexpired token after a refresh failure only if it was not the
+ * credential the caller explicitly asked to replace. */
+export function fallbackAccessTokenAfterRefreshFailure(
+    observed: StoredTokens,
+    latest: StoredTokens | undefined,
+    forceRefresh: boolean,
+    now = Date.now(),
+): string | null {
+    if (!latest || now >= latest.expiresAtMs) {
+        return null;
+    }
+    if (forceRefresh && sameStoredTokenVersion(observed, latest)) {
+        return null;
+    }
+    return latest.accessToken;
+}
+
 /** Coordinates the authoritative server-side session used by code-server windows. */
 export class SharedIdentitySession {
     private lastPayload: string | undefined;

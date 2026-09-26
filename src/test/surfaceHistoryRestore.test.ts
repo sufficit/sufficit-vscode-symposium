@@ -28,6 +28,7 @@ test("reopening a live controller reprojects history instead of trusting an empt
             return Promise.resolve();
         },
         getModel: () => "",
+        currentTodos: () => [],
         getPermission: () => "manager",
         aiToolsInfo: () => undefined,
         subscribeLive: () => () => undefined,
@@ -80,6 +81,10 @@ test("reopening a live controller reprojects history instead of trusting an empt
     assert.equal(transient, true, "reprojection must not append derived history to the ledger");
     assert.equal(
         posts.some((message) => (message as { type?: string }).type === "history-end"),
+        true,
+    );
+    assert.equal(
+        posts.some((message) => (message as { type?: string }).type === "todos-snapshot"),
         true,
     );
     const meta = posts.find((message) => (message as { type?: string }).type === "meta") as {

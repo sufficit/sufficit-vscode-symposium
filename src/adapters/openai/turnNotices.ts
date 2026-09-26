@@ -4,6 +4,10 @@ import type { MaterializedToolHistory, ToolHistoryIssue } from "./toolHistory";
 
 /** Number of identical tool-call batches allowed before stopping the turn. */
 export const REPEAT_TOOL_CALL_LIMIT = 6;
+/** A consecutive identical batch has stronger evidence of a stalled loop. */
+export const CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT = 3;
+/** Duplicate requests skipped internally before an insistent loop is stopped. */
+export const REPEATED_TOOL_CALL_RECOVERY_LIMIT = 2;
 
 const TOOL_LOOP_GUARDRAIL_PREFIX = "[Symposium tool-loop guardrail:";
 
@@ -23,12 +27,80 @@ export function repeatedToolCallWithoutProgress(
     signature: string,
     limit = REPEAT_TOOL_CALL_LIMIT,
 ): boolean {
+    return repeatedToolCallCountWithoutProgress(recentCalls, signature, limit) !== undefined;
+}
+
+/**
+ * Records one batch and returns the repeat count that tripped the guardrail.
+ * Three consecutive identical calls stop early; interleaved reuse retains the
+ * wider six-occurrence window so legitimate read/edit/read workflows survive.
+ */
+export function repeatedToolCallCountWithoutProgress(
+    recentCalls: string[],
+    signature: string,
+    limit = REPEAT_TOOL_CALL_LIMIT,
+    consecutiveLimit = CONSECUTIVE_REPEAT_TOOL_CALL_LIMIT,
+): number | undefined {
     recentCalls.push(signature);
     const windowSize = limit * 2;
     if (recentCalls.length > windowSize) {
         recentCalls.splice(0, recentCalls.length - windowSize);
     }
-    return recentCalls.filter((call) => call === signature).length >= limit;
+    let consecutive = 0;
+    for (let index = recentCalls.length - 1; index >= 0; index--) {
+        if (recentCalls[index] !== signature) break;
+        consecutive++;
+    }
+    if (consecutive >= consecutiveLimit) return consecutive;
+    const occurrences = recentCalls.filter((call) => call === signature).length;
+    return occurrences >= limit ? occurrences : undefined;
+}
+
+export type RepeatedToolCallDecision =
+    | { kind: "execute" }
+    | {
+          kind: "recover" | "stop";
+          attempt: number;
+          repeatCount: number | undefined;
+          previouslyBlocked: boolean;
+      };
+
+/**
+ * Turns duplicate model requests into bounded recovery opportunities. A
+ * different tool batch proves progress and resets the recovery counter.
+ */
+export class RepeatedToolCallGuard {
+    private readonly recentCalls: string[] = [];
+    private blockedFingerprint: string | undefined;
+    private recoveryAttempts = 0;
+    private triggeringRepeatCount: number | undefined;
+
+    constructor(previouslyBlockedFingerprint?: string) {
+        this.blockedFingerprint = previouslyBlockedFingerprint;
+    }
+
+    evaluate(signature: string): RepeatedToolCallDecision {
+        const fingerprint = toolCallBatchFingerprint(signature);
+        const previouslyBlocked = this.blockedFingerprint === fingerprint;
+        const repeatCount = previouslyBlocked
+            ? this.triggeringRepeatCount
+            : repeatedToolCallCountWithoutProgress(this.recentCalls, signature);
+        if (!previouslyBlocked && repeatCount === undefined) {
+            this.blockedFingerprint = undefined;
+            this.recoveryAttempts = 0;
+            this.triggeringRepeatCount = undefined;
+            return { kind: "execute" };
+        }
+        if (!previouslyBlocked) this.triggeringRepeatCount = repeatCount;
+        this.blockedFingerprint = fingerprint;
+        const attempt = ++this.recoveryAttempts;
+        return {
+            kind: attempt <= REPEATED_TOOL_CALL_RECOVERY_LIMIT ? "recover" : "stop",
+            attempt,
+            repeatCount: this.triggeringRepeatCount,
+            previouslyBlocked,
+        };
+    }
 }
 
 /** Stable opaque identity for a tool-call batch; arguments never enter the feedback text. */
@@ -62,6 +134,66 @@ export function appendRepeatedToolCallFeedback(
     };
     messages.push(feedback);
     return feedback;
+}
+
+/** Adds durable guidance after Symposium skips a duplicate call without executing it. */
+export function appendRepeatedToolCallRecoveryFeedback(
+    messages: ChatMessage[],
+    signature: string,
+    toolNames: string[],
+    supportsDeveloperRole: boolean,
+    attempt: number,
+): ChatMessage {
+    const fingerprint = toolCallBatchFingerprint(signature);
+    const tools = [...new Set(toolNames)].filter(Boolean).slice(0, 4).join(", ") || "tool";
+    const feedback: ChatMessage = {
+        role: supportsDeveloperRole ? "developer" : "system",
+        content: `${TOOL_LOOP_GUARDRAIL_PREFIX}${fingerprint}] A duplicate ${tools} request was skipped without execution because its result is already available above. Reuse that result and continue the task or answer the user. Do not request the same arguments again. Recovery attempt ${attempt} of ${REPEATED_TOOL_CALL_RECOVERY_LIMIT}.`,
+    };
+    messages.push(feedback);
+    return feedback;
+}
+
+/** Selects durable model feedback for a blocked duplicate-call decision. */
+export function appendRepeatedToolCallDecisionFeedback(
+    messages: ChatMessage[],
+    signature: string,
+    toolNames: string[],
+    supportsDeveloperRole: boolean,
+    decision: Exclude<RepeatedToolCallDecision, { kind: "execute" }>,
+): ChatMessage {
+    return decision.kind === "recover"
+        ? appendRepeatedToolCallRecoveryFeedback(
+              messages,
+              signature,
+              toolNames,
+              supportsDeveloperRole,
+              decision.attempt,
+          )
+        : appendRepeatedToolCallFeedback(
+              messages,
+              signature,
+              toolNames,
+              supportsDeveloperRole,
+              decision.repeatCount,
+          );
+}
+
+/** User-visible notice that a duplicate request was skipped and the turn continues. */
+export function repeatedToolCallRecoveryNotice(toolNames: string[], attempt: number): AgentEvent {
+    const tools = [...new Set(toolNames)].filter(Boolean).slice(0, 4).join(", ") || "tool";
+    return {
+        kind: "status-notice",
+        severity: "warning",
+        text: `Skipped a repeated ${tools} request and asked the model to reuse the existing result (recovery ${attempt} of ${REPEATED_TOOL_CALL_RECOVERY_LIMIT}).`,
+    };
+}
+
+/** Builds the user-facing stop notice for a repeated or carried-over tool loop. */
+export function repeatedToolCallStopNotice(attempt: number): AgentEvent {
+    return guardrailStopNotice(
+        `Stopped because the model repeated the same tool call after ${Math.max(1, attempt - 1)} recovery instructions.`,
+    );
 }
 
 /**

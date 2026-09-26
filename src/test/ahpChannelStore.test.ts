@@ -114,6 +114,67 @@ test("AHP reconnect falls back to a snapshot after replay history rolls over", (
     }
 });
 
+test("AHP replay uses a snapshot barrier for an oversized action", () => {
+    const store = new AhpStateStore({
+        replayCapacity: 10,
+        replayByteCapacity: 1_024,
+        replayActionByteCapacity: 256,
+    });
+    store.register<RootState, RootActiveSessionsChangedAction>(
+        ROOT,
+        { agents: [], activeSessions: 0 },
+        (state, action) => ({ ...state, activeSessions: action.activeSessions }),
+    );
+    store.dispatch(ROOT, activeSessions(1) as StateAction);
+    store.dispatch(ROOT, {
+        ...activeSessions(2),
+        history: "x".repeat(1_024),
+    } as unknown as StateAction);
+    store.dispatch(ROOT, activeSessions(3) as StateAction);
+
+    assert.deepEqual(
+        store.retainedActions().map((item) => item.serverSeq),
+        [3],
+    );
+    assert.equal(store.reconnect(1, [ROOT]).type, "snapshot");
+    const caughtUp = store.reconnect(2, [ROOT]);
+    assert.equal(caughtUp.type, "replay");
+    if (caughtUp.type === "replay") {
+        assert.deepEqual(
+            caughtUp.actions.map((item) => item.serverSeq),
+            [3],
+        );
+    }
+});
+
+test("AHP replay evicts oldest actions when their serialized bytes exceed the budget", () => {
+    const store = new AhpStateStore({
+        replayCapacity: 100,
+        replayByteCapacity: 700,
+        replayActionByteCapacity: 600,
+    });
+    store.register<RootState, RootActiveSessionsChangedAction>(
+        ROOT,
+        { agents: [], activeSessions: 0 },
+        (state, action) => ({ ...state, activeSessions: action.activeSessions }),
+    );
+    for (let index = 1; index <= 10; index++) {
+        store.dispatch(ROOT, {
+            ...activeSessions(index),
+            detail: `${index}-${"x".repeat(120)}`,
+        } as unknown as StateAction);
+    }
+
+    const retained = store.retainedActions();
+    const retainedBytes = retained.reduce(
+        (total, action) => total + Buffer.byteLength(JSON.stringify(action)),
+        0,
+    );
+    assert.ok(retained.length < 10);
+    assert.ok(retainedBytes <= 700, `expected at most 700 replay bytes, got ${retainedBytes}`);
+    assert.equal(store.reconnect(0, [ROOT]).type, "snapshot");
+});
+
 test("AHP channel registration and sequence inputs are guarded", () => {
     const store = rootStore();
 
@@ -124,4 +185,9 @@ test("AHP channel registration and sequence inputs are guarded", () => {
     assert.throws(() => store.snapshot(SESSION), /Unknown AHP channel/);
     assert.throws(() => store.reconnect(-1, [ROOT]), /lastSeenServerSeq/);
     assert.throws(() => new AhpStateStore({ replayCapacity: -1 }), /replayCapacity/);
+    assert.throws(() => new AhpStateStore({ replayByteCapacity: 0 }), /replayByteCapacity/);
+    assert.throws(
+        () => new AhpStateStore({ replayActionByteCapacity: 0 }),
+        /replayActionByteCapacity/,
+    );
 });

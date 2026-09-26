@@ -38,6 +38,15 @@ test("403 identifies the required directive and explains the recovery", () => {
     assert.match(out.summary, /administrator.*resend/i);
 });
 
+test("401 after saved tool results asks to continue, not replay the original request", () => {
+    const out = presentTurnError(
+        "HTTP 401 Unauthorized\nCompleted tool results are saved; send Continue to resume safely instead of resending the original request.",
+        false,
+    );
+    assert.match(out.summary, /sign in again.*Continue/i);
+    assert.match(out.summary, /do not resend the original request/i);
+});
+
 test("403 does not invent a directive when the provider omits it", () => {
     const out = presentTurnError("HTTP 403 Forbidden", false);
 

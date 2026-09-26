@@ -1,10 +1,9 @@
 import { selectRequestHistory } from "./contextPolicy";
 import { ChatMessage } from "./types";
 import { isTransientErrorMessage } from "../transientError";
-import { filterTools } from "../aiTools/defs";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
-import { consumeStream } from "./streamConsume";
+import { readTurnStream, startStreamWaitNotice } from "./turnStream";
 import { isWindowTruncated } from "./requestWindow";
 import { httpFailureEvent, preflightRequest } from "./turnPreflight";
 import { applyInjectedMessages } from "./turnInjection";
@@ -15,11 +14,11 @@ import { makeAttemptId } from "./turnId";
 import { emitTurnUsage } from "./turnUsage";
 import {
     activeRepeatedToolCallFingerprint,
-    appendRepeatedToolCallFeedback,
+    appendRepeatedToolCallDecisionFeedback,
     guardrailStopNotice,
-    REPEAT_TOOL_CALL_LIMIT,
-    repeatedToolCallWithoutProgress,
-    toolCallBatchFingerprint,
+    RepeatedToolCallGuard,
+    repeatedToolCallRecoveryNotice,
+    repeatedToolCallStopNotice,
     toolHistoryMaterializationNotice,
     toolHistoryPairingNotice,
     toolHopLimitNotice,
@@ -31,6 +30,7 @@ import { executeToolCallBatch } from "./turnToolBatch";
 import { TurnCompression } from "./turnCompression";
 import { prepareTurnAccess } from "./turnAccess";
 import { RunSequence } from "./runSequence";
+import { TurnToolAvailability } from "./turnToolAvailability";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
@@ -96,10 +96,12 @@ export class TurnRunner {
             const maxHops = Math.min(softCap, HARD_CAP);
             let hitCap = !unlimited; // cleared when the model finishes on its own
             let toolHistoryMaterializationNoticeEmitted = false;
-            const recentCalls: string[] = [];
-            let blockedRepeatFingerprint = activeRepeatedToolCallFingerprint(messages);
+            const blockedFingerprint = activeRepeatedToolCallFingerprint(messages);
+            const repeatedCalls = new RepeatedToolCallGuard(blockedFingerprint);
+            const availableTools = new TurnToolAvailability(messages, blockedFingerprint);
             const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
             let noTextHops = 0;
+            let toolActivityStarted = false;
             for (let hop = 0; hop < maxHops; hop++) {
                 if (this.cancelled || !isCurrentRun()) {
                     hitCap = false;
@@ -141,14 +143,12 @@ export class TurnRunner {
                           session_id: this.d.sessionId,
                           stream_options: { include_usage: true },
                       };
-                const allow = this.d.options.aiTools;
-                const toolList = filterTools<{ function?: { name: string }; name?: string }>(
-                    finalTools as { function?: { name: string }; name?: string }[],
-                    allow,
-                );
+                const toolList = availableTools.filter(finalTools, this.d.options.aiTools);
                 if (toolList.length > 0) {
                     body.tools = toolList;
                     body.tool_choice = "auto";
+                } else {
+                    body.tool_choice = "none";
                 }
                 if (effort && effort !== "default") {
                     if (responses) {
@@ -185,73 +185,70 @@ export class TurnRunner {
                     headers["X-Symposium-Session-Id"] = this.d.sessionId;
                     return fetch(url, { method: "POST", headers, body: bodyJson, signal });
                 };
-                let res = await post(loginToken);
-                if (shouldRefreshNativeAuthorization(res.status, noExplicitAuth, loginToken)) {
-                    const refreshedToken = await this.d.authToken(true);
-                    if (refreshedToken) {
-                        // Drain the rejected response before reusing the pooled
-                        // connection. The model request was not dispatched on
-                        // 401/403, so this single retry cannot duplicate a turn.
-                        await res.arrayBuffer().catch(() => undefined);
-                        this.d.emit({
-                            kind: "status-notice",
-                            text: "Sufficit AI authorization refreshed; retrying once.",
-                        });
-                        loginToken = refreshedToken;
-                        res = await post(loginToken);
-                    }
-                }
-                const responseStartedAt = Date.now();
-                if (!res.ok || !res.body) {
-                    this.d.emit(await httpFailureEvent(this.d, res, estimate));
-                    hitCap = false;
-                    break;
-                }
+                const wait = startStreamWaitNotice(this.d.emit);
                 const m = this.d.model();
-                const { text, reasoning, toolCalls, aborted, interruption, usage } =
-                    await consumeStream(
-                        res.body,
-                        m,
-                        { requestStartedAt, responseStartedAt },
+                let streamResult: Awaited<ReturnType<typeof readTurnStream>>;
+                try {
+                    let res = await post(loginToken);
+                    if (shouldRefreshNativeAuthorization(res.status, noExplicitAuth, loginToken)) {
+                        const refreshedToken = await this.d.authToken(true);
+                        if (refreshedToken && refreshedToken !== loginToken) {
+                            // A 401/403 was not dispatched, so this auth retry cannot duplicate a turn.
+                            await res.arrayBuffer().catch(() => undefined);
+                            this.d.emit({
+                                kind: "status-notice",
+                                text: "Sufficit AI authorization refreshed; retrying once.",
+                            });
+                            loginToken = refreshedToken;
+                            res = await post(loginToken);
+                        } else {
+                            this.d.emit({
+                                kind: "status-notice",
+                                text: "Sufficit AI authorization could not be refreshed. Sign in again to continue.",
+                            });
+                        }
+                    }
+                    const responseStartedAt = Date.now();
+                    if (!res.ok || !res.body) {
+                        this.d.emit(
+                            await httpFailureEvent(this.d, res, estimate, toolActivityStarted),
+                        );
+                        hitCap = false;
+                        break;
+                    }
+                    streamResult = await readTurnStream({
+                        deps: this.d,
+                        stream: res.body,
+                        model: m,
+                        effort,
                         responses,
-                        {
-                            onText: (delta) =>
-                                this.d.emit({
-                                    kind: "text",
-                                    text: delta,
-                                    model: m,
-                                    modelLabel: this.d.label(m),
-                                    reasoning: effort,
-                                    ts: responseStartedAt,
-                                }),
-                            onReasoning: (delta) => this.d.emit({ kind: "thinking", text: delta }),
-                            // Classify: a mid-stream provider failure (the gateway
-                            // already sent 200 + SSE headers, so the status can no
-                            // longer carry 429/503) was emitted with no retryable
-                            // flag at all, which reads as "Retry is unavailable" —
-                            // even for "model is at capacity", which is precisely
-                            // the case worth retrying.
-                            onError: (message) =>
-                                this.d.emit({
-                                    kind: "error",
-                                    message,
-                                    retryable: isTransientErrorMessage(message),
-                                }),
-                            onStatusNotice: (notice) =>
-                                this.d.emit({ kind: "status-notice", text: notice }),
-                        },
-                    );
-
+                        requestStartedAt,
+                        responseStartedAt,
+                        safeToRetry: !toolActivityStarted,
+                        wait,
+                    });
+                } finally {
+                    wait.stop();
+                }
+                const { text, toolCalls, aborted, interruption, usage, providerError } =
+                    streamResult;
                 if (usage) {
                     emitTurnUsage(this.d, usage);
                 }
-
                 if (interruption?.kind === "transport" && !this.cancelled) {
                     this.d.emit(transportInterruptionNotice(interruption.message));
                 }
 
-                await this.d.maybeAutoCompact();
+                if (providerError) {
+                    if (text.trim()) {
+                        messages.push({ role: "assistant", content: text, model: m });
+                        this.d.led("assistant", text);
+                    }
+                    hitCap = false;
+                    break;
+                }
 
+                await this.d.maybeAutoCompact();
                 if (aborted) {
                     if (toolCalls.length > 0) {
                         messages.push({
@@ -280,20 +277,23 @@ export class TurnRunner {
                 }
 
                 if (toolCalls.length === 0) {
+                    if (!text.trim()) {
+                        this.d.emit({
+                            kind: "error",
+                            message: toolActivityStarted
+                                ? "Sufficit AI returned no answer or tool call. Completed tool results are saved; send Continue to resume safely."
+                                : "Sufficit AI returned no answer or tool call. Retry the turn or choose another model.",
+                            retryable: !toolActivityStarted,
+                        });
+                        hitCap = false;
+                        break;
+                    }
                     messages.push({
                         role: "assistant",
-                        content: text || "",
+                        content: text,
                         model: this.d.model(),
                     });
-                    if (text) {
-                        this.d.led("assistant", text);
-                    }
-                    if (!text.trim() && !reasoning.trim()) {
-                        this.d.emit({
-                            kind: "status-notice",
-                            text: "The model returned an empty response (no content). Try resending, a different model, or a lower reasoning effort.",
-                        });
-                    }
+                    this.d.led("assistant", text);
                     hitCap = false;
                     break;
                 }
@@ -327,31 +327,31 @@ export class TurnRunner {
                 const sig = toolCalls
                     .map((tc) => `${tc.function.name}:${tc.function.arguments}`)
                     .join("|");
-                const repeatsPreviouslyBlockedCall =
-                    blockedRepeatFingerprint === toolCallBatchFingerprint(sig);
-                if (
-                    repeatsPreviouslyBlockedCall ||
-                    repeatedToolCallWithoutProgress(recentCalls, sig)
-                ) {
-                    if (!repeatsPreviouslyBlockedCall) {
-                        const feedback = appendRepeatedToolCallFeedback(
-                            messages,
-                            sig,
-                            toolCalls.map((tc) => stripSourcePrefix(tc.function.name)),
-                            this.d.cfg.supportsDeveloperRole !== false,
-                        );
-                        this.d.led(feedback.role, feedback.content, { kind: "guardrail-feedback" });
-                        this.d.safePersist();
-                    }
-                    this.d.emit(
-                        guardrailStopNotice(
-                            `Stopped because the model repeated the same tool call ${REPEAT_TOOL_CALL_LIMIT} times without progress.`,
-                        ),
+                const repeatDecision = repeatedCalls.evaluate(sig);
+                if (repeatDecision.kind !== "execute") {
+                    const toolNames = toolCalls.map((tc) => stripSourcePrefix(tc.function.name));
+                    const feedback = appendRepeatedToolCallDecisionFeedback(
+                        messages,
+                        sig,
+                        toolNames,
+                        this.d.cfg.supportsDeveloperRole !== false,
+                        repeatDecision,
                     );
+                    this.d.led(feedback.role, feedback.content, { kind: "guardrail-feedback" });
+                    this.d.safePersist();
+                    if (repeatDecision.kind === "recover") {
+                        availableTools.block(toolCalls);
+                        this.d.emit(
+                            repeatedToolCallRecoveryNotice(toolNames, repeatDecision.attempt),
+                        );
+                        noTextHops = 0;
+                        continue;
+                    }
+                    this.d.emit(repeatedToolCallStopNotice(repeatDecision.attempt));
                     hitCap = false;
                     break;
                 }
-                blockedRepeatFingerprint = undefined;
+                availableTools.clear();
                 this.pendingTasksCompact =
                     (await executeToolCallBatch({
                         deps: this.d,
@@ -361,6 +361,7 @@ export class TurnRunner {
                         text,
                         abortSignal: this.abort?.signal,
                     })) || this.pendingTasksCompact;
+                toolActivityStarted = true;
                 // loop again so the model can use the tool results
             }
             if (hitCap) {

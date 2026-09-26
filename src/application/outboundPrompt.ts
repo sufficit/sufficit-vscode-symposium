@@ -362,7 +362,7 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): {
     }
 
     // Role-aware backends carry the preambles as separate developer messages;
-    // CLIs (and the default) keep them prepended to the user text.
+    // Other backends keep them prepended to the user text.
     if (prefixes.length && !options.asRoles) {
         fullText = [...prefixes, fullText].join("\n\n---\n\n");
     }

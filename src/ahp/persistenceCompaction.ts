@@ -28,7 +28,11 @@ export function compactHistoricalSnapshots(
     state: AhpRuntimeExport,
     limits: AhpCompactionLimits,
 ): AhpRuntimeExport {
-    const targetBytes = Math.floor(limits.maxBytes * 0.75);
+    // AHP state is a reconstructible reconnect cache. Keep three quarters of
+    // the hard ceiling free for live actions, cross-host merge and stringify
+    // overhead; waiting until 75% made a 30 MiB cache repeatedly block the
+    // Extension Host while active conversations streamed.
+    const targetBytes = Math.floor(limits.maxBytes * 0.25);
     let estimatedBytes = byteLength({ ...state, retainedActions: [] as ActionEnvelope[] });
     if (estimatedBytes <= targetBytes) return state;
 
@@ -55,7 +59,8 @@ export function compactHistoricalSnapshots(
                     turns: unknown[];
                 } => (candidate.turns?.length ?? 0) > minimumTurns,
             )
-            .sort((left, right) => byteLength(right.turns) - byteLength(left.turns));
+            .map((candidate) => ({ ...candidate, bytes: byteLength(candidate.turns) }))
+            .sort((left, right) => right.bytes - left.bytes);
 
         for (const candidate of candidates) {
             if (estimatedBytes <= targetBytes) break;

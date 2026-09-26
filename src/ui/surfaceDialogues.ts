@@ -371,11 +371,13 @@ export class SurfaceDialogues {
             void controller.loadHistory(info, !!existing || seededVisual).finally(() => {
                 if (generation === this.generation) {
                     this.d.post({ type: "history-end" });
+                    this.d.post({ type: "todos-snapshot", todos: controller.currentTodos() });
                 }
             });
         } else if (historyPending) {
             // Existing controllers already have an AHP snapshot, so their tail is ready now.
             this.d.post({ type: "history-end" });
+            this.d.post({ type: "todos-snapshot", todos: controller.currentTodos() });
         }
         if (options.resumeSessionId) {
             this.d.deps.lastActive.set({ backend, sessionId: options.resumeSessionId });

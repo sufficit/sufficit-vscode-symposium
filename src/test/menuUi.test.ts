@@ -31,6 +31,7 @@ const dispatchCatalog = source("ui/webview/dispatchCatalog.ts");
 const ahpChatView = source("ui/webview/ahpChatView.ts");
 const messages = source("ui/webview/messages.ts");
 const openaiTurnRunner = source("adapters/openai/turnRunner.ts");
+const openaiTurnStream = source("adapters/openai/turnStream.ts");
 const codexDiscovery = source("adapters/codex/sessionDiscovery.ts");
 
 function zIndex(selector: string): number {
@@ -67,7 +68,8 @@ test("assistant message headers expose the model and effort used for that reply"
     assert.match(ahpChatView, /metadata\.model \|\| fallbackModel/);
     assert.doesNotMatch(ahpChatView, /message\("assistant", content, Date\.now\(\)\)/);
     assert.doesNotMatch(messages, /ts \?\? Date\.now\(\)/);
-    assert.match(openaiTurnRunner, /reasoning: effort,[\s\S]*?ts: responseStartedAt/);
+    assert.match(openaiTurnRunner, /readTurnStream\(/);
+    assert.match(openaiTurnStream, /reasoning: effort,[\s\S]*?ts: responseStartedAt/);
     assert.match(codexDiscovery, /reasoning: meta\.reasoning/);
     assert.equal(i18n.match(/"chat\.message\.model"/g)?.length, 2);
     assert.equal(i18n.match(/"chat\.message\.effort"/g)?.length, 2);

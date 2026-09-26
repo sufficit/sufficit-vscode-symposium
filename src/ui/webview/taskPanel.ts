@@ -11,7 +11,13 @@ export let lastTaskItems: TaskItem[] = [];
 let lastTaskProject = "";
 const taskPrevDone = new Set(); // done ids seen on the previous render
 const taskCompleting = new Set(); // done ids currently animating out (~5s)
+export function beginTaskSession(): void {
+    lastTaskItems = [];
+    taskPrevDone.clear();
+    taskCompleting.clear();
+}
 export function renderTasks(items: TaskItem[], project: string): void {
+    const initialSnapshot = lastTaskItems.length === 0 || lastTaskProject !== (project || "");
     lastTaskItems = items || [];
     lastTaskProject = project || "";
     tasksEl.textContent = "";
@@ -24,7 +30,7 @@ export function renderTasks(items: TaskItem[], project: string): void {
     // A task that just became done lingers with a completion animation for
     // ~5s (time to notice), then drops from the pending view on re-render.
     for (const it of items) {
-        if (it.done && !taskPrevDone.has(it.id)) {
+        if (!initialSnapshot && it.done && !taskPrevDone.has(it.id)) {
             taskCompleting.add(it.id);
             setTimeout(() => {
                 taskCompleting.delete(it.id);

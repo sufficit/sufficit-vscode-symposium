@@ -14,7 +14,7 @@ import { conciseRetryReason } from "../recovery/retryReason";
  */
 
 /** CLI backends can retry unchanged text in their native session. */
-const CLI_BACKENDS = new Set(["claude", "codex", "copilot"]);
+const CLI_BACKENDS = new Set(["claude", "codex", "copilot", "genius"]);
 
 /**
  * Lineage the branched session should inherit so it groups under the same

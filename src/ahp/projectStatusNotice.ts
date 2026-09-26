@@ -8,7 +8,7 @@ import {
 } from "./projectionCore";
 import { projectRecoveryStatus } from "./projectRecoveryStatus";
 
-/** Keeps operational notices transient while preserving terminal explanations. */
+/** Keeps routine operations transient while preserving visible and terminal notices. */
 export function projectStatusNotice(
     state: AhpProjectionState,
     event: Extract<AgentEvent, { kind: "status-notice" }>,
@@ -16,7 +16,7 @@ export function projectStatusNotice(
     if (event.recovery) {
         return projectRecoveryStatus({ ...event, recovery: event.recovery });
     }
-    if (!event.terminal || !state.turnId) {
+    if ((!event.terminal && !event.transcript) || !state.turnId) {
         return activity(event.text);
     }
     state.textPartId = undefined;

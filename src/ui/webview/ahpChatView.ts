@@ -249,10 +249,11 @@ function renderTurn(
             attachmentValues(turn.message.attachments),
             optionalString(meta.queuedMessageId),
             turn.startedAt,
+            true,
         );
     }
     const usageModel = optionalString(asRecord(turn.usage).model);
-    for (const part of turn.responseParts) renderPart(part, usageModel);
+    for (const part of turn.responseParts) renderPart(part, usageModel, true);
     if ("error" in turn && turn.error) {
         const error = asRecord(turn.error);
         renderError(
@@ -264,14 +265,18 @@ function renderTurn(
         );
     }
     if (!active) {
-        applyEvent({
-            kind: "turn-end",
-            durationMs: "duration" in turn ? turn.duration : undefined,
-        });
+        applyEvent(
+            {
+                kind: "turn-end",
+                durationMs: "duration" in turn ? turn.duration : undefined,
+            },
+            undefined,
+            true,
+        );
     }
 }
 
-function renderPart(part: ResponsePart, fallbackModel?: string): void {
+function renderPart(part: ResponsePart, fallbackModel?: string, historical = false): void {
     const value = part as unknown as Record<string, unknown>;
     if (value.kind === "markdown") {
         const content = String(value.content ?? "");
@@ -303,6 +308,7 @@ function renderPart(part: ResponsePart, fallbackModel?: string): void {
     const name = String(tool.displayName ?? tool.toolName ?? "Tool");
     renderTool(name, stringContent(tool.intention ?? tool.invocationMessage), {
         toolId: id,
+        historical,
         input: optionalString(tool.toolInput),
         ...toolDisplayMetadata(tool._meta),
     });

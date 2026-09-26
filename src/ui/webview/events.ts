@@ -39,7 +39,7 @@ import type { AgentEvent } from "../../adapters/types";
 import { resolveRunningTransientRetryNotices } from "./retryStatusNotice";
 
 /** Apply an `event` message payload (streaming turn events). */
-export function applyEvent(ev: AgentEvent, errorTurnId?: string): void {
+export function applyEvent(ev: AgentEvent, errorTurnId?: string, historical = false): void {
     // Any real turn-progress event proves a pending retry took effect (the
     // stalled/errored attempt resumed) — clear its "Retrying…" button on the
     // first sign of life, not just at full turn-end (which can be long after,
@@ -47,10 +47,10 @@ export function applyEvent(ev: AgentEvent, errorTurnId?: string): void {
     // posted synchronously by retryLastMessage() itself, before the actual
     // turn resumes, so treating it as "success" would clear the button
     // instantly instead of on real progress.
-    if (ev.kind !== "status-notice") {
+    if (!historical && ev.kind !== "status-notice") {
         resolvePendingRetry();
     }
-    if (isRetryProgressEvent(ev)) {
+    if (!historical && isRetryProgressEvent(ev)) {
         resolveRunningTransientRetryNotices();
     }
     // Claude streams extended thinking token-by-token. Consecutive thinking
@@ -131,11 +131,13 @@ export function applyEvent(ev: AgentEvent, errorTurnId?: string): void {
         append("meta", "session " + ev.sessionId + (ev.model ? " · " + modelLabel(ev.model) : ""));
         setStatus();
     } else if (ev.kind === "turn-end") {
-        setBusy(false);
-        sendBtn.disabled = false;
-        setStatus();
-        if (!queued) {
-            applyEffectiveModel(activeModel);
+        if (!historical) {
+            setBusy(false);
+            sendBtn.disabled = false;
+            setStatus();
+            if (!queued) {
+                applyEffectiveModel(activeModel);
+            }
         }
         setLastTurn({ costUsd: ev.costUsd, durationMs: ev.durationMs });
         if (ev.costUsd) {

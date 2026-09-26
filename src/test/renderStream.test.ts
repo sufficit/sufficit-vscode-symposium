@@ -40,6 +40,28 @@ test("RenderStream transient notifications reach live observers without persiste
     assert.deepEqual(stream.messages, []);
 });
 
+test("RenderStream bounds an oversized restored ledger to its newest 5000 events", () => {
+    const stream = new RenderStream();
+    const restored = Array.from({ length: 8_873 }, (_, index) => ({ index }));
+
+    const seeded = stream.seed(restored);
+
+    assert.equal(seeded, 5_000);
+    assert.equal(stream.messages.length, 5_000);
+    assert.deepEqual(stream.messages[0], { index: 3_873 });
+    assert.deepEqual(stream.messages.at(-1), { index: 8_872 });
+});
+
+test("RenderStream ignores additional seed events after its restore buffer is full", () => {
+    const stream = new RenderStream();
+    stream.seed(Array.from({ length: 5_000 }, (_, index) => ({ index })));
+
+    const seeded = stream.seed([{ index: 5_000 }]);
+
+    assert.equal(seeded, 5_000);
+    assert.deepEqual(stream.messages.at(-1), { index: 4_999 });
+});
+
 test("terminal retryable error remains actionable after replaying its turn-end", () => {
     const stream = new RenderStream();
     stream.seed([

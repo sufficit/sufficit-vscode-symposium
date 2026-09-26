@@ -1,11 +1,12 @@
 import { buildTurnTools } from "./turnTools";
 import type { TurnRunnerDeps } from "./turnRunnerDeps";
 import { isTransientErrorMessage } from "../transientError";
+import type { ToolDefinition } from "./toolMerge";
 
 export interface TurnAccess {
     loginToken: string | null;
     noExplicitAuth: boolean;
-    finalTools: unknown[];
+    finalTools: ToolDefinition[];
 }
 
 /** Resolves authentication, model discovery and the tool contract before a turn. */

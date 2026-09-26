@@ -7,6 +7,7 @@ import { applyEvent } from "./events";
 import { message, renderThinkBlock, resolvePendingRetry } from "./messages";
 import { renderTool } from "./tools";
 import { renderChangedFiles, renderGuardrails, renderTasks, setChangedItems } from "./panels";
+import { beginTaskSession } from "./taskPanel";
 import { setLang } from "./i18n";
 import { applyStaticI18n } from "./staticI18n";
 import { renderStatusbar, setQuotaLoading } from "./statusbar";
@@ -115,6 +116,7 @@ export function handleHostMessage(payload: unknown): void {
             break;
         }
         case "meta": {
+            beginTaskSession();
             applyMeta(data as MetaMessageData);
             break;
         }

@@ -150,7 +150,10 @@ const HISTORY_TOP_THRESHOLD = 40;
 
 export function setHasMoreHistory(value: boolean): void {
     hasMoreHistory = value;
-    if (!value) loadingMoreHistory = false;
+    // A history response (with or without another cursor) completes the
+    // in-flight request. Keeping this latch set after a successful page made
+    // upward scrolling stop permanently after the first older page.
+    loadingMoreHistory = false;
 }
 
 export function setLoadingMoreHistory(value: boolean): void {

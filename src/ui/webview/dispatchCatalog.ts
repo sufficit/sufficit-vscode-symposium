@@ -13,6 +13,7 @@ import {
     resetLastMsg,
 } from "./messages";
 import { renderTool } from "./tools";
+import { renderTodos } from "./panels";
 import { renderAccount, renderSessions } from "./sessions";
 import { setStatus } from "./status";
 import { hideCtx, openChoiceMenu, showToast } from "./menus";
@@ -187,6 +188,13 @@ export function handleCatalogMessage(data: HostToWebview): boolean {
             });
             break;
         }
+        case "todos-snapshot": {
+            renderTodos(
+                Array.isArray(data.todos) ? (data.todos as Parameters<typeof renderTodos>[0]) : [],
+                true,
+            );
+            break;
+        }
         case "history-prepend": {
             // Scroll-up pagination: older turns arrived. Render the legacy
             // messages normally (each appends to the log), then move the newly
@@ -321,6 +329,7 @@ function renderHistoryMessage(m: HistoryMessage): void {
         renderThinkBlock(m.text ?? "");
     } else if (m.role === "tool") {
         renderTool(m.toolName || m.text || "", m.detail || "", {
+            historical: true,
             input: m.input,
             result: m.result,
             added: m.added,

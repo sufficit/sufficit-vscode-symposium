@@ -44,6 +44,8 @@ export interface AhpRuntimeExport {
 export interface AhpHostRuntimeOptions {
     agents?: AgentInfo[];
     replayCapacity?: number;
+    replayByteCapacity?: number;
+    replayActionByteCapacity?: number;
     restored?: AhpRuntimeExport;
     onListenerError?: (error: unknown, envelope: ActionEnvelope) => void;
 }
@@ -56,6 +58,8 @@ export class AhpHostRuntime {
     constructor(options: AhpHostRuntimeOptions = {}) {
         this.store = new AhpStateStore({
             replayCapacity: options.replayCapacity,
+            replayByteCapacity: options.replayByteCapacity,
+            replayActionByteCapacity: options.replayActionByteCapacity,
             onListenerError: options.onListenerError,
         });
         if (options.restored) {

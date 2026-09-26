@@ -40,9 +40,27 @@ export function buildDispatchOutbound(
     const images = canVision ? msg.attachments.filter(isImage) : [];
     const fileAtts = canVision ? msg.attachments.filter((p) => !isImage(p)) : msg.attachments;
 
-    // Role-aware backends (HTTP API) carry one-shot app instructions as
-    // `developer` messages; CLIs get them prepended to the user text.
+    // Role-aware backends carry app instructions separately from user text.
     const roleAware = ctx.adapter.roleAware?.() === true;
+    // Genius reconstructs its developer prompt on every CLI turn. Replay
+    // session guidance there because it is intentionally absent from chat history.
+    const promptState =
+        ctx.adapter.backend === "genius"
+            ? {
+                  ...ctx.promptState,
+                  policyInjected: false,
+                  todoInjected: false,
+                  seedInjected: false,
+                  handoffInjected: false,
+                  autonomyInjected: false,
+                  rtkInjected: false,
+                  speechInjected: false,
+                  sessionIdInjected: false,
+                  bootstrapInjected: false,
+                  checkpointInjected: false,
+                  trackingInjected: false,
+              }
+            : ctx.promptState;
     // Plan/tracking discipline is injected on EVERY backend so the agent
     // always plans up front and keeps the next step visible. The mode
     // matches the backend's tracking capability: native todo tool (CLIs),
@@ -54,7 +72,7 @@ export function buildDispatchOutbound(
     const outbound = buildOutboundPrompt({
         text: msg.text,
         fileAttachments: fileAtts,
-        ...ctx.promptState,
+        ...promptState,
         sessionId: ctx.sessionId,
         rtk: rtkCached(),
         speechEnabled:

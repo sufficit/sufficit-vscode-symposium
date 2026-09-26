@@ -1,7 +1,7 @@
 # Symposium — Architecture
 
 Symposium hosts persistent dialogue sessions for Claude Code, Codex CLI,
-GitHub Copilot CLI and OpenAI-compatible HTTP providers. The extension has no
+Genius CLI, GitHub Copilot CLI and OpenAI-compatible HTTP providers. The extension has no
 runtime npm dependencies: VS Code and Node provide the runtime platform.
 
 ## Dependency direction
@@ -85,10 +85,14 @@ restored when a user returns to a session rather than leaking across sessions.
 
 ## Adapter boundary
 
-Claude, Codex, Copilot and OpenAI implementations normalize provider output into
+Claude, Codex, Genius, Copilot and OpenAI implementations normalize provider output into
 `AgentEvent` values. The application layer does not parse provider wire
 formats. Model selection is shared through `application/modelSelection.ts`
 rather than the extension composition namespace.
+
+The Genius adapter uses the CLI's JSONL protocol for execution, discovery and
+native session resume. The CLI's session UUID is the context authority; the
+adapter does not call Genius's loopback HTTP API or read its private state.
 
 ## Verification
 

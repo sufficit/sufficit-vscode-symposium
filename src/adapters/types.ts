@@ -205,8 +205,7 @@ export interface AgentSession extends EventEmitter {
     /**
      * Send one user message (optionally with image file paths to inline as
      * vision). `preamble` carries one-shot app instructions to insert as
-     * `developer` messages before the user turn (role-aware backends only; CLIs
-     * ignore it — they get the instructions prepended to `text` instead).
+     * `developer` messages before the user turn on role-aware backends.
      */
     send(
         text: string,
