@@ -29,6 +29,7 @@ export class GeniusEventParser {
     private streamedText = false;
     sawResult = false;
     sawError = false;
+    removed = false;
 
     constructor(private readonly callbacks: GeniusParserCallbacks) {}
 
@@ -63,6 +64,8 @@ export class GeniusEventParser {
                     const answer = string(frame.answer);
                     if (!this.streamedText && answer)
                         this.callbacks.emit({ kind: "text", text: answer });
+                } else if (frame.status === "removed") {
+                    this.removed = true;
                 } else {
                     this.error("Genius CLI returned an unknown result status");
                 }

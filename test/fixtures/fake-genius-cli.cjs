@@ -47,6 +47,11 @@ if (args.includes("--version")) {
     } else {
         write(envelope("session/deleted", "completed", { sessionId: args[1] }));
     }
+} else if (args[0] === "queue" || args[0] === "stop") {
+    if (process.env.FAKE_GENIUS_TRACE) {
+        fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args })}\n`);
+    }
+    write(envelope(args[0] === "stop" ? "session/stopped" : "queue/removed", "completed", {}));
 } else if (args[0] === "exec") {
     let prompt = "";
     process.stdin.setEncoding("utf8");
@@ -56,6 +61,7 @@ if (args.includes("--version")) {
         if (process.env.FAKE_GENIUS_TRACE) {
             fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args, prompt: input.prompt,
                 instructions: input.instructions,
+                clientMessageId: input.clientMessageId,
                 authToken: process.env.GENIUS_CLI_ACCESS_TOKEN ?? null,
                 mcpServers: process.env.GENIUS_CLI_MCP_SERVERS_JSON ?? null })}\n`);
         }
@@ -67,6 +73,10 @@ if (args.includes("--version")) {
             return;
         }
         write({ type: "session", schemaVersion: 1, sessionId: id, presetId: "test-preset" });
+        if (process.env.FAKE_GENIUS_MODE === "queued") {
+            write({ type: "queued", schemaVersion: 1, sessionId: id,
+                clientMessageId: input.clientMessageId, pendingMessageId: id });
+        }
         if (process.env.FAKE_GENIUS_MODE === "wait") {
             process.on("SIGINT", () => process.exit(130));
             setInterval(() => undefined, 1000);
