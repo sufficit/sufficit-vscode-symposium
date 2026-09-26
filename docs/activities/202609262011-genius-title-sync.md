@@ -15,7 +15,7 @@ Symposium stored renamed Genius titles as local overrides. Genius Desktop could 
 
 - Regression tests cover CLI invocation, native rename, legacy override migration, Desktop-to-Symposium refresh, and failure retention.
 - `npm run test`: 861 tests passed. `npm run check:size` and `npm run check:vsix` passed. Full package validation passed except the former bundle cap; the measured adjustment subsequently passed `check:vsix`.
-- Changed-line coverage and delivery: pending at the time this note was drafted. Companion Genius issue #1020 and PR #1021 provide the native command.
+- Changed-line coverage after adding UI command and surface refresh cases: 91.72% (144/157), above the 85% gate. Delivery: PR #75, with companion Genius issue #1020 and PR #1021 providing the native command.
 
 ## Limitations
 
