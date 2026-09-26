@@ -31,6 +31,7 @@ import { TurnCompression } from "./turnCompression";
 import { prepareTurnAccess } from "./turnAccess";
 import { RunSequence } from "./runSequence";
 import { TurnToolAvailability } from "./turnToolAvailability";
+import { handleToolFreeReply } from "./turnCompletion";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
@@ -102,6 +103,7 @@ export class TurnRunner {
             const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
             let noTextHops = 0;
             let toolActivityStarted = false;
+            let completionRecoveryUsed = false;
             for (let hop = 0; hop < maxHops; hop++) {
                 if (this.cancelled || !isCurrentRun()) {
                     hitCap = false;
@@ -277,23 +279,14 @@ export class TurnRunner {
                 }
 
                 if (toolCalls.length === 0) {
-                    if (!text.trim()) {
-                        this.d.emit({
-                            kind: "error",
-                            message: toolActivityStarted
-                                ? "Sufficit AI returned no answer or tool call. Completed tool results are saved; send Continue to resume safely."
-                                : "Sufficit AI returned no answer or tool call. Retry the turn or choose another model.",
-                            retryable: !toolActivityStarted,
-                        });
-                        hitCap = false;
-                        break;
-                    }
-                    messages.push({
-                        role: "assistant",
-                        content: text,
-                        model: this.d.model(),
+                    const completion = handleToolFreeReply(this.d, messages, text, {
+                        toolActivityStarted,
+                        canContinue: !completionRecoveryUsed && hop + 1 < maxHops,
                     });
-                    this.d.led("assistant", text);
+                    if (completion === "continue") {
+                        completionRecoveryUsed = true;
+                        continue;
+                    }
                     hitCap = false;
                     break;
                 }
