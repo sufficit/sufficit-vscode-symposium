@@ -52,7 +52,7 @@ session state and model selection. Agents converse, but the host conducts.
 | Sufficit AI | Implemented | Native OpenAI-compatible backend with Sufficit Identity, memory, web and local tools. |
 | Claude Code | Implemented | JSONL streaming via `claude -p`, resume via `--resume`, model pinned per session. |
 | Codex CLI | Implemented | JSONL events via `codex exec --json`, resume via `codex exec resume`. |
-| Genius CLI | Implemented | JSONL events via `genius exec --stdin --json`; Genius owns context and resume by UUID. [Setup and limits](docs/GENIUS-CLI-ADAPTER.md). |
+| Genius CLI | Implemented | JSONL events via `genius exec --input-json --json`; Genius owns context and resume by UUID. [Setup and limits](docs/GENIUS-CLI-ADAPTER.md). |
 | GitHub Copilot CLI | Implemented | JSON output via `copilot -p --output-format json`; ACP is planned for persistent sessions. |
 
 ## Architecture

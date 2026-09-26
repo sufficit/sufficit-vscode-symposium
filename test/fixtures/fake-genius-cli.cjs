@@ -52,8 +52,10 @@ if (args.includes("--version")) {
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => { prompt += chunk; });
     process.stdin.on("end", () => {
+        const input = args.includes("--input-json") ? JSON.parse(prompt) : { prompt, instructions: [] };
         if (process.env.FAKE_GENIUS_TRACE) {
-            fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args, prompt,
+            fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args, prompt: input.prompt,
+                instructions: input.instructions,
                 authToken: process.env.GENIUS_CLI_ACCESS_TOKEN ?? null,
                 mcpServers: process.env.GENIUS_CLI_MCP_SERVERS_JSON ?? null })}\n`);
         }

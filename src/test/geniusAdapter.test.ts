@@ -29,6 +29,7 @@ function collectTurn(
     session: AgentSession,
     prompt: string,
     images?: string[],
+    preamble?: string[],
 ): Promise<AgentEvent[]> {
     return new Promise((resolve, reject) => {
         const events: AgentEvent[] = [];
@@ -42,7 +43,7 @@ function collectTurn(
             }
         };
         session.on("event", onEvent);
-        session.send(prompt, images, undefined, "intent-1");
+        session.send(prompt, images, preamble, "intent-1");
     });
 }
 
@@ -135,7 +136,7 @@ test("Genius adapter discovers sessions and resumes context through the CLI UUID
             calls.map((call) => call.prompt),
             ["First prompt", "Second prompt"],
         );
-        assert.deepEqual(calls[0].args.slice(0, 3), ["exec", "--stdin", "--json"]);
+        assert.deepEqual(calls[0].args.slice(0, 3), ["exec", "--input-json", "--json"]);
         assert.ok(!calls[0].args.includes("--resume"));
         assert.ok(calls[0].args.includes("requested-preset"));
         assert.deepEqual(calls[1].args.slice(3, 5), ["--resume", sessionId]);

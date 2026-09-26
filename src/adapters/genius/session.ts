@@ -21,7 +21,7 @@ function explicitPreset(value: string): string {
     return preset.toLowerCase() === "default" ? "" : preset;
 }
 
-/** Runs one `genius exec --stdin --json` child for each turn. Genius owns context. */
+/** Runs one `genius exec --input-json --json` child for each turn. Genius owns context. */
 export class GeniusSession extends EventEmitter implements AgentSession {
     readonly backend = "genius";
     sessionId: string | undefined;
@@ -53,7 +53,7 @@ export class GeniusSession extends EventEmitter implements AgentSession {
     send(
         text: string,
         images?: string[],
-        _preamble?: string[],
+        preamble?: string[],
         intentId?: string,
         retryOf?: string,
     ): void {
@@ -91,10 +91,10 @@ export class GeniusSession extends EventEmitter implements AgentSession {
             return;
         }
 
-        void this.startTurn(text, turnId);
+        void this.startTurn(text, preamble ?? [], turnId);
     }
 
-    private async startTurn(text: string, turnId: string): Promise<void> {
+    private async startTurn(text: string, instructions: string[], turnId: string): Promise<void> {
         let token: string | null;
         try {
             token = await (this.config.tokenProvider ?? resolveSufficitMcpToken)();
@@ -109,7 +109,7 @@ export class GeniusSession extends EventEmitter implements AgentSession {
         }
         if (this.disposed || this.cancelled || this.currentTurnId !== turnId) return;
 
-        const args = ["exec", "--stdin", "--json"];
+        const args = ["exec", "--input-json", "--json"];
         if (this.sessionId) args.push("--resume", this.sessionId);
         if (this.presetId) args.push("--preset", this.presetId);
         const env = { ...process.env, ...this.config.env, ...this.options.env };
@@ -174,7 +174,7 @@ export class GeniusSession extends EventEmitter implements AgentSession {
             stderr = (stderr + String(chunk)).slice(-2000);
         });
         child.stdin.on("error", () => undefined);
-        child.stdin.end(text);
+        child.stdin.end(JSON.stringify({ schemaVersion: 1, prompt: text, instructions }));
         child.on("error", (error) => {
             if (this.current !== child) return;
             this.failTurn(`Genius CLI could not start: ${error.message}`, turnId);

@@ -1,6 +1,8 @@
 # Genius CLI adapter
 
-Symposium can use the installed `genius` command as a conversation backend. The adapter starts one `genius exec --stdin --json` process per turn, reads JSONL from stdout, and sends the next turn with `--resume <session UUID>`. Genius owns the conversation context and its compaction. Symposium does not replay previous messages to Genius and does not call the loopback HTTP API.
+Symposium can use the installed `genius` command as a conversation backend. The adapter starts one `genius exec --input-json --json` process per turn, reads JSONL from stdout, and sends the next turn with `--resume <session UUID>`. Genius owns the conversation context and its compaction. Symposium does not replay previous messages to Genius and does not call the loopback HTTP API.
+
+The CLI input is a JSON object with `schemaVersion: 1`, the user's `prompt`, and an `instructions` array. Symposium's host guidance goes into Genius's developer prompt for the turn rather than appearing as a user message. Genius rebuilds that layer on each turn, so Symposium resends its session guidance while the actual user prompt remains clean in Genius chat history. This requires a Genius CLI with `--input-json` support; older installs must be updated before using this adapter version.
 
 ## Setup
 

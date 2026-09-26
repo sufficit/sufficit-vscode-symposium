@@ -98,6 +98,10 @@ export class GeniusAdapter implements AgentAdapter {
     private discoveredLabels: Record<string, string> = {};
     private readonly contextWindows: Record<string, number> = {};
 
+    roleAware(): boolean {
+        return true;
+    }
+
     constructor(private readonly getConfig: () => GeniusAdapterConfig) {}
 
     async available(): Promise<{ ok: boolean; version?: string; error?: string }> {
