@@ -209,8 +209,12 @@ export function registerSessionCommands(ctx: CommandContext): void {
                     refreshAll();
                 }
                 if (!opts?.skipConfirm) {
+                    const description =
+                        info.backend === "genius"
+                            ? "This removes the Genius conversation and its Symposium record. Files created separately by the agent may remain. It cannot be undone."
+                            : `This scrubs the transcript and all history/index entries for this session (${info.sessionId}) from the ${info.backend} CLI on disk. It cannot be undone.`;
                     const confirm = await vscode.window.showWarningMessage(
-                        `Permanently delete "${info.title}"?\n\nThis scrubs the transcript and all history/index entries for this session (${info.sessionId}) from the ${info.backend} CLI on disk. It cannot be undone.`,
+                        `Permanently delete "${info.title}"?\n\n${description}`,
                         { modal: true },
                         "Delete permanently",
                     );

@@ -4,11 +4,13 @@ import { resolve } from "node:path";
 import test from "node:test";
 import { ClaudeAdapter } from "../adapters/claude/adapter";
 import { CodexAdapter } from "../adapters/codex/adapter";
+import { GeniusAdapter } from "../adapters/genius/adapter";
 import { CopilotAdapter } from "../adapters/copilot/adapter";
 import { OpenAIAdapter } from "../adapters/openai/adapter";
 import type { AgentAdapter, AgentEvent, AgentSession } from "../adapters/types";
 
 const fakeCli = resolve(__dirname, "../../test/fixtures/fake-agent-cli.cjs");
+const fakeGeniusCli = resolve(__dirname, "../../test/fixtures/fake-genius-cli.cjs");
 
 function collectTurn(session: AgentSession, text = "contract prompt"): Promise<AgentEvent[]> {
     return new Promise((resolveTurn, reject) => {
@@ -88,6 +90,12 @@ test("Codex adapter satisfies the shared lifecycle contract with a fake CLI", as
             approvalPolicy: "never",
             sandboxMode: "read-only",
         })),
+    );
+});
+
+test("Genius adapter satisfies the shared lifecycle contract with a fake CLI", async () => {
+    await assertAdapterContract(
+        new GeniusAdapter(() => ({ executable: fakeGeniusCli, model: "fake-preset" })),
     );
 });
 

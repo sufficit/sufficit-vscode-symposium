@@ -1,4 +1,6 @@
 import { AgentAdapter, SessionInfo, SessionStartOptions } from "../adapters/types";
+import { transcriptText } from "../application/controllerTranscript";
+import { readRenderPage } from "../renderLog";
 
 /**
  * Backend handoff for a chat surface: hands an ongoing dialogue off to another
@@ -12,11 +14,37 @@ interface HandoffController {
     title: string;
     cwd: string;
     sessionId: string | undefined;
+    transcript(): string;
 }
 interface HandoffTerminal {
     backend: string;
     cwd: string;
     currentSessionId: string | undefined;
+}
+
+/** The Genius CLI can read its own sessions, so carry foreign history once at handoff. */
+function geniusHandoffSeed(source: string, backend: string, title: string): string {
+    const maxCharacters = 12_000;
+    const rows = source
+        .trim()
+        .split(/\n\n(?=(?:user|assistant): )/)
+        .filter(Boolean);
+    const selected: string[] = [];
+    let length = 0;
+    for (let index = rows.length - 1; index >= 0; index -= 1) {
+        const row = rows[index];
+        if (length + row.length + 2 > maxCharacters) {
+            if (!selected.length) selected.unshift(row.slice(-maxCharacters));
+            selected.unshift("[Earlier source messages omitted]");
+            break;
+        }
+        selected.unshift(row);
+        length += row.length + 2;
+    }
+    const context = selected.length
+        ? selected.join("\n\n")
+        : "Source history was unavailable. Follow the user's latest request and ask for missing details only if needed.";
+    return `[Backend handoff] Continued from ${backend}, conversation ${JSON.stringify(title)}. The source session belongs to another backend; Genius session_read cannot read it. Use the source exchange below as context.\n\n${context}`;
 }
 
 export interface HandoffDeps {
@@ -51,29 +79,39 @@ export class BackendHandoff {
         title: string,
         fromName: string,
         parentId?: string,
+        sourceTranscript?: string,
     ): void {
         const adapter = this.d.getAdapter(backend);
         if (!adapter || adapter.canStartSessions === false) {
             return;
         }
+        const genius = backend === "genius";
+        const source = genius
+            ? sourceTranscript ||
+              (parentId ? transcriptText(readRenderPage(parentId).messages) : "")
+            : "";
         const options: SessionStartOptions = {
             cwd,
             model: undefined,
             permission: undefined,
             env: {},
             parentId,
-            handoff: { sessionId: parentId, backend: fromName, title },
+            ...(genius
+                ? { seedHistory: geniusHandoffSeed(source, fromName, title) }
+                : { handoff: { sessionId: parentId, backend: fromName, title } }),
         };
         this.d.openDialogue(backend, options, title);
         this.d.post({
             type: "set-input",
-            text: `Continue the parent conversation${parentId ? ` (${parentId})` : ""}.`,
+            text: genius
+                ? "Continue the conversation using the transferred context."
+                : `Continue the parent conversation${parentId ? ` (${parentId})` : ""}.`,
         });
     }
 
     /**
      * Hands off a live ChatController session to a new backend.
-     * Replays the entire transcript as if it happened on the new agent.
+     * Carries recent source history to Genius when the native session store differs.
      */
     switch(backend: string): void {
         const from = this.d.getController();
@@ -86,7 +124,14 @@ export class BackendHandoff {
         }
         const fromName = this.displayName(from.backend);
         const sourceSessionId = from.sessionId;
-        this.openDialogueSeeded(backend, from.cwd, from.title, fromName, sourceSessionId);
+        this.openDialogueSeeded(
+            backend,
+            from.cwd,
+            from.title,
+            fromName,
+            sourceSessionId,
+            backend === "genius" ? from.transcript() : undefined,
+        );
     }
 
     /** Hand a live TERMINAL session off (history read from the CLI transcript). */

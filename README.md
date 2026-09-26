@@ -19,7 +19,7 @@
 
 Sufficit Symposium is a VS Code and code-server extension for hosting dialogue
 sessions with multiple AI agents side by side. It runs **Sufficit AI**,
-**Claude Code**, **Codex CLI** and **GitHub Copilot CLI** through one visual
+**Claude Code**, **Codex CLI**, **Genius CLI** and **GitHub Copilot CLI** through one visual
 surface, while keeping each session pinned to the backend and model selected by
 the user.
 
@@ -52,25 +52,17 @@ session state and model selection. Agents converse, but the host conducts.
 | Sufficit AI | Implemented | Native OpenAI-compatible backend with Sufficit Identity, memory, web and local tools. |
 | Claude Code | Implemented | JSONL streaming via `claude -p`, resume via `--resume`, model pinned per session. |
 | Codex CLI | Implemented | JSONL events via `codex exec --json`, resume via `codex exec resume`. |
+| Genius CLI | Implemented | JSONL events via `genius exec --stdin --json`; Genius owns context and resume by UUID. [Setup and limits](docs/GENIUS-CLI-ADAPTER.md). |
 | GitHub Copilot CLI | Implemented | JSON output via `copilot -p --output-format json`; ACP is planned for persistent sessions. |
 
 ## Architecture
 
-```text
-+------------------------------------------------+
-| VS Code / code-server                          |
-|  +---------------+   +-----------------------+ |
-|  | Sessions pane |   | Chat panel (webview)  | |
-|  +-------+-------+   +-----------+-----------+ |
-|          +-----------+-----------+             |
-|              Adapter interface                 |
-|      +-------+-------+-------+-------+         |
-|      | Sufficit AI   | Claude | Codex | Copilot|
-|      +-------+-------+-------+-------+         |
-+--------------+-------+-------+-------+---------+
-               |       |       |
-               v       v       v
-        Sufficit API  CLIs  local transcripts
+```mermaid
+flowchart TD
+    UI[VS Code and code-server sessions and chat] --> Adapter[AgentAdapter interface]
+    Adapter --> API[Sufficit AI API]
+    Adapter --> CLI[Claude, Codex, Genius and Copilot CLIs]
+    Adapter --> History[Symposium transcript store]
 ```
 
 ## Agent Host Protocol Direction
@@ -81,7 +73,7 @@ as its client-facing state and synchronization layer.
 
 Symposium is the **AHP host** in this architecture. The existing
 `AgentAdapter` implementations remain the downstream boundary to Claude Code,
-Codex CLI, GitHub Copilot CLI and OpenAI-compatible services. AHP sits above
+Codex CLI, Genius CLI, GitHub Copilot CLI and OpenAI-compatible services. AHP sits above
 them so the VS Code webview, PWA and future CLI/mobile clients can share one
 host-authoritative view of a live session.
 
