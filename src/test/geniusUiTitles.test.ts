@@ -28,8 +28,9 @@ test("Genius rename command sends the title to the native owner", async () => {
             context: { subscriptions: [] },
             infoOf: (item: SessionInfo) => item,
             geniusTitleSync: {
-                rename: async (_session: SessionInfo, value: string) => {
+                rename: (_session: SessionInfo, value: string) => {
                     title = value;
+                    return Promise.resolve();
                 },
             },
         } as never);
@@ -57,22 +58,24 @@ test("native title refresh updates the open Symposium surfaces", async () => {
     const result = startGeniusSessionRefresh(
         context as never,
         {
-            listSessions: async () => [info],
-            renameSession: async () => undefined,
+            listSessions: () => Promise.resolve([info]),
+            renameSession: () => Promise.resolve(),
         } as never,
         {
             customTitle: () => localTitle,
-            setTitle: async (_session: SessionInfo, value: string | undefined) => {
+            setTitle: (_session: SessionInfo, value: string | undefined) => {
                 localTitle = value;
+                return Promise.resolve();
             },
         } as never,
         {
             listCached: () => [info],
-            reconcile: async () => [info],
+            reconcile: () => Promise.resolve([info]),
         } as never,
         {
-            refreshSessions: async () => {
+            refreshSessions: () => {
                 listRefreshes++;
+                return Promise.resolve();
             },
             reMetaActive: () => {
                 metadataRefreshes++;
