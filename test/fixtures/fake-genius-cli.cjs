@@ -15,6 +15,11 @@ if (args.includes("--version")) {
     } else {
         write(envelope("version", "ok", { version: "0.125.2" }));
     }
+} else if (args[0] === "sessions" && args[1] === "rename") {
+    if (process.env.FAKE_GENIUS_TRACE) {
+        fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args })}\n`);
+    }
+    write(envelope("session/renamed", "completed", { sessionId: args[2], title: args[3] }));
 } else if (args[0] === "sessions") {
     if (process.env.FAKE_GENIUS_MODE === "invalid_sessions") {
         write(envelope("sessions", "ok", { sessions: "invalid" }));

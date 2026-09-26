@@ -162,6 +162,26 @@ export class GeniusAdapter implements AgentAdapter {
         }
     }
 
+    async renameSession(info: SessionInfo, title: string): Promise<void> {
+        if (!isUuid(info.sessionId)) throw new Error("Genius session ID is not a valid UUID.");
+        const trimmed = title.trim();
+        if (!trimmed) throw new Error("Genius session title must not be empty.");
+        const response = await queryCli(this.getConfig(), [
+            "sessions",
+            "rename",
+            info.sessionId,
+            trimmed,
+            "--json",
+        ]);
+        if (
+            response.type !== "session/renamed" ||
+            response.status !== "completed" ||
+            response.data?.sessionId !== info.sessionId ||
+            response.data?.title !== trimmed
+        )
+            throw new Error("Genius CLI did not confirm session rename");
+    }
+
     async deleteSession(info: SessionInfo): Promise<void> {
         if (!isUuid(info.sessionId)) throw new Error("Genius session ID is not a valid UUID.");
         const response = await queryCli(this.getConfig(), ["delete", info.sessionId, "--json"]);

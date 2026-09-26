@@ -281,6 +281,8 @@ export interface AgentAdapter {
     available(): Promise<{ ok: boolean; version?: string; error?: string }>;
     listSessions(): Promise<SessionInfo[]>; // stored sessions for the tree view
     listSessionsIncremental?(cached: readonly SessionInfo[]): Promise<SessionInfo[]>;
+    /** Rename a session in its native store when the backend supports it. */
+    renameSession?(info: SessionInfo, title: string): Promise<void>;
     /** Start a new live session (or resume one). */
     start(options: SessionStartOptions): AgentSession;
     /**
