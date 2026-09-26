@@ -1,0 +1,28 @@
+# Genius CLI adapter
+
+## Objective and starting state
+
+Add Genius as a first-class Symposium backend while keeping Genius responsible for conversation context. Symposium previously offered Claude, Codex, Copilot and OpenAI-compatible backends but no Genius adapter. The Genius CLI already exposed schemaVersion 1 JSONL commands; issue [#59](https://github.com/sufficit/sufficit-vscode-symposium/issues/59) tracks this integration.
+
+## Changes
+
+- Added a Genius adapter that probes `genius --version --json`, discovers sessions through `genius sessions --json`, and streams each turn through `genius exec --stdin --json`.
+- Resumed subsequent and reopened turns with the native Genius UUID. Mapped session, Markdown, reasoning, tool, usage, result and error records into Symposium events without repeating the final answer.
+- Added child process cancellation, an actionable deleted-session error, explicit image rejection and Windows resolution of the installed native executable behind `genius.cmd`.
+- Registered Genius in backend selection, settings and model editing. Added setup and protocol documentation. Updated the extension version to `2026.925.2` and the host bundle budget to 880 KiB for the measured 872.3 KiB bundle; retained the independent 1 MiB archive cap.
+
+## Decisions and limits
+
+The adapter exclusively invokes the CLI. It does not call Genius's loopback HTTP endpoint or read Genius's private state. The optional model setting is a Genius preset ID. The CLI has no attachment, transcript history, permanent deletion or transcript-follow command, so those capabilities are not exposed. A Genius session discovered outside Symposium may show an empty initial transcript in Symposium, but native context resumes correctly.
+
+## Validation
+
+- `npm run verify:package` passed, including type checks, lint, tests, architecture and engineering guardrails, VSIX packaging and archive validation. The VSIX contains 41 files and is about 519 KiB.
+- Focused parser, process, resume, cancellation, deleted-session, Windows executable, CLI failure-path and shared adapter contract tests passed.
+- The PR's first CI run exposed a changed-line coverage gate that the original local run skipped because `COVERAGE_BASE_SHA` was unset. Tests for missing executables, invalid JSON, unsupported protocol versions and malformed session listings raised changed-line coverage from 82.58% to 86.52% (462/534); the full `verify:package` gate then passed with the CI base SHA set.
+- A live smoke through the compiled Symposium adapter and installed Genius 0.125.3, using isolated `GENIUS_STATE_ROOT` and the `echo` backend, passed two turns with one UUID, streamed text and usage, and session discovery.
+- `git diff --check` passed. The repository's 201 existing advisory complexity targets remain; the new Genius modules did not add any.
+
+## Delivery
+
+Implementation branch: `feat/genius-cli-adapter`, review [PR #60](https://github.com/sufficit/sufficit-vscode-symposium/pull/60). The remote Build VSIX check passed, including Extension Host integration and VSIX validation. The generated `2026.925.2` VSIX was installed in local VS Code and `code --list-extensions --show-versions` confirmed that version. Already running Extension Hosts continue using their loaded version until their window is reloaded. Merge into `develop`, release publication and remote code-server installation remain separate from this reviewed implementation.

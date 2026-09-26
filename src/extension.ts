@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { createVscodeApplicationPorts } from "./infrastructure/vscode/applicationPorts";
 import { ClaudeAdapter } from "./adapters/claude";
 import { CodexAdapter } from "./adapters/codex";
+import { GeniusAdapter } from "./adapters/genius/adapter";
 import { CopilotAdapter } from "./adapters/copilot";
 import { GeminiAdapter } from "./adapters/gemini";
 import { OpenAIAdapter, setOpenAITokenProvider } from "./adapters/openai";
@@ -24,6 +25,7 @@ import { symposiumLog, setSymposiumOutput } from "./extension/log";
 import {
     claudeConfig,
     codexConfig,
+    geniusConfig,
     copilotConfig,
     openaiConfig,
     normalizeAdapterDefs,
@@ -37,7 +39,6 @@ import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/
 import { setSufficitIdentityMcpUrl } from "./adapters/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
 import { registerExtensionAhpRuntime } from "./extension/ahpRuntime";
-
 /** SessionIndex singleton initialized during activation and shared with command wiring. */
 export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
 
@@ -62,11 +63,11 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     // Local speech-to-text model storage (downloaded on demand under global storage).
     initSttStorage(context);
     initVscodeSpeechBridge(context.globalStorageUri.fsPath);
-
     const sufficitAdapter = new OpenAIAdapter("openai", "Sufficit AI", () => openaiConfig(context));
     const adapters: AgentAdapter[] = [
         new ClaudeAdapter(claudeConfig),
         new CodexAdapter(codexConfig),
+        new GeniusAdapter(geniusConfig),
         new CopilotAdapter(copilotConfig),
         new GeminiAdapter("gemini"),
         new GeminiAdapter("antigravity"),
@@ -76,11 +77,11 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const adapterByBackend = new Map<string, AgentAdapter>(
         adapters.map((adapter) => [adapter.backend, adapter]),
     );
-
     // Refresh custom adapters in place when settings change; retain built-ins.
     const BUILTIN_BACKENDS = new Set([
         "claude",
         "codex",
+        "genius",
         "copilot",
         "gemini",
         "antigravity",
@@ -393,7 +394,6 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         refreshAll,
         output,
     });
-
     return api;
 }
 
