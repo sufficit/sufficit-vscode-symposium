@@ -9,10 +9,10 @@ import { OpenAIAdapter, setOpenAITokenProvider } from "./adapters/openai";
 import { AgentAdapter, SessionInfo } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
 import { SessionIndex } from "./sessions/index";
+import { startGeniusSessionRefresh } from "./extension/geniusSessionRefresh";
 import { LiveSessions } from "./sessions/runtime";
 import { SubagentManager } from "./sessions/subagents";
 import { setSubagentHost, setLiveTranscriptReader } from "./adapters/aiTools";
-import { ChatPanel } from "./ui/chatPanel";
 import { ChatViewProvider } from "./ui/chatView";
 import { ConfigPanel } from "./ui/configPanel";
 import { createSymposiumApi, SymposiumApi } from "./api/symposiumApi";
@@ -46,7 +46,6 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const output = vscode.window.createOutputChannel("Symposium");
     setSymposiumOutput(output);
     context.subscriptions.push(output);
-    // Delay activation evidence until code-server's file-backed logger attaches.
     const activatedVersion = String(context.extension.packageJSON.version);
     const activationEvidenceTimer = setTimeout(() => {
         symposiumLog(`[extension] activated version=${activatedVersion}`);
@@ -60,14 +59,14 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         );
     });
 
-    // Local speech-to-text model storage (downloaded on demand under global storage).
     initSttStorage(context);
     initVscodeSpeechBridge(context.globalStorageUri.fsPath);
     const sufficitAdapter = new OpenAIAdapter("openai", "Sufficit AI", () => openaiConfig(context));
+    const geniusAdapter = new GeniusAdapter(geniusConfig);
     const adapters: AgentAdapter[] = [
         new ClaudeAdapter(claudeConfig),
         new CodexAdapter(codexConfig),
-        new GeniusAdapter(geniusConfig),
+        geniusAdapter,
         new CopilotAdapter(copilotConfig),
         new GeminiAdapter("gemini"),
         new GeminiAdapter("antigravity"),
@@ -77,7 +76,6 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     const adapterByBackend = new Map<string, AgentAdapter>(
         adapters.map((adapter) => [adapter.backend, adapter]),
     );
-    // Refresh custom adapters in place when settings change; retain built-ins.
     const BUILTIN_BACKENDS = new Set([
         "claude",
         "codex",
@@ -335,14 +333,14 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
     });
     const chatView = new ChatViewProvider(surfaceDeps);
 
-    const refreshAll = () => {
-        void chatView.refreshSessions();
-        ChatPanel.refreshSessions();
-        // Re-push session titles to active surfaces so the chat header updates
-        // when a session is renamed (not just the sessions list row).
-        ChatPanel.reMetaActive();
-        chatView.reMetaActive();
-    };
+    const { refreshAll, geniusTitleSync } = startGeniusSessionRefresh(
+        context,
+        geniusAdapter,
+        store,
+        sessionIndex,
+        chatView,
+        (message) => symposiumLog(`[genius] title sync: ${message}`),
+    );
     // Debounce status-driven refreshes (turns flip busy frequently).
     let statusTimer: ReturnType<typeof setTimeout> | undefined;
     notifyStatus = () => {
@@ -392,6 +390,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         bridge,
         deleting,
         refreshAll,
+        geniusTitleSync,
         output,
     });
     return api;

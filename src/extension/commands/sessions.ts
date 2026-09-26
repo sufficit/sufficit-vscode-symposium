@@ -21,6 +21,7 @@ export function registerSessionCommands(ctx: CommandContext): void {
         store,
         deleting,
         refreshAll,
+        geniusTitleSync,
         inEditor,
         infoOf,
     } = ctx;
@@ -105,8 +106,20 @@ export function registerSessionCommands(ctx: CommandContext): void {
                 if (value === undefined) {
                     return; // cancelled
                 }
-                await store.setTitle(info, value);
-                refreshAll();
+                if (info.backend === "genius") {
+                    try {
+                        if (!geniusTitleSync) throw new Error("Genius title sync is unavailable");
+                        await geniusTitleSync.rename(info, value);
+                    } catch (error) {
+                        await showErrorWithCopy(
+                            `Rename failed: ${error instanceof Error ? error.message : String(error)}`,
+                            errorDetails(error),
+                        );
+                    }
+                } else {
+                    await store.setTitle(info, value);
+                    refreshAll();
+                }
             },
         ),
 
