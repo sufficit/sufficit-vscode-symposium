@@ -26,4 +26,14 @@ The first full test attempt found `tools.ts` over the repository's 400-line cap;
 
 Codex does not expose the actual query for `action.type=other`; Symposium cannot truthfully show terms absent from the event. The row states that limitation instead of pretending to know the query.
 
-Release `v2026.927.3` is being prepared from `develop`. Strict `npm run verify:package` passed with the release guardrail, formatting, lint, TypeScript, all tests/coverage, engineering and architecture checks, compile, and VSIX allowlist (41 files, 533841 bytes). Installation and publication references are recorded after they complete.
+Release `v2026.927.3` was built from `develop`. Strict `npm run verify:package` passed with the release guardrail, formatting, lint, TypeScript, all tests/coverage, engineering and architecture checks, compile, and VSIX allowlist (41 files, 533841 bytes).
+
+- Commit: `c90855a74ea37fb40ce85ee444f3614746d24820` on `develop`.
+- Annotated tag: `v2026.927.3`.
+- GitHub Actions publication run [36328534316](https://github.com/sufficit/sufficit-vscode-symposium/actions/runs/36328534316) succeeded. Workflow logs confirm Visual Studio Marketplace and Open VSX publication; GitHub Release includes `sufficit-vscode-symposium-2026.927.3.vsix`.
+- The marketplace VSIX endpoint returned HTTP 200. GitHub Release VSIX is 534661 bytes.
+- VS Code local reports `sufficit.sufficit-vscode-symposium@2026.927.3`.
+- Development code-server reports the same version. The copied VSIX SHA-256 matches the local artifact: `ac6203fe7272e3f88673891889fa5e5c16dc2b674ac994742b0474bc9241564b`.
+- Immediately after the successful workflow, Open VSX's public metadata still showed `.2` and its `.3` version endpoint returned 404; this is registry propagation delay, as the workflow's publish step itself succeeded. Do not republish the same version unless the registry remains stale after propagation.
+
+Already open VS Code or code-server windows keep the extension version they loaded. Reload each window when convenient to activate `.3`; no Extension Host was restarted, preserving active sessions.
