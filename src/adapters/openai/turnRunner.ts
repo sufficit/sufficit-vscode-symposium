@@ -4,7 +4,7 @@ import { isTransientErrorMessage } from "../transientError";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
 import { readTurnStream, startStreamWaitNotice } from "./turnStream";
-import { isWindowTruncated } from "./requestWindow";
+import { isWindowTruncated, nextEmergencyHistoryLimit } from "./requestWindow";
 import { httpFailureEvent, preflightRequest } from "./turnPreflight";
 import { applyInjectedMessages } from "./turnInjection";
 import { stripSourcePrefix } from "./toolMerge";
@@ -104,6 +104,7 @@ export class TurnRunner {
             let noTextHops = 0;
             let toolActivityStarted = false;
             let completionRecoveryUsed = false;
+            let historyLimit = this.d.cfg.maxHistoryMessages ?? 40;
             for (let hop = 0; hop < maxHops; hop++) {
                 if (this.cancelled || !isCurrentRun()) {
                     hitCap = false;
@@ -111,10 +112,15 @@ export class TurnRunner {
                 }
                 applyInjectedMessages(this.d, messages, logicalTurnId);
                 this.abort = new AbortController();
-                const currentMessages = requestMessages();
-                const windowed = selectRequestHistory(currentMessages, messages.length, this.d);
+                const current = requestMessages();
+                const windowed = selectRequestHistory(
+                    current,
+                    messages.length,
+                    this.d,
+                    historyLimit,
+                );
                 const anchor =
-                    isWindowTruncated(messages, this.d.cfg.maxHistoryMessages ?? 40) || hop >= 3
+                    isWindowTruncated(messages, historyLimit) || hop >= 3
                         ? this.d.followupAnchor()
                         : undefined;
                 const materialized = materializeToolSafeHistory(
@@ -164,8 +170,10 @@ export class TurnRunner {
                     body,
                     outMessages.length,
                     toolList.length,
+                    nextEmergencyHistoryLimit(historyLimit, current.length),
                 );
-                if (pre.kind === "retry-hop") {
+                if (pre.kind === "retry-hop" || pre.kind === "shrink-history") {
+                    if (pre.kind === "shrink-history") historyLimit = pre.maxHistoryMessages;
                     hop--;
                     continue;
                 }
@@ -355,7 +363,6 @@ export class TurnRunner {
                         abortSignal: this.abort?.signal,
                     })) || this.pendingTasksCompact;
                 toolActivityStarted = true;
-                // loop again so the model can use the tool results
             }
             if (hitCap) {
                 this.d.emit(toolHopLimitNotice(maxHops));
