@@ -43,8 +43,9 @@ export function selectRequestHistory(
     messages: ChatMessage[],
     total: number,
     deps: { cfg: OpenAIAdapterConfig; sessionId: string },
+    maxHistoryMessages = deps.cfg.maxHistoryMessages ?? 40,
 ): ChatMessage[] {
-    const selected = windowMessages(messages, deps.cfg.maxHistoryMessages ?? 40);
+    const selected = windowMessages(messages, maxHistoryMessages);
     if (selected.length >= total || !normalizeContextPolicy(deps.cfg.contextPolicy).historyNotice)
         return selected;
     return [

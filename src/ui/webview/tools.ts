@@ -7,7 +7,7 @@ import { nearBottom, autoScroll } from "./scroll";
 import { toolGroupBody, bumpToolGroup } from "./messages";
 import { renderTodos } from "./panels";
 import type { TodoItem } from "../../adapters/types";
-import { TOOL_META } from "./toolMetadata";
+import { TOOL_META, normalizeToolDisplay } from "./toolMetadata";
 
 // Live tool rows awaiting their result, keyed by tool id.
 interface ToolOptions {
@@ -159,6 +159,9 @@ export function renderTool(
     opts: ToolOptions = {},
 ): HTMLDivElement | null {
     opts = opts || {};
+    const display = normalizeToolDisplay(name, detail, opts.input);
+    detail = display.detail;
+    if (display.input !== opts.input) opts = { ...opts, input: display.input };
     // A plan/todo update renders as the evolving checklist panel, not a row.
     if (opts.todos) {
         if (!opts.historical) renderTodos(opts.todos);

@@ -5,7 +5,7 @@ import {
     contextPolicyDefaults,
     selectRequestHistory,
 } from "../adapters/openai/contextPolicy";
-import { windowMessages } from "../adapters/openai/requestWindow";
+import { nextEmergencyHistoryLimit, windowMessages } from "../adapters/openai/requestWindow";
 import { dumpToText, type SessionDump } from "../sessionReader";
 import type { ChatMessage, OpenAIAdapterConfig } from "../adapters/openai/types";
 
@@ -82,6 +82,13 @@ test("a small request window retains the latest user and its full tool exchange 
     assert.equal(selected[1].content, "current cancellation");
     assert.equal(selected.length, 4);
     assert.equal(JSON.stringify(messages), original);
+});
+
+test("emergency request history limits converge even when configured as unlimited", () => {
+    assert.equal(nextEmergencyHistoryLimit(200, 194), 100);
+    assert.equal(nextEmergencyHistoryLimit(0, 194), 97);
+    assert.equal(nextEmergencyHistoryLimit(2, 194), 1);
+    assert.equal(nextEmergencyHistoryLimit(1, 194), undefined);
 });
 
 test("paged reads can reconstruct every original character including old tool results", () => {

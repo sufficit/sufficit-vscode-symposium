@@ -76,6 +76,16 @@ export function isWindowTruncated(messages: ChatMessage[], max: number): boolean
     return messages.length - firstUserIdx > max;
 }
 
+/** Bound a single oversized request without changing the saved conversation.
+ * Zero means unlimited, so its first fallback starts at half the live history. */
+export function nextEmergencyHistoryLimit(
+    current: number,
+    liveMessageCount: number,
+): number | undefined {
+    const effective = current > 0 ? current : liveMessageCount;
+    return effective > 1 ? Math.max(1, Math.floor(effective / 2)) : undefined;
+}
+
 /**
  * Local preflight estimate for requests that may fail before the provider emits
  * a final usage chunk. It intentionally uses the serialized request body,

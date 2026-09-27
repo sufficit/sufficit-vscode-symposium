@@ -4,7 +4,7 @@ import { isTransientErrorMessage } from "../transientError";
 import * as ledger from "../../ledger";
 import { toResponsesInput } from "./transform";
 import { readTurnStream, startStreamWaitNotice } from "./turnStream";
-import { isWindowTruncated } from "./requestWindow";
+import { isWindowTruncated, nextEmergencyHistoryLimit } from "./requestWindow";
 import { httpFailureEvent, preflightRequest } from "./turnPreflight";
 import { applyInjectedMessages } from "./turnInjection";
 import { stripSourcePrefix } from "./toolMerge";
@@ -31,6 +31,7 @@ import { TurnCompression } from "./turnCompression";
 import { prepareTurnAccess } from "./turnAccess";
 import { RunSequence } from "./runSequence";
 import { TurnToolAvailability } from "./turnToolAvailability";
+import { handleToolFreeReply } from "./turnCompletion";
 
 export type { TurnRunnerDeps } from "./turnRunnerDeps";
 
@@ -102,6 +103,8 @@ export class TurnRunner {
             const noProgressStop = Math.max(0, this.d.cfg.noProgressStop ?? 0);
             let noTextHops = 0;
             let toolActivityStarted = false;
+            let completionRecoveryUsed = false;
+            let historyLimit = this.d.cfg.maxHistoryMessages ?? 40;
             for (let hop = 0; hop < maxHops; hop++) {
                 if (this.cancelled || !isCurrentRun()) {
                     hitCap = false;
@@ -109,10 +112,15 @@ export class TurnRunner {
                 }
                 applyInjectedMessages(this.d, messages, logicalTurnId);
                 this.abort = new AbortController();
-                const currentMessages = requestMessages();
-                const windowed = selectRequestHistory(currentMessages, messages.length, this.d);
+                const current = requestMessages();
+                const windowed = selectRequestHistory(
+                    current,
+                    messages.length,
+                    this.d,
+                    historyLimit,
+                );
                 const anchor =
-                    isWindowTruncated(messages, this.d.cfg.maxHistoryMessages ?? 40) || hop >= 3
+                    isWindowTruncated(messages, historyLimit) || hop >= 3
                         ? this.d.followupAnchor()
                         : undefined;
                 const materialized = materializeToolSafeHistory(
@@ -162,8 +170,10 @@ export class TurnRunner {
                     body,
                     outMessages.length,
                     toolList.length,
+                    nextEmergencyHistoryLimit(historyLimit, current.length),
                 );
-                if (pre.kind === "retry-hop") {
+                if (pre.kind === "retry-hop" || pre.kind === "shrink-history") {
+                    if (pre.kind === "shrink-history") historyLimit = pre.maxHistoryMessages;
                     hop--;
                     continue;
                 }
@@ -277,23 +287,14 @@ export class TurnRunner {
                 }
 
                 if (toolCalls.length === 0) {
-                    if (!text.trim()) {
-                        this.d.emit({
-                            kind: "error",
-                            message: toolActivityStarted
-                                ? "Sufficit AI returned no answer or tool call. Completed tool results are saved; send Continue to resume safely."
-                                : "Sufficit AI returned no answer or tool call. Retry the turn or choose another model.",
-                            retryable: !toolActivityStarted,
-                        });
-                        hitCap = false;
-                        break;
-                    }
-                    messages.push({
-                        role: "assistant",
-                        content: text,
-                        model: this.d.model(),
+                    const completion = handleToolFreeReply(this.d, messages, text, {
+                        toolActivityStarted,
+                        canContinue: !completionRecoveryUsed && hop + 1 < maxHops,
                     });
-                    this.d.led("assistant", text);
+                    if (completion === "continue") {
+                        completionRecoveryUsed = true;
+                        continue;
+                    }
                     hitCap = false;
                     break;
                 }
@@ -362,7 +363,6 @@ export class TurnRunner {
                         abortSignal: this.abort?.signal,
                     })) || this.pendingTasksCompact;
                 toolActivityStarted = true;
-                // loop again so the model can use the tool results
             }
             if (hitCap) {
                 this.d.emit(toolHopLimitNotice(maxHops));

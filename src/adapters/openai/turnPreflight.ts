@@ -10,6 +10,7 @@ import type { TurnRunnerDeps } from "./turnRunnerDeps";
 export type PreflightOutcome =
     | { kind: "send"; bodyJson: string; estimate: RequestEstimate }
     | { kind: "retry-hop" }
+    | { kind: "shrink-history"; maxHistoryMessages: number }
     | { kind: "stop" };
 
 /** Local context guard run before the request leaves: may compact and redo the
@@ -19,6 +20,7 @@ export async function preflightRequest(
     body: Record<string, unknown>,
     messageCount: number,
     toolCount: number,
+    emergencyHistoryLimit?: number,
 ): Promise<PreflightOutcome> {
     const bodyJson = JSON.stringify(body);
     const estimate = estimateRequest(bodyJson, messageCount, toolCount);
@@ -38,6 +40,13 @@ export async function preflightRequest(
         // every retry rebuilds the very same oversized request.
         if (await deps.compactForOverflow(estimate.inputTokens)) {
             return { kind: "retry-hop" };
+        }
+        if (emergencyHistoryLimit !== undefined) {
+            deps.emit({
+                kind: "status-notice",
+                text: `Compaction did not produce a smaller request. Retrying with at most ${emergencyHistoryLimit} recent messages; the complete history remains saved and can be read with read_session.`,
+            });
+            return { kind: "shrink-history", maxHistoryMessages: emergencyHistoryLimit };
         }
         const diagnostic = requestEstimateDiagnostic(estimate, deps.contextWindow());
         deps.emit({
