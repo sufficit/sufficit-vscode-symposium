@@ -54,12 +54,13 @@ export function codexToolStart(item: Record<string, unknown>): ToolStart | undef
         };
     }
     if (type === "web_search") {
+        const opaqueAction = isOpaqueWebSearchAction(item.action);
         return {
             kind: "tool-start",
             toolName: "web_search",
-            detail: searchDetail(item),
+            detail: searchDetail(item) ?? "Search terms not provided by Codex",
             toolId,
-            input: item.action === undefined ? undefined : prettyJson(item.action),
+            input: item.action === undefined || opaqueAction ? undefined : prettyJson(item.action),
         };
     }
     if (type === "image_view") {
@@ -208,6 +209,16 @@ function searchDetail(item: Record<string, unknown>): string | undefined {
     if (!action || typeof action !== "object") return undefined;
     const record = action as Record<string, unknown>;
     return stringValue(record.query) ?? stringValue(record.url) ?? stringValue(record.pattern);
+}
+
+function isOpaqueWebSearchAction(action: unknown): boolean {
+    if (!action || typeof action !== "object" || Array.isArray(action)) return false;
+    const fields = Object.keys(action);
+    return (
+        fields.length === 1 &&
+        fields[0] === "type" &&
+        (action as { type?: unknown }).type === "other"
+    );
 }
 
 function formatInput(value: unknown): string | undefined {

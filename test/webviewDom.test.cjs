@@ -380,6 +380,27 @@ test("approved destructive actions replace the danger treatment with a success s
     harness.dom.window.close();
 });
 
+test("web-search activity explains opaque Codex actions in live and stored rows", () => {
+    const harness = createHarness();
+    harness.deliver(meta("alpha", "luna"));
+    harness.deliver({
+        type: "event",
+        event: { kind: "tool-start", toolId: "web-live", toolName: "web_search", detail: "", input: '{"type":"other"}' },
+    });
+    harness.deliver({
+        type: "append",
+        message: { role: "tool", toolName: "web_search", detail: "Tool call", input: '{\n  "type": "other"\n}' },
+    });
+
+    const rows = [...harness.document.querySelectorAll(".toolwrap")];
+    assert.equal(rows.length, 2);
+    for (const row of rows) {
+        assert.match(row.querySelector(".toolrow").textContent, /Search terms not available in this record/);
+        assert.doesNotMatch(row.textContent, /Tool call|"type": "other"/);
+    }
+    harness.dom.window.close();
+});
+
 test("webview DOM announces AHP reconciliation and renders a chat snapshot once", async () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));

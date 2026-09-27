@@ -29,4 +29,4 @@ The vsce tool (VS Code Extension Manager) and semver specification **FORBID** le
 
 ## Current Date: 2026-09-27
 ## Correct Version Format: 2026.927.X
-## Current Release: 2026.927.2
+## Current Release: 2026.927.3

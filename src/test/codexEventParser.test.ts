@@ -107,6 +107,39 @@ test("Codex surfaces reasoning summaries without exposing raw reasoning content"
     assert.equal(JSON.stringify(events).includes("private chain of thought"), false);
 });
 
+test("Codex web searches show the query when available and identify opaque searches honestly", () => {
+    const { events, send } = parserHarness();
+    send({
+        type: "item.started",
+        item: {
+            id: "web-1",
+            type: "web_search",
+            action: { type: "search", query: "Kimi Code quota" },
+        },
+    });
+    send({
+        type: "item.started",
+        item: { id: "web-2", type: "web_search", action: { type: "other" } },
+    });
+
+    assert.deepEqual(events, [
+        {
+            kind: "tool-start",
+            toolName: "web_search",
+            detail: "Kimi Code quota",
+            toolId: "web-1",
+            input: '{\n  "type": "search",\n  "query": "Kimi Code quota"\n}',
+        },
+        {
+            kind: "tool-start",
+            toolName: "web_search",
+            detail: "Search terms not provided by Codex",
+            toolId: "web-2",
+            input: undefined,
+        },
+    ]);
+});
+
 test("Codex enriches completed MCP calls even when the start event was missed", () => {
     const { events, send } = parserHarness();
 

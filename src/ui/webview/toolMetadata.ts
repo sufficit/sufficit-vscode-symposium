@@ -27,3 +27,29 @@ export const TOOL_META: Record<string, { icon: string; verb: string }> = {
     WebSearch: { icon: "globe", verb: "Searched web" },
     TodoWrite: { icon: "list", verb: "Updated plan" },
 };
+
+/** Never present Codex's opaque web-search marker as if it were a query. */
+export function normalizeToolDisplay(
+    name: string,
+    detail: string,
+    input: string | undefined,
+): { detail: string; input: string | undefined } {
+    if (name !== "web_search") return { detail, input };
+    const normalizedDetail =
+        !detail || detail === "Tool call" ? "Search terms not available in this record" : detail;
+    if (!input) return { detail: normalizedDetail, input };
+    try {
+        const action = JSON.parse(input) as Record<string, unknown>;
+        if (
+            action &&
+            !Array.isArray(action) &&
+            Object.keys(action).length === 1 &&
+            action.type === "other"
+        ) {
+            return { detail: normalizedDetail, input: undefined };
+        }
+    } catch {
+        // Non-JSON input may contain useful provider details; preserve it.
+    }
+    return { detail: normalizedDetail, input };
+}
