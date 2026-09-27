@@ -38,6 +38,58 @@ test("detects the observed progress-only ending without matching completed answe
         promisesNextAction("O relatório cita a frase 'vou verificar' como exemplo."),
         false,
     );
+    assert.equal(promisesNextAction("Vou abri-lo:"), true);
+    assert.equal(promisesNextAction("Refaço o toque no botão:"), true);
+    assert.equal(promisesNextAction("A análise está concluída: sem alterações."), false);
+});
+
+test("a first-hop action announcement gets one continuation instead of ending silently", async (t) => {
+    let requests = 0;
+    const events: Array<{ kind: string; text?: string }> = [];
+    t.mock.method(globalThis, "fetch", () => {
+        requests++;
+        return Promise.resolve(
+            responsesText(
+                requests === 1 ? "Vou abri-lo:" : "Não há ferramenta disponível; preciso parar.",
+            ),
+        );
+    });
+    const deps = createRunnerDeps((event) => events.push(event));
+    deps.cfg.api = "responses";
+
+    await new TurnRunner(deps).run();
+
+    assert.equal(requests, 2);
+    assert.ok(
+        events.some(
+            (event) => event.kind === "status-notice" && event.text?.includes("continuing"),
+        ),
+    );
+    assert.equal(
+        deps.getMessages().at(-1)?.content,
+        "Não há ferramenta disponível; preciso parar.",
+    );
+});
+
+test("Kimi's observed 'Vou abri-lo:' ending continues after a completed tool without rerunning it", async (t) => {
+    let requests = 0;
+    const events: Array<{ kind: string; text?: string }> = [];
+    t.mock.method(globalThis, "fetch", () => {
+        requests++;
+        return Promise.resolve(
+            requests === 1
+                ? responsesToolCall()
+                : responsesText(requests === 2 ? "Vou abri-lo:" : "A ação foi concluída."),
+        );
+    });
+    const deps = createRunnerDeps((event) => events.push(event));
+    deps.cfg.api = "responses";
+
+    await new TurnRunner(deps).run();
+
+    assert.equal(requests, 3);
+    assert.equal(events.filter((event) => event.kind === "tool-start").length, 1);
+    assert.equal(deps.getMessages().at(-1)?.content, "A ação foi concluída.");
 });
 
 test("a progress-only final after a tool continues once with saved tool results", async () => {

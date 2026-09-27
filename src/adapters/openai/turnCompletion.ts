@@ -1,11 +1,16 @@
 import type { TurnRunnerDeps } from "./turnRunnerDeps";
 import type { ChatMessage } from "./types";
 
-/** A narrow signal that the model announced its next action instead of taking it. */
+/** An unfinished action or introduction at the end of a tool-free reply. */
 export function promisesNextAction(text: string): boolean {
     const tail = text.trimEnd();
-    return /(?:^|[.!?]\s+|\n)\s*(?:agora\s+)?(?:vou|vamos|irei|iremos)\s+(?:medir|verificar|checar|consultar|executar|rodar|instalar|testar|comparar|analisar|investigar|abrir|ler|aplicar|corrigir|ajustar|buscar|fazer)\b[^\n]{0,220}[:.]?\s*$/i.test(
-        tail,
+    // A terminal colon promises content or an action that never arrived. It also
+    // catches Portuguese clitics such as "vou abri-lo:" without guessing verbs.
+    return (
+        tail.endsWith(":") ||
+        /(?:^|[.!?]\s+|\n)\s*(?:agora\s+)?(?:vou|vamos|irei|iremos)\s+(?:medir|verificar|checar|consultar|executar|rodar|instalar|testar|comparar|analisar|investigar|abrir|ler|aplicar|corrigir|ajustar|buscar|fazer)\b[^\n]{0,220}[:.]?\s*$/i.test(
+            tail,
+        )
     );
 }
 
@@ -29,7 +34,7 @@ export function handleToolFreeReply(
 
     messages.push({ role: "assistant", content: text, model: deps.model() });
     deps.led("assistant", text);
-    if (!state.toolActivityStarted || !promisesNextAction(text)) return "done";
+    if (!promisesNextAction(text)) return "done";
 
     if (state.canContinue) {
         const role = deps.cfg.supportsDeveloperRole !== false ? "developer" : "system";
