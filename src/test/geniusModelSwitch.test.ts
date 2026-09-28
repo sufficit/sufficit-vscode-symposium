@@ -66,3 +66,60 @@ test("Genius keeps a newly selected preset after resumed turns report the old se
         fs.rmSync(root, { recursive: true, force: true });
     }
 });
+
+test("Genius preserves a model switch made while a prequeued turn is still launching", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-genius-prequeue-race-"));
+    const trace = path.join(root, "calls.jsonl");
+    let releaseToken!: () => void;
+    const tokenGate = new Promise<void>((resolve) => {
+        releaseToken = resolve;
+    });
+    const adapter = new GeniusAdapter(() => ({
+        executable: fakeCli,
+        model: "",
+        env: { FAKE_GENIUS_MODE: "queued", FAKE_GENIUS_TRACE: trace },
+        // Defers the CLI spawn so setModel() below lands while launchExec is
+        // still in flight, reproducing the late "session" record race.
+        tokenProvider: async () => {
+            await tokenGate;
+            return null;
+        },
+    }));
+    const session = adapter.start({ cwd: root, resumeSessionId: sessionId });
+    try {
+        session.prequeue?.("Queued prompt", [], "queue-1");
+        session.setModel?.("selected-preset");
+        releaseToken();
+
+        const events = await new Promise<AgentEvent[]>((resolve, reject) => {
+            const collected: AgentEvent[] = [];
+            const timeout = setTimeout(() => reject(new Error("Queued turn timed out")), 5000);
+            session.on("event", (event: AgentEvent) => {
+                collected.push(event);
+                if (event.kind === "turn-end") {
+                    clearTimeout(timeout);
+                    resolve(collected);
+                }
+            });
+            session.send("Queued prompt", [], [], "intent-queue", undefined, "queue-1");
+        });
+        assert.equal(
+            events.some((event) => event.kind === "error"),
+            false,
+        );
+        assert.equal(session.getModel?.(), "selected-preset");
+
+        await collectTurn(session, "Next prompt");
+
+        const calls = fs
+            .readFileSync(trace, "utf8")
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line) as { args: string[] });
+        assert.equal(calls[0].args.includes("--preset"), false);
+        assert.equal(calls[1].args[calls[1].args.indexOf("--preset") + 1], "selected-preset");
+    } finally {
+        session.dispose();
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+});

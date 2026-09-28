@@ -3,9 +3,11 @@ import { EventEmitter } from "node:events";
 import * as readline from "node:readline";
 import type { AgentEvent, AgentSession, SessionStartOptions } from "../types";
 import { resolveSufficitMcpToken } from "../sufficitMcp";
+import { runQueueCommand, stopSession } from "./cliCommands";
 import { GeniusEventParser } from "./eventParser";
 import { resolveGeniusExecutable } from "./executable";
 import type { GeniusMcpServer } from "./mcpConfig";
+import { explicitPreset } from "./presetState";
 
 export interface GeniusAdapterConfig {
     executable: string;
@@ -14,11 +16,6 @@ export interface GeniusAdapterConfig {
     tokenProvider?: () => Promise<string | null>;
     contextWindows?: Record<string, number>;
     mcpServers?: () => GeniusMcpServer[];
-}
-
-function explicitPreset(value: string): string {
-    const preset = value.trim();
-    return preset.toLowerCase() === "default" ? "" : preset;
 }
 
 interface ExecProcess {
@@ -48,6 +45,9 @@ export class GeniusSession extends EventEmitter implements AgentSession {
     private cancelled = false;
     private reportedError = false;
     private presetId: string;
+    /** Bumped on every explicit setModel(); guards a late "session" record
+     *  from a process launched before the change from reverting it. */
+    private presetRevision = 0;
 
     constructor(
         private readonly config: GeniusAdapterConfig,
@@ -60,6 +60,7 @@ export class GeniusSession extends EventEmitter implements AgentSession {
 
     setModel(model: string): void {
         this.presetId = explicitPreset(model === "default" ? this.config.model : model);
+        this.presetRevision++;
     }
 
     getModel(): string {
@@ -174,6 +175,7 @@ export class GeniusSession extends EventEmitter implements AgentSession {
         clientMessageId: string | undefined,
         presetId: string,
     ): Promise<ExecProcess> {
+        const launchedRevision = this.presetRevision;
         const token = await (this.config.tokenProvider ?? resolveSufficitMcpToken)();
         const args = ["exec", "--input-json", "--json"];
         if (this.sessionId) args.push("--resume", this.sessionId);
@@ -228,7 +230,8 @@ export class GeniusSession extends EventEmitter implements AgentSession {
                     return;
                 }
                 this.sessionId = id;
-                if (reportedPreset && !presetId) this.presetId = reportedPreset;
+                if (reportedPreset && !presetId && this.presetRevision === launchedRevision)
+                    this.presetId = reportedPreset;
                 deliver({
                     kind: "session",
                     sessionId: id,
@@ -325,31 +328,17 @@ export class GeniusSession extends EventEmitter implements AgentSession {
         }
         await running.accepted;
         if (!running.sawQueued) return;
-        const child = spawn(
-            resolveGeniusExecutable(this.config.executable),
-            ["queue", action, this.sessionId, clientMessageId, "--json"],
+        const error = await runQueueCommand(
             {
+                executable: this.config.executable,
                 cwd: this.options.cwd,
                 env: { ...process.env, ...this.config.env, ...this.options.env },
-                stdio: ["ignore", "pipe", "pipe"],
             },
+            action,
+            this.sessionId,
+            clientMessageId,
         );
-        let result = "";
-        child.stdout.on("data", (chunk) => {
-            result += String(chunk);
-        });
-        child.stderr.resume();
-        child.on("error", (error) =>
-            this.emit("native-queue-error", clientMessageId, error.message),
-        );
-        child.on("close", (code) => {
-            if (code !== 0)
-                this.emit(
-                    "native-queue-error",
-                    clientMessageId,
-                    `${action} failed: ${result.trim() || `CLI exit ${code}`}`,
-                );
-        });
+        if (error) this.emit("native-queue-error", clientMessageId, error);
     }
 
     cancel(): void {
@@ -365,17 +354,15 @@ export class GeniusSession extends EventEmitter implements AgentSession {
             target?.kill("SIGINT");
             return;
         }
-        const child = spawn(
-            resolveGeniusExecutable(this.config.executable),
-            ["stop", this.sessionId, "--json"],
+        stopSession(
             {
+                executable: this.config.executable,
                 cwd: this.options.cwd,
                 env: { ...process.env, ...this.config.env, ...this.options.env },
-                stdio: "ignore",
             },
+            this.sessionId,
+            () => target?.kill("SIGINT"),
         );
-        child.on("error", () => target?.kill("SIGINT"));
-        child.on("close", () => target?.kill("SIGINT"));
     }
 
     dispose(): void {
