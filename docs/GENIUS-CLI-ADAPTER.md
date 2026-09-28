@@ -50,6 +50,8 @@ tools to that turn.
 
 Genius schemaVersion 1 `session` records provide the native UUID and preset. `chat/responsePart` identifies Markdown, reasoning and tool parts. Markdown `chat/delta` becomes live assistant text; `chat/reasoning` becomes thinking; tool parts become tool rows; `chat/usage` updates token counts. The final `result.answer` is rendered only when no Markdown delta was streamed, avoiding duplicate answers. CLI errors become visible Symposium errors. Cancelling a turn requests `genius stop` before closing the CLI child, so the resident host stops the same turn.
 
+Confirmed `tasks_create`, `tasks_update` and `tasks_list` results also update the plan panel above the composer. The adapter keeps the original tool row and emits a separate task snapshot for the panel and Symposium's local history; malformed or failed results do not alter the panel. A `tasks_update` or `tasks_list` result contains the complete authoritative list, so it reconciles tasks created outside the current Symposium process. Until Genius exposes its task state outside a turn, a newly discovered native session only gains that authoritative snapshot after one of those tools runs.
+
 ## Current CLI limits
 
 `genius exec` accepts text only. Symposium reports an explicit error if a message includes an image. The Genius CLI does not yet expose transcript history, so the adapter does not read Genius state files to imitate it. Symposium keeps its own visible transcript for dialogues started there; an older session discovered from Genius may initially show no prior messages even though Genius retains its full context when resumed. The terminal mirror/watch mode also requires a CLI transcript-follow command and is not offered for Genius yet.

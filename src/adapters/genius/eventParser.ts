@@ -1,5 +1,6 @@
 import type { AgentEvent } from "../types";
 import { geniusToolSummary } from "./toolSummary";
+import { GeniusTaskTracker } from "./tasks";
 
 type RecordValue = Record<string, unknown>;
 
@@ -27,6 +28,7 @@ export interface GeniusParserCallbacks {
 export class GeniusEventParser {
     private readonly parts = new Map<string, string>();
     private readonly tools = new Map<string, string>();
+    private readonly tasks = new GeniusTaskTracker();
     private streamedText = false;
     sawResult = false;
     sawError = false;
@@ -130,12 +132,24 @@ export class GeniusEventParser {
         const existing = this.tools.get(partId);
         if (existing) {
             if (content.startsWith(" → ")) {
+                const result = content.slice(3);
                 this.callbacks.emit({
                     kind: "tool-end",
                     toolName: existing,
                     toolId: partId,
-                    result: content.slice(3),
+                    result,
                 });
+                const todos = this.tasks.observe(existing, result);
+                if (todos) {
+                    const toolId = `${partId}-todos`;
+                    this.callbacks.emit({
+                        kind: "tool-start",
+                        toolName: "TodoWrite",
+                        toolId,
+                        todos,
+                    });
+                    this.callbacks.emit({ kind: "tool-end", toolName: "TodoWrite", toolId });
+                }
             } else {
                 this.callbacks.emit({ kind: "tool-output", toolId: partId, text: content });
             }
