@@ -228,11 +228,11 @@ export class GeniusSession extends EventEmitter implements AgentSession {
                     return;
                 }
                 this.sessionId = id;
-                if (reportedPreset) this.presetId = reportedPreset;
+                if (reportedPreset && !presetId) this.presetId = reportedPreset;
                 deliver({
                     kind: "session",
                     sessionId: id,
-                    model: reportedPreset || presetId || undefined,
+                    model: presetId || reportedPreset || undefined,
                 });
             },
             emit: deliver,
