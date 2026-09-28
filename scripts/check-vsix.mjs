@@ -78,8 +78,9 @@ const budgets = new Map([
     // and prune strategy) pushes it to 856.8 KiB. Recent-history recovery
     // adds under 0.1 KiB. The Genius CLI adapter adds native session
     // discovery, streaming and process lifecycle; its verified host bundle
-    // is 873.3 KiB. Keep 880 KiB explicit and retain the 1 MiB archive cap.
-    ["extension/out/extension.js", 880 * 1024],
+    // is 873.3 KiB. The Genius tool activity summaries bring it to 881.9 KiB;
+    // retain the 1 MiB archive cap.
+    ["extension/out/extension.js", 885 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

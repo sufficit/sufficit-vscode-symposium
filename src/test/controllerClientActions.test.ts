@@ -38,6 +38,25 @@ test("owner Send next releases a failed hold and dispatches exactly that message
     assert.equal(snapshots, 1);
 });
 
+test("removing a local queued row also removes its native Genius submission", () => {
+    const queue = heldQueue();
+    const removed: string[] = [];
+    const actions = new ControllerClientActions({
+        queue,
+        getSession: () => ({ removePrequeued: (id: string) => removed.push(id) }) as never,
+        turns: { isBusy: false } as TurnTracker,
+        statusChanged: () => undefined,
+        onSend: () => undefined,
+        emitQueue: () => undefined,
+        dispatch: () => undefined,
+        canMutateQueue: () => true,
+        emitPeerQueueCommand: () => undefined,
+    });
+    assert.equal(actions.removeQueued("queued-1"), true);
+    assert.deepEqual(removed, ["queued-1"]);
+    assert.equal(queue.isEmpty, true);
+});
+
 test("continue records the last request before a retryable continuation failure", () => {
     const queue = new ChatQueue();
     const request = { text: "continuar", attachments: [], intentId: "intent-continue" };

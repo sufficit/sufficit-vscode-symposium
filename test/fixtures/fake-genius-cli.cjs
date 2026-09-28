@@ -15,6 +15,11 @@ if (args.includes("--version")) {
     } else {
         write(envelope("version", "ok", { version: "0.125.2" }));
     }
+} else if (args[0] === "sessions" && args[1] === "rename") {
+    if (process.env.FAKE_GENIUS_TRACE) {
+        fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args })}\n`);
+    }
+    write(envelope("session/renamed", "completed", { sessionId: args[2], title: args[3] }));
 } else if (args[0] === "sessions") {
     if (process.env.FAKE_GENIUS_MODE === "invalid_sessions") {
         write(envelope("sessions", "ok", { sessions: "invalid" }));
@@ -47,6 +52,11 @@ if (args.includes("--version")) {
     } else {
         write(envelope("session/deleted", "completed", { sessionId: args[1] }));
     }
+} else if (args[0] === "queue" || args[0] === "stop") {
+    if (process.env.FAKE_GENIUS_TRACE) {
+        fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args })}\n`);
+    }
+    write(envelope(args[0] === "stop" ? "session/stopped" : "queue/removed", "completed", {}));
 } else if (args[0] === "exec") {
     let prompt = "";
     process.stdin.setEncoding("utf8");
@@ -56,6 +66,7 @@ if (args.includes("--version")) {
         if (process.env.FAKE_GENIUS_TRACE) {
             fs.appendFileSync(process.env.FAKE_GENIUS_TRACE, `${JSON.stringify({ args, prompt: input.prompt,
                 instructions: input.instructions,
+                clientMessageId: input.clientMessageId,
                 authToken: process.env.GENIUS_CLI_ACCESS_TOKEN ?? null,
                 mcpServers: process.env.GENIUS_CLI_MCP_SERVERS_JSON ?? null })}\n`);
         }
@@ -67,6 +78,11 @@ if (args.includes("--version")) {
             return;
         }
         write({ type: "session", schemaVersion: 1, sessionId: id, presetId: "test-preset" });
+        if (process.env.FAKE_GENIUS_MODE === "no_result") return;
+        if (process.env.FAKE_GENIUS_MODE === "queued") {
+            write({ type: "queued", schemaVersion: 1, sessionId: id,
+                clientMessageId: input.clientMessageId, pendingMessageId: id });
+        }
         if (process.env.FAKE_GENIUS_MODE === "wait") {
             process.on("SIGINT", () => process.exit(130));
             setInterval(() => undefined, 1000);

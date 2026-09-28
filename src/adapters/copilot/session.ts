@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { resolveExecutable } from "../exec";
+import { toolSummary } from "../toolSummary";
 import { AgentSession, SessionStartOptions } from "../types";
 import { isTransientErrorMessage } from "../transientError";
 import {
@@ -189,12 +190,12 @@ export class CopilotSession extends EventEmitter implements AgentSession {
                 const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
                 for (const tool of toolRequests) {
                     if (typeof tool === "object" && tool !== null) {
+                        const name =
+                            "name" in tool && typeof tool.name === "string" ? tool.name : "tool";
                         this.emit("event", {
                             kind: "tool-start",
-                            toolName:
-                                "name" in tool && typeof tool.name === "string"
-                                    ? tool.name
-                                    : "tool",
+                            toolName: name,
+                            detail: toolSummary(name, tool.arguments ?? tool.input),
                         });
                     }
                 }
@@ -205,12 +206,14 @@ export class CopilotSession extends EventEmitter implements AgentSession {
                     typeof event.data === "object" && event.data !== null
                         ? (event.data as Record<string, unknown>)
                         : {};
+                const toolName =
+                    "toolName" in data && typeof data.toolName === "string"
+                        ? data.toolName
+                        : "tool";
                 this.emit("event", {
                     kind: "tool-start",
-                    toolName:
-                        "toolName" in data && typeof data.toolName === "string"
-                            ? data.toolName
-                            : "tool",
+                    toolName,
+                    detail: toolSummary(toolName, data.arguments ?? data.input),
                 });
                 break;
             }

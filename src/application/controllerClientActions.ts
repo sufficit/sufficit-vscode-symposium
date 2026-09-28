@@ -45,9 +45,14 @@ export class ControllerClientActions {
     removeQueued(id: string): boolean {
         if (!this.deps.queue.hasExternal(id)) return false;
         if (this.forward({ type: "queue-command", action: "remove", id })) return true;
-        const changed = this.deps.queue.removeExternal(id);
-        if (changed) this.deps.emitQueue();
-        return changed;
+        const removed = this.deps.queue.takeExternal(id);
+        if (removed) {
+            this.deps
+                .getSession()
+                ?.removePrequeued?.(removed.clientMessageId ?? String(removed.id));
+            this.deps.emitQueue();
+        }
+        return removed !== undefined;
     }
 
     /** Discards every held/queued message at once (the "Discard all" action
@@ -55,6 +60,10 @@ export class ControllerClientActions {
     clearQueued(): boolean {
         if (this.deps.queue.isEmpty) return false;
         if (this.forward({ type: "queue-command", action: "clear" })) return true;
+        for (const message of this.deps.queue.items())
+            this.deps
+                .getSession()
+                ?.removePrequeued?.(message.clientMessageId ?? String(message.id));
         this.deps.queue.clear();
         this.deps.emitQueue();
         return true;
@@ -75,6 +84,7 @@ export class ControllerClientActions {
         if (this.forward({ type: "queue-command", action: "promote", id })) return true;
         const queued = this.deps.queue.takeExternal(id);
         if (!queued) return false;
+        this.deps.getSession()?.promotePrequeued?.(queued.clientMessageId ?? String(queued.id));
         // "Send next" is the user's explicit release of a queue paused after
         // failure. Without this, dispatch re-enters with held=true and every
         // normal drain path refuses to run it.

@@ -1,5 +1,6 @@
 import { TodoItem } from "./types";
 import { parseNativeTodos } from "./todos";
+import { summarizeToolInput as sharedSummarizeToolInput } from "./toolSummary";
 
 /**
  * Pure parsing/formatting helpers shared by the Claude adapter (and tests).
@@ -10,49 +11,11 @@ import { parseNativeTodos } from "./todos";
 /**
  * A short, human target for a tool call — the file, command, pattern or url —
  * so the UI can show "Read foo.ts" / "Ran npm test" instead of a raw JSON blob.
+ * Delegates to the shared toolSummary module (which also filters credentials
+ * and URLs); kept here for backwards compatibility with Claude importers.
  */
 export function summarizeToolInput(input: unknown): string {
-    const o = (input ?? {}) as Record<string, unknown>;
-    const short = (p: unknown) => {
-        const parts = String(p).split("/").filter(Boolean);
-        return parts.slice(-2).join("/") || String(p);
-    };
-    const filePath =
-        typeof o.file_path === "string"
-            ? o.file_path
-            : typeof o.notebook_path === "string"
-              ? o.notebook_path
-              : typeof o.path === "string"
-                ? o.path
-                : undefined;
-    let s = "";
-    // A human-readable description (e.g. Bash tool's `description`) is the intent
-    // the user cares about — prefer it over the raw command/args.
-    if (typeof o.description === "string" && o.description.trim()) {
-        s = o.description.trim();
-    } else if (filePath) {
-        s = short(filePath);
-        if (typeof o.offset === "number") {
-            const end = typeof o.limit === "number" ? o.offset + o.limit : undefined;
-            s += ":" + o.offset + (end ? "-" + end : "");
-        }
-    } else if (typeof o.command === "string") {
-        s = o.command.trim().replace(/\s+/g, " ");
-    } else if (typeof o.pattern === "string") {
-        s = '"' + o.pattern + '"' + (typeof o.path === "string" ? " in " + short(o.path) : "");
-    } else if (typeof o.url === "string") {
-        s = o.url;
-    } else if (typeof o.query === "string") {
-        s = o.query;
-    } else if (typeof o.description === "string") {
-        s = o.description;
-    } else if (typeof o.prompt === "string") {
-        s = o.prompt;
-    } else {
-        const first = Object.values(o).find((v) => typeof v === "string") as string | undefined;
-        s = first ?? "";
-    }
-    return s.length > 160 ? s.slice(0, 157) + "..." : s;
+    return sharedSummarizeToolInput(input);
 }
 
 /** Context window (tokens) for a Claude model; default 200k. */

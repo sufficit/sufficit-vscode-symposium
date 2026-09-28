@@ -4,6 +4,7 @@ import { AgentAdapter, SessionInfo } from "../../adapters/types";
 import { SessionStore } from "../../sessions/store";
 import { LiveSessions } from "../../sessions/runtime";
 import { SessionIndex } from "../../sessions/index";
+import type { GeniusTitleSync } from "../../sessions/geniusTitleSync";
 import { ChatPanel } from "../../ui/chatPanel";
 import { ChatSurfaceDeps } from "../../ui/chatSurface";
 import { ChatViewProvider } from "../../ui/chatView";
@@ -35,6 +36,7 @@ export interface CommandDeps {
     bridge: RemoteBridge;
     deleting: Set<string>;
     refreshAll: () => void;
+    geniusTitleSync?: GeniusTitleSync;
     output: vscode.OutputChannel;
 }
 

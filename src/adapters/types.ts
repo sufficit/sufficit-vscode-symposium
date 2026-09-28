@@ -214,7 +214,14 @@ export interface AgentSession extends EventEmitter {
         intentId?: string,
         /** logicalTurnId of the failed attempt when this is an explicit retry. */
         retryOf?: string,
+        /** Stable identity shared with backends that own a native queue. */
+        clientMessageId?: string,
     ): void;
+    /** Submit ahead of local dispatch so a backend-owned queue can show the request. */
+    prequeue?(text: string, preamble: string[], clientMessageId: string, model?: string): void;
+    /** Reflect edits to a pre-submitted message in the backend-owned queue. */
+    removePrequeued?(clientMessageId: string): void;
+    promotePrequeued?(clientMessageId: string): void;
     /**
      * Replaces the model for the next turn. The currently running CLI/API
      * request is intentionally left unchanged.
@@ -274,6 +281,8 @@ export interface AgentAdapter {
     available(): Promise<{ ok: boolean; version?: string; error?: string }>;
     listSessions(): Promise<SessionInfo[]>; // stored sessions for the tree view
     listSessionsIncremental?(cached: readonly SessionInfo[]): Promise<SessionInfo[]>;
+    /** Rename a session in its native store when the backend supports it. */
+    renameSession?(info: SessionInfo, title: string): Promise<void>;
     /** Start a new live session (or resume one). */
     start(options: SessionStartOptions): AgentSession;
     /**

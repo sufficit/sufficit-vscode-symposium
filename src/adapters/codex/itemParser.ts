@@ -1,4 +1,5 @@
 import { prettyJson, toolResultText } from "../parse";
+import { toolSummary } from "../toolSummary";
 import type { AgentEvent } from "../types";
 
 type ToolStart = Extract<AgentEvent, { kind: "tool-start" }>;
@@ -48,7 +49,7 @@ export function codexToolStart(item: Record<string, unknown>): ToolStart | undef
         return {
             kind: "tool-start",
             toolName: tool,
-            detail: stringValue(item.server),
+            detail: toolSummary(tool, item.arguments) ?? stringValue(item.server),
             toolId,
             input: formatInput(item.arguments),
         };
@@ -68,10 +69,11 @@ export function codexToolStart(item: Record<string, unknown>): ToolStart | undef
         return { kind: "tool-start", toolName: "view_image", detail: path, path, toolId };
     }
     if (type === "collab_tool_call") {
+        const tool = stringValue(item.tool) ?? "Task";
         return {
             kind: "tool-start",
-            toolName: stringValue(item.tool) ?? "Task",
-            detail: stringValue(item.prompt),
+            toolName: tool,
+            detail: toolSummary(tool, { prompt: item.prompt }) ?? stringValue(item.prompt),
             toolId,
         };
     }

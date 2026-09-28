@@ -17,6 +17,8 @@ import type {
 import { TransientRetryController } from "../recovery/transientRetry";
 import type { HubClient } from "../sync/hubClient";
 import { dispatchControllerMessage } from "./controllerDispatch";
+import { prepareDispatch } from "./controllerDispatchPrep";
+import { buildDispatchOutbound } from "./controllerDispatchPrompt";
 import type { HubState } from "./controllerHubState";
 import type { ControllerLiveState } from "./controllerLiveState";
 import type { ChatQueue, PendingMessage, QueueDispatchOptions } from "./controllerQueue";
@@ -70,6 +72,7 @@ export function turnOriginOf(
 }
 
 export class ControllerTurnRunner {
+    private nativeQueueChain: Promise<void> = Promise.resolve();
     // Force-ends a silent turn that would otherwise stay working forever.
     private readonly watchdogState = {
         timer: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -129,7 +132,8 @@ export class ControllerTurnRunner {
         clearWatchdogFn(this.watchdogState);
     }
 
-    dispatch(message: PendingMessage, options: QueueDispatchOptions = {}): Promise<void> {
+    async dispatch(message: PendingMessage, options: QueueDispatchOptions = {}): Promise<void> {
+        if (message.id != null) await this.nativeQueueChain;
         // Promoting or retrying explicitly releases a prior failure hold. A
         // new direct request may opt to run beside that paused work instead.
         if (!options.preserveQueueHold) this.deps.queue.release();
@@ -174,6 +178,75 @@ export class ControllerTurnRunner {
             emit: this.deps.emit,
             turn,
             completion: this.completionContext(),
+        });
+    }
+
+    prequeueNative(message: PendingMessage): void {
+        const session = this.deps.getSession();
+        const clientMessageId = message.clientMessageId;
+        if (
+            !session?.prequeue ||
+            !this.deps.sessionId() ||
+            !clientMessageId ||
+            message.attachments.length > 0
+        )
+            return;
+        this.nativeQueueChain = this.nativeQueueChain
+            .then(async () => {
+                if (!this.deps.queue.hasExternal(clientMessageId)) return;
+                await prepareDispatch(
+                    {
+                        adapter: this.deps.adapter,
+                        sessionId: this.deps.sessionId(),
+                        hub: this.deps.hub,
+                        options: this.deps.options,
+                        reloadGuardrails: this.deps.reloadGuardrails,
+                        reloadTasks: this.deps.reloadTasks,
+                        getInjectedCheckpointId: this.deps.checkpointId,
+                        setInjectedCheckpointId: this.deps.setCheckpointId,
+                    },
+                    message,
+                );
+                if (!this.deps.queue.hasExternal(clientMessageId)) return;
+                const outbound = buildDispatchOutbound(
+                    {
+                        adapter: this.deps.adapter,
+                        sessionId: this.deps.sessionId(),
+                        options: this.deps.options,
+                        hubState: this.deps.hubState,
+                        aiToolsInfo: this.deps.aiToolsInfo,
+                        pendingTasksSummary: this.deps.pendingTasksSummary,
+                        promptState: this.deps.promptState,
+                        configuration: this.deps.ports.configuration,
+                    },
+                    message,
+                );
+                session.prequeue?.(
+                    outbound.text,
+                    outbound.preamble,
+                    clientMessageId,
+                    message.model,
+                );
+            })
+            .catch((error) =>
+                this.deps.log(`[genius] native queue submission failed: ${String(error)}`),
+            );
+    }
+
+    watchNativeQueue(session: AgentSession): void {
+        session.on("native-queue-removed", (id: string) => {
+            if (this.deps.queue.removeExternal(id)) this.deps.emitQueue();
+        });
+        session.on("native-queue-error", (id: string, error: string) => {
+            this.deps.emit({
+                type: "event",
+                event: {
+                    kind: "status-notice",
+                    severity: "warning",
+                    terminal: false,
+                    text: `Genius could not update queued message ${id}: ${error}`,
+                },
+            });
         });
     }
 

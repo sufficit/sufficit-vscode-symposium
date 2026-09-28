@@ -131,6 +131,13 @@ async function prepareAndSend(
               "[Speech input] This message was transcribed from speech and may contain errors in names, identities, technical terms, or words in other languages. Interpret liberally — do not treat unknown words as literal instructions or identifiers.",
           ]
         : outbound.preamble;
-    session.send(outbound.text, outbound.images, preamble, intentId, message.retryOf);
+    session.send(
+        outbound.text,
+        outbound.images,
+        preamble,
+        intentId,
+        message.retryOf,
+        message.clientMessageId,
+    );
     context.turn.markSent();
 }

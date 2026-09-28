@@ -8,6 +8,7 @@ import type {
 } from "./controllerQueue";
 import { tryInjectSteer } from "./controllerSteerInjection";
 import type { TurnTracker } from "./turn";
+import { randomUUID } from "node:crypto";
 
 interface SendRouterContext {
     queue: ChatQueue;
@@ -22,6 +23,7 @@ interface SendRouterContext {
     turns?: TurnTracker;
     createIntentId?: () => string;
     emit?: (message: unknown) => void;
+    onQueued?: (message: PendingMessage) => void;
 }
 
 export function routeControllerSend(
@@ -30,6 +32,8 @@ export function routeControllerSend(
     context: SendRouterContext,
 ): void {
     message.mode = mode;
+    if (context.getSession?.()?.prequeue && !message.clientMessageId)
+        message.clientMessageId = randomUUID();
     if (
         typeof message.createdAt !== "number" ||
         !Number.isFinite(message.createdAt) ||
@@ -49,6 +53,7 @@ export function routeControllerSend(
         context.queue.unshift(message);
         context.cancel();
         context.emitQueue();
+        context.onQueued?.(message);
         context.log?.(`[send] "${preview}" — redirect while busy: queued at head, cancelling turn`);
         return;
     }
@@ -64,6 +69,7 @@ export function routeControllerSend(
         }
         context.queue.unshift(message);
         context.emitQueue();
+        context.onQueued?.(message);
         context.log?.(
             `[send] "${preview}" — steer while busy: queued at head (${context.queue.length} pending)`,
         );
@@ -73,6 +79,7 @@ export function routeControllerSend(
         // Plain "queue": back of the line, after everything already pending.
         context.queue.enqueue(message);
         context.emitQueue();
+        context.onQueued?.(message);
         context.log?.(`[send] "${preview}" — busy: queued (${context.queue.length} pending)`);
         return;
     }
