@@ -160,7 +160,7 @@ test("Codex enriches completed MCP calls even when the start event was missed", 
         {
             kind: "tool-start",
             toolName: "memory_search",
-            detail: "sufficit-ai",
+            detail: "astra",
             toolId: "mcp-1",
             input: '{\n  "query": "astra"\n}',
         },
