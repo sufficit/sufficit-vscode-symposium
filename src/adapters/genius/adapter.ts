@@ -1,9 +1,16 @@
 import { spawn } from "node:child_process";
 import { EmptyAdapterUsage } from "../quotaCache";
 import { resolveSufficitMcpToken } from "../sufficitMcp";
-import type { AgentAdapter, AgentSession, SessionInfo, SessionStartOptions } from "../types";
+import type {
+    AgentAdapter,
+    AgentSession,
+    HistoryPage,
+    SessionInfo,
+    SessionStartOptions,
+} from "../types";
 import { resolveGeniusExecutable } from "./executable";
 import { GeniusSession, type GeniusAdapterConfig } from "./session";
+import { geniusTranscriptMessages } from "./transcript";
 
 interface CliResponse {
     schemaVersion: number;
@@ -25,6 +32,7 @@ function queryCli(
     config: GeniusAdapterConfig,
     args: string[],
     accessToken?: string | null,
+    timeoutMs = 15_000,
 ): Promise<CliResponse> {
     return new Promise((resolve, reject) => {
         const env = { ...process.env, ...config.env };
@@ -48,7 +56,7 @@ function queryCli(
         const timeout = setTimeout(() => {
             child.kill("SIGTERM");
             finish(new Error(`Genius CLI ${args[0]} timed out`));
-        }, 15_000);
+        }, timeoutMs);
         child.stdout.on("data", (chunk) => {
             stdout += String(chunk);
             if (stdout.length > 4_000_000) {
@@ -160,6 +168,32 @@ export class GeniusAdapter implements AgentAdapter {
         } catch {
             return [...cached];
         }
+    }
+
+    /** Pages the persisted Genius transcript newest-first; the cursor is the
+     *  CLI's exclusive part index for the next older page. */
+    async history(info: SessionInfo, cursor?: string): Promise<HistoryPage> {
+        if (!isUuid(info.sessionId)) throw new Error("Genius session ID is not a valid UUID.");
+        const args = ["sessions", "show", info.sessionId];
+        if (cursor !== undefined) {
+            if (!/^\d+$/.test(cursor)) throw new Error("Invalid Genius history cursor.");
+            args.push("--before", cursor);
+        }
+        args.push("--json");
+        const response = await queryCli(this.getConfig(), args, undefined, 60_000);
+        if (
+            response.type !== "session/transcript" ||
+            response.status !== "ok" ||
+            !Array.isArray(response.data?.parts)
+        )
+            throw new Error("Genius CLI returned an invalid transcript response");
+        const start = response.data.start;
+        return {
+            messages: geniusTranscriptMessages(response.data.parts),
+            ...(typeof start === "number" && Number.isInteger(start) && start > 0
+                ? { nextCursor: String(start) }
+                : {}),
+        };
     }
 
     async renameSession(info: SessionInfo, title: string): Promise<void> {
