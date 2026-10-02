@@ -22,7 +22,8 @@ export const UNIVERSAL_MEMORY_TOOLS: OpenAITool[] = [
         type: "function",
         function: {
             name: "memory_search",
-            description: "Search canonical memory with exact, semantic, or hybrid ranking.",
+            description:
+                "Search canonical memory with exact, semantic, or hybrid ranking. Scope is GLOBAL across conversations: results may include records saved by OTHER chat sessions — compare each record's sessionId with the current session id (otherSession=true marks a foreign conversation) and never treat another conversation's tasks/state as this one's. For THIS session's pending tasks use list_tasks instead.",
             parameters: {
                 type: "object",
                 properties: {
@@ -206,7 +207,7 @@ const HUB_TOOLS: OpenAITool[] = [
         function: {
             name: "list_tasks",
             description:
-                "List this chat session's tasks (task-anchor / task-checkpoint memory items bound to the session). Returns PENDING tasks by default; pass all=true to include completed ones too.",
+                "List this chat session's tasks (task-anchor / task-checkpoint memory items bound to the session). Returns PENDING tasks by default; pass all=true to include completed ones too. This is the session-scoped source for \"what's pending\" — memory_search is global and mixes conversations, so use list_tasks when asked about this session's tasks.",
             parameters: {
                 type: "object",
                 properties: {

@@ -14,6 +14,7 @@ export interface OutboundPromptState {
     checkpointInjected?: boolean;
     tasksReminderInjected?: boolean;
     trackingInjected?: boolean;
+    sessionScopeInjected?: boolean;
 }
 
 export interface BuildOutboundPromptOptions extends OutboundPromptState {
@@ -120,7 +121,8 @@ export const CANCELED_RETRY_PREAMBLE =
 export function sessionIdNote(id: string): string {
     return (
         `[session: ${id}] You are in this Symposium chat session. ` +
-        `Call the read_session tool (with no arguments, or this id) at any time to re-read this conversation's full transcript and recover context. You will never lose track of which session you are in.`
+        `Call the read_session tool (with no arguments, or this id) at any time to re-read this conversation's full transcript and recover context. You will never lose track of which session you are in. ` +
+        `Memory results whose sessionId differs from this id belong to OTHER conversations — never mix them into this session's tasks or answers.`
     );
 }
 
@@ -147,6 +149,23 @@ export const CHECKPOINT_PREAMBLE =
     'So you MUST externalize context you will need later: call memory_save (type "task-checkpoint") for results, decisions, root causes, file paths, ids, and "what\'s done / what\'s next" after real work. It records context; it never edits files or proves an edit. Checkpoint at the start and each milestone. ' +
     "And RECALL often: call memory_search whenever you resume, change sub-task, or feel unsure of the current goal, so you never drift back to an earlier task or lose the thread. Treat your checkpoints as your real memory; the chat scrollback is not. " +
     "Your task-checkpoints are automatically bound to THIS chat session (shown in the session's Tasks panel); always reference the current session id in the checkpoint so it stays traceable.";
+
+/**
+ * Session-boundary discipline. memory_search is GLOBAL on purpose (shared
+ * canonical knowledge across conversations), which means its results routinely
+ * carry work/state from OTHER chat sessions. Without this rule the agent
+ * answers \"what are my pending tasks?\" with a foreign conversation's tasks
+ * (the reported bug). The rule keeps the global recall useful while making the
+ * session boundary explicit, and routes cross-session work to an explicit
+ * user decision: continue here (recovering context via read_session) or start
+ * a new conversation.
+ */
+export const SESSION_SCOPE_PREAMBLE =
+    "[Session scope — IMPORTANT] memory_search is GLOBAL across conversations: its results may include records from OTHER chat sessions. " +
+    "Each result carries sessionId (and otherSession=true when it belongs to a foreign conversation). " +
+    "For THIS session's pending tasks use list_tasks (session-scoped), never memory_search. " +
+    "When a memory_search result's sessionId differs from the current session id ([session: …]): it is context from another conversation — do NOT mix it into this one's tasks, decisions or answers as if it were current work. " +
+    "If that foreign work seems relevant to the user, say where it came from (its session id) and ASK whether to continue it here — recovering the original context with read_session(id) — or to leave it for a new conversation. Never silently import another conversation's state.";
 
 /**
  * How the agent should track multi-step work, per backend capability:
@@ -263,6 +282,7 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): {
         checkpointInjected: options.checkpointInjected ?? false,
         tasksReminderInjected: false,
         trackingInjected: options.trackingInjected ?? false,
+        sessionScopeInjected: options.sessionScopeInjected ?? false,
     };
 
     // Pending tasks reminder (injected EVERY message, before guardrails)
@@ -321,6 +341,12 @@ export function buildOutboundPrompt(options: BuildOutboundPromptOptions): {
     if (!state.sessionIdInjected && options.sessionId) {
         prefixes.push(sessionIdNote(options.sessionId));
         state.sessionIdInjected = true;
+    }
+    // Session-scope discipline rides along with the session id: it is only
+    // meaningful once the agent knows which conversation it is in.
+    if (!state.sessionScopeInjected && options.sessionId) {
+        prefixes.push(SESSION_SCOPE_PREAMBLE);
+        state.sessionScopeInjected = true;
     }
     if (options.autonomy === "away" && !state.autonomyInjected) {
         prefixes.push(AUTONOMY_PREAMBLE);

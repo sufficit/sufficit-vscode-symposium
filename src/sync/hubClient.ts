@@ -23,6 +23,14 @@ export interface CompactRecord {
     tags?: string;
     /** Caller session id (when the observation was scoped to a session). */
     sessionId?: string;
+    /**
+     * True when the record's sessionId differs from the trusted caller session
+     * (X-Symposium-Session-Id) — i.e. the record belongs to ANOTHER conversation.
+     * Set by the server so the model can spot cross-session results without
+     * comparing ids itself; undefined on older servers (client can still
+     * compare sessionId by hand).
+     */
+    otherSession?: boolean;
     textScore?: number;
     vectorScore?: number;
     freshnessScore?: number;
