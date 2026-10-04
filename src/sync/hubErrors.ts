@@ -1,10 +1,9 @@
 /**
  * Error classification for Sufficit Hub (memory/task REST) failures.
  *
- * Motivation (incident 2026-10-04, AcessoPoint): a 403 "scope_required" from
- * the hub was surfaced to agents and users as "save failed - check hub
- * configuration" or as a generic 15s-timeout wording, sending NOC engineers to
- * hunt for hub outages without evidence. A 403 tells us the permission was
+ * Motivation: a 403 "scope_required" from the hub was surfaced to agents and
+ * users as "save failed - check hub configuration" or as generic timeout text,
+ * sending operators to investigate hub outages without evidence. A 403 tells us the permission was
  * missing from the token on that request; a renewed session may resolve it.
  * These carriers preserve the HTTP status and the server's
  * reasonCode/requiredPermission so every layer (tool result, retry affordance,
