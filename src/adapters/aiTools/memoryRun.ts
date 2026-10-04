@@ -3,6 +3,7 @@ import {
     MAX_GUARDRAIL_TEXT_LENGTH,
     saveGuardrail,
 } from "../../sync/guardrails";
+import { hubFailurePayload } from "../../sync/hubErrors";
 import { LocalMemory } from "./localMemory";
 import type { ToolContext } from "./types";
 
@@ -170,14 +171,12 @@ function warnFallback(operation: string, error: unknown): void {
 }
 
 function remoteMemoryError(operation: string, error: unknown): string {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[Symposium] Hub ${operation} failed: ${message}`);
-    return JSON.stringify({
-        error: `Memory ${operation} failed: ${message}`,
-        retryable: true,
-        _memory_source: "remote_unavailable",
-        _notice: "No local fallback was read or written.",
-    });
+    console.warn(
+        `[Symposium] Hub ${operation} failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    // Classifies the failure: 401/403 → reconnect guidance (not retryable);
+    // transport/deadline → retryable. See hubErrors.ts.
+    return hubFailurePayload(operation, error);
 }
 
 function memorySearchStrategy(value: unknown): "Exact" | "Semantic" | "Hybrid" {

@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { hubStatusError } from "./hubErrors";
 import { HUB_REQUEST_TIMEOUT_MS, withAbortableDeadline } from "./requestDeadline";
 
 /**
@@ -245,7 +246,7 @@ export class HubClient {
             trustedSessionId,
         );
         if (!res.ok) {
-            throw new Error(`memory search failed: ${res.status}`);
+            throw hubStatusError("memory search", res, await res.text().catch(() => ""));
         }
         return (await res.json()) as CompactRecord[];
     }
@@ -276,7 +277,7 @@ export class HubClient {
             trustedSessionId,
         );
         if (!res.ok) {
-            throw new Error(`getByIds failed: ${res.status}`);
+            throw hubStatusError("getByIds", res, await res.text().catch(() => ""));
         }
         return (await res.json()) as Observation[];
     }
@@ -297,7 +298,7 @@ export class HubClient {
             observation.sessionId,
         );
         if (!res.ok) {
-            throw new Error(`save failed: ${res.status}`);
+            throw hubStatusError("save", res, await res.text().catch(() => ""));
         }
         const body = (await res.json()) as SaveResponse;
         return body.data?.id ?? observation.id ?? "";
