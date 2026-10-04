@@ -82,8 +82,10 @@ const budgets = new Map([
     // retain the 1 MiB archive cap. Genius task synchronization adds a small
     // confirmed-result projection; the measured host bundle is 887.47 KiB.
     // Genius transcript history (sessions show paging + part mapping) brings
-    // it to 889.06 KiB.
-    ["extension/out/extension.js", 890 * 1024],
+    // it to 889.06 KiB. Hub error classification (typed request-failure
+    // payloads, reconnect notices in task/memory tool results and the task
+    // list UI) brings it to 892.81 KiB.
+    ["extension/out/extension.js", 894 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
