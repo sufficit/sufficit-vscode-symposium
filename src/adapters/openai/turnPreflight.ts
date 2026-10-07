@@ -71,8 +71,7 @@ export async function httpFailureEvent(
         ? `\nX-Sufficit-Required-Directive: ${requiredDirective}`
         : "";
     const diagnostic = requestEstimateDiagnostic(estimate, deps.contextWindow());
-    const retryable =
-        !toolActivityStarted && (res.status >= 500 || res.status === 429 || res.status === 408);
+    const retryable = res.status >= 500 || res.status === 429 || res.status === 408;
     const recoveryHint = toolActivityStarted
         ? "\nCompleted tool results are saved; send Continue to resume safely instead of resending the original request."
         : "";

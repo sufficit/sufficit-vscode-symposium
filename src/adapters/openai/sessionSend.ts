@@ -15,19 +15,33 @@ export interface UserTurnInput {
     text: string;
     images?: string[];
     preamble?: string[];
-    /** Reuse the dangling user row, but never reuse the backend turn id. */
+    /** Resume existing history, but never reuse the backend turn id. */
     retry?: boolean;
     intentId?: string;
 }
 
 /**
  * Pushes the dangling-turn gap notice, the preamble developer/system rows and
- * the user message. Returns false when a Retry reused the dangling user message
+ * the user message. Returns false when a retry resumes the existing user message
  * instead of pushing a new one (the caller must then leave the objective as is).
  */
 export function appendUserTurn(ctx: UserTurnContext, input: UserTurnInput): boolean {
     const { cfg, sessionId, messages, turnSeq } = ctx;
     const { text, images, preamble, retry, intentId } = input;
+    // A retry resumes the existing history, including completed tool results.
+    // Reposting the original instruction can make the provider repeat its work.
+    const previousUser = [...messages].reverse().find((message) => message.role === "user");
+    const previousText =
+        typeof previousUser?.content === "string"
+            ? previousUser.content
+            : Array.isArray(previousUser?.content)
+              ? previousUser.content
+                    .filter((part) => part.type === "text")
+                    .map((part) => part.text)
+                    .join("")
+              : undefined;
+    if (retry === true && previousText === text) return false;
+
     // One-shot app instructions (todo capability, autonomy, policy) go in as
     // `developer` messages — above the user turn, below the preset's system —
     // instead of being glued onto the user text. Downgraded to `system` for
@@ -37,14 +51,8 @@ export function appendUserTurn(ctx: UserTurnContext, input: UserTurnInput): bool
     // user message with no assistant reply. Sending another user message would
     // break role alternation (Anthropic-backed providers 400 on user→user).
     // Close the gap with a short assistant turn so the new user is valid.
-    // BUT: an explicit Retry of a failed turn leaves the same user
-    // message dangling — re-pushing it would duplicate it in model context
-    // and the lossless ledger (defect 4.1). When retrying and the dangling
-    // last message is textually identical, reuse it instead of re-pushing.
     const last = messages[messages.length - 1];
-    const lastText = last && typeof last.content === "string" ? last.content : "";
-    const isRetryReuse = retry === true && last && last.role === "user" && lastText === text;
-    if (last && last.role === "user" && !isRetryReuse) {
+    if (last?.role === "user") {
         messages.push({ role: "assistant", content: "(previous turn interrupted)" });
         ctx.led("assistant", "(previous turn interrupted)");
     }
@@ -60,13 +68,6 @@ export function appendUserTurn(ctx: UserTurnContext, input: UserTurnInput): bool
     const userContent: string | ContentPart[] = imageParts.length
         ? [{ type: "text", text }, ...imageParts]
         : text;
-    // A Retry of a failed turn reuses the dangling user message already in
-    // context + ledger (isRetryReuse). Don't push/append a second copy — the
-    // model and the lossless ledger must see the request exactly once, and a
-    // multi-retry loop must not compound duplicates (defect 4.1).
-    if (isRetryReuse) {
-        return false;
-    }
     messages.push({ role: "user", content: userContent });
     ledger.appendMessage(sessionId, {
         role: "user",
