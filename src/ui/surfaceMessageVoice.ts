@@ -29,6 +29,12 @@ export async function handleVoiceMessage(
                         d.restoreFocus,
                     );
                     if (!started) {
+                        d.post({
+                            type: "voice-recording",
+                            ok: false,
+                            captureId: message.captureId,
+                            error: "VS Code dictation was cancelled.",
+                        });
                         return true;
                     }
                 } else {

@@ -309,11 +309,11 @@ function markdownImage(label: string, href: string): HTMLElement {
 
 function appendMarkdownLink(parent: HTMLElement, label: string, href: string): void {
     if (!isExternalMarkdownLink(href) && !isLocalMarkdownTarget(href)) {
-        parent.appendChild(document.createTextNode(label));
+        inline(parent, label);
         return;
     }
     const anchor = document.createElement("a");
-    anchor.textContent = label;
+    inline(anchor, label);
     if (isLocalMarkdownTarget(href)) {
         anchor.href = "#";
         anchor.className = "mdLocalLink";
@@ -351,11 +351,11 @@ export function inline(parent: HTMLElement, text: string): void {
             parent.appendChild(e);
         } else if (tok.startsWith("**")) {
             const e = document.createElement("strong");
-            e.textContent = tok.slice(2, -2);
+            inline(e, tok.slice(2, -2));
             parent.appendChild(e);
         } else if (tok.startsWith("*")) {
             const e = document.createElement("em");
-            e.textContent = tok.slice(1, -1);
+            inline(e, tok.slice(1, -1));
             parent.appendChild(e);
         } else {
             const link = parseMarkdownLinkToken(tok);

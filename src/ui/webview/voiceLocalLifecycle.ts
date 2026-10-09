@@ -50,5 +50,10 @@ export function createLocalCaptureHooks(options: LocalCaptureLifecycleOptions): 
             options.setTranscribing(false);
             setVoiceUiState("error", "Could not stop microphone capture");
         },
+        onOpenFailed() {
+            options.setRecording(false);
+            setStatus("Ready");
+            setVoiceUiState("idle");
+        },
     };
 }
