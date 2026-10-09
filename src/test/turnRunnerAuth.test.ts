@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { appendUserTurn } from "../adapters/openai/sessionSend";
 import { TurnRunner } from "../adapters/openai/turnRunner";
 import { createRunnerDeps } from "./openaiRunnerFixture";
 
@@ -107,20 +108,30 @@ test("401 after tool work retries once with a new token but never offers replay"
     }
 });
 
-test("transient HTTP failure after completed tools preserves results and disables replay", async () => {
+test("provider update after completed tools preserves results and permits automatic recovery", async () => {
     const originalFetch = globalThis.fetch;
     let requests = 0;
-    const events: Array<{ kind: string; message?: string; retryable?: boolean }> = [];
-    globalThis.fetch = (() => {
+    const bodies: string[] = [];
+    const events: Array<{ kind: string; message?: string; retryable?: boolean; text?: string }> =
+        [];
+    globalThis.fetch = ((_url: string | URL, init?: RequestInit) => {
+        bodies.push(String(init?.body));
         requests++;
         return Promise.resolve(
-            requests === 1 ? toolCallResponse("saved-call") : new Response(null, { status: 503 }),
+            requests === 1
+                ? toolCallResponse("saved-call")
+                : requests === 2
+                  ? new Response("Sufficit AI — update in progress", { status: 503 })
+                  : new Response(
+                        'data: {"choices":[{"delta":{"content":"Done"}}]}\n\ndata: [DONE]\n\n',
+                    ),
         );
     }) as typeof fetch;
 
     try {
         const runnerDeps = createRunnerDeps((event) => events.push(event));
-        await new TurnRunner(runnerDeps).run();
+        const runner = new TurnRunner(runnerDeps);
+        await runner.run();
 
         assert.equal(requests, 2);
         assert.ok(
@@ -132,7 +143,24 @@ test("transient HTTP failure after completed tools preserves results and disable
         );
         const error = events.find((event) => event.kind === "error");
         assert.match(error?.message ?? "", /Completed tool results are saved/);
-        assert.equal(error?.retryable, false);
+        assert.equal(error?.retryable, true);
+        appendUserTurn(
+            {
+                cfg: runnerDeps.cfg,
+                sessionId: runnerDeps.sessionId,
+                messages: runnerDeps.getMessages(),
+                turnSeq: 1,
+                led: runnerDeps.led,
+            },
+            { text: "prompt", retry: true },
+        );
+        await runner.run();
+        assert.equal(requests, 3);
+        assert.equal(bodies[1], bodies[2]);
+        assert.equal(runnerDeps.getMessages().filter((m) => m.role === "user").length, 1);
+        assert.equal(events.filter((e) => e.kind === "tool-start").length, 1);
+        assert.equal(events.filter((e) => e.kind === "error").length, 1);
+        assert.ok(events.some((e) => e.kind === "text" && e.text === "Done"));
     } finally {
         globalThis.fetch = originalFetch;
     }

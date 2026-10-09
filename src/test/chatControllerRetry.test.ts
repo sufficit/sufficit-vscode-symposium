@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
+import { httpFailureEvent } from "../adapters/openai/turnPreflight";
+import { createRunnerDeps } from "./openaiRunnerFixture";
 import type { AgentAdapter, AgentEvent } from "../adapters/types";
 import { ChatController } from "../application/chatController";
 import type { ApplicationPorts } from "../application/ports";
@@ -173,4 +175,30 @@ test("disabled retry and non-retryable errors do not schedule automatic work", a
             true,
         );
     }
+});
+
+test("HTTP 503 update after a completed tool schedules automatic continuation", async (t) => {
+    const h = harness();
+    t.after(() => h.controller.dispose());
+    await h.send();
+    h.event({ kind: "turn-start", logicalTurnId: "after-tool" });
+    h.event({ kind: "tool-start", toolName: "write_file", toolId: "saved" });
+    h.event({ kind: "tool-end", toolName: "write_file", toolId: "saved", result: "written" });
+    const error = await httpFailureEvent(
+        createRunnerDeps(() => undefined),
+        new Response("Sufficit AI — update in progress", { status: 503 }),
+        { inputTokens: 100, requestChars: 400, messageCount: 3, toolCount: 1 },
+        true,
+    );
+    h.event(error);
+    h.event({ kind: "turn-end", logicalTurnId: "after-tool" });
+    assert.equal(h.timers.size, 1);
+    assert.equal(
+        h.emitted.some((m) => m.event?.kind === "error"),
+        false,
+    );
+    await h.retry();
+    assert.equal(h.sends[1][4], "after-tool");
+    assert.equal(h.sends[1][3], "intent-1");
+    assert.equal(h.controller.transcriptMessages().filter((m) => m.role === "user").length, 1);
 });
