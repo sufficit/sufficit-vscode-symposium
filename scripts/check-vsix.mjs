@@ -85,7 +85,9 @@ const budgets = new Map([
     // it to 889.06 KiB. Hub error classification (typed request-failure
     // payloads, reconnect notices in task/memory tool results and the task
     // list UI) brings it to 892.81 KiB.
-    ["extension/out/extension.js", 894 * 1024],
+    // Retry reconciliation integrated from PR #79 measures 894.62 KiB.
+    // Retain a bounded 895 KiB host budget and the existing 1 MiB archive cap.
+    ["extension/out/extension.js", 895 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
