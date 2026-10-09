@@ -10,6 +10,9 @@ const configuration = {
     update() {
         return Promise.resolve();
     },
+    has() {
+        return false;
+    },
 };
 
 const disposable = () => ({ dispose() {} });
@@ -33,7 +36,7 @@ const vscodeStub = {
         },
     },
     workspace: {
-        getConfiguration() {
+        getConfiguration(_section, _scope) {
             return configuration;
         },
         workspaceFolders: [],
@@ -43,7 +46,7 @@ const vscodeStub = {
     window: {
         activeTextEditor: undefined,
         terminals: [],
-        tabGroups: { all: [] },
+        tabGroups: { all: [], close: async () => undefined },
         createOutputChannel() {
             return { append() {}, appendLine() {}, clear() {}, show() {}, dispose() {} };
         },
@@ -51,6 +54,11 @@ const vscodeStub = {
         onDidCloseTerminal: disposable,
     },
     commands: { executeCommand: async () => undefined, registerCommand: disposable },
+    extensions: {
+        getExtension() {
+            return undefined;
+        },
+    },
     env: { remoteName: undefined, machineId: "test-machine", sessionId: "test-session" },
 };
 

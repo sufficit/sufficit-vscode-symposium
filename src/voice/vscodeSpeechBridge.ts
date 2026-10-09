@@ -15,6 +15,7 @@ const START_DICTATION_COMMAND = "workbench.action.editorDictation.start";
 const STOP_DICTATION_COMMAND = "workbench.action.editorDictation.stop";
 const TRANSCRIPT_QUIET_MS = 350;
 const TRANSCRIPT_SETTLE_TIMEOUT_MS = 1_500;
+const DICTATION_TOGGLE_SETTLE_MS = 150;
 
 let storageDir = "";
 let startInFlight: Promise<boolean> | undefined;
@@ -47,6 +48,23 @@ export function getVscodeSpeechStatus(): VscodeSpeechStatus {
             supported && vscode.extensions.getExtension(VSCODE_SPEECH_EXTENSION_ID) !== undefined,
         extensionId: VSCODE_SPEECH_EXTENSION_ID,
     };
+}
+
+/**
+ * Activate the Microsoft provider extension so its registration flips the
+ * workbench `hasSpeechProvider` context key. The editor dictation command
+ * needs that key once the built-in chat backend is disabled.
+ */
+async function ensureProviderExtensionActive(): Promise<void> {
+    const extension = vscode.extensions.getExtension(VSCODE_SPEECH_EXTENSION_ID);
+    if (!extension || extension.isActive) {
+        return;
+    }
+    try {
+        await extension.activate();
+    } catch {
+        // Activation failures surface through the dictation command itself.
+    }
 }
 
 export function isVscodeSpeechAvailable(): boolean {
@@ -142,8 +160,31 @@ async function createAndStartSession(
             await releaseSession(session);
             return false;
         }
-        await vscode.window.showTextDocument(document, { preview: true, preserveFocus: false });
-        await vscode.commands.executeCommand(START_DICTATION_COMMAND);
+        await vscode.window.showTextDocument(document, {
+            preview: true,
+            preserveFocus: false,
+        });
+        // VS Code >= 1.141 routes editorDictation.start into its built-in chat
+        // speech-to-text backend while `dictation.enabled` is on, bypassing the
+        // installed ms-vscode.vscode-speech provider. Hosts without that
+        // backend's model end the session with an empty transcript, which looks
+        // exactly like a dead microphone. Disable it just for the start command
+        // so dictation takes the extension provider path.
+        // The start command's precondition accepts the provider only while
+        // `hasSpeechProvider` is set, and the Microsoft extension activates
+        // lazily on the `onSpeech` event that this very command fires. Start
+        // it explicitly so the precondition holds once the built-in backend is
+        // switched off below.
+        await ensureProviderExtensionActive();
+        const restoreDictationEnabled = await disableBuiltinEditorDictation();
+        try {
+            // Give the workbench a beat to re-evaluate command preconditions
+            // after the settings write before invoking the command.
+            await delay(DICTATION_TOGGLE_SETTLE_MS);
+            await vscode.commands.executeCommand(START_DICTATION_COMMAND);
+        } finally {
+            await restoreDictationEnabled();
+        }
         // The command requires an ICodeEditor only while creating its speech
         // session. Immediately return to the Symposium composer; the provider
         // keeps writing into `document` through the retained editor model.
@@ -228,11 +269,77 @@ async function releaseSession(session: DictationSession): Promise<void> {
     if (activeSession === session) {
         activeSession = undefined;
     }
-    // Closing a hidden retained editor would bring its TXT tab to the front.
-    // The document is clean after STOP_DICTATION_COMMAND, so deleting the
-    // backing file and dropping our reference lets VS Code release it without
-    // another visible editor transition.
+    // The transcript was already harvested from the in-memory model, but the
+    // provider wrote it through editor edits, so the document is dirty. Revert
+    // it to the (empty) on-disk state first: only then can the dictation tab
+    // close without a save prompt, leaving no stray "Dictation" editor behind.
+    try {
+        await vscode.window.showTextDocument(session.document, {
+            preview: true,
+            preserveFocus: false,
+        });
+        await vscode.commands.executeCommand("workbench.action.files.revert");
+        await closeDictationTab(session.document);
+    } catch {
+        // Best effort: a lingering empty tab is cosmetic, cleanup continues.
+    }
+    // Deleting the backing file and dropping our reference lets VS Code
+    // release the document without another visible editor transition.
     await fs.unlink(session.filePath).catch(() => undefined);
+}
+
+async function closeDictationTab(document: vscode.TextDocument): Promise<void> {
+    const uri = document.uri.toString();
+    for (const group of vscode.window.tabGroups.all) {
+        const tabs = group.tabs.filter((tab) => tabUri(tab)?.toString() === uri);
+        if (tabs.length > 0) {
+            await vscode.window.tabGroups.close(tabs);
+            return;
+        }
+    }
+}
+
+function tabUri(tab: vscode.Tab): vscode.Uri | undefined {
+    return (tab.input as { uri?: vscode.Uri } | undefined)?.uri;
+}
+
+/**
+ * Temporarily turn off VS Code's built-in dictation backend so the editor
+ * dictation command reaches the installed speech provider extension. Treats
+ * every layer that is not explicitly false (including the default) as on,
+ * disables it, and returns a callback restoring the original values.
+ */
+async function disableBuiltinEditorDictation(): Promise<() => Promise<void>> {
+    const config = vscode.workspace.getConfiguration("dictation");
+    const inspect = config.inspect<boolean>("enabled");
+    const layers: Array<[vscode.ConfigurationTarget, boolean | undefined]> = [
+        [vscode.ConfigurationTarget.Global, inspect?.globalValue],
+        [vscode.ConfigurationTarget.Workspace, inspect?.workspaceValue],
+    ];
+    const restores: Array<() => Promise<void>> = [];
+    for (const [target, value] of layers) {
+        if (value === false) {
+            continue;
+        }
+        try {
+            await config.update("enabled", false, target);
+        } catch {
+            // Policy-locked or transient failure: keep the legacy command path.
+            continue;
+        }
+        restores.push(async () => {
+            try {
+                await config.update("enabled", value, target);
+            } catch {
+                // Best effort: the user can reset dictation.enabled manually.
+            }
+        });
+    }
+    return async () => {
+        for (const restore of restores.reverse()) {
+            await restore();
+        }
+    };
 }
 
 async function waitForTranscriptToSettle(document: vscode.TextDocument): Promise<void> {
