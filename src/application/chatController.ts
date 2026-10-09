@@ -55,6 +55,7 @@ export class ChatController {
         bootstrapInjected: false,
         checkpointInjected: false,
         trackingInjected: false,
+        sessionScopeInjected: false,
     };
     private readonly hub = new HubClient();
     // Checkpoint already injected as resume context.

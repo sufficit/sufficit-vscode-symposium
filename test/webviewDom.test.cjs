@@ -1027,3 +1027,96 @@ test("mermaid fences render a diagram card when closed and stay source-only whil
     assert.equal(blocks[2].classList.contains("mmdCard"), false);
     harness.dom.window.close();
 });
+
+function voicePrefs(overrides = {}) {
+    return {
+        type: "setVoicePreferences",
+        preferences: {
+            language: "pt-BR",
+            continuous: false,
+            interimResults: true,
+            dotsAnimation: false,
+            soundFeedback: false,
+            engine: "local",
+            localStt: true,
+            hostCapture: true,
+            vscodeSpeechBridge: false,
+            ...overrides,
+        },
+    };
+}
+
+test("host voice capture shows a neutral opening state until the host confirms the microphone", () => {
+    const harness = createHarness();
+    harness.deliver(voicePrefs());
+    const mic = harness.document.querySelector("#mic");
+    mic.dispatchEvent(new harness.dom.window.MouseEvent("click", { bubbles: true }));
+
+    const start = harness.sent.find((m) => m.type === "voice-start");
+    assert.ok(start && start.captureId, "voice-start posted with a captureId");
+    assert.equal(mic.classList.contains("opening"), true);
+    assert.equal(mic.classList.contains("recording"), false);
+    const activity = harness.document.querySelector("#voiceActivity");
+    assert.equal(activity.hidden, false);
+    assert.equal(activity.dataset.state, "opening");
+    assert.doesNotMatch(mic.title, /Click to stop/);
+    assert.match(harness.document.querySelector("#status").textContent, /Opening microphone/);
+
+    harness.deliver({ type: "voice-recording", ok: true, captureId: start.captureId });
+    assert.equal(mic.classList.contains("recording"), true);
+    assert.equal(mic.classList.contains("opening"), false);
+    assert.equal(activity.dataset.state, "listening");
+    assert.match(mic.title, /Click to stop/);
+    assert.equal(mic.disabled, false);
+
+    mic.dispatchEvent(new harness.dom.window.MouseEvent("click", { bubbles: true }));
+    const stop = harness.sent.find((m) => m.type === "voice-stop");
+    assert.ok(stop, "voice-stop posted");
+    assert.equal(stop.captureId, start.captureId);
+    assert.equal(activity.dataset.state, "finalizing");
+    assert.equal(mic.classList.contains("recording"), false);
+
+    harness.deliver({ type: "stt-result", text: "ola mundo", captureId: start.captureId, final: true });
+    assert.match(harness.document.querySelector("#input").value, /ola mundo/);
+    assert.equal(activity.hidden, true);
+    assert.equal(activity.dataset.state, "idle");
+    assert.match(harness.document.querySelector("#status").textContent, /Ready/);
+    harness.dom.window.close();
+});
+
+test("host voice capture failure leaves the opening state and reports the error", () => {
+    const harness = createHarness();
+    harness.deliver(voicePrefs());
+    const mic = harness.document.querySelector("#mic");
+    mic.dispatchEvent(new harness.dom.window.MouseEvent("click", { bubbles: true }));
+    const start = harness.sent.find((m) => m.type === "voice-start");
+    assert.ok(start);
+
+    harness.deliver({ type: "voice-recording", ok: false, captureId: start.captureId, error: "boom" });
+    const activity = harness.document.querySelector("#voiceActivity");
+    assert.equal(activity.dataset.state, "error");
+    assert.equal(mic.classList.contains("recording"), false);
+    assert.equal(mic.classList.contains("opening"), false);
+    assert.equal(mic.disabled, false);
+    assert.match(harness.document.querySelector("#toast").textContent, /Microphone capture failed: boom/);
+    assert.match(harness.document.querySelector("#status").textContent, /Ready/);
+    harness.dom.window.close();
+});
+
+test("local voice capture failure exits the opening state without pretending to record", async () => {
+    const harness = createHarness();
+    harness.deliver(voicePrefs({ hostCapture: false }));
+    const mic = harness.document.querySelector("#mic");
+    mic.dispatchEvent(new harness.dom.window.MouseEvent("click", { bubbles: true }));
+
+    const activity = harness.document.querySelector("#voiceActivity");
+    assert.equal(activity.dataset.state, "opening");
+    assert.equal(mic.classList.contains("recording"), false);
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(mic.classList.contains("opening"), false);
+    assert.equal(activity.dataset.state, "idle");
+    assert.equal(activity.hidden, true);
+    assert.match(harness.document.querySelector("#toast").textContent, /Microphone unavailable/);
+    harness.dom.window.close();
+});

@@ -1626,7 +1626,12 @@
     #voiceActivityLabel { overflow: hidden; text-overflow: ellipsis; }
     #voiceMeter {
         position: relative; width: 30px; height: 4px; flex: 0 0 30px; overflow: hidden;
-        border-radius: 2px; background: var(--vscode-progressBar-background, rgba(128,128,128,0.25));
+        border-radius: 2px; background: color-mix(in srgb, var(--vscode-descriptionForeground, #888) 25%, transparent);
+    }
+    /* Opening is a wait state, not capture: neutral pulsing track, no VU illusion. */
+    #voiceActivity[data-state="opening"] #voiceMeter {
+        background: color-mix(in srgb, var(--vscode-descriptionForeground, #888) 35%, transparent);
+        animation: ldPulse 1.2s ease-in-out infinite;
     }
     #voiceLevel {
         position: absolute; inset: 0; transform: scaleX(var(--voice-level, 0)); transform-origin: left center;
@@ -1685,6 +1690,11 @@
     }
     #mic.recording:hover:not(:disabled) { background: var(--vscode-statusBarItem-errorBackground, var(--vscode-inputValidation-errorBackground)) !important; opacity: 0.85; }
     @media (prefers-reduced-motion: reduce) { #mic.recording { animation: none; } }
+    /* Opening: the microphone is being armed (host capture, VS Code Speech or
+       getUserMedia) but is NOT live yet — gentle neutral pulse only. The red
+       recording treatment stays exclusive to confirmed live capture. */
+    #mic.opening { animation: ldPulse 1.2s ease-in-out infinite; }
+    @media (prefers-reduced-motion: reduce) { #mic.opening { animation: none; } }
     
     /* Stop sits attached as the first segment of the send pill while busy. */
     #stopBtn {

@@ -11,6 +11,8 @@ export interface LocalCaptureHooks {
     onEmpty: () => void;
     onTranscribing: () => void;
     onStopFailed: () => void;
+    /** getUserMedia or MediaRecorder failed before any capture: leave "opening". */
+    onOpenFailed?: () => void;
 }
 
 let recorder: MediaRecorder | null = null;
@@ -36,6 +38,7 @@ export async function startLocalCapture(
         stream = await openMicrophone();
     } catch (error) {
         showToast("Microphone unavailable: " + ((error as Error).message || error), "error");
+        hooks.onOpenFailed?.();
         return;
     }
     chunks = [];
@@ -44,6 +47,7 @@ export async function startLocalCapture(
     } catch (error) {
         showToast("Recording not supported here: " + ((error as Error).message || error), "error");
         stopStream();
+        hooks.onOpenFailed?.();
         return;
     }
 

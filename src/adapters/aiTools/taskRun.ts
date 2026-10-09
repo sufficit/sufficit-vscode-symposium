@@ -7,6 +7,7 @@ import {
     rememberTaskCreated,
     rememberTaskDone,
 } from "../../sync/tasks";
+import { hubFailurePayload } from "../../sync/hubErrors";
 import type { ToolContext } from "./types";
 
 const NAMES = new Set(["TaskCreate", "add_task", "list_tasks", "TaskUpdate", "task_complete"]);
@@ -42,19 +43,23 @@ async function createTasks(args: Record<string, unknown>, ctx: ToolContext): Pro
     const userRequested = args.user_requested === true;
     const tags = `task-anchor,${userRequested ? "creator:user" : "creator:agent"}`;
     const ids: string[] = [];
-    for (const title of titles) {
-        const id = await ctx.hub.save({
-            type: "task-anchor",
-            title: title.slice(0, 80),
-            summary: title,
-            tags,
-            sessionId: ctx.sessionId,
-            privacyLevel: "internal",
-        });
-        if (id) {
-            ids.push(id);
-            rememberTaskCreated(ctx.sessionId, id, title);
+    try {
+        for (const title of titles) {
+            const id = await ctx.hub.save({
+                type: "task-anchor",
+                title: title.slice(0, 80),
+                summary: title,
+                tags,
+                sessionId: ctx.sessionId,
+                privacyLevel: "internal",
+            });
+            if (id) {
+                ids.push(id);
+                rememberTaskCreated(ctx.sessionId, id, title);
+            }
         }
+    } catch (error) {
+        return hubFailurePayload("add_task", error, { created: ids.length, ids });
     }
     rememberTaskBatch(ctx.sessionId, ids);
     return JSON.stringify({
@@ -70,7 +75,12 @@ async function createTasks(args: Record<string, unknown>, ctx: ToolContext): Pro
 
 async function listTasks(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     if (!ctx.sessionId) return JSON.stringify({ tasks: [] });
-    const all = await fetchSessionTasks(ctx.hub, ctx.sessionId);
+    let all: Awaited<ReturnType<typeof fetchSessionTasks>>;
+    try {
+        all = await fetchSessionTasks(ctx.hub, ctx.sessionId);
+    } catch (error) {
+        return hubFailurePayload("list_tasks", error);
+    }
     const includeDone = args.all === true;
     const tasks = (includeDone ? all : all.filter((task) => !task.done)).map((task) => ({
         id: task.id,
@@ -102,8 +112,14 @@ async function completeTask(
         return JSON.stringify({ ok: true, message: "task unchanged (done=false)" });
     }
     const summary = typeof args.summary === "string" ? args.summary : undefined;
-    if (!(await markTaskDone(ctx.hub, id, summary))) {
-        return JSON.stringify({ error: "save failed — check hub configuration" });
+    try {
+        if (!(await markTaskDone(ctx.hub, id, summary))) {
+            return JSON.stringify({
+                error: "task completion failed — the task id was not found or the hub rejected the update",
+            });
+        }
+    } catch (error) {
+        return hubFailurePayload("task_complete", error, { id });
     }
     if (!ctx.sessionId) return JSON.stringify({ ok: true });
     rememberTaskDone(ctx.sessionId, id);
@@ -131,7 +147,10 @@ async function cascadePriorTasks(
     );
     const completed: string[] = [];
     for (const priorId of priorIds) {
-        if (!userRequested.has(priorId) && (await markTaskDone(ctx.hub, priorId, summary))) {
+        if (
+            !userRequested.has(priorId) &&
+            (await markTaskDone(ctx.hub, priorId, summary).catch(() => false))
+        ) {
             rememberTaskDone(ctx.sessionId, priorId);
             completed.push(priorId);
         }

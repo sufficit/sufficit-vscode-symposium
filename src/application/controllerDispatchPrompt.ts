@@ -59,6 +59,7 @@ export function buildDispatchOutbound(
                   bootstrapInjected: false,
                   checkpointInjected: false,
                   trackingInjected: false,
+                  sessionScopeInjected: false,
               }
             : ctx.promptState;
     // Plan/tracking discipline is injected on EVERY backend so the agent

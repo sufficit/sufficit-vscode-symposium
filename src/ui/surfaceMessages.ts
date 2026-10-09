@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { WebviewToHost } from "../protocol/chat";
-import { setTaskDone } from "../sync/tasks";
+import { handleTaskSetDoneMessage } from "./surfaceMessageTasks";
 import { clearSurfaceGuardrails, removeSurfaceGuardrail } from "./surfaceGuardrails";
 import { handleVoiceMessage } from "./surfaceMessageVoice";
 import { handleFileMessage } from "./surfaceMessageFiles";
@@ -167,15 +167,7 @@ export class SurfaceMessages {
                     return;
                 }
                 case "task-set-done": {
-                    if (typeof message.id === "string" && this.d.hub.configured()) {
-                        const done = message.done === true;
-                        const ok = await setTaskDone(this.d.hub, message.id, done);
-                        if (ok) {
-                            this.d.sync.setTasksDoneByIds([message.id], done);
-                        } else {
-                            void this.d.sync.refreshTasks();
-                        }
-                    }
+                    await handleTaskSetDoneMessage(this.d, message);
                     return;
                 }
                 case "remove-guardrail": {
