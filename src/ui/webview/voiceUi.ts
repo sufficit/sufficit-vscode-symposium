@@ -17,14 +17,18 @@ export function setVoiceUiState(state: VoiceUiState, detail?: string): void {
     voiceActivity.hidden = !active;
     voiceActivity.dataset.state = state;
     voiceActivityLabel.textContent = label;
-    micBtn.title = active && state !== "error" ? `${label} Click to stop.` : label;
+    // "opening" is NOT recording yet — no stop hint and no red state until
+    // real capture is confirmed, so the user is not misled into speaking early.
+    const interactive = active && state !== "error" && state !== "opening";
+    micBtn.title = interactive ? `${label} Click to stop.` : label;
     micBtn.setAttribute("aria-label", micBtn.title);
     micBtn.setAttribute(
         "aria-pressed",
         state === "listening" || state === "speech" ? "true" : "false",
     );
+    micBtn.classList.toggle("opening", state === "opening");
     micBtn.disabled = state === "opening" || state === "finalizing";
-    if (!active || state === "error") setVoiceLevel(-96);
+    if (!active || state === "opening" || state === "error") setVoiceLevel(-96);
 }
 
 export function setVoiceLevel(rmsDbFs: number): void {

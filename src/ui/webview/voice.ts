@@ -1,4 +1,3 @@
-import { postMessage } from "./vscode";
 import { input, micBtn } from "./dom";
 import { setStatus } from "./status";
 import { showToast } from "./menus";
@@ -9,20 +8,17 @@ import {
     getVoicePreferences,
     updateMicVisibility,
 } from "./voicePrefs";
-import { shouldDiscardUntouchedContinuation } from "./voiceContinuation";
 import { stopVadMonitor } from "./voiceVad";
 import { startLocalCapture, stopLocalCapture } from "./voiceLocalCapture";
 import { createLocalCaptureHooks } from "./voiceLocalLifecycle";
 import { dispatchVoiceEnded, setVoiceInputValue } from "./voiceComposer";
 import {
     armHostVoicePreviews,
-    beginHostVoiceSession,
-    currentHostCaptureId,
     endHostVoiceSession,
     handleHostVoiceTelemetry,
     isCurrentHostCapture,
-    markHostVoiceFinalizing,
 } from "./voiceHostSession";
+import { createHostCapture } from "./voiceHostCapture";
 import { setVoiceUiState } from "./voiceUi";
 import { VoiceDraft } from "./voiceDraft";
 import type {
@@ -137,58 +133,23 @@ if (SpeechRecognition) {
     };
 }
 
-let hostRecording = false;
-// Track untouched automatic continuations so they can be cancelled without transcription.
-let currentCaptureIsContinuation = false;
-let hadSpeechThisSegment = false;
-
-function startHostCapture(isContinuation = false) {
-    const prefs = getVoicePreferences();
-    const captureId = beginHostVoiceSession();
-    postMessage({ type: "voice-start", captureId, vad: dictationActive });
-    hostRecording = true;
-    isRecording = true;
-    activeVoicePath = prefs.vscodeSpeechBridge ? "vscode-speech" : "host";
-    currentCaptureIsContinuation = isContinuation;
-    hadSpeechThisSegment = false;
-    micBtn.classList.add("recording");
-    setStatus("Listening...");
-    if (prefs.soundFeedback && !isContinuation) playStartSound();
-    draft.reset();
-    if (prefs.dotsAnimation) draft.startDots();
-}
-
-function stopHostCapture(discardUntouchedContinuation = false) {
-    const prefs = getVoicePreferences();
-    // Only explicit stops may discard an untouched continuation; VAD evidence can be incomplete.
-    const phantom = shouldDiscardUntouchedContinuation(
-        discardUntouchedContinuation,
-        currentCaptureIsContinuation,
-        hadSpeechThisSegment,
-    );
-    isRecording = false;
-    hostRecording = false;
-    activeVoicePath = null;
-    if (!dictationActive) {
-        micBtn.classList.remove("recording");
-    }
-    draft.stopDots();
-    draft.interim = "";
-    if (phantom) {
-        // No result will arrive, so release any deferred send immediately.
-        setStatus("Ready");
-        postMessage({ type: "voice-cancel", captureId: currentHostCaptureId() });
-        endHostVoiceSession();
-        dispatchVoiceEnded();
-        return;
-    }
-    if (prefs.soundFeedback && !dictationActive) playStopSound();
-    setVoiceInputValue(draft.base); // drop the dots animation text
-    setStatus("Transcribing...");
-    transcriptionInFlight = true;
-    const captureId = markHostVoiceFinalizing();
-    if (captureId) postMessage({ type: "voice-stop", captureId });
-}
+const hostCapture = createHostCapture({
+    draft,
+    isDictationActive: () => dictationActive,
+    setDictationActive(value) {
+        dictationActive = value;
+    },
+    setDictationUseHost(value) {
+        dictationUseHost = value;
+    },
+    setRecordingState(recording, path) {
+        isRecording = recording;
+        activeVoicePath = recording ? path : null;
+    },
+    setTranscribing(value) {
+        transcriptionInFlight = value;
+    },
+});
 
 const localCaptureHooks = createLocalCaptureHooks({
     draft,
@@ -208,7 +169,7 @@ function onSilenceDetected(): void {
         return;
     }
     if (activeVoicePath === "host" || activeVoicePath === "vscode-speech") {
-        stopHostCapture(false);
+        hostCapture.stop(false);
     } else if (activeVoicePath === "local") {
         stopLocalCapture(localCaptureHooks);
     }
@@ -220,7 +181,7 @@ function maybeContinueDictation(): void {
         return;
     }
     if (dictationUseHost) {
-        startHostCapture(true);
+        hostCapture.start(true);
     } else {
         void startLocalCapture(true, localCaptureHooks);
     }
@@ -266,35 +227,20 @@ window.addEventListener("message", (e) => {
         maybeContinueDictation();
     } else if (e.data.type === "voice-recording") {
         if (!isCurrentHostCapture(e.data.captureId)) return;
-        if (!e.data.ok && hostRecording) {
-            hostRecording = false;
-            isRecording = false;
-            activeVoicePath = null;
-            dictationUseHost = false;
-            micBtn.classList.remove("recording");
-            draft.stopDots();
-            draft.interim = "";
-            setVoiceInputValue(draft.base);
-            // Preserve the native-capture error instead of reporting a webview permission error.
-            setStatus("Ready");
-            showToast(
-                "Native microphone capture failed: " + (e.data.error || "unknown error"),
-                "error",
-            );
-            // Release deferred sends when a continuous-mode restart fails.
-            dictationActive = false;
-            endHostVoiceSession(e.data.captureId);
-            setVoiceUiState("error", "Microphone capture failed");
-            dispatchVoiceEnded();
-        } else if (e.data.ok && activeVoicePath === "host") {
-            armHostVoicePreviews();
+        if (!e.data.ok) {
+            hostCapture.failFromHost(e.data.error, e.data.captureId);
+        } else {
+            hostCapture.confirmStarted();
+            if (activeVoicePath === "host") {
+                armHostVoicePreviews();
+            }
         }
     } else if (e.data.type === "voice-silence") {
         if (!isCurrentHostCapture(e.data.captureId)) return;
         onSilenceDetected();
     } else if (e.data.type === "voice-speech") {
         if (!isCurrentHostCapture(e.data.captureId)) return;
-        hadSpeechThisSegment = true;
+        hostCapture.markSpeech();
     }
 });
 
@@ -351,10 +297,12 @@ if (micBtn) {
             // VS Code Speech uses the host protocol without the webview microphone.
             dictationActive = prefs.continuous;
             dictationUseHost = true;
-            startHostCapture();
+            hostCapture.start();
         } else {
             dictationActive = prefs.continuous;
             dictationUseHost = false;
+            // Wait state while getUserMedia resolves: recording visuals only on onStarted.
+            setVoiceUiState("opening");
             void startLocalCapture(false, localCaptureHooks);
         }
     });
@@ -384,7 +332,7 @@ export function stopVoiceRecording(): void {
         if (prefs.soundFeedback) playStopSound();
         recognition.stop();
     } else if (activeVoicePath === "host" || activeVoicePath === "vscode-speech") {
-        stopHostCapture(true);
+        hostCapture.stop(true);
     } else if (activeVoicePath === "local") {
         stopLocalCapture(localCaptureHooks);
     }
