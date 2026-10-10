@@ -87,7 +87,10 @@ const budgets = new Map([
     // list UI) brings it to 892.81 KiB.
     // Retry reconciliation integrated from PR #79 measures 894.62 KiB.
     // Retain a bounded 895 KiB host budget and the existing 1 MiB archive cap.
-    ["extension/out/extension.js", 895 * 1024],
+    // Voice dictation backend routing (activate the installed speech provider,
+    // disable the built-in chat STT backend around the start command and
+    // restore every dictation.enabled layer) measures 895.58 KiB.
+    ["extension/out/extension.js", 896 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
