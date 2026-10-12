@@ -315,8 +315,8 @@
                 },
                 "symposium.identity.scope": {
                     "type": "string",
-                    "default": "openid profile email roles directives offline_access",
-                    "description": "OAuth scopes requested at login. The roles and directives scopes are always included because Sufficit AI authorization requires them."
+                    "default": "openid profile email roles entitlements offline_access",
+                    "description": "OAuth scopes requested at login. The roles and entitlements scopes are always included because Sufficit AI authorization requires them."
                 },
                 "symposium.hub.token": {
                     "type": "string",
