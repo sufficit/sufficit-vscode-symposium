@@ -7,7 +7,10 @@ import {
 } from "../auth/identityScopes";
 
 test("default Identity scopes include authorization claims", () => {
-    assert.equal(normalizeIdentityScope(), "openid profile email roles entitlements offline_access");
+    assert.equal(
+        normalizeIdentityScope(),
+        "openid profile email roles entitlements offline_access",
+    );
     assert.equal(normalizeIdentityScope(), DEFAULT_IDENTITY_SCOPE);
 });
 
