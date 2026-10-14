@@ -7,6 +7,7 @@ function settings(engine: SttSettings["engine"] = "faster-whisper"): SttSettings
     return {
         engine,
         language: "pt-BR",
+        sufficitBaseUrl: "",
         modelsDir: "",
         ffmpegPath: "",
         whisper: {

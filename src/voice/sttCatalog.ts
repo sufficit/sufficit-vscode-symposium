@@ -18,6 +18,7 @@ export type SttEngineId =
     | "auto"
     | "webspeech"
     | "vscode-speech"
+    | "sufficit-ai"
     | "whisper-cpp"
     | "faster-whisper"
     | "vosk";
@@ -73,6 +74,14 @@ export const STT_ENGINES: SttEngineSpec[] = [
         label: "VS Code Speech (installed provider)",
         description:
             "Uses the Microsoft VS Code Speech provider already installed in the desktop UI. No model download by Symposium.",
+        defaultCommand: "",
+        managesModels: false,
+    },
+    {
+        id: "sufficit-ai",
+        label: "Sufficit AI (online)",
+        description:
+            "Symposium records the microphone and Sufficit AI transcribes it. Text goes straight to the composer; requires Sufficit login and network.",
         defaultCommand: "",
         managesModels: false,
     },

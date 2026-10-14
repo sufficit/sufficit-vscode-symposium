@@ -18,6 +18,7 @@ function snapshot(engine: SttDiagnosticSnapshot["settings"]["engine"]): SttDiagn
         settings: {
             engine,
             language: "pt-BR",
+            sufficitBaseUrl: "",
             modelsDir: "",
             ffmpegPath: "",
             whisper: {

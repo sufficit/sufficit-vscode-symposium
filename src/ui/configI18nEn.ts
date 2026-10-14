@@ -51,6 +51,11 @@ export const CONFIG_EN: Dict = {
         "This webview does not expose SpeechRecognition. Use code-server with a compatible browser or select a local engine.",
     "config.voice.diagnose.fixWebspeechDesktop":
         "Web Speech's API is present here (Electron), but the recognition service never actually starts in VS Code desktop. Select a local engine (whisper.cpp / faster-whisper / vosk) below instead.",
+    "config.voice.diagnose.sufficitAi": "Sufficit AI online transcription",
+    "config.voice.diagnose.sufficitAiReady":
+        "Sufficit session active. Audio recorded by Symposium is transcribed by Sufficit AI and goes straight to the composer.",
+    "config.voice.diagnose.fixSufficitAi":
+        "Sign in to your Sufficit account in Symposium to use online transcription.",
     "config.voice.diagnose.vscodeSpeech": "Microsoft VS Code Speech provider",
     "config.voice.diagnose.vscodeSpeechReady":
         "Provider installed. The first microphone recording performs the final functional check.",

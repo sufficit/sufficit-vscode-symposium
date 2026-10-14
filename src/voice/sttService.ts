@@ -36,10 +36,13 @@ import {
     commandAvailable,
 } from "./sttEngines";
 import { getVscodeSpeechStatus, isVscodeSpeechAvailable } from "./vscodeSpeechBridge";
+import { isSufficitSttReady, transcribeWithSufficitAi } from "./sttSufficit";
 
 export interface SttSettings {
     engine: SttEngineId;
     language: string;
+    /** OpenAI-compatible Sufficit gateway base URL (shared with the chat backend). */
+    sufficitBaseUrl: string;
     modelsDir: string;
     ffmpegPath: string;
     whisper: {
@@ -71,6 +74,9 @@ export function readSettings(): SttSettings {
     return {
         engine: c.get<SttEngineId>("engine", "auto"),
         language: c.get<string>("language", "pt-BR"),
+        sufficitBaseUrl: vscode.workspace
+            .getConfiguration("symposium.openai")
+            .get<string>("baseUrl", ""),
         modelsDir: c.get<string>("modelsDir", ""),
         ffmpegPath: c.get<string>("ffmpegPath", ""),
         whisper: {
@@ -105,6 +111,7 @@ function resolvedRoot(s: SttSettings): string {
 export function resolveLocalEngine(s: SttSettings): SttEngineId {
     if (
         s.engine === "vscode-speech" ||
+        s.engine === "sufficit-ai" ||
         s.engine === "whisper-cpp" ||
         s.engine === "faster-whisper" ||
         s.engine === "vosk"
@@ -138,6 +145,11 @@ export async function isLocalSttReady(): Promise<boolean> {
         // dictation command when the user starts recording; command failure
         // produces no transcript and the UI returns to its idle state.
         return isVscodeSpeechAvailable();
+    }
+    // Remote transcription: Symposium captures audio itself and only needs a
+    // signed-in Sufficit session (no ffmpeg, binary or local model).
+    if (engine === "sufficit-ai") {
+        return isSufficitSttReady();
     }
     // ffmpeg is required for every local path (capture → 16 kHz mono WAV).
     const cmd = (fallback: string, override: string) =>
@@ -177,6 +189,7 @@ export async function getSttState(): Promise<Record<string, unknown>> {
         commandAvailable(cmd("whisper-ctranslate2", s.fasterWhisper.binaryPath)),
         commandAvailable(cmd("vosk-transcriber", s.vosk.binaryPath)),
     ]);
+    const sufficitOk = await isSufficitSttReady();
     const vscodeSpeechStatus = getVscodeSpeechStatus();
     const vscodeSpeechOk = vscodeSpeechStatus.supported && vscodeSpeechStatus.installed;
     const models = ALL_MODELS.map((m) => ({
@@ -196,6 +209,7 @@ export async function getSttState(): Promise<Record<string, unknown>> {
         availability: {
             ffmpeg: ffmpegOk,
             "vscode-speech": vscodeSpeechOk,
+            "sufficit-ai": sufficitOk,
             "whisper-cpp": whisperOk,
             "faster-whisper": fasterOk,
             vosk: voskOk,
@@ -235,6 +249,14 @@ export async function transcribeWav(wav: string): Promise<string> {
     }
     const lang = toShortLang(s.language);
     try {
+        if (engine === "sufficit-ai") {
+            return await transcribeWithSufficitAi({
+                filePath: wav,
+                mime: "audio/wav",
+                language: s.language,
+                baseUrl: s.sufficitBaseUrl,
+            });
+        }
         if (engine === "whisper-cpp") {
             const spec = findModel(s.whisper.model);
             return await transcribeWhisperCpp(wav, {
@@ -284,6 +306,15 @@ export async function transcribeAudio(base64: string, mime: string): Promise<str
     const input = path.join(os.tmpdir(), `symposium-stt-in-${Date.now()}.${ext}`);
     fs.writeFileSync(input, Buffer.from(base64, "base64"));
     try {
+        if (resolveLocalEngine(s) === "sufficit-ai") {
+            // The gateway decodes webm/ogg/wav itself: no ffmpeg on this host.
+            return await transcribeWithSufficitAi({
+                filePath: input,
+                mime,
+                language: s.language,
+                baseUrl: s.sufficitBaseUrl,
+            });
+        }
         const wav = await toWav16k(input, s.ffmpegPath);
         return await transcribeWav(wav); // deletes the wav
     } finally {
