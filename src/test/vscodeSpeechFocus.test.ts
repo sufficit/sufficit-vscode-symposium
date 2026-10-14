@@ -103,9 +103,26 @@ test("bridge closes the dictation editor tab when releasing a session", () => {
     );
     const release = bridge.indexOf("async function releaseSession");
     const closeCall = bridge.indexOf("closeDictationTab(session.document)", release);
-    const unlink = bridge.indexOf("fs.unlink(session.filePath)", release);
+    const revert = bridge.indexOf("workbench.action.files.revert", release);
 
     assert.ok(closeCall > release, "releaseSession must close the tab");
-    assert.ok(unlink > closeCall, "tab must close before the backing file is deleted");
+    assert.ok(revert > release && revert < closeCall, "document must be reverted before closing");
     assert.match(bridge, /tabGroups\.close\(tabs\)/, "close must go through the tabGroups API");
+});
+
+test("bridge keeps the dictation document in memory and beside the current editor", () => {
+    const bridge = source("voice/vscodeSpeechBridge.ts");
+
+    assert.doesNotMatch(bridge, /from "fs/, "bridge must not touch the filesystem");
+    assert.doesNotMatch(bridge, /Uri\.file\(/, "dictation document must not be a file on disk");
+    assert.match(
+        bridge,
+        /openTextDocument\(\{\s*language: "plaintext",\s*content: ""/,
+        "dictation must use an untitled in-memory document",
+    );
+    assert.match(
+        bridge,
+        /viewColumn: vscode\.ViewColumn\.Beside/,
+        "dictation editor must open beside, never replacing the user's editor",
+    );
 });
