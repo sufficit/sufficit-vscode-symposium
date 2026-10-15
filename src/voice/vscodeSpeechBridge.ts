@@ -19,6 +19,7 @@ const STOP_DICTATION_COMMAND = "workbench.action.editorDictation.stop";
 const TRANSCRIPT_QUIET_MS = 350;
 const TRANSCRIPT_SETTLE_TIMEOUT_MS = 1_500;
 const DICTATION_TOGGLE_SETTLE_MS = 150;
+const REVERT_AND_CLOSE_COMMAND = "workbench.action.revertAndCloseActiveEditor";
 
 let startInFlight: Promise<boolean> | undefined;
 let cancellationGeneration = 0;
@@ -264,15 +265,31 @@ async function releaseSession(session: DictationSession): Promise<void> {
     }
     // The transcript was already harvested from the in-memory model, but the
     // provider wrote it through editor edits, so the untitled document is
-    // dirty. Revert it to empty first: only then can the side tab close without
-    // a save prompt, leaving no stray editor (or empty side group) behind.
+    // dirty. An untitled document without an associated path stops being dirty
+    // once its content is empty, so clear it through a workspace edit (no focus
+    // or active-editor dependency) before closing. If it is still dirty, fall
+    // back to revert-and-close on the revealed editor, which never prompts.
     try {
-        await revealSessionEditor(session);
-        await vscode.commands.executeCommand("workbench.action.files.revert");
+        await clearDocument(session.document);
+        if (session.document.isDirty) {
+            await revealSessionEditor(session);
+            await vscode.commands.executeCommand("workbench.action.files.revert");
+            await vscode.commands.executeCommand(REVERT_AND_CLOSE_COMMAND);
+        }
         await closeDictationTab(session.document);
     } catch {
         // Best effort: a lingering empty tab is cosmetic, cleanup continues.
     }
+}
+
+async function clearDocument(document: vscode.TextDocument): Promise<void> {
+    if (document.isClosed || document.getText().length === 0) {
+        return;
+    }
+    const edit = new vscode.WorkspaceEdit();
+    const end = document.lineAt(document.lineCount - 1).range.end;
+    edit.delete(document.uri, new vscode.Range(new vscode.Position(0, 0), end));
+    await vscode.workspace.applyEdit(edit);
 }
 
 /** Bring the dictation editor back to front in its own side column. */
