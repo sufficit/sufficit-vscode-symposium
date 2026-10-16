@@ -249,9 +249,7 @@ function markdownImage(label: string, href: string): HTMLElement {
         action.setAttribute("title", `Open ${href}`);
         action.setAttribute("aria-label", `Open image: ${accessibleLabel}`);
     } else if (remote) {
-        action.setAttribute("href", href);
         action.setAttribute("title", href);
-        action.setAttribute("rel", "noopener noreferrer");
     }
     if (local || remote) {
         bindMarkdownTarget(action, href, local ? "file" : "link");
@@ -314,14 +312,13 @@ function appendMarkdownLink(parent: HTMLElement, label: string, href: string): v
     }
     const anchor = document.createElement("a");
     inline(anchor, label);
+    // No href: VS Code's webview also handles native navigable anchors,
+    // which can open a second tab alongside our explicit open-link message.
     if (isLocalMarkdownTarget(href)) {
-        anchor.href = "#";
         anchor.className = "mdLocalLink";
         anchor.title = `Open ${href}`;
     } else {
-        anchor.href = href;
         anchor.title = href;
-        anchor.rel = "noopener noreferrer";
     }
     bindMarkdownTarget(anchor, href, isLocalMarkdownTarget(href) ? "file" : "link");
     parent.appendChild(anchor);

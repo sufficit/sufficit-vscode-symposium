@@ -211,14 +211,23 @@ test("Markdown links open outside the host without navigating the conversation w
         carried: true,
         messages: [{ role: "assistant", text: `[Open service](${url})` }],
     });
-    const anchor = harness.document.querySelector(`#log a[href="${url}"]`);
+    const anchor = harness.document.querySelector("#log a[role=link]");
     assert.ok(anchor);
+    assert.equal(anchor.hasAttribute("href"), false, "webview must not navigate the same link itself");
+    assert.equal(anchor.tabIndex, 0);
     const webviewUrl = harness.dom.window.location.href;
 
+    const before = harness.sent.length;
     anchor.click();
+    assert.equal(harness.sent.length, before + 1, "one click sends exactly one open request");
     assert.equal(harness.sent.at(-1).type, "open-link");
     assert.equal(harness.sent.at(-1).url, url);
     assert.equal(harness.dom.window.location.href, webviewUrl);
+
+    const beforeKeyboard = harness.sent.length;
+    anchor.dispatchEvent(new harness.dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    assert.equal(harness.sent.length, beforeKeyboard + 1);
+    assert.equal(harness.sent.at(-1).url, url);
 
     anchor.dispatchEvent(
         new harness.dom.window.MouseEvent("contextmenu", {
