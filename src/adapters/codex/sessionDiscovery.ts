@@ -5,11 +5,8 @@ import { SessionInfo } from "../types";
 import { inferCodexLineage, readCodexMeta } from "./transcript";
 
 /** Incrementally discovers Codex rollouts and reuses unchanged metadata. */
-export async function listCodexSessions(cached: readonly SessionInfo[]): Promise<SessionInfo[]> {
+export async function listCodexSessions(_cached: readonly SessionInfo[]): Promise<SessionInfo[]> {
     const root = path.join(os.homedir(), ".codex", "sessions");
-    const cachedByPath = new Map(
-        cached.filter((item) => item.transcriptPath).map((item) => [item.transcriptPath!, item]),
-    );
     const files: string[] = [];
     await walkRollouts(root, 0, files);
 
@@ -17,12 +14,7 @@ export async function listCodexSessions(cached: readonly SessionInfo[]): Promise
     for (const file of files) {
         try {
             const stat = await fs.promises.stat(file);
-            const cachedInfo = cachedByPath.get(file);
-            if (cachedInfo?.updatedAt?.getTime() === stat.mtime.getTime()) {
-                records.push({ info: cachedInfo });
-                continue;
-            }
-            const meta = await readCodexMeta(file);
+            const meta = await readCodexMeta(file, stat);
             if (!meta.id) {
                 continue;
             }

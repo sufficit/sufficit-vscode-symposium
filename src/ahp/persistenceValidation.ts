@@ -20,7 +20,13 @@ export interface PersistenceEnvelope {
     runtime: AhpRuntimeExport;
 }
 
-export function validateEnvelope(value: unknown, maxSessionBytes: number): PersistenceEnvelope {
+export type OwnedBytesMeasure = (owned: Snapshot[]) => number;
+
+export function validateEnvelope(
+    value: unknown,
+    maxSessionBytes: number,
+    measure?: OwnedBytesMeasure,
+): PersistenceEnvelope {
     if (!isRecord(value)) throw new Error("AHP persistence root is not an object");
     if (value.protocolVersion !== AHP_PROTOCOL_VERSION) {
         throw new Error(`Unsupported AHP protocol ${String(value.protocolVersion)}`);
@@ -28,7 +34,7 @@ export function validateEnvelope(value: unknown, maxSessionBytes: number): Persi
     if (value.schemaVersion !== AHP_SCHEMA_VERSION) {
         throw new Error(`Unsupported AHP persistence schema ${String(value.schemaVersion)}`);
     }
-    const runtime = validateRuntime(value.runtime, maxSessionBytes);
+    const runtime = validateRuntime(value.runtime, maxSessionBytes, measure);
     return {
         protocolVersion: AHP_PROTOCOL_VERSION,
         schemaVersion: AHP_SCHEMA_VERSION,
@@ -37,7 +43,11 @@ export function validateEnvelope(value: unknown, maxSessionBytes: number): Persi
     };
 }
 
-export function validateRuntime(value: unknown, maxSessionBytes: number): AhpRuntimeExport {
+export function validateRuntime(
+    value: unknown,
+    maxSessionBytes: number,
+    measure?: OwnedBytesMeasure,
+): AhpRuntimeExport {
     if (!isRecord(value)) throw new Error("AHP runtime state is not an object");
     const serverSeq = safeInteger(value.serverSeq, "serverSeq");
     const sessions = asArray<AhpSessionHandle>(value.sessions, "sessions");
@@ -45,7 +55,7 @@ export function validateRuntime(value: unknown, maxSessionBytes: number): AhpRun
     const retainedActions = asArray<ActionEnvelope>(value.retainedActions, "retainedActions");
     validateSnapshots(snapshots, serverSeq);
     validateActions(retainedActions, serverSeq);
-    validateHandles(sessions, snapshots, maxSessionBytes);
+    validateHandles(sessions, snapshots, maxSessionBytes, measure);
     return { serverSeq, sessions, snapshots, retainedActions };
 }
 
@@ -85,6 +95,7 @@ function validateHandles(
     handles: AhpSessionHandle[],
     snapshots: Snapshot[],
     maxSessionBytes: number,
+    measure?: OwnedBytesMeasure,
 ): void {
     const resources = new Set(snapshots.map((item) => item.resource));
     const seen = new Set<string>();
@@ -110,7 +121,8 @@ function validateHandles(
             throw new Error("AHP session handle references missing snapshots");
         }
         const owned = sessionOwnedSnapshots(snapshots, handle);
-        if (Buffer.byteLength(JSON.stringify(owned)) > maxSessionBytes) {
+        const ownedBytes = measure ? measure(owned) : Buffer.byteLength(JSON.stringify(owned));
+        if (ownedBytes > maxSessionBytes) {
             throw new Error(`AHP session ${handle.sessionId} exceeds byte limit`);
         }
     }

@@ -143,12 +143,18 @@ export class JsonlMetadataCache<T> {
     private readonly values = new Map<string, CachedPrefix<T>>();
     private readonly pending = new Map<string, Promise<T>>();
 
-    async get(file: string, load: () => Promise<T>): Promise<T> {
-        let stat: fs.Stats | undefined;
-        try {
-            stat = await fs.promises.stat(file);
-        } catch {
-            /* load handles it */
+    async get(
+        file: string,
+        load: () => Promise<T>,
+        knownStat?: Pick<fs.Stats, "size" | "mtimeMs">,
+    ): Promise<T> {
+        let stat: Pick<fs.Stats, "size" | "mtimeMs"> | undefined = knownStat;
+        if (!stat) {
+            try {
+                stat = await fs.promises.stat(file);
+            } catch {
+                /* load handles it */
+            }
         }
         const cached = this.values.get(file);
         if (stat && cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {

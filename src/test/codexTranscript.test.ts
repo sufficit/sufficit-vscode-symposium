@@ -213,3 +213,26 @@ test("legacy Codex branch inference does not link a short generic assistant repl
 
     assert.equal(lineage, undefined);
 });
+
+test("Codex metadata cache invalidates on size change even when mtime is preserved", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-codex-cache-"));
+    const file = path.join(dir, "rollout.jsonl");
+    const row = (model: string) =>
+        [
+            { type: "session_meta", payload: { id: "thread-cache", cwd: "/w" } },
+            { type: "turn_context", payload: { model } },
+        ]
+            .map((r) => JSON.stringify(r))
+            .join("\n");
+    fs.writeFileSync(file, row("model-a"));
+    const fixed = new Date("2026-01-01T00:00:00Z");
+    fs.utimesSync(file, fixed, fixed);
+    assert.equal((await readCodexMeta(file)).model, "model-a");
+    fs.writeFileSync(file, row("model-bb"));
+    fs.utimesSync(file, fixed, fixed);
+    assert.equal((await readCodexMeta(file)).model, "model-bb");
+    // unchanged mtime+size is served from cache (no re-read)
+    fs.writeFileSync(file, row("model-cc"));
+    fs.utimesSync(file, fixed, fixed);
+    assert.equal((await readCodexMeta(file)).model, "model-bb");
+});

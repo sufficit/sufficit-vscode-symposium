@@ -11,8 +11,13 @@ import { byteLength, sessionOwnedSnapshots } from "./persistenceValidation";
 export interface AhpCompactionLimits {
     maxBytes: number;
     maxSessionBytes: number;
+    targetBytes?: number;
     snapshotResources?: (resources: readonly URI[]) => Snapshot[];
     onDiagnostic?: (message: string) => void;
+    /** Optional identity-cached byte counter for immutable state objects. */
+    measureBytes?: (value: object) => number;
+    /** Measures runtime structure without re-stringifying snapshot state. */
+    measureRuntime?: (state: AhpRuntimeExport, includeActions: boolean) => number;
 }
 
 /**
@@ -32,8 +37,11 @@ export function compactHistoricalSnapshots(
     // the hard ceiling free for live actions, cross-host merge and stringify
     // overhead; waiting until 75% made a 30 MiB cache repeatedly block the
     // Extension Host while active conversations streamed.
-    const targetBytes = Math.floor(limits.maxBytes * 0.25);
-    let estimatedBytes = byteLength({ ...state, retainedActions: [] as ActionEnvelope[] });
+    const targetBytes = limits.targetBytes ?? Math.floor(limits.maxBytes * 0.25);
+    let estimatedBytes = limits.measureRuntime
+        ? limits.measureRuntime(state, false)
+        : byteLength({ ...state, retainedActions: [] as ActionEnvelope[] });
+    const measure = (value: object): number => limits.measureBytes?.(value) ?? byteLength(value);
     if (estimatedBytes <= targetBytes) return state;
 
     const snapshots = [...state.snapshots];
@@ -59,7 +67,7 @@ export function compactHistoricalSnapshots(
                     turns: unknown[];
                 } => (candidate.turns?.length ?? 0) > minimumTurns,
             )
-            .map((candidate) => ({ ...candidate, bytes: byteLength(candidate.turns) }))
+            .map((candidate) => ({ ...candidate, bytes: measure(candidate.turns) }))
             .sort((left, right) => right.bytes - left.bytes);
 
         for (const candidate of candidates) {
@@ -96,6 +104,17 @@ export function compactHistoricalSnapshots(
     return { ...state, snapshots };
 }
 
+export function measureSnapshotArray(snapshots: Snapshot[], limits: AhpCompactionLimits): number {
+    if (!limits.measureBytes) return byteLength(snapshots);
+    let total = 2 + Math.max(0, snapshots.length - 1);
+    for (const snapshot of snapshots) {
+        total += Buffer.byteLength(JSON.stringify(snapshot.resource));
+        total += 1 + limits.measureBytes(snapshot.state as object) + 1;
+        total += Buffer.byteLength(String(snapshot.fromSeq));
+    }
+    return total;
+}
+
 /**
  * Re-snapshots any session whose owned snapshots exceed the per-session
  * cap, so validateRuntime does not throw on a long-running host. If a fresh
@@ -115,7 +134,7 @@ export function resnapshotOversizedSessions(
     const snapshots = state.snapshots;
     const oversized = state.sessions.filter((handle) => {
         const owned = sessionOwnedSnapshots(snapshots, handle);
-        return owned.length > 0 && byteLength(owned) > limits.maxSessionBytes;
+        return owned.length > 0 && measureSnapshotArray(owned, limits) > limits.maxSessionBytes;
     });
     if (oversized.length === 0) return state;
     const replacements = new Map<URI, Snapshot>();
@@ -142,11 +161,12 @@ export function resnapshotOversizedSessions(
             snapshots.map((s) => replacements.get(s.resource) ?? s),
             handle,
         );
-        if (byteLength(ownedFresh) <= limits.maxSessionBytes) continue;
+        if (measureSnapshotArray(ownedFresh, limits) <= limits.maxSessionBytes) continue;
         const budget =
             limits.maxSessionBytes -
-            byteLength(
+            measureSnapshotArray(
                 ownedFresh.filter((s) => !Array.isArray((s.state as { turns?: unknown }).turns)),
+                limits,
             );
         for (const snapshot of ownedFresh) {
             const chatState = snapshot.state as Partial<ChatState>;
@@ -154,7 +174,7 @@ export function resnapshotOversizedSessions(
             let turns = [...chatState.turns];
             while (
                 turns.length > 1 &&
-                Buffer.byteLength(JSON.stringify(turns)) > Math.max(0, budget)
+                (limits.measureBytes?.(turns) ?? byteLength(turns)) > Math.max(0, budget)
             ) {
                 turns = turns.slice(1);
             }
@@ -195,41 +215,41 @@ export function trimRetained(
     // Measure the immutable base (everything except retained actions) once,
     // then trim retained actions by count rather than by re-serializing the
     // whole state per removal.
-    const baseBytes = byteLength({ ...state, retainedActions: [] as ActionEnvelope[] });
-    const retainedBytes = byteLength(retainedActions);
-    if (baseBytes + retainedBytes <= limits.maxBytes) return state;
+    const targetBytes = limits.targetBytes ?? limits.maxBytes;
+    const baseBytes = limits.measureRuntime
+        ? limits.measureRuntime(state, false)
+        : byteLength({ ...state, retainedActions: [] as ActionEnvelope[] });
+    const measure = (value: object): number => limits.measureBytes?.(value) ?? byteLength(value);
+    const retainedBytes = measure(retainedActions);
+    if (baseBytes + retainedBytes <= targetBytes) return state;
 
     const avgPerAction = Math.max(1, Math.ceil(retainedBytes / retainedActions.length));
-    const overage = baseBytes + retainedBytes - limits.maxBytes;
+    const overage = baseBytes + retainedBytes - targetBytes;
     const estimatedRemovals = Math.min(
         retainedActions.length,
         Math.ceil(overage / avgPerAction) + 1,
     );
     let trimmed = retainedActions.slice(estimatedRemovals);
     let iterations = 0;
-    while (
-        trimmed.length > 0 &&
-        baseBytes + byteLength(trimmed) > limits.maxBytes &&
-        iterations++ < 32
-    ) {
+    while (trimmed.length > 0 && baseBytes + measure(trimmed) > targetBytes && iterations++ < 32) {
         trimmed = trimmed.slice(Math.max(1, Math.ceil(trimmed.length / 10)));
     }
     while (
         trimmed.length > 1 &&
-        baseBytes + byteLength(trimmed) < limits.maxBytes - avgPerAction &&
+        baseBytes + measure(trimmed) < targetBytes - avgPerAction &&
         iterations++ < 32
     ) {
         const reAdd = retainedActions.length - trimmed.length - 1;
         if (reAdd < 0) break;
         const candidate = retainedActions.slice(reAdd);
-        if (baseBytes + byteLength(candidate) > limits.maxBytes) break;
+        if (baseBytes + measure(candidate) > targetBytes) break;
         trimmed = candidate;
     }
     const removed = retainedActions.length - trimmed.length;
     if (removed <= 0) return state;
     const newFloor = trimmed[0]?.serverSeq ?? state.serverSeq;
     limits.onDiagnostic?.(
-        `[ahp] trimmed ${removed} retained action(s) to stay under the ${limits.maxBytes}-byte persistence cap (new floor serverSeq=${newFloor})`,
+        `[ahp] trimmed ${removed} retained action(s) to stay under the ${targetBytes}-byte reconnect-cache target (new floor serverSeq=${newFloor})`,
     );
     return { ...state, retainedActions: trimmed };
 }
