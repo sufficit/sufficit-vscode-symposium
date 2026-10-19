@@ -51,6 +51,8 @@ export class AhpPersistence {
     private readonly compactEveryActions: number;
     private readonly autoCompact: boolean;
     private lastSavedSequence = 0;
+    /** Highest sequence that still needs to be captured after a failed save. */
+    private retryPendingSequence: number | undefined;
     private pendingSaves: Array<{
         exported: AhpRuntimeExport;
         resolve: () => void;
@@ -105,7 +107,6 @@ export class AhpPersistence {
     /** Captures a consistent snapshot now, then serializes and writes asynchronously. */
     save(runtime: AhpHostRuntime): Promise<void> {
         const exported = runtime.exportState();
-        this.lastSavedSequence = exported.serverSeq;
         const promise = new Promise<void>((resolve, reject) => {
             this.pendingSaves.push({ exported, resolve, reject });
         });
@@ -128,12 +129,60 @@ export class AhpPersistence {
             const batch = this.pendingSaves.splice(0);
             // Intermediate captures in the same burst are redundant: write the
             // newest complete runtime and resolve every waiter only afterwards.
-            const latest = batch[batch.length - 1];
+            let candidateIndex = batch.length - 1;
+            let serialized: string | undefined;
+            let serializationError: unknown;
+            while (candidateIndex >= 0) {
+                try {
+                    serialized = this.serialize(batch[candidateIndex].exported);
+                    break;
+                } catch (error) {
+                    serializationError ??= error;
+                    candidateIndex--;
+                }
+            }
+
+            if (serialized === undefined) {
+                this.retryPendingSequence = Math.max(
+                    this.retryPendingSequence ?? 0,
+                    batch[batch.length - 1].exported.serverSeq,
+                );
+                this.options.onDiagnostic?.(
+                    `[ahp] save failed: ${serializationError instanceof Error ? serializationError.message : String(serializationError)}`,
+                );
+                for (const request of batch) request.reject(serializationError);
+                continue;
+            }
+
             try {
-                const serialized = this.serialize(latest.exported);
                 await this.writePayload(serialized);
-                for (const request of batch) request.resolve();
+                const savedSequence = batch[candidateIndex].exported.serverSeq;
+                this.lastSavedSequence = savedSequence;
+                if (candidateIndex < batch.length - 1) {
+                    this.retryPendingSequence = Math.max(
+                        this.retryPendingSequence ?? 0,
+                        batch[batch.length - 1].exported.serverSeq,
+                    );
+                } else if (
+                    this.retryPendingSequence !== undefined &&
+                    savedSequence >= this.retryPendingSequence
+                ) {
+                    this.retryPendingSequence = undefined;
+                }
+                for (let index = 0; index <= candidateIndex; index++) batch[index].resolve();
+                for (let index = candidateIndex + 1; index < batch.length; index++) {
+                    batch[index].reject(serializationError);
+                }
+                if (candidateIndex < batch.length - 1) {
+                    this.options.onDiagnostic?.(
+                        `[ahp] newest save capture skipped after serialization failure: ${serializationError instanceof Error ? serializationError.message : String(serializationError)}`,
+                    );
+                }
             } catch (error) {
+                this.retryPendingSequence = Math.max(
+                    this.retryPendingSequence ?? 0,
+                    batch[batch.length - 1].exported.serverSeq,
+                );
                 this.options.onDiagnostic?.(
                     `[ahp] save failed: ${error instanceof Error ? error.message : String(error)}`,
                 );
@@ -258,8 +307,12 @@ export class AhpPersistence {
     }
 
     maybeSave(runtime: AhpHostRuntime): boolean {
-        if (runtime.store.serverSeq - this.lastSavedSequence < this.compactEveryActions)
+        if (
+            this.retryPendingSequence === undefined &&
+            runtime.store.serverSeq - this.lastSavedSequence < this.compactEveryActions
+        ) {
             return false;
+        }
         void this.save(runtime).catch(() => undefined);
         return true;
     }
