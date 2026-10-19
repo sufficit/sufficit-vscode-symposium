@@ -20,7 +20,7 @@ Disk reads/writes and shared-file-lock waiting use promises. The lock heartbeats
 
 ## Real-state diagnosis (read-only, aggregate)
 
-`node scripts/diagnose-ahp-state.cjs <state.json>` prints only counts and sizes. On the author's real 20,527,971-byte state (not modified): 289 sessions, 579 snapshots; chat snapshots = 19,186,026 B (93%), session/other snapshots 188 KB, retained actions 2,653 / 1,051,180 B. 277 turns in total (max 1 per chat); `responseParts` = 18,928,784 B of the turn bytes, i.e. the size is tool-call/response payload text, not turn count or the action log. Reading took 24.5 ms and `JSON.parse` 39.3 ms synchronously in a standalone script. Hence the bounding of tool/reasoning string leaves rather than dropping history.
+`node scripts/diagnose-ahp-state.cjs <state.json>` prints only counts and sizes. Latest read-only sample (diagnostic JSON generated 2026-10-19 14:43:17 UTC): 20,366,392 B, 289 sessions and 579 snapshots; chat snapshots total 19,541,011 B (96%), other snapshots 188,446 B, root 164 B, retained actions 734 / 534,608 B. The chat snapshots contain 277 turns (at most one per chat), but `responseParts` account for 18,900,674 B (92.8% of the whole file): 6,267 tool calls consume 17,629,090 B, versus 2,122 markdown parts at 1,133,165 B, 195 reasoning parts at 66,029 B, and 304 notice parts at 63,213 B. The largest aggregate tool-call fields are `content` 6,086,787 B, `result` 4,649,989 B, `toolInput` 1,888,975 B, and `invocationMessage` 1,673,645 B. This identifies verbose tool payloads, not session/turn count or the retained action log, as the size driver. The diagnostic script's synchronous read/parse measured 24.5/40.9 ms. An earlier read-only sample was 20,527,971 B; the file changed between samples while the application was active. This agent did not write the real state file; the cause of that change is not established. The size-bounding therefore targets tool-call payloads first and preserves session and turn structure.
 
 ## Validation and benchmark
 
@@ -28,18 +28,18 @@ Disk reads/writes and shared-file-lock waiting use promises. The lock heartbeats
 
 Measured (medians of 5 isolated runs, local tmp filesystem):
 
-| Measurement                    |           Baseline f1c4230 |          This branch |
-| ------------------------------ | -------------------------: | -------------------: |
-| Save completion                |                   137.8 ms |              64.7 ms |
-| Save max timer gap             |                   165.2 ms |              21.9 ms |
-| Save peak RSS growth           |                    49.4 MB |              40.9 MB |
-| Bytes written                  |                  8,387,671 |            1,342,135 |
-| Sessions / turns kept          |                   20 / 412 |           20 / 1,000 |
-| Load (20.3 MB file) completion |                   150.0 ms |             106.6 ms |
-| Load max timer gap             |                   150.3 ms |              12.3 ms |
-| Load peak RSS growth           |                   105.7 MB |             102.7 MB |
-| Occupied lock (50 ms)          | timed out after 2,018.7 ms | saved after 154.1 ms |
+| Measurement                         |            Baseline f1c4230 |           This branch |
+| ----------------------------------- | --------------------------: | --------------------: |
+| Save completion                     |                   137.80 ms |              64.66 ms |
+| Save max timer gap                  |                   165.18 ms |              21.89 ms |
+| Save peak RSS growth                |                49,364,992 B |          40,931,328 B |
+| Bytes written                       |                   8,387,671 |             1,342,135 |
+| Sessions / turns kept               |                    20 / 412 |            20 / 1,000 |
+| Load (20,325,135 B file) completion |                   149.95 ms |             106.57 ms |
+| Load max timer gap                  |                   150.30 ms |              12.29 ms |
+| Load peak RSS growth                |               105,705,472 B |         102,703,104 B |
+| Occupied lock (50 ms)               | timed out after 2,018.68 ms | saved after 154.08 ms |
 
-Caveats: synthetic uniform fixture; tool text compresses to markers so the size gain is fixture-specific; peak RSS is process-wide `maxRSS` and noisy; the remaining first-save serialization is chunked but each chat state is still stringified synchronously (largest real chat 708 KB); worker start-up adds a few ms for files < 1 MiB, which therefore are parsed inline. Real tool outputs beyond 1,024 characters are not recoverable from the reconnect cache; the authoritative transcripts remain in each provider's own storage.
+Caveats: synthetic uniform fixture; tool text compresses to markers so the size gain is fixture-specific; peak RSS is process-wide `maxRSS` and noisy; the remaining first-save serialization is chunked but each chat state is still stringified synchronously (largest real chat 708 KB); worker start-up would add a few ms to small files; files < 1 MiB are therefore parsed inline. Real tool outputs beyond 1,024 characters are not recoverable from the reconnect cache; the authoritative transcripts remain in each provider's own storage.
 
 Tests (`ahpPersistenceLarge.test.ts`, `codexTranscript.test.ts`, existing suites): 20 MB size bound with all turns preserved, event-loop gap on save and load, incremental re-save, debounce coalescing, fail-closed on an unmergeable valid state (file bytes unchanged, no temp files), quarantine of unparseable state, failed save not advancing the sequence, 4 concurrent writer processes without lost sessions, Codex cache invalidation on size change with preserved mtime.
