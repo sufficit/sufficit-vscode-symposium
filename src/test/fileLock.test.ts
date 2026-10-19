@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
-import { withFileLock } from "../fileLock";
+import { withFileLock, writeFileLockHeartbeat } from "../fileLock";
 
 test("async file lock serializes peers without blocking timers", async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-file-lock-"));
@@ -38,6 +38,71 @@ test("async file lock serializes peers without blocking timers", async () => {
         await assert.rejects(fs.access(`${file}.lock`), { code: "ENOENT" });
     } finally {
         releaseFirst?.();
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("async file lock timestamps ownership when contention ends, not when waiting starts", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-file-lock-wait-time-"));
+    const file = path.join(directory, "state.json");
+    let releaseFirst!: () => void;
+    let markFirstAcquired!: () => void;
+    const firstAcquired = new Promise<void>((resolve) => (markFirstAcquired = resolve));
+    const firstGate = new Promise<void>((resolve) => (releaseFirst = resolve));
+    try {
+        const first = withFileLock(file, async () => {
+            markFirstAcquired();
+            await firstGate;
+        });
+        await firstAcquired;
+        let acquiredAt = 0;
+        const second = withFileLock(file, async () => {
+            const owner = JSON.parse(
+                await fs.readFile(path.join(`${file}.lock`, "owner.json"), "utf8"),
+            ) as {
+                createdAt: number;
+            };
+            acquiredAt = owner.createdAt;
+        });
+        await new Promise<void>((resolve) => setTimeout(resolve, 100));
+        const releasedAt = Date.now();
+        releaseFirst();
+        await Promise.all([first, second]);
+        assert.ok(
+            acquiredAt >= releasedAt,
+            `owner timestamp ${acquiredAt} predates acquisition ${releasedAt}`,
+        );
+    } finally {
+        releaseFirst?.();
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("a resumed old heartbeat cannot overwrite a replacement lock owner", async () => {
+    const directory = await fs.mkdtemp(
+        path.join(os.tmpdir(), "symposium-file-lock-heartbeat-fence-"),
+    );
+    const lockPath = path.join(directory, "state.json.lock");
+    try {
+        await fs.mkdir(lockPath);
+        await fs.writeFile(
+            path.join(lockPath, "owner.json"),
+            JSON.stringify({ token: "successor", pid: process.pid, createdAt: Date.now() }),
+        );
+        // Model a prior owner's heartbeat that passed its token check before
+        // recovery replaced the directory, then resumed after the successor arrived.
+        await writeFileLockHeartbeat(lockPath, "stale-owner", Date.now());
+        const current = JSON.parse(
+            await fs.readFile(path.join(lockPath, "owner.json"), "utf8"),
+        ) as {
+            token: string;
+        };
+        assert.equal(current.token, "successor");
+        const staleLease = JSON.parse(
+            await fs.readFile(path.join(lockPath, "heartbeat.stale-owner.json"), "utf8"),
+        ) as { token: string };
+        assert.equal(staleLease.token, "stale-owner");
+    } finally {
         await fs.rm(directory, { recursive: true, force: true });
     }
 });

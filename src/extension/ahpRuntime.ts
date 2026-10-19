@@ -42,6 +42,18 @@ export async function registerExtensionAhpRuntime(
         },
     );
     projectionRef.current = projection;
+    let shutdownPromise: Promise<void> | undefined;
+    const shutdown = (): Promise<void> => {
+        if (!shutdownPromise) {
+            shutdownPromise = projection.dispose().catch((error) => {
+                log(
+                    `[ahp] dispose failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+                throw error;
+            });
+        }
+        return shutdownPromise;
+    };
     const diagnosticThrottle = new DiagnosticThrottle();
     const logDiagnostics = (force = false) => {
         if (!vscode.workspace.getConfiguration("symposium.ahp").get("diagnostics", false)) return;
@@ -55,14 +67,10 @@ export async function registerExtensionAhpRuntime(
         logDiagnostics();
     };
     context.subscriptions.push(api.onSessionsChanged(sync), {
+        // Disposable.dispose is synchronous by VS Code contract. deactivate()
+        // awaits this same memoized promise through the registered shutdown task.
         dispose: () => {
-            void projection
-                .dispose()
-                .catch((error) =>
-                    log(
-                        `[ahp] dispose failed: ${error instanceof Error ? error.message : String(error)}`,
-                    ),
-                );
+            void shutdown().catch(() => undefined);
         },
     });
     context.subscriptions.push(
@@ -78,6 +86,6 @@ export async function registerExtensionAhpRuntime(
         runtime: () => projection.runtime,
         sync,
         rebuild: (provider, sessionId) => projection.rebuild(provider, sessionId),
-        shutdown: () => projection.dispose(),
+        shutdown,
     };
 }

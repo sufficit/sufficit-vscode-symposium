@@ -33,8 +33,9 @@ export async function withFileLock<T>(file: string, action: () => Promise<T> | T
         token: randomUUID(),
         hostname: os.hostname(),
         pid: process.pid,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        // Set only after this contender has actually acquired the directory.
+        createdAt: 0,
+        updatedAt: 0,
     };
     const deadline = Date.now() + LOCK_WAIT_MS;
     for (;;) {
@@ -42,6 +43,8 @@ export async function withFileLock<T>(file: string, action: () => Promise<T> | T
         try {
             await fs.promises.mkdir(lockPath, { mode: 0o700 });
             created = true;
+            owner.createdAt = Date.now();
+            owner.updatedAt = owner.createdAt;
             await fs.promises.writeFile(path.join(lockPath, "owner.json"), JSON.stringify(owner), {
                 encoding: "utf8",
                 mode: 0o600,
@@ -67,15 +70,15 @@ export async function withFileLock<T>(file: string, action: () => Promise<T> | T
         () => {
             owner.updatedAt = Date.now();
             heartbeat = heartbeat.then(async () => {
-                const temporary = path.join(lockPath, `owner.${owner.token}.tmp`);
                 try {
-                    // Never overwrite a lock another process took over after we stalled.
+                    // The owner check is only advisory: the directory could be replaced
+                    // immediately after it. Write a token-scoped lease file so a resumed
+                    // heartbeat can never rename over a successor's owner.json.
                     const current = await readOwnerAsync(lockPath);
                     if (current?.token !== owner.token) return;
-                    await fs.promises.writeFile(temporary, JSON.stringify(owner), { mode: 0o600 });
-                    await fs.promises.rename(temporary, path.join(lockPath, "owner.json"));
+                    await writeFileLockHeartbeat(lockPath, owner.token, owner.updatedAt);
                 } catch {
-                    await fs.promises.rm(temporary, { force: true }).catch(() => undefined);
+                    // Heartbeats are best effort; recovery expires the lease if they fail.
                 }
             });
         },
@@ -115,15 +118,47 @@ async function recoverStaleLockAsync(lockPath: string): Promise<void> {
     }
     try {
         const owner = await readOwnerAsync(lockPath);
+        const heartbeatAt = owner ? await readHeartbeatAsync(lockPath, owner.token) : undefined;
+        const lastSeenAt = heartbeatAt ?? owner?.updatedAt ?? owner?.createdAt;
         const stale = owner
             ? sameHost(owner)
                 ? !pidAlive(owner.pid)
-                : Date.now() - (owner.updatedAt ?? owner.createdAt) >= LOCK_STALE_MS
+                : lastSeenAt !== undefined && Date.now() - lastSeenAt >= LOCK_STALE_MS
             : (await lockAgeAsync(lockPath)) >= LOCK_STALE_MS;
         if (stale) await fs.promises.rm(lockPath, { recursive: true, force: true });
     } finally {
         await fs.promises.rm(recoveryPath, { recursive: true, force: true });
     }
+}
+
+/** Writes a lease update without ever replacing owner.json. Exported for focused race tests. */
+export async function writeFileLockHeartbeat(
+    lockPath: string,
+    token: string,
+    updatedAt: number,
+): Promise<void> {
+    const heartbeatPath = path.join(lockPath, `heartbeat.${token}.json`);
+    const temporary = path.join(lockPath, `heartbeat.${token}.${randomUUID()}.tmp`);
+    try {
+        await fs.promises.writeFile(temporary, JSON.stringify({ token, updatedAt }), {
+            mode: 0o600,
+        });
+        await fs.promises.rename(temporary, heartbeatPath);
+    } catch {
+        await fs.promises.rm(temporary, { force: true }).catch(() => undefined);
+    }
+}
+
+async function readHeartbeatAsync(lockPath: string, token: string): Promise<number | undefined> {
+    try {
+        const value = JSON.parse(
+            await fs.promises.readFile(path.join(lockPath, `heartbeat.${token}.json`), "utf8"),
+        ) as { token?: unknown; updatedAt?: unknown };
+        if (value.token === token && typeof value.updatedAt === "number") return value.updatedAt;
+    } catch {
+        // The owner may not have emitted its first heartbeat yet.
+    }
+    return undefined;
 }
 
 async function readOwnerAsync(lockPath: string): Promise<LockOwner | undefined> {
