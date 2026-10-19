@@ -66,3 +66,30 @@ test("async file lock recovers an abandoned owner", async () => {
         await fs.rm(directory, { recursive: true, force: true });
     }
 });
+
+test("async file lock expires an abandoned recovery marker", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-file-lock-recover-"));
+    const file = path.join(directory, "state.json");
+    const lockPath = `${file}.lock`;
+    const recoveryPath = `${lockPath}.recover`;
+    try {
+        await fs.mkdir(lockPath);
+        await fs.writeFile(
+            path.join(lockPath, "owner.json"),
+            JSON.stringify({ token: "abandoned", pid: 2_000_000_000, createdAt: Date.now() }),
+        );
+        // A contender died after creating the recovery marker, long ago.
+        await fs.mkdir(recoveryPath);
+        const old = new Date(Date.now() - 120_000);
+        await fs.utimes(recoveryPath, old, old);
+        let ran = false;
+        await withFileLock(file, () => {
+            ran = true;
+        });
+        assert.equal(ran, true);
+        await assert.rejects(fs.access(lockPath), { code: "ENOENT" });
+        await assert.rejects(fs.access(recoveryPath), { code: "ENOENT" });
+    } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+});

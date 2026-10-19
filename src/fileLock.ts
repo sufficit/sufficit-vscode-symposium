@@ -93,7 +93,17 @@ async function recoverStaleLockAsync(lockPath: string): Promise<void> {
     try {
         await fs.promises.mkdir(recoveryPath, { mode: 0o700 });
     } catch (error) {
-        if (isFsError(error, "EEXIST") || isFsError(error, "ENOENT")) return;
+        if (isFsError(error, "EEXIST")) {
+            // A contender that died mid-recovery would otherwise block every
+            // later recovery forever; expire its marker like a stale lock.
+            if ((await lockAgeAsync(recoveryPath)) >= LOCK_STALE_MS) {
+                await fs.promises
+                    .rm(recoveryPath, { recursive: true, force: true })
+                    .catch(() => undefined);
+            }
+            return;
+        }
+        if (isFsError(error, "ENOENT")) return;
         throw error;
     }
     try {
