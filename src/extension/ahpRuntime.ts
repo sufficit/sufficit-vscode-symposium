@@ -14,11 +14,11 @@ export interface ExtensionAhpRuntime {
 }
 
 /** Owns activation, configuration and disposal of the shared AHP runtime. */
-export function registerExtensionAhpRuntime(
+export async function registerExtensionAhpRuntime(
     context: vscode.ExtensionContext,
     api: SymposiumApi,
     log: (message: string) => void,
-): ExtensionAhpRuntime {
+): Promise<ExtensionAhpRuntime> {
     const config = vscode.workspace.getConfiguration("symposium.ahp");
     const projectionRef: { current?: AhpProjectionRuntime } = {};
     const persistence = new AhpPersistence(context.globalStorageUri.fsPath, {
@@ -30,10 +30,11 @@ export function registerExtensionAhpRuntime(
             projectionRef.current?.runtime.snapshots(resources).snapshots ?? [],
         onDiagnostic: (message) => log(`[ahp] ${message}`),
     });
+    const restored = await persistence.load();
     const projection = new AhpProjectionRuntime(
         { list: api.sessions.list, follow: api.sessions.follow },
         {
-            restored: persistence.load(),
+            restored,
             persistence,
             onDiagnostic: (message) => log(`[ahp] ${message}`),
         },
@@ -52,7 +53,15 @@ export function registerExtensionAhpRuntime(
         logDiagnostics();
     };
     context.subscriptions.push(api.onSessionsChanged(sync), {
-        dispose: () => projection.dispose(),
+        dispose: () => {
+            void projection
+                .dispose()
+                .catch((error) =>
+                    log(
+                        `[ahp] dispose failed: ${error instanceof Error ? error.message : String(error)}`,
+                    ),
+                );
+        },
     });
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {

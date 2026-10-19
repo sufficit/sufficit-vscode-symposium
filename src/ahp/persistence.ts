@@ -1,7 +1,7 @@
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import type { Snapshot, URI } from "@microsoft/agent-host-protocol";
-import { withFileLockSync } from "../fileLock";
+import { withFileLock } from "../fileLock";
 import type { AhpHostRuntime, AhpRuntimeExport } from "./hostRuntime";
 import { mergeRuntimeExports } from "./persistenceMerge";
 import {
@@ -51,6 +51,12 @@ export class AhpPersistence {
     private readonly compactEveryActions: number;
     private readonly autoCompact: boolean;
     private lastSavedSequence = 0;
+    private pendingSaves: Array<{
+        exported: AhpRuntimeExport;
+        resolve: () => void;
+        reject: (error: unknown) => void;
+    }> = [];
+    private drainPromise: Promise<void> | undefined;
 
     constructor(
         root: string,
@@ -64,83 +70,79 @@ export class AhpPersistence {
         this.autoCompact = options.autoCompact ?? true;
     }
 
-    load(): AhpRuntimeExport | undefined {
-        if (!fs.existsSync(this.file)) return undefined;
+    async load(): Promise<AhpRuntimeExport | undefined> {
         try {
-            const stat = fs.statSync(this.file);
-            if (stat.size > this.maxBytes)
-                throw new Error("AHP persistence exceeds total byte limit");
-            const parsed = JSON.parse(fs.readFileSync(this.file, "utf8")) as unknown;
-            const envelope = validateEnvelope(parsed, this.maxSessionBytes);
-            const runtime = this.autoCompact
-                ? compactHistoricalSnapshots(envelope.runtime, this.compactionLimits())
-                : envelope.runtime;
-            this.lastSavedSequence = runtime.serverSeq;
-            return runtime;
+            await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
+            return await withFileLock(this.file, async () => {
+                try {
+                    const contents = await fs.readFile(this.file, "utf8");
+                    if (Buffer.byteLength(contents) > this.maxBytes) {
+                        throw new Error("AHP persistence exceeds total byte limit");
+                    }
+                    const envelope = validateEnvelope(
+                        JSON.parse(contents) as unknown,
+                        this.maxSessionBytes,
+                    );
+                    const runtime = this.autoCompact
+                        ? compactHistoricalSnapshots(envelope.runtime, this.compactionLimits())
+                        : envelope.runtime;
+                    this.lastSavedSequence = runtime.serverSeq;
+                    return runtime;
+                } catch (error) {
+                    if (isMissingFile(error)) return undefined;
+                    await this.quarantine(error);
+                    return undefined;
+                }
+            });
         } catch (error) {
-            this.quarantine(error);
+            this.options.onDiagnostic?.(
+                `[ahp] load failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
             return undefined;
         }
     }
 
-    save(runtime: AhpHostRuntime): void {
-        // Capture the exported state synchronously (it returns shallow copies of
-        // the arrays, safe to process off-tick), then defer the expensive
-        // serialization, validation and disk I/O to a later microtask so the
-        // extension host stays responsive while a 10+ MB state.json is built.
+    /** Captures a consistent snapshot now, then serializes and writes asynchronously. */
+    save(runtime: AhpHostRuntime): Promise<void> {
         const exported = runtime.exportState();
         this.lastSavedSequence = exported.serverSeq;
-        this.scheduleSerialize(exported);
+        const promise = new Promise<void>((resolve, reject) => {
+            this.pendingSaves.push({ exported, resolve, reject });
+        });
+        this.startDrain();
+        return promise;
     }
 
-    /**
-     * Synchronous save that serializes, validates and writes immediately on the
-     * call stack. Used by tests that assert it throws on byte-limit violations
-     * (the deferred {@link save} swallows those errors into diagnostics) and as
-     * the flush primitive for {@link flushSync}.
-     */
-    saveSync(runtime: AhpHostRuntime): void {
-        const exported = runtime.exportState();
-        this.lastSavedSequence = exported.serverSeq;
-        this.serializeAndWrite(exported);
+    private startDrain(): void {
+        if (this.drainPromise) return;
+        this.drainPromise = new Promise<void>((resolve) => setImmediate(resolve))
+            .then(() => this.drain())
+            .finally(() => {
+                this.drainPromise = undefined;
+                if (this.pendingSaves.length) this.startDrain();
+            });
     }
 
-    private pendingExport: AhpRuntimeExport | undefined;
-    private serializeInFlight = false;
-
-    /**
-     * Coalesces rapid save bursts (e.g. a history page loading many turns) into
-     * a single deferred serialization+write. The whole pipeline — re-snapshot,
-     * redact, validate, stringify, trim, write — runs off the call stack via
-     * setImmediate, so the host keeps handling webview messages while it works.
-     */
-    private scheduleSerialize(exported: AhpRuntimeExport): void {
-        this.pendingExport = exported;
-        if (this.serializeInFlight) return;
-        this.serializeInFlight = true;
-        setImmediate(() => {
-            const state = this.pendingExport;
-            this.pendingExport = undefined;
-            if (!state) {
-                this.serializeInFlight = false;
-                return;
-            }
+    private async drain(): Promise<void> {
+        while (this.pendingSaves.length) {
+            const batch = this.pendingSaves.splice(0);
+            // Intermediate captures in the same burst are redundant: write the
+            // newest complete runtime and resolve every waiter only afterwards.
+            const latest = batch[batch.length - 1];
             try {
-                this.serializeAndWrite(state);
+                const serialized = this.serialize(latest.exported);
+                await this.writePayload(serialized);
+                for (const request of batch) request.resolve();
             } catch (error) {
                 this.options.onDiagnostic?.(
                     `[ahp] save failed: ${error instanceof Error ? error.message : String(error)}`,
                 );
-            } finally {
-                this.serializeInFlight = false;
-                if (this.pendingExport !== undefined) {
-                    this.scheduleSerialize(this.pendingExport);
-                }
+                for (const request of batch) request.reject(error);
             }
-        });
+        }
     }
 
-    private serializeAndWrite(exported: AhpRuntimeExport): void {
+    private serialize(exported: AhpRuntimeExport): string {
         const reSnapshotted = this.autoCompact
             ? resnapshotOversizedSessions(exported, this.compactionLimits())
             : exported;
@@ -157,113 +159,64 @@ export class AhpPersistence {
         };
         let serialized = JSON.stringify(envelope);
         if (Buffer.byteLength(serialized) > this.maxBytes) {
-            if (!this.autoCompact) {
-                throw new Error("AHP persistence exceeds total byte limit");
-            }
+            if (!this.autoCompact) throw new Error("AHP persistence exceeds total byte limit");
             const trimmed = trimRetained(state, this.compactionLimits());
-            const trimmedEnvelope: PersistenceEnvelope = { ...envelope, runtime: trimmed };
-            serialized = JSON.stringify(trimmedEnvelope);
+            serialized = JSON.stringify({ ...envelope, runtime: trimmed });
             if (Buffer.byteLength(serialized) > this.maxBytes) {
                 throw new Error("AHP persistence exceeds total byte limit");
             }
         }
-        this.scheduleWrite(serialized);
+        return serialized;
     }
 
-    private writePending: string | undefined;
-    private writeInFlight = false;
-
-    /**
-     * Coalesces rapid save bursts (e.g. a history page loading many turns) into
-     * a single disk write and runs the actual I/O off the call stack so the
-     * extension host does not freeze while a large state.json is flushed.
-     */
-    private scheduleWrite(serialized: string): void {
-        this.writePending = serialized;
-        if (this.writeInFlight) return;
-        this.writeInFlight = true;
-        const directory = this.directory;
-        setImmediate(() => {
-            const payload = this.writePending ?? serialized;
-            this.writePending = undefined;
-            try {
-                fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-                this.writePayload(payload);
-            } catch (error) {
-                this.options.onDiagnostic?.(
-                    `[ahp] write failed: ${error instanceof Error ? error.message : String(error)}`,
-                );
-            } finally {
-                this.writeInFlight = false;
-                if (this.writePending !== undefined) this.scheduleWrite(this.writePending);
-            }
-        });
-    }
-
-    /**
-     * Synchronously drains any pending serialization and writes the current
-     * state to disk. Used by tests and by dispose() to guarantee the file is
-     * current before the process exits or an assertion reads it back.
-     */
-    flushSync(): void {
-        // Drain any pending export that hasn't been serialized yet.
-        if (this.pendingExport !== undefined) {
-            const pending = this.pendingExport;
-            this.pendingExport = undefined;
-            this.serializeInFlight = false;
-            try {
-                this.serializeAndWrite(pending);
-            } catch {
-                /* best-effort flush */
-            }
-        }
-        if (this.writePending === undefined && !this.writeInFlight) return;
-        // Drain the pending payload synchronously.
-        const payload = this.writePending;
-        this.writePending = undefined;
-        this.writeInFlight = false;
-        if (payload !== undefined) {
-            fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-            this.writePayload(payload);
+    /** Waits until all captured saves have either completed or failed. */
+    async flush(): Promise<void> {
+        while (this.drainPromise || this.pendingSaves.length) {
+            if (this.drainPromise) await this.drainPromise;
+            else this.startDrain();
         }
     }
 
-    /** Serializes the cross-process read/merge/write transaction. */
-    private writePayload(localPayload: string): void {
-        withFileLockSync(this.file, () => {
-            const payload = this.mergePersisted(localPayload);
-            const temporary = path.join(this.directory, `state.${process.pid}.${Date.now()}.tmp`);
+    async dispose(runtime?: AhpHostRuntime): Promise<void> {
+        if (runtime) await this.save(runtime);
+        await this.flush();
+    }
+
+    /** Serializes the cross-process read/merge/write transaction asynchronously. */
+    private async writePayload(localPayload: string): Promise<void> {
+        await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
+        await withFileLock(this.file, async () => {
+            const payload = await this.mergePersisted(localPayload);
+            const temporary = path.join(
+                this.directory,
+                `state.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`,
+            );
             try {
-                fs.writeFileSync(temporary, payload, { encoding: "utf8", mode: 0o600 });
-                fs.renameSync(temporary, this.file);
+                await fs.writeFile(temporary, payload, { encoding: "utf8", mode: 0o600 });
+                await fs.rename(temporary, this.file);
                 try {
-                    fs.chmodSync(this.file, 0o600);
+                    await fs.chmod(this.file, 0o600);
                 } catch {
                     // Some remote filesystems do not expose POSIX mode changes.
                 }
             } finally {
-                try {
-                    fs.rmSync(temporary, { force: true });
-                } catch {
-                    /* already renamed */
-                }
+                await fs.rm(temporary, { force: true }).catch(() => undefined);
             }
         });
     }
 
-    /**
-     * Preserves sessions projected by sibling code-server Extension Hosts.
-     * Each browser owns an independent runtime, so replacing state.json with
-     * only the local runtime loses ephemeral AHP ids and their chat snapshots.
-     */
-    private mergePersisted(localPayload: string): string {
-        if (!fs.existsSync(this.file)) return localPayload;
+    /** Preserves sessions projected by sibling code-server Extension Hosts. */
+    private async mergePersisted(localPayload: string): Promise<string> {
+        let persistedContents: string;
+        try {
+            persistedContents = await fs.readFile(this.file, "utf8");
+        } catch (error) {
+            if (isMissingFile(error)) return localPayload;
+            throw error;
+        }
         try {
             const local = validateEnvelope(JSON.parse(localPayload), this.maxSessionBytes);
-            const persisted = validateEnvelope(
-                JSON.parse(fs.readFileSync(this.file, "utf8")),
-                this.maxSessionBytes,
-            );
+            const persisted = validateEnvelope(JSON.parse(persistedContents), this.maxSessionBytes);
             const merged = mergeRuntimeExports(local.runtime, persisted.runtime);
             if (!merged.changed) return localPayload;
             let runtime = compactHistoricalSnapshots(merged.runtime, this.compactionLimits());
@@ -305,31 +258,32 @@ export class AhpPersistence {
     }
 
     maybeSave(runtime: AhpHostRuntime): boolean {
-        if (runtime.store.serverSeq - this.lastSavedSequence < this.compactEveryActions) {
+        if (runtime.store.serverSeq - this.lastSavedSequence < this.compactEveryActions)
             return false;
-        }
-        this.save(runtime);
+        void this.save(runtime).catch(() => undefined);
         return true;
     }
 
-    private quarantine(error: unknown): void {
+    private async quarantine(error: unknown): Promise<void> {
         const reason = error instanceof Error ? error.message : String(error);
-        this.options.onDiagnostic?.(`AHP persistence ignored: ${reason}`);
-        if (!fs.existsSync(this.file)) return;
-        fs.mkdirSync(this.directory, { recursive: true, mode: 0o700 });
+        this.options.onDiagnostic?.(`[ahp] persistence ignored: ${reason}`);
         const suffix =
             reason.includes("schema") || reason.includes("protocol") ? "incompatible" : "corrupt";
         const target = path.join(this.directory, `state.${suffix}.${Date.now()}.json`);
         try {
-            fs.renameSync(this.file, target);
+            await fs.rename(this.file, target);
         } catch (renameError) {
-            this.options.onDiagnostic?.(
-                `AHP persistence quarantine failed: ${
-                    renameError instanceof Error ? renameError.message : String(renameError)
-                }`,
-            );
+            if (!isMissingFile(renameError)) {
+                this.options.onDiagnostic?.(
+                    `[ahp] persistence quarantine failed: ${renameError instanceof Error ? renameError.message : String(renameError)}`,
+                );
+            }
         }
     }
+}
+
+function isMissingFile(error: unknown): boolean {
+    return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function redactRuntime(runtime: AhpRuntimeExport): AhpRuntimeExport {

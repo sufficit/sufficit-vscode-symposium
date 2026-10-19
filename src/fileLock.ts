@@ -6,91 +6,141 @@ interface LockOwner {
     token: string;
     pid: number;
     createdAt: number;
+    updatedAt?: number;
 }
 
-const LOCK_WAIT_MS = 2_000;
+// Allow sibling hosts to finish large snapshots on slower shared filesystems.
+const LOCK_WAIT_MS = 30_000;
 const LOCK_RETRY_MS = 20;
 const LOCK_STALE_MS = 30_000;
 
 /**
- * Runs one short filesystem transaction under a machine-wide lock.
+ * Runs one filesystem transaction under a machine-wide lock without blocking
+ * the extension-host event loop.
  *
  * code-server starts one Extension Host per browser connection, while those
  * hosts share globalStorage. Atomic rename protects readers from partial JSON,
  * but it does not protect a read/merge/write transaction from lost updates.
+ * The owner file is heartbeated while the action runs so a slow but live
+ * transaction is never treated as stale; a crashed owner (dead pid or no
+ * heartbeat for LOCK_STALE_MS) is recovered by exactly one contender.
  */
-export function withFileLockSync<T>(file: string, action: () => T): T {
+export async function withFileLock<T>(file: string, action: () => Promise<T> | T): Promise<T> {
     const lockPath = `${file}.lock`;
-    const owner: LockOwner = { token: randomUUID(), pid: process.pid, createdAt: Date.now() };
+    const owner: Required<LockOwner> = {
+        token: randomUUID(),
+        pid: process.pid,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+    };
     const deadline = Date.now() + LOCK_WAIT_MS;
     for (;;) {
+        let created = false;
         try {
-            fs.mkdirSync(lockPath, { mode: 0o700 });
-            fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify(owner), {
+            await fs.promises.mkdir(lockPath, { mode: 0o700 });
+            created = true;
+            await fs.promises.writeFile(path.join(lockPath, "owner.json"), JSON.stringify(owner), {
                 encoding: "utf8",
                 mode: 0o600,
             });
             break;
         } catch (error) {
+            if (created) {
+                await fs.promises
+                    .rm(lockPath, { recursive: true, force: true })
+                    .catch(() => undefined);
+            }
             if (!isFsError(error, "EEXIST")) throw error;
-            recoverStaleLock(lockPath);
+            await recoverStaleLockAsync(lockPath);
             if (Date.now() >= deadline) {
                 throw new Error(`Timed out waiting for shared file lock: ${file}`);
             }
-            wait(LOCK_RETRY_MS);
+            await delay(LOCK_RETRY_MS);
         }
     }
+
+    let heartbeat = Promise.resolve();
+    const timer = setInterval(
+        () => {
+            owner.updatedAt = Date.now();
+            heartbeat = heartbeat.then(async () => {
+                const temporary = path.join(lockPath, `owner.${owner.token}.tmp`);
+                try {
+                    await fs.promises.writeFile(temporary, JSON.stringify(owner), { mode: 0o600 });
+                    await fs.promises.rename(temporary, path.join(lockPath, "owner.json"));
+                } catch {
+                    await fs.promises.rm(temporary, { force: true }).catch(() => undefined);
+                }
+            });
+        },
+        Math.max(1_000, Math.floor(LOCK_STALE_MS / 3)),
+    );
+    timer.unref();
     try {
-        return action();
+        return await action();
     } finally {
-        release(lockPath, owner.token);
+        clearInterval(timer);
+        await heartbeat;
+        const current = await readOwnerAsync(lockPath);
+        if (current?.token === owner.token) {
+            await fs.promises.rm(lockPath, { recursive: true, force: true });
+        }
     }
 }
 
-function recoverStaleLock(lockPath: string): void {
-    const owner = readOwner(lockPath);
-    const stale = owner
-        ? !pidAlive(owner.pid) || Date.now() - owner.createdAt >= LOCK_STALE_MS
-        : lockAge(lockPath) >= LOCK_STALE_MS;
-    if (!stale) return;
+async function recoverStaleLockAsync(lockPath: string): Promise<void> {
+    const recoveryPath = `${lockPath}.recover`;
     try {
-        fs.rmSync(lockPath, { recursive: true, force: true });
-    } catch {
-        // Another process may have recovered/replaced it first.
+        await fs.promises.mkdir(recoveryPath, { mode: 0o700 });
+    } catch (error) {
+        if (isFsError(error, "EEXIST") || isFsError(error, "ENOENT")) return;
+        throw error;
+    }
+    try {
+        const owner = await readOwnerAsync(lockPath);
+        const stale = owner
+            ? !pidAlive(owner.pid) ||
+              Date.now() - (owner.updatedAt ?? owner.createdAt) >= LOCK_STALE_MS
+            : (await lockAgeAsync(lockPath)) >= LOCK_STALE_MS;
+        if (stale) await fs.promises.rm(lockPath, { recursive: true, force: true });
+    } finally {
+        await fs.promises.rm(recoveryPath, { recursive: true, force: true });
     }
 }
 
-function release(lockPath: string, token: string): void {
-    if (readOwner(lockPath)?.token !== token) return;
-    fs.rmSync(lockPath, { recursive: true, force: true });
-}
-
-function readOwner(lockPath: string): LockOwner | undefined {
+async function readOwnerAsync(lockPath: string): Promise<LockOwner | undefined> {
     try {
-        const value = JSON.parse(fs.readFileSync(path.join(lockPath, "owner.json"), "utf8")) as {
+        const value = JSON.parse(
+            await fs.promises.readFile(path.join(lockPath, "owner.json"), "utf8"),
+        ) as {
             token?: unknown;
             pid?: unknown;
             createdAt?: unknown;
+            updatedAt?: unknown;
         };
         if (
             typeof value.token === "string" &&
             typeof value.pid === "number" &&
-            typeof value.createdAt === "number"
-        ) {
+            typeof value.createdAt === "number" &&
+            (value.updatedAt === undefined || typeof value.updatedAt === "number")
+        )
             return value as LockOwner;
-        }
     } catch {
-        // mkdir and owner.json are two operations; a peer may observe the gap.
+        // A peer may observe mkdir before owner.json is written.
     }
     return undefined;
 }
 
-function lockAge(lockPath: string): number {
+async function lockAgeAsync(lockPath: string): Promise<number> {
     try {
-        return Date.now() - fs.statSync(lockPath).mtimeMs;
+        return Date.now() - (await fs.promises.stat(lockPath)).mtimeMs;
     } catch {
         return 0;
     }
+}
+
+function delay(milliseconds: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function pidAlive(pid: number): boolean {
@@ -100,11 +150,6 @@ function pidAlive(pid: number): boolean {
     } catch (error) {
         return !isFsError(error, "ESRCH");
     }
-}
-
-function wait(milliseconds: number): void {
-    const signal = new Int32Array(new SharedArrayBuffer(4));
-    Atomics.wait(signal, 0, 0, milliseconds);
 }
 
 function isFsError(error: unknown, code: string): error is NodeJS.ErrnoException {

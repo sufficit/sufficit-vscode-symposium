@@ -32,7 +32,7 @@ function runtimeWithSession(title = "Before restart"): AhpHostRuntime {
     return runtime;
 }
 
-test("AHP persistence round trips visible state and resumes sequence", () => {
+test("AHP persistence round trips visible state and resumes sequence", async () => {
     const directory = temporaryDirectory();
     try {
         const first = runtimeWithSession();
@@ -42,10 +42,10 @@ test("AHP persistence round trips visible state and resumes sequence", () => {
             title: "After restart",
         });
         const firstPersistence = new AhpPersistence(directory);
-        firstPersistence.save(first);
-        firstPersistence.flushSync();
+        await firstPersistence.save(first);
+        await firstPersistence.flush();
 
-        const restoredState = new AhpPersistence(directory).load();
+        const restoredState = await new AhpPersistence(directory).load();
         assert.ok(restoredState);
         const restored = new AhpHostRuntime({ restored: restoredState, replayCapacity: 20 });
         const restoredHandle = restored.handles()[0];
@@ -67,7 +67,7 @@ test("AHP persistence round trips visible state and resumes sequence", () => {
     }
 });
 
-test("AHP persistence quarantines corrupt and unsupported state", () => {
+test("AHP persistence quarantines corrupt and unsupported state", async () => {
     for (const fixture of [
         "{truncated",
         JSON.stringify({
@@ -84,12 +84,12 @@ test("AHP persistence quarantines corrupt and unsupported state", () => {
             const diagnostics: string[] = [];
 
             assert.equal(
-                new AhpPersistence(directory, {
+                await new AhpPersistence(directory, {
                     onDiagnostic: (message) => diagnostics.push(message),
                 }).load(),
                 undefined,
             );
-            assert.match(diagnostics[0], /AHP persistence ignored/);
+            assert.match(diagnostics[0], /\[ahp\] persistence ignored/);
             assert.equal(fs.existsSync(path.join(storage, "state.json")), false);
             assert.equal(
                 fs.readdirSync(storage).some((file) => file.startsWith("state.")),
@@ -101,16 +101,16 @@ test("AHP persistence quarantines corrupt and unsupported state", () => {
     }
 });
 
-test("AHP persistence enforces total and per-session limits", () => {
+test("AHP persistence enforces total and per-session limits", async () => {
     const directory = temporaryDirectory();
     try {
         const runtime = runtimeWithSession("x".repeat(2_000));
-        assert.throws(
-            () => new AhpPersistence(directory, { maxBytes: 128 }).saveSync(runtime),
+        await assert.rejects(
+            () => new AhpPersistence(directory, { maxBytes: 128 }).save(runtime),
             /total byte limit/,
         );
-        assert.throws(
-            () => new AhpPersistence(directory, { maxSessionBytes: 128 }).saveSync(runtime),
+        await assert.rejects(
+            () => new AhpPersistence(directory, { maxSessionBytes: 128 }).save(runtime),
             /session .* exceeds byte limit/,
         );
     } finally {
@@ -118,7 +118,7 @@ test("AHP persistence enforces total and per-session limits", () => {
     }
 });
 
-test("AHP persistence persists oversized session under raised per-session cap", () => {
+test("AHP persistence persists oversized session under raised per-session cap", async () => {
     // Reproduces the field incident: a single OpenAI session whose chat
     // snapshot grew past the legacy 4 MiB default. With the raised cap
     // (8 MiB default) save() succeeds without data loss and reloads cleanly.
@@ -143,9 +143,9 @@ test("AHP persistence persists oversized session under raised per-session cap", 
             maxSessionBytes: 8 * 1024 * 1024,
             onDiagnostic: (message) => diagnostics.push(message),
         });
-        persistence.save(runtime);
-        persistence.flushSync();
-        const restored = persistence.load();
+        await persistence.save(runtime);
+        await persistence.flush();
+        const restored = await persistence.load();
         assert.ok(restored, diagnostics.join("\n"));
         const restoredRuntime = new AhpHostRuntime({ restored, replayCapacity: 20 });
         const restoredChat = restoredRuntime.snapshot(restoredRuntime.handles()[0].chatResource)
@@ -157,7 +157,7 @@ test("AHP persistence persists oversized session under raised per-session cap", 
     }
 });
 
-test("AHP persistence auto-compacts by re-snapshotting oversized sessions", () => {
+test("AHP persistence auto-compacts by re-snapshotting oversized sessions", async () => {
     const directory = temporaryDirectory();
     try {
         const runtime = runtimeWithSession();
@@ -188,7 +188,7 @@ test("AHP persistence auto-compacts by re-snapshotting oversized sessions", () =
                 resources.map((resource) => runtime.snapshot(resource)),
             onDiagnostic: (message) => diagnostics.push(message),
         });
-        persistence.saveSync({ exportState: () => bloated } as AhpHostRuntime);
+        await persistence.save({ exportState: () => bloated } as AhpHostRuntime);
         assert.ok(
             diagnostics.some((message) => message.includes("re-snapshoted")),
             `expected a re-snapshot diagnostic, got: ${JSON.stringify(diagnostics)}`,
@@ -198,21 +198,21 @@ test("AHP persistence auto-compacts by re-snapshotting oversized sessions", () =
     }
 });
 
-test("AHP persistence still throws hard ceiling when fresh snapshot exceeds cap", () => {
+test("AHP persistence still throws hard ceiling when fresh snapshot exceeds cap", async () => {
     const directory = temporaryDirectory();
     try {
         // A genuinely oversized single snapshot cannot be shrunk by
         // re-snapshotting (the live state itself is too large), so the throw
         // remains the documented hard ceiling.
         const runtime = runtimeWithSession("x".repeat(2_000));
-        assert.throws(
+        await assert.rejects(
             () =>
                 new AhpPersistence(directory, {
                     maxSessionBytes: 128,
                     autoCompact: true,
                     snapshotResources: (resources) =>
                         resources.map((resource) => runtime.snapshot(resource)),
-                }).saveSync(runtime),
+                }).save(runtime),
             /session .* exceeds byte limit/,
         );
     } finally {
@@ -220,7 +220,7 @@ test("AHP persistence still throws hard ceiling when fresh snapshot exceeds cap"
     }
 });
 
-test("AHP persistence trims retained actions under the total cap", () => {
+test("AHP persistence trims retained actions under the total cap", async () => {
     const directory = temporaryDirectory();
     try {
         // Use a high replayCapacity so the retained buffer actually accumulates
@@ -252,13 +252,13 @@ test("AHP persistence trims retained actions under the total cap", () => {
             autoCompact: true,
             onDiagnostic: (message) => diagnostics.push(message),
         });
-        persistence.save(runtime);
-        persistence.flushSync();
+        await persistence.save(runtime);
+        await persistence.flush();
         assert.ok(
             diagnostics.some((message) => message.includes("trimmed")),
             `expected a trim diagnostic, got: ${JSON.stringify(diagnostics)}`,
         );
-        const restored = persistence.load();
+        const restored = await persistence.load();
         assert.ok(restored);
         assert.ok(
             restored.retainedActions.length < 500,
@@ -269,7 +269,7 @@ test("AHP persistence trims retained actions under the total cap", () => {
     }
 });
 
-test("AHP persistence compacts aggregate history when many sessions exceed the total cap", () => {
+test("AHP persistence compacts aggregate history when many sessions exceed the total cap", async () => {
     const directory = temporaryDirectory();
     try {
         const runtime = new AhpHostRuntime({ replayCapacity: 20 });
@@ -303,9 +303,9 @@ test("AHP persistence compacts aggregate history when many sessions exceed the t
             autoCompact: true,
             onDiagnostic: (message) => diagnostics.push(message),
         });
-        persistence.saveSync(runtime);
-        persistence.flushSync();
-        const restored = persistence.load();
+        await persistence.save(runtime);
+        await persistence.flush();
+        const restored = await persistence.load();
 
         assert.ok(restored, diagnostics.join("\n"));
         const snapshotBaseBytes = Buffer.byteLength(
@@ -330,7 +330,7 @@ test("AHP persistence compacts aggregate history when many sessions exceed the t
     }
 });
 
-test("AHP persistence redacts protected nested keys", () => {
+test("AHP persistence redacts protected nested keys", async () => {
     const directory = temporaryDirectory();
     try {
         const runtime = runtimeWithSession();
@@ -344,8 +344,8 @@ test("AHP persistence redacts protected nested keys", () => {
             },
         });
         const redactPersistence = new AhpPersistence(directory);
-        redactPersistence.save(runtime);
-        redactPersistence.flushSync();
+        await redactPersistence.save(runtime);
+        await redactPersistence.flush();
 
         const serialized = fs.readFileSync(path.join(directory, "ahp", "state.json"), "utf8");
         assert.doesNotMatch(serialized, /privateToken|removed/);
@@ -355,17 +355,18 @@ test("AHP persistence redacts protected nested keys", () => {
     }
 });
 
-test("AHP persistence compacts only after its action threshold", () => {
+test("AHP persistence compacts only after its action threshold", async () => {
     const directory = temporaryDirectory();
     try {
         const runtime = runtimeWithSession();
         const persistence = new AhpPersistence(directory, { compactEveryActions: 2 });
-        persistence.save(runtime);
+        await persistence.save(runtime);
         const handle = runtime.handles()[0];
         runtime.dispatch(handle.sessionResource, { type: "session/titleChanged", title: "one" });
         assert.equal(persistence.maybeSave(runtime), false);
         runtime.dispatch(handle.sessionResource, { type: "session/titleChanged", title: "two" });
         assert.equal(persistence.maybeSave(runtime), true);
+        await persistence.flush();
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });
     }

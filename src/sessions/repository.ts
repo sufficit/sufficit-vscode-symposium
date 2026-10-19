@@ -9,11 +9,16 @@ export interface StoredSession extends Omit<SessionInfo, "updatedAt" | "status" 
 export interface SessionRepository {
     readonly kind: "sqlite" | "json" | "memory";
     list(): StoredSession[];
-    replaceProvider(backend: string, sessions: readonly StoredSession[]): void;
-    replaceAll(sessions: readonly StoredSession[]): void;
+    /**
+     * Updates the in-memory view immediately. Durable repositories return a
+     * promise that settles once the change reached storage.
+     */
+    replaceProvider(backend: string, sessions: readonly StoredSession[]): void | Promise<void>;
+    replaceAll(sessions: readonly StoredSession[]): void | Promise<void>;
     /** Optional one-shot import used by persistent backends during upgrades. */
     importLegacy?(sessions: readonly StoredSession[]): number;
-    dispose(): void;
+    /** Durable repositories flush queued writes before resolving. */
+    dispose(): void | Promise<void>;
 }
 
 export function sessionKey(session: Pick<StoredSession, "backend" | "sessionId">): string {

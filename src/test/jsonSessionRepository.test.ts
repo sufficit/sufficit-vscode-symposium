@@ -6,15 +6,15 @@ import test from "node:test";
 import { JsonSessionRepository } from "../sessions/jsonRepository";
 import type { StoredSession } from "../sessions/repository";
 
-test("JSON session index preserves providers updated by sibling Extension Hosts", () => {
+test("JSON session index preserves providers updated by sibling Extension Hosts", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-session-index-"));
     try {
         // Both hosts activate before either has written, reproducing two
         // code-server browser connections sharing globalStorage.
         const firstHost = new JsonSessionRepository(directory);
         const secondHost = new JsonSessionRepository(directory);
-        firstHost.replaceProvider("claude", [session("claude", "ixc", "IXC")]);
-        secondHost.replaceProvider("codex", [session("codex", "other", "Other")]);
+        await firstHost.replaceProvider("claude", [session("claude", "ixc", "IXC")]);
+        await secondHost.replaceProvider("codex", [session("codex", "other", "Other")]);
 
         const restored = new JsonSessionRepository(directory);
         assert.deepEqual(

@@ -5,19 +5,19 @@ import * as path from "node:path";
 import test from "node:test";
 import { AhpHostRuntime, AhpPersistence } from "../ahp";
 
-test("AHP persistence merges sessions written by sibling Extension Hosts", () => {
+test("AHP persistence merges sessions written by sibling Extension Hosts", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-ahp-multi-host-"));
     try {
         const first = runtime("openai", "native-1", "11111111", "22222222", "IXC");
         const second = runtime("claude", "native-2", "33333333", "44444444", "Other");
         const firstHost = new AhpPersistence(directory);
         const secondHost = new AhpPersistence(directory);
-        firstHost.saveSync(first);
-        firstHost.flushSync();
-        secondHost.saveSync(second);
-        secondHost.flushSync();
+        await firstHost.save(first);
+        await firstHost.flush();
+        await secondHost.save(second);
+        await secondHost.flush();
 
-        const restored = new AhpPersistence(directory).load();
+        const restored = await new AhpPersistence(directory).load();
         assert.ok(restored);
         assert.deepEqual(restored.sessions.map((session) => session.nativeSessionId).sort(), [
             "native-1",

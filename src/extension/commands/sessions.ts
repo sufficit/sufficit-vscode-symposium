@@ -261,7 +261,7 @@ export function registerSessionCommands(ctx: CommandContext): void {
                     // catalog row before dropping its custom title; otherwise the
                     // cached row flashes back with a generic title until reconcile,
                     // making the user delete the same Claude session twice.
-                    sessionIndex.forget(info.backend, info.sessionId);
+                    await sessionIndex.forget(info.backend, info.sessionId);
                     await store.forget(info);
                     // Remove the session's tasks from Sufficit memory (soft-delete via
                     // expiry) — tasks are bound to the session id.

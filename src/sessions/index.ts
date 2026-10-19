@@ -79,16 +79,14 @@ export class SessionIndex {
      * persistent index. Incrementing the generation also prevents a provider
      * scan that started before the physical scrub from restoring its stale row.
      */
-    forget(backend: string, sessionId: string): void {
+    async forget(backend: string, sessionId: string): Promise<void> {
         this.generation++;
-        if (!this.sessions.delete(keyOf({ backend, sessionId }))) {
-            return;
-        }
+        if (!this.sessions.delete(keyOf({ backend, sessionId }))) return;
         const remaining = [...this.sessions.values()].filter(
             (session) => session.backend === backend,
         );
         try {
-            this.repository.replaceProvider(backend, remaining);
+            await this.repository.replaceProvider(backend, remaining);
         } catch (error) {
             this.log(
                 `[sessions] failed to persist deletion for ${backend}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -107,10 +105,16 @@ export class SessionIndex {
         return total;
     }
 
-    dispose(): void {
+    async dispose(): Promise<void> {
         this.disposed = true;
         this.generation++;
-        this.repository.dispose();
+        try {
+            await this.repository.dispose();
+        } catch (error) {
+            this.log(
+                `[sessions] repository flush failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
     }
 
     private async scan(generation: number): Promise<SessionInfo[]> {
@@ -154,7 +158,8 @@ export class SessionIndex {
                 continue;
             }
             try {
-                this.repository.replaceProvider(result.backend, result.listed);
+                await this.repository.replaceProvider(result.backend, result.listed);
+                if (this.disposed || generation !== this.generation) return this.listCached();
                 for (const [key, session] of this.sessions) {
                     if (session.backend === result.backend) {
                         this.sessions.delete(key);

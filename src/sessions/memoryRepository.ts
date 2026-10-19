@@ -8,7 +8,7 @@ export class InMemorySessionRepository implements SessionRepository {
         return sortStored([...this.sessions.values()]);
     }
 
-    replaceProvider(backend: string, sessions: readonly StoredSession[]): void {
+    replaceProvider(backend: string, sessions: readonly StoredSession[]): void | Promise<void> {
         for (const [key, session] of this.sessions) {
             if (session.backend === backend) {
                 this.sessions.delete(key);
@@ -19,11 +19,11 @@ export class InMemorySessionRepository implements SessionRepository {
         }
     }
 
-    replaceAll(sessions: readonly StoredSession[]): void {
+    replaceAll(sessions: readonly StoredSession[]): void | Promise<void> {
         this.sessions = new Map(sessions.map((session) => [sessionKey(session), session]));
     }
 
-    dispose(): void {
+    dispose(): void | Promise<void> {
         /* no resources */
     }
 }

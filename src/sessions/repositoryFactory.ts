@@ -55,7 +55,7 @@ function readJsonSeed(
         try {
             return json.list();
         } finally {
-            json.dispose();
+            void Promise.resolve(json.dispose()).catch(() => undefined);
         }
     } catch (error) {
         log(

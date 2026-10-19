@@ -163,14 +163,10 @@ export class AhpProjectionRuntime {
         return serializeProjectionDiagnostics(this.diagnostics(), maxRecent);
     }
 
-    dispose(): void {
+    async dispose(): Promise<void> {
         for (const record of this.records.values()) record.unsubscribe();
         this.records.clear();
-        const persistence = this.options.persistence;
-        if (persistence) {
-            persistence.saveSync(this.runtime);
-            persistence.flushSync();
-        }
+        await this.options.persistence?.dispose(this.runtime);
     }
 
     private attach(key: string, info: AhpProjectionSessionInfo): void {

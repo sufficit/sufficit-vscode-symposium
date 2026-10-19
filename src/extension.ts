@@ -42,7 +42,7 @@ import { registerExtensionAhpRuntime } from "./extension/ahpRuntime";
 /** SessionIndex singleton initialized during activation and shared with command wiring. */
 export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
 
-export function activate(context: vscode.ExtensionContext): SymposiumApi {
+export async function activate(context: vscode.ExtensionContext): Promise<SymposiumApi> {
     const output = vscode.window.createOutputChannel("Symposium");
     setSymposiumOutput(output);
     context.subscriptions.push(output);
@@ -127,7 +127,7 @@ export function activate(context: vscode.ExtensionContext): SymposiumApi {
         onSessionsChanged: sessionsChanged.event,
     });
 
-    const ahp = registerExtensionAhpRuntime(context, api, symposiumLog);
+    const ahp = await registerExtensionAhpRuntime(context, api, symposiumLog);
 
     // Late-bound delegation keeps the tool layer independent of the runtime.
     setSubagentHost(

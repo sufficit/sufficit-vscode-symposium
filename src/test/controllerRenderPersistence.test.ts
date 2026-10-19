@@ -122,7 +122,7 @@ test("peer controllers share live render state, project AHP once and hand owners
             assert.equal(leader.canDispatch(), true);
             assert.equal(leader.isOwner, true);
         } finally {
-            projection.dispose();
+            await projection.dispose();
             leader.dispose();
             follower.dispose();
         }
