@@ -87,15 +87,17 @@ test("a scan invalidated while persistence is pending does not repopulate the ca
         backend: "claude",
         listSessions: () => Promise.resolve([info]),
     } as unknown as AgentAdapter;
+    const repository = new SlowRepository();
     const index = new SessionIndex({
         storageDir: "/unused",
         adapters: [adapter],
-        repository: new SlowRepository(),
+        repository,
     });
     const reconcile = index.reconcile();
     await writing;
-    index.invalidate();
+    const forgetting = index.forget(info.backend, info.sessionId);
     release();
-    await reconcile;
+    await Promise.all([reconcile, forgetting]);
     assert.equal(index.get(info.backend, info.sessionId), undefined);
+    assert.deepEqual(repository.list(), []);
 });

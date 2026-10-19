@@ -11,6 +11,8 @@ export interface ExtensionAhpRuntime {
     runtime(): AhpHostRuntime;
     sync(): void;
     rebuild(provider: string, sessionId: string): void;
+    /** Flushes pending persistence; awaited by deactivate(). */
+    shutdown(): Promise<void>;
 }
 
 /** Owns activation, configuration and disposal of the shared AHP runtime. */
@@ -76,5 +78,6 @@ export async function registerExtensionAhpRuntime(
         runtime: () => projection.runtime,
         sync,
         rebuild: (provider, sessionId) => projection.rebuild(provider, sessionId),
+        shutdown: () => projection.dispose(),
     };
 }

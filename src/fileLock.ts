@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 interface LockOwner {
     token: string;
+    hostname?: string;
     pid: number;
     createdAt: number;
     updatedAt?: number;
@@ -29,6 +31,7 @@ export async function withFileLock<T>(file: string, action: () => Promise<T> | T
     const lockPath = `${file}.lock`;
     const owner: Required<LockOwner> = {
         token: randomUUID(),
+        hostname: os.hostname(),
         pid: process.pid,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -66,6 +69,9 @@ export async function withFileLock<T>(file: string, action: () => Promise<T> | T
             heartbeat = heartbeat.then(async () => {
                 const temporary = path.join(lockPath, `owner.${owner.token}.tmp`);
                 try {
+                    // Never overwrite a lock another process took over after we stalled.
+                    const current = await readOwnerAsync(lockPath);
+                    if (current?.token !== owner.token) return;
                     await fs.promises.writeFile(temporary, JSON.stringify(owner), { mode: 0o600 });
                     await fs.promises.rename(temporary, path.join(lockPath, "owner.json"));
                 } catch {
@@ -83,7 +89,8 @@ export async function withFileLock<T>(file: string, action: () => Promise<T> | T
         await heartbeat;
         const current = await readOwnerAsync(lockPath);
         if (current?.token === owner.token) {
-            await fs.promises.rm(lockPath, { recursive: true, force: true });
+            // A failed release must not mask the action's result; the lock expires on its own.
+            await fs.promises.rm(lockPath, { recursive: true, force: true }).catch(() => undefined);
         }
     }
 }
@@ -109,8 +116,9 @@ async function recoverStaleLockAsync(lockPath: string): Promise<void> {
     try {
         const owner = await readOwnerAsync(lockPath);
         const stale = owner
-            ? !pidAlive(owner.pid) ||
-              Date.now() - (owner.updatedAt ?? owner.createdAt) >= LOCK_STALE_MS
+            ? sameHost(owner)
+                ? !pidAlive(owner.pid)
+                : Date.now() - (owner.updatedAt ?? owner.createdAt) >= LOCK_STALE_MS
             : (await lockAgeAsync(lockPath)) >= LOCK_STALE_MS;
         if (stale) await fs.promises.rm(lockPath, { recursive: true, force: true });
     } finally {
@@ -124,6 +132,7 @@ async function readOwnerAsync(lockPath: string): Promise<LockOwner | undefined> 
             await fs.promises.readFile(path.join(lockPath, "owner.json"), "utf8"),
         ) as {
             token?: unknown;
+            hostname?: unknown;
             pid?: unknown;
             createdAt?: unknown;
             updatedAt?: unknown;
@@ -131,6 +140,7 @@ async function readOwnerAsync(lockPath: string): Promise<LockOwner | undefined> 
         if (
             typeof value.token === "string" &&
             typeof value.pid === "number" &&
+            (value.hostname === undefined || typeof value.hostname === "string") &&
             typeof value.createdAt === "number" &&
             (value.updatedAt === undefined || typeof value.updatedAt === "number")
         )
@@ -151,6 +161,11 @@ async function lockAgeAsync(lockPath: string): Promise<number> {
 
 function delay(milliseconds: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/** PID liveness is meaningful only on the host that wrote the lock (legacy owners have no host). */
+function sameHost(owner: LockOwner): boolean {
+    return owner.hostname === undefined || owner.hostname === os.hostname();
 }
 
 function pidAlive(pid: number): boolean {

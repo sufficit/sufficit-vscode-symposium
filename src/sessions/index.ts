@@ -81,7 +81,7 @@ export class SessionIndex {
      */
     async forget(backend: string, sessionId: string): Promise<void> {
         this.generation++;
-        if (!this.sessions.delete(keyOf({ backend, sessionId }))) return;
+        this.sessions.delete(keyOf({ backend, sessionId }));
         const remaining = [...this.sessions.values()].filter(
             (session) => session.backend === backend,
         );

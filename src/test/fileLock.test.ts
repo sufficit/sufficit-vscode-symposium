@@ -67,6 +67,68 @@ test("async file lock recovers an abandoned owner", async () => {
     }
 });
 
+test("async file lock does not steal an expired lease from a live same-host process", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-file-lock-local-owner-"));
+    const file = path.join(directory, "state.json");
+    const lockPath = `${file}.lock`;
+    try {
+        await fs.mkdir(lockPath);
+        await fs.writeFile(
+            path.join(lockPath, "owner.json"),
+            JSON.stringify({
+                token: "live-local-owner",
+                hostname: os.hostname(),
+                pid: process.pid,
+                createdAt: Date.now() - 120_000,
+                updatedAt: Date.now() - 120_000,
+            }),
+        );
+        let ran = false;
+        const contender = withFileLock(file, () => {
+            ran = true;
+        });
+        await new Promise<void>((resolve) => setTimeout(resolve, 80));
+        const ranBeforeRelease = ran;
+        await fs.rm(lockPath, { recursive: true, force: true });
+        await contender;
+        assert.equal(ranBeforeRelease, false);
+        assert.equal(ran, true);
+    } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+});
+
+test("async file lock does not use another host's PID to expire its fresh lease", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-file-lock-remote-owner-"));
+    const file = path.join(directory, "state.json");
+    const lockPath = `${file}.lock`;
+    try {
+        await fs.mkdir(lockPath);
+        await fs.writeFile(
+            path.join(lockPath, "owner.json"),
+            JSON.stringify({
+                token: "live-remote-owner",
+                hostname: `${os.hostname()}-peer`,
+                pid: 2_000_000_000,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            }),
+        );
+        let ran = false;
+        const contender = withFileLock(file, () => {
+            ran = true;
+        });
+        await new Promise<void>((resolve) => setTimeout(resolve, 80));
+        const ranBeforeRelease = ran;
+        await fs.rm(lockPath, { recursive: true, force: true });
+        await contender;
+        assert.equal(ranBeforeRelease, false);
+        assert.equal(ran, true);
+    } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+    }
+});
+
 test("async file lock expires an abandoned recovery marker", async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "symposium-file-lock-recover-"));
     const file = path.join(directory, "state.json");

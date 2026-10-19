@@ -50,10 +50,9 @@ export class JsonSessionRepository extends InMemorySessionRepository {
 
     /** Resolves after every queued write has reached storage. */
     async flush(): Promise<void> {
-        while (this.drain || this.hasPending()) {
-            if (this.drain) await this.drain.catch(() => undefined);
-            else await this.enqueue().catch(() => undefined);
-        }
+        if (this.drain) await this.drain.catch(() => undefined);
+        // One bounded retry of work a failed write left behind; never spin on a persistent error.
+        if (this.hasPending() || this.waiters.length) await this.enqueue().catch(() => undefined);
     }
 
     override async dispose(): Promise<void> {
@@ -93,7 +92,7 @@ export class JsonSessionRepository extends InMemorySessionRepository {
             .then(() => this.drainQueue())
             .finally(() => {
                 this.drain = undefined;
-                if (this.waiters.length || this.hasPending()) this.startDrain();
+                if (this.waiters.length) this.startDrain();
             });
     }
 
@@ -109,7 +108,11 @@ export class JsonSessionRepository extends InMemorySessionRepository {
                 await this.persist(all ? undefined : providers);
                 for (const waiter of waiters) waiter.resolve();
             } catch (error) {
+                // Keep the unwritten work so the next write or flush retries it.
+                if (all) this.pendingAll = true;
+                for (const provider of providers) this.pendingProviders.add(provider);
                 for (const waiter of waiters) waiter.reject(error);
+                return;
             } finally {
                 this.inflightProviders = new Set();
             }

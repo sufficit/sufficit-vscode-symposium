@@ -39,7 +39,8 @@ import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/
 import { setSufficitIdentityMcpUrl } from "./adapters/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
 import { registerExtensionAhpRuntime } from "./extension/ahpRuntime";
-/** SessionIndex singleton initialized during activation and shared with command wiring. */
+import { registerShutdownTask } from "./extension/shutdown";
+export { deactivate } from "./extension/shutdown";
 export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<SymposiumApi> {
@@ -128,6 +129,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     });
 
     const ahp = await registerExtensionAhpRuntime(context, api, symposiumLog);
+    registerShutdownTask(() => ahp.shutdown());
 
     // Late-bound delegation keeps the tool layer independent of the runtime.
     setSubagentHost(
@@ -294,6 +296,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
         disableSqlite: true,
     });
     context.subscriptions.push(sessionIndex);
+    registerShutdownTask(() => sessionIndex?.dispose() ?? Promise.resolve());
     let indexPrimed = sessionIndex.listCached().length > 0;
     let lastReconcileAt = 0;
     const RECONCILE_INTERVAL_MS = 5_000;
@@ -395,5 +398,3 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     });
     return api;
 }
-
-export function deactivate(): void {}
