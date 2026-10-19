@@ -90,7 +90,9 @@ const budgets = new Map([
     // Voice dictation backend routing (activate the installed speech provider,
     // disable the built-in chat STT backend around the start command and
     // restore every dictation.enabled layer) measures 895.58 KiB.
-    ["extension/out/extension.js", 896 * 1024],
+    // Async persistence, bounded cache and worker parsing measure 927374 bytes
+    // (905.64 KiB). Keep a tight 906 KiB budget; archive cap is unchanged.
+    ["extension/out/extension.js", 906 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
