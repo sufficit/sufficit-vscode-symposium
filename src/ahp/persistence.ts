@@ -39,6 +39,8 @@ export class AhpPersistence {
     private lastSavedSequence = 0;
     private lastScheduledSequence = 0;
     private pendingSaves: SaveRequest[] = [];
+    /** Highest sequence still requiring a fresh capture after failure. */
+    private retryPendingSequence: number | undefined;
     private drainPromise: Promise<void> | undefined;
     private drainTimer: NodeJS.Timeout | undefined;
     private cachedDiskState: CachedDiskState | undefined;
@@ -132,17 +134,65 @@ export class AhpPersistence {
     private async drain(): Promise<void> {
         while (this.pendingSaves.length) {
             const batch = this.pendingSaves.splice(0);
-            const latest = batch[batch.length - 1];
-            try {
-                await this.codec.warm(latest.exported);
-                const prepared = this.codec.serialize(latest.exported);
-                await this.writePayload(prepared);
-                this.lastSavedSequence = Math.max(
-                    this.lastSavedSequence,
-                    latest.exported.serverSeq,
+            // Intermediate captures in the same burst are redundant: write the
+            // newest complete runtime and resolve every waiter only afterwards.
+            let candidateIndex = batch.length - 1;
+            let serialized: PreparedExport | undefined;
+            let serializationError: unknown;
+            while (candidateIndex >= 0) {
+                try {
+                    await this.codec.warm(batch[candidateIndex].exported);
+                    serialized = this.codec.serialize(batch[candidateIndex].exported);
+                    break;
+                } catch (error) {
+                    serializationError ??= error;
+                    candidateIndex--;
+                }
+            }
+
+            if (serialized === undefined) {
+                this.retryPendingSequence = Math.max(
+                    this.retryPendingSequence ?? 0,
+                    batch[batch.length - 1].exported.serverSeq,
                 );
-                for (const request of batch) request.resolve();
+                this.options.onDiagnostic?.(
+                    `[ahp] save failed: ${serializationError instanceof Error ? serializationError.message : String(serializationError)}`,
+                );
+                for (const request of batch) request.reject(serializationError);
+                this.lastScheduledSequence = Math.max(this.lastSavedSequence, this.pendingSaves[this.pendingSaves.length - 1]?.exported.serverSeq ?? 0);
+                continue;
+            }
+
+            try {
+                await this.writePayload(serialized);
+                const savedSequence = batch[candidateIndex].exported.serverSeq;
+                this.lastSavedSequence = Math.max(this.lastSavedSequence, savedSequence);
+                this.lastScheduledSequence = Math.max(this.lastSavedSequence, this.pendingSaves[this.pendingSaves.length - 1]?.exported.serverSeq ?? 0);
+                if (candidateIndex < batch.length - 1) {
+                    this.retryPendingSequence = Math.max(
+                        this.retryPendingSequence ?? 0,
+                        batch[batch.length - 1].exported.serverSeq,
+                    );
+                } else if (
+                    this.retryPendingSequence !== undefined &&
+                    savedSequence >= this.retryPendingSequence
+                ) {
+                    this.retryPendingSequence = undefined;
+                }
+                for (let index = 0; index <= candidateIndex; index++) batch[index].resolve();
+                for (let index = candidateIndex + 1; index < batch.length; index++) {
+                    batch[index].reject(serializationError);
+                }
+                if (candidateIndex < batch.length - 1) {
+                    this.options.onDiagnostic?.(
+                        `[ahp] newest save capture skipped after serialization failure: ${serializationError instanceof Error ? serializationError.message : String(serializationError)}`,
+                    );
+                }
             } catch (error) {
+                this.retryPendingSequence = Math.max(
+                    this.retryPendingSequence ?? 0,
+                    batch[batch.length - 1].exported.serverSeq,
+                );
                 this.options.onDiagnostic?.(
                     `[ahp] save failed: ${error instanceof Error ? error.message : String(error)}`,
                 );
@@ -261,6 +311,7 @@ export class AhpPersistence {
 
     maybeSave(runtime: AhpHostRuntime): boolean {
         if (
+            this.retryPendingSequence === undefined &&
             runtime.store.serverSeq - Math.max(this.lastSavedSequence, this.lastScheduledSequence) <
             this.compactEveryActions
         ) {
