@@ -145,6 +145,13 @@ export async function handleVoiceMessage(
 }
 
 async function runVoicePreview(captureId: string, d: SurfaceMessagesDeps): Promise<void> {
+    const { readSettings } = await import("../voice/sttService");
+    if (readSettings().engine === "sufficit-ai") {
+        // Remote transcription is billed per request: transcribe once on stop,
+        // never every preview tick.
+        d.post({ type: "voice-preview-result", captureId, text: "" });
+        return;
+    }
     const { finishCapturePreview, prepareCapturePreview } = await import("../voice/recorder");
     const preview = prepareCapturePreview();
     if (!preview || preview.captureId !== captureId) {

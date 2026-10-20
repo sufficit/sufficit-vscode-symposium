@@ -1,12 +1,12 @@
 /** Scopes required by the Sufficit AI authorization contract. */
-export const REQUIRED_IDENTITY_AUTHORIZATION_SCOPES = ["roles", "directives"] as const;
+export const REQUIRED_IDENTITY_AUTHORIZATION_SCOPES = ["roles", "entitlements"] as const;
 
 /** Default scopes requested by Symposium during PKCE and device-flow login. */
-export const DEFAULT_IDENTITY_SCOPE = "openid profile email roles directives offline_access";
+export const DEFAULT_IDENTITY_SCOPE = "openid profile email roles entitlements offline_access";
 
 /**
  * Keeps custom scope configuration while guaranteeing that the Identity server
- * can emit the role/directive claims required by Sufficit AI policies.
+ * can emit the role/entitlement claims required by Sufficit AI policies.
  */
 export function normalizeIdentityScope(configured?: string): string {
     const values = (configured?.trim() || DEFAULT_IDENTITY_SCOPE).split(/\s+/).filter(Boolean);

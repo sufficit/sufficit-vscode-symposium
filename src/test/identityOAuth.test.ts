@@ -31,7 +31,7 @@ test("PKCE authorization URL carries the complete public-client contract", () =>
         endpoint: "https://identity.sufficit.com.br/connect/authorize",
         clientId: "sufficit-vscode-symposium",
         redirectUri: identityRedirectUri("vscode"),
-        scope: "openid profile roles directives offline_access",
+        scope: "openid profile roles entitlements offline_access",
         challenge: "challenge",
         state: "state",
     });

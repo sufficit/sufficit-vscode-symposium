@@ -315,8 +315,8 @@
                 },
                 "symposium.identity.scope": {
                     "type": "string",
-                    "default": "openid profile email roles directives offline_access",
-                    "description": "OAuth scopes requested at login. The roles and directives scopes are always included because Sufficit AI authorization requires them."
+                    "default": "openid profile email roles entitlements offline_access",
+                    "description": "OAuth scopes requested at login. The roles and entitlements scopes are always included because Sufficit AI authorization requires them."
                 },
                 "symposium.hub.token": {
                     "type": "string",
@@ -461,6 +461,7 @@
                         "auto",
                         "webspeech",
                         "vscode-speech",
+                        "sufficit-ai",
                         "whisper-cpp",
                         "faster-whisper",
                         "vosk"
@@ -469,6 +470,7 @@
                         "Web Speech in the browser (code-server); local whisper.cpp on desktop.",
                         "Browser Web Speech API only (works in code-server, not VS Code desktop).",
                         "Uses the installed Microsoft VS Code Speech provider through VS Code editor dictation. Available only when that provider is installed in the desktop UI.",
+                        "Sufficit AI online transcription: Symposium records the microphone and sends the audio to the Sufficit AI gateway with your Sufficit login. No editor or local model.",
                         "whisper.cpp via the whisper-cli binary (offline, CPU, multilingual).",
                         "faster-whisper via whisper-ctranslate2 (the tool downloads its own models).",
                         "Vosk via vosk-transcriber (pip install vosk; lightweight, streaming)."

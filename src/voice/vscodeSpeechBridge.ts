@@ -4,9 +4,12 @@
  * VS Code does not expose `ISpeechService` to third-party extensions. It does,
  * however, expose editor-dictation commands backed by that service. We run
  * those commands against a disposable text document and return its contents.
+ *
+ * The document lives only in memory (untitled, never written to disk) and is
+ * shown in a side column with focus preserved, so the user's current editor is
+ * never replaced. Editor dictation writes through a visible code editor, so the
+ * side editor cannot be fully hidden; it is closed as soon as the session ends.
  */
-import * as fs from "fs/promises";
-import * as path from "path";
 import * as vscode from "vscode";
 
 export const VSCODE_SPEECH_EXTENSION_ID = "ms-vscode.vscode-speech";
@@ -16,14 +19,14 @@ const STOP_DICTATION_COMMAND = "workbench.action.editorDictation.stop";
 const TRANSCRIPT_QUIET_MS = 350;
 const TRANSCRIPT_SETTLE_TIMEOUT_MS = 1_500;
 const DICTATION_TOGGLE_SETTLE_MS = 150;
+const REVERT_AND_CLOSE_COMMAND = "workbench.action.revertAndCloseActiveEditor";
 
-let storageDir = "";
 let startInFlight: Promise<boolean> | undefined;
 let cancellationGeneration = 0;
 
 interface DictationSession {
     document: vscode.TextDocument;
-    filePath: string;
+    column: vscode.ViewColumn | undefined;
     restoreFocus: () => void | Thenable<void>;
 }
 
@@ -35,8 +38,9 @@ export interface VscodeSpeechStatus {
     extensionId: string;
 }
 
-export function initVscodeSpeechBridge(globalStoragePath: string): void {
-    storageDir = path.join(globalStoragePath, "vscode-speech-bridge");
+/** Kept for activation compatibility; the bridge no longer touches disk. */
+export function initVscodeSpeechBridge(_globalStoragePath?: string): void {
+    // In-memory documents need no storage directory.
 }
 
 /** Static provider state. A real microphone session remains the final probe. */
@@ -134,9 +138,6 @@ async function createAndStartSession(
             `Install and enable ${VSCODE_SPEECH_EXTENSION_ID}, then run the voice diagnostic again.`,
         );
     }
-    if (!storageDir) {
-        throw new Error("VS Code Speech bridge has not been initialized.");
-    }
 
     // Editor dictation reads this native setting; command arguments are ignored.
     const voiceConfig = vscode.workspace.getConfiguration("accessibility.voice");
@@ -144,15 +145,12 @@ async function createAndStartSession(
         await voiceConfig.update("speechLanguage", language, vscode.ConfigurationTarget.Global);
     }
 
-    await fs.mkdir(storageDir, { recursive: true });
-    const filePath = path.join(
-        storageDir,
-        `dictation-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`,
-    );
-    await fs.writeFile(filePath, "", "utf8");
-
-    const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
-    const session: DictationSession = { document, filePath, restoreFocus };
+    // Untitled in-memory document: nothing is created on disk.
+    const document = await vscode.workspace.openTextDocument({
+        language: "plaintext",
+        content: "",
+    });
+    const session: DictationSession = { document, column: undefined, restoreFocus };
     activeSession = session;
 
     try {
@@ -160,10 +158,12 @@ async function createAndStartSession(
             await releaseSession(session);
             return false;
         }
-        await vscode.window.showTextDocument(document, {
+        const editor = await vscode.window.showTextDocument(document, {
+            viewColumn: vscode.ViewColumn.Beside,
             preview: true,
             preserveFocus: false,
         });
+        session.column = editor.viewColumn;
         // VS Code >= 1.141 routes editorDictation.start into its built-in chat
         // speech-to-text backend while `dictation.enabled` is on, bypassing the
         // installed ms-vscode.vscode-speech provider. Hosts without that
@@ -211,10 +211,7 @@ export async function stopVscodeSpeechDictation(): Promise<string> {
     }
 
     try {
-        await vscode.window.showTextDocument(session.document, {
-            preview: true,
-            preserveFocus: false,
-        });
+        await revealSessionEditor(session);
         await vscode.commands.executeCommand(STOP_DICTATION_COMMAND);
         await waitForTranscriptToSettle(session.document);
         const transcript = session.document.getText().trim();
@@ -254,10 +251,7 @@ async function stopAndReleaseSession(session: DictationSession): Promise<void> {
         activeSession = undefined;
     }
     try {
-        await vscode.window.showTextDocument(session.document, {
-            preview: true,
-            preserveFocus: false,
-        });
+        await revealSessionEditor(session);
         await vscode.commands.executeCommand(STOP_DICTATION_COMMAND);
     } catch {
         // The stop command is best-effort; cleanup is still mandatory.
@@ -270,22 +264,41 @@ async function releaseSession(session: DictationSession): Promise<void> {
         activeSession = undefined;
     }
     // The transcript was already harvested from the in-memory model, but the
-    // provider wrote it through editor edits, so the document is dirty. Revert
-    // it to the (empty) on-disk state first: only then can the dictation tab
-    // close without a save prompt, leaving no stray "Dictation" editor behind.
+    // provider wrote it through editor edits, so the untitled document is
+    // dirty. An untitled document without an associated path stops being dirty
+    // once its content is empty, so clear it through a workspace edit (no focus
+    // or active-editor dependency) before closing. If it is still dirty, fall
+    // back to revert-and-close on the revealed editor, which never prompts.
     try {
-        await vscode.window.showTextDocument(session.document, {
-            preview: true,
-            preserveFocus: false,
-        });
-        await vscode.commands.executeCommand("workbench.action.files.revert");
+        await clearDocument(session.document);
+        if (session.document.isDirty) {
+            await revealSessionEditor(session);
+            await vscode.commands.executeCommand("workbench.action.files.revert");
+            await vscode.commands.executeCommand(REVERT_AND_CLOSE_COMMAND);
+        }
         await closeDictationTab(session.document);
     } catch {
         // Best effort: a lingering empty tab is cosmetic, cleanup continues.
     }
-    // Deleting the backing file and dropping our reference lets VS Code
-    // release the document without another visible editor transition.
-    await fs.unlink(session.filePath).catch(() => undefined);
+}
+
+async function clearDocument(document: vscode.TextDocument): Promise<void> {
+    if (document.isClosed || document.getText().length === 0) {
+        return;
+    }
+    const edit = new vscode.WorkspaceEdit();
+    const end = document.lineAt(document.lineCount - 1).range.end;
+    edit.delete(document.uri, new vscode.Range(new vscode.Position(0, 0), end));
+    await vscode.workspace.applyEdit(edit);
+}
+
+/** Bring the dictation editor back to front in its own side column. */
+async function revealSessionEditor(session: DictationSession): Promise<void> {
+    await vscode.window.showTextDocument(session.document, {
+        viewColumn: session.column ?? vscode.ViewColumn.Beside,
+        preview: true,
+        preserveFocus: false,
+    });
 }
 
 async function closeDictationTab(document: vscode.TextDocument): Promise<void> {

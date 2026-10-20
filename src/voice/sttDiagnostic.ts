@@ -89,6 +89,22 @@ export function buildSttDiagnostic(
             ],
         };
     }
+    if (settings.engine === "sufficit-ai") {
+        const signedIn = avail["sufficit-ai"] === true;
+        return {
+            ready: signedIn,
+            steps: [
+                {
+                    id: "sufficit-ai",
+                    status: signedIn ? "ok" : "fail",
+                    label: tr("config.voice.diagnose.sufficitAi"),
+                    fix: signedIn
+                        ? tr("config.voice.diagnose.sufficitAiReady")
+                        : tr("config.voice.diagnose.fixSufficitAi"),
+                },
+            ],
+        };
+    }
     const models = stt.models || [];
     const engine = resolveDiagnosticLocalEngine(settings.engine);
 
