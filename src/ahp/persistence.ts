@@ -159,7 +159,10 @@ export class AhpPersistence {
                     `[ahp] save failed: ${serializationError instanceof Error ? serializationError.message : String(serializationError)}`,
                 );
                 for (const request of batch) request.reject(serializationError);
-                this.lastScheduledSequence = Math.max(this.lastSavedSequence, this.pendingSaves[this.pendingSaves.length - 1]?.exported.serverSeq ?? 0);
+                this.lastScheduledSequence = Math.max(
+                    this.lastSavedSequence,
+                    this.pendingSaves[this.pendingSaves.length - 1]?.exported.serverSeq ?? 0,
+                );
                 continue;
             }
 
@@ -167,7 +170,10 @@ export class AhpPersistence {
                 await this.writePayload(serialized);
                 const savedSequence = batch[candidateIndex].exported.serverSeq;
                 this.lastSavedSequence = Math.max(this.lastSavedSequence, savedSequence);
-                this.lastScheduledSequence = Math.max(this.lastSavedSequence, this.pendingSaves[this.pendingSaves.length - 1]?.exported.serverSeq ?? 0);
+                this.lastScheduledSequence = Math.max(
+                    this.lastSavedSequence,
+                    this.pendingSaves[this.pendingSaves.length - 1]?.exported.serverSeq ?? 0,
+                );
                 if (candidateIndex < batch.length - 1) {
                     this.retryPendingSequence = Math.max(
                         this.retryPendingSequence ?? 0,
@@ -313,7 +319,7 @@ export class AhpPersistence {
         if (
             this.retryPendingSequence === undefined &&
             runtime.store.serverSeq - Math.max(this.lastSavedSequence, this.lastScheduledSequence) <
-            this.compactEveryActions
+                this.compactEveryActions
         ) {
             return false;
         }
