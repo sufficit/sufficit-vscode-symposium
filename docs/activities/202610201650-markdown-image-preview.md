@@ -25,4 +25,14 @@ Release `2026.1020.1` autorizada pelo usuário. Preparada em `develop` sobre a c
 
 Teste adicional de Extension Host (`xvfb-run -a node test/extensionHost/run.cjs`) passou com saída 0.
 
-Publicação, instalação e ativação serão registradas após a confirmação dos resultados. Nenhum host com turno ativo será reiniciado.
+Entrega confirmada em 20/10/2026:
+
+- Commit da release: `ac3fa4ab821d458df70614ef14fc9e438be41022`, integrado e publicado em `main` e `develop`.
+- Tag anotada: `v2026.1020.1`, apontando para esse commit.
+- [Publish VS Code Extension](https://github.com/sufficit/sufficit-vscode-symposium/actions/runs/39487675535): sucesso, incluindo Visual Studio Marketplace, Open VSX e GitHub Release.
+- Builds [main](https://github.com/sufficit/sufficit-vscode-symposium/actions/runs/39487657730) e [develop](https://github.com/sufficit/sufficit-vscode-symposium/actions/runs/39487657725): sucesso, incluindo integração Extension Host e validação do VSIX.
+- [Release e VSIX](https://github.com/sufficit/sufficit-vscode-symposium/releases/tag/v2026.1020.1): artefato publicado baixado e validado novamente (41 arquivos, 546355 bytes; SHA-256 `e9fc4a37dd8c22bffb35785a54d84e5888e9020c3d5a750fc14b86bea5e8c6fb`). Diferença de tamanho do ZIP local não altera o bundle de código.
+- Artefato publicado instalado no VS Code local e no code-server `development`, usuário root; ambos listam `sufficit.sufficit-vscode-symposium@2026.1020.1`.
+- SHA-256 do bundle host idêntico no pacote publicado e nas duas instalações: `636ae1cd2a53af63db735554d0ba10ebf549ffea07a05ebdd8fb0e20e2856a43`.
+
+Nenhum Extension Host ou serviço foi interrompido. As janelas abertas precisam de reload ao terminar os turnos para ativar a versão instalada; ativação nessas janelas não foi alegada como concluída.
