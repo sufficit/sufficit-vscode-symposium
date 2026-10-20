@@ -40,6 +40,10 @@ export function resolveLocalResourcePath(raw: string, cwd?: string): string | un
             return undefined;
         }
     }
+    // Codex artifact links refer to files in the local /mnt/data artifact directory.
+    if (/^sandbox:\/mnt\/data\//i.test(value)) {
+        value = value.slice("sandbox:".length);
+    }
     // Reject URL-like schemes, while retaining Windows drive paths.
     if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) && !/^[A-Za-z]:[\\/]/.test(value)) {
         return undefined;
@@ -130,7 +134,10 @@ export async function loadMarkdownImage(
     try {
         const realFile = await fs.promises.realpath(resolved);
         const roots: string[] = [];
-        for (const root of allowedRoots) {
+        const previewRoots = /^sandbox:\/mnt\/data\//i.test(raw)
+            ? [...allowedRoots, "/mnt/data"]
+            : allowedRoots;
+        for (const root of previewRoots) {
             if (!root) {
                 continue;
             }

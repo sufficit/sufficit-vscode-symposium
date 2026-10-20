@@ -116,3 +116,26 @@ test("loadMarkdownImage reads allowed images and blocks traversal outside roots"
         await rm(base, { recursive: true, force: true });
     }
 });
+
+test("sandbox artifact links resolve locally and remain confined during preview", async () => {
+    assert.equal(isLocalMarkdownTarget("sandbox:/mnt/data/avatar-ritmo/idle-previa.webp"), true);
+    assert.equal(
+        resolveLocalResourcePath("sandbox:/mnt/data/avatar-ritmo/idle-previa.webp"),
+        path.normalize("/mnt/data/avatar-ritmo/idle-previa.webp"),
+    );
+    assert.equal(isLocalMarkdownTarget("sandbox:https://example.com/a.png"), false);
+    assert.equal(resolveLocalResourcePath("sandbox:https://example.com/a.png"), undefined);
+    assert.equal(resolveLocalResourcePath("sandbox:/etc/passwd"), undefined);
+    const base = await mkdtemp(path.join(os.tmpdir(), "symposium-sandbox-image-"));
+    const outside = path.join(base, "outside.webp");
+    await writeFile(outside, Buffer.from([1, 2, 3]));
+    try {
+        const target = `sandbox:/mnt/data/../../${outside.replace(/^\//, "")}`;
+        assert.match(
+            (await loadMarkdownImage(target, undefined, [])).error ?? "",
+            /outside the active workspace/,
+        );
+    } finally {
+        await rm(base, { recursive: true, force: true });
+    }
+});

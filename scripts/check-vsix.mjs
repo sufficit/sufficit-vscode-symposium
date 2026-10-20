@@ -92,7 +92,10 @@ const budgets = new Map([
     // restore every dictation.enabled layer) measures 895.58 KiB.
     // Async persistence, bounded cache and worker parsing measure 927374 bytes
     // (905.64 KiB). Keep a tight 906 KiB budget; archive cap is unchanged.
-    ["extension/out/extension.js", 906 * 1024],
+    // Main consolidation (voice bridge + retry reconciliation) and Markdown
+    // artifact previews measure 931904 bytes (910.06 KiB). Keep a bounded
+    // 912 KiB host budget; retain the existing 1 MiB archive cap.
+    ["extension/out/extension.js", 912 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

@@ -43,5 +43,9 @@ export function isLocalMarkdownTarget(href: string): boolean {
     if (/^[A-Za-z]:[\\/]/.test(href)) {
         return true;
     }
-    return /^file:/i.test(href) || !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(href);
+    return (
+        /^sandbox:\/mnt\/data\//i.test(href) ||
+        /^file:/i.test(href) ||
+        !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(href)
+    );
 }

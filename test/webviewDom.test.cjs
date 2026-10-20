@@ -1129,3 +1129,49 @@ test("local voice capture failure exits the opening state without pretending to 
     assert.match(harness.document.querySelector("#toast").textContent, /Microphone unavailable/);
     harness.dom.window.close();
 });
+
+test("sandbox image previews resolve, load and open with keyboard and mouse", () => {
+    const harness = createHarness();
+    try {
+        harness.deliver(meta("alpha", "luna"));
+        const path = "sandbox:/mnt/data/avatar-ritmo/idle-previa.webp";
+        harness.deliver({
+            type: "history",
+            carried: true,
+            messages: [{ role: "assistant", text: `![Prévia animada em repouso](${path})` }],
+        });
+        const request = harness.sent.find((message) => message.type === "resolve-markdown-image");
+        assert.ok(request, "sandbox images must request a local preview");
+        assert.equal(request.path, path);
+        const action = harness.document.querySelector(".mdImageAction");
+        const image = action.querySelector("img");
+        harness.deliver({
+            type: "markdown-image",
+            id: request.id,
+            dataUrl: "data:image/webp;base64,AQID",
+        });
+        assert.equal(image.src, "data:image/webp;base64,AQID");
+        image.dispatchEvent(new harness.dom.window.Event("load"));
+        assert.equal(image.hidden, false);
+        assert.equal(action.querySelector(".mdImageFallback").hidden, true);
+        action.click();
+        assert.deepEqual(JSON.parse(JSON.stringify(harness.sent.at(-1))), {
+            type: "open-file",
+            path,
+        });
+        const before = harness.sent.length;
+        action.dispatchEvent(
+            new harness.dom.window.KeyboardEvent("keydown", {
+                key: "Enter",
+                bubbles: true,
+                cancelable: true,
+            }),
+        );
+        assert.equal(harness.sent.length, before + 1);
+        image.dispatchEvent(new harness.dom.window.Event("error"));
+        assert.equal(image.hidden, true);
+        assert.match(action.querySelector(".mdImageFallback").textContent, /Preview unavailable/);
+    } finally {
+        harness.dom.window.close();
+    }
+});

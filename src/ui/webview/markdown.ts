@@ -256,7 +256,8 @@ function markdownImage(label: string, href: string): HTMLElement {
     }
     const image = document.createElement("img");
     image.alt = accessibleLabel;
-    image.loading = "lazy";
+    // Hidden lazy images do not load until visible, but load is what reveals them.
+    image.loading = "eager";
     image.hidden = true;
     const fallback = document.createElement("span");
     fallback.className = "mdImageFallback";
