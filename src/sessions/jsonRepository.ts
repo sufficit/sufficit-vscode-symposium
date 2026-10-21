@@ -7,6 +7,17 @@ import { sessionKey, StoredSession } from "./repository";
 
 export const JSON_INDEX_FILE = "session-index.v1.json";
 const SCHEMA_VERSION = 2;
+/**
+ * Quiet period before queued index changes reach the disk. Slow journaled
+ * filesystems can take hundreds of ms per metadata operation, so bursts
+ * (one reconcile touches every provider) must collapse into a single write.
+ */
+export const DEFAULT_PERSIST_DEBOUNCE_MS = 1_000;
+
+export interface JsonSessionRepositoryOptions {
+    /** Quiet period before a write; `0` writes on the next timer tick. */
+    debounceMs?: number;
+}
 
 interface StoredIndex {
     schemaVersion: number;
@@ -27,17 +38,25 @@ export class JsonSessionRepository extends InMemorySessionRepository {
     private inflightProviders = new Set<string>();
     private waiters: PersistWaiter[] = [];
     private drain: Promise<void> | undefined;
+    private timer: ReturnType<typeof setTimeout> | undefined;
+    private readonly debounceMs: number;
 
-    constructor(storageDir: string) {
+    constructor(storageDir: string, options: JsonSessionRepositoryOptions = {}) {
         super();
         this.file = path.join(storageDir, JSON_INDEX_FILE);
+        this.debounceMs = Math.max(0, options.debounceMs ?? DEFAULT_PERSIST_DEBOUNCE_MS);
         // Read once at activation: constructors cannot await and the
         // catalog must be primed before the first listCached() call.
         this.load();
     }
 
     override replaceProvider(backend: string, sessions: readonly StoredSession[]): Promise<void> {
+        const unchanged = this.sameAsStored(backend, sessions);
         void super.replaceProvider(backend, sessions);
+        // A periodic reconcile usually finds nothing new: rewriting an
+        // identical snapshot only burns journal commits. Pending/in-flight
+        // work for this provider still has to settle, so it is not skipped.
+        if (unchanged && !this.hasWorkFor(backend)) return Promise.resolve();
         this.pendingProviders.add(backend);
         return this.enqueue();
     }
@@ -48,11 +67,11 @@ export class JsonSessionRepository extends InMemorySessionRepository {
         return this.enqueue();
     }
 
-    /** Resolves after every queued write has reached storage. */
+    /** Resolves after every queued write has reached storage, skipping the debounce window. */
     async flush(): Promise<void> {
-        if (this.drain) await this.drain.catch(() => undefined);
+        await this.drainNow();
         // One bounded retry of work a failed write left behind; never spin on a persistent error.
-        if (this.hasPending() || this.waiters.length) await this.enqueue().catch(() => undefined);
+        if (this.hasPending() || this.waiters.length) await this.drainNow();
     }
 
     override async dispose(): Promise<void> {
@@ -61,6 +80,19 @@ export class JsonSessionRepository extends InMemorySessionRepository {
 
     private hasPending(): boolean {
         return this.pendingAll || this.pendingProviders.size > 0;
+    }
+
+    private hasWorkFor(backend: string): boolean {
+        return (
+            this.pendingAll ||
+            this.pendingProviders.has(backend) ||
+            this.inflightProviders.has(backend)
+        );
+    }
+
+    private sameAsStored(backend: string, sessions: readonly StoredSession[]): boolean {
+        const current = [...this.sessions.values()].filter((item) => item.backend === backend);
+        return fingerprint(current) === fingerprint(sessions);
     }
 
     private load(): void {
@@ -86,36 +118,52 @@ export class JsonSessionRepository extends InMemorySessionRepository {
         return promise;
     }
 
+    /** Arms the debounce timer; every change inside the window shares the same write. */
     private startDrain(): void {
+        if (this.drain || this.timer) return;
+        this.timer = setTimeout(() => {
+            this.timer = undefined;
+            this.runDrain();
+        }, this.debounceMs);
+    }
+
+    private runDrain(): void {
         if (this.drain) return;
-        this.drain = new Promise<void>((resolve) => setImmediate(resolve))
-            .then(() => this.drainQueue())
-            .finally(() => {
-                this.drain = undefined;
-                if (this.waiters.length) this.startDrain();
-            });
+        this.drain = this.drainQueue().finally(() => {
+            this.drain = undefined;
+            // Changes that arrived during the write wait out a fresh debounce window.
+            if (this.waiters.length) this.startDrain();
+        });
+    }
+
+    /** Writes queued work right now (no debounce) and resolves when the write settles. */
+    private drainNow(): Promise<void> {
+        if (this.timer) {
+            clearTimeout(this.timer);
+            this.timer = undefined;
+        }
+        if (!this.drain && (this.waiters.length || this.hasPending())) this.runDrain();
+        return (this.drain ?? Promise.resolve()).catch(() => undefined);
     }
 
     private async drainQueue(): Promise<void> {
-        while (this.waiters.length || this.hasPending()) {
-            const waiters = this.waiters.splice(0);
-            const all = this.pendingAll;
-            const providers = new Set(this.pendingProviders);
-            this.pendingAll = false;
-            this.pendingProviders.clear();
-            this.inflightProviders = providers;
-            try {
-                await this.persist(all ? undefined : providers);
-                for (const waiter of waiters) waiter.resolve();
-            } catch (error) {
-                // Keep the unwritten work so the next write or flush retries it.
-                if (all) this.pendingAll = true;
-                for (const provider of providers) this.pendingProviders.add(provider);
-                for (const waiter of waiters) waiter.reject(error);
-                return;
-            } finally {
-                this.inflightProviders = new Set();
-            }
+        if (!this.waiters.length && !this.hasPending()) return;
+        const waiters = this.waiters.splice(0);
+        const all = this.pendingAll;
+        const providers = new Set(this.pendingProviders);
+        this.pendingAll = false;
+        this.pendingProviders.clear();
+        this.inflightProviders = providers;
+        try {
+            await this.persist(all ? undefined : providers);
+            for (const waiter of waiters) waiter.resolve();
+        } catch (error) {
+            // Keep the unwritten work so the next write or flush retries it.
+            if (all) this.pendingAll = true;
+            for (const provider of providers) this.pendingProviders.add(provider);
+            for (const waiter of waiters) waiter.reject(error);
+        } finally {
+            this.inflightProviders = new Set();
         }
     }
 
@@ -162,6 +210,27 @@ export class JsonSessionRepository extends InMemorySessionRepository {
             if (!owned(session.backend)) this.sessions.set(sessionKey(session), session);
         }
     }
+}
+
+/** Order-insensitive identity of a provider's rows, used to detect no-op replacements. */
+function fingerprint(sessions: readonly StoredSession[]): string {
+    return JSON.stringify(
+        sessions
+            .map((session) => stableStringify(session))
+            .sort(),
+    );
+}
+
+function stableStringify(value: unknown): string {
+    return JSON.stringify(value, (_key, nested) =>
+        nested && typeof nested === "object" && !Array.isArray(nested)
+            ? Object.fromEntries(
+                  Object.entries(nested as Record<string, unknown>).sort(([a], [b]) =>
+                      a < b ? -1 : a > b ? 1 : 0,
+                  ),
+              )
+            : nested,
+    );
 }
 
 async function readStoredIndex(file: string): Promise<StoredSession[]> {

@@ -17,6 +17,12 @@ export interface SessionRepository {
     replaceAll(sessions: readonly StoredSession[]): void | Promise<void>;
     /** Optional one-shot import used by persistent backends during upgrades. */
     importLegacy?(sessions: readonly StoredSession[]): number;
+    /**
+     * Optional: writes queued changes immediately, skipping any debounce window.
+     * Repositories that batch writes implement it so urgent changes (deletions,
+     * shutdown) do not wait for the quiet period.
+     */
+    flush?(): Promise<void>;
     /** Durable repositories flush queued writes before resolving. */
     dispose(): void | Promise<void>;
 }
