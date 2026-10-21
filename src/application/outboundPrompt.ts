@@ -1,4 +1,5 @@
 /** Application-owned outbound prompt policy. */
+import { LOCAL_MCP_READ_SESSION_TOOL } from "../adapters/localMcp/endpoint";
 import { mimeTypeFor } from "../adapters/parse";
 
 export interface OutboundPromptState {
@@ -121,7 +122,7 @@ export const CANCELED_RETRY_PREAMBLE =
 export function sessionIdNote(id: string): string {
     return (
         `[session: ${id}] You are in this Symposium chat session. ` +
-        `Call the read_session tool (with no arguments, or this id) at any time to re-read this conversation's full transcript and recover context. You will never lose track of which session you are in. ` +
+        `Call the read_session tool (named ${LOCAL_MCP_READ_SESSION_TOOL} when tools are namespaced by MCP server; no arguments, or this id) at any time to re-read this conversation's full transcript and recover context. You will never lose track of which session you are in. ` +
         `Memory results whose sessionId differs from this id belong to OTHER conversations — never mix them into this session's tasks or answers.`
     );
 }
@@ -131,7 +132,7 @@ export function handoffReferenceNote(
     handoff: NonNullable<BuildOutboundPromptOptions["handoff"]>,
 ): string {
     const source = handoff.sessionId
-        ? `Parent session id: ${handoff.sessionId}. Before acting, call read_session with this id; start with a recent tail and request more only when needed.`
+        ? `Parent session id: ${handoff.sessionId}. Before acting, call read_session (${LOCAL_MCP_READ_SESSION_TOOL} when namespaced) with this id; start with a recent tail and request more only when needed. If that tool is unavailable, follow the user's latest request and do not guess the parent from memory.`
         : "The parent session id was not available; use the user's current request as the source of truth.";
     return `[Backend handoff] You are continuing the conversation titled ${JSON.stringify(handoff.title || "Untitled")} from ${handoff.backend}. ${source} Do not reuse goals or tasks from unrelated conversations. Follow the latest user request from the parent conversation.`;
 }

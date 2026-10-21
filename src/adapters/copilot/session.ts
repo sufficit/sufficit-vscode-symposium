@@ -8,6 +8,7 @@ import { resolveExecutable } from "../exec";
 import { toolSummary } from "../toolSummary";
 import { AgentSession, SessionStartOptions } from "../types";
 import { isTransientErrorMessage } from "../transientError";
+import { LOCAL_MCP_SERVER, buildLocalMcpServer, isLocalMcpName } from "../localMcp/endpoint";
 import {
     buildAutomaticSufficitMcpServers,
     currentSufficitMcpToken,
@@ -97,10 +98,12 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         }
         const mcpServers: Record<string, unknown> = { ...(this.config.mcpServers ?? {}) };
         for (const name of Object.keys(mcpServers)) {
-            if (isAutomaticSufficitMcpName(name)) {
+            if (isAutomaticSufficitMcpName(name) || isLocalMcpName(name)) {
                 delete mcpServers[name];
             }
         }
+        const local = buildLocalMcpServer(this.options.guardrailSessionId || this.sessionId);
+        if (local) mcpServers[LOCAL_MCP_SERVER] = local;
         Object.assign(
             mcpServers,
             buildAutomaticSufficitMcpServers(
@@ -113,7 +116,9 @@ export class CopilotSession extends EventEmitter implements AgentSession {
         );
         const mcp = buildMcpConfigFile({ ...this.config, mcpServers }, "copilot-mcp.json");
         if (mcp) {
-            args.push("--mcp-config", mcp);
+            // Copilot CLI 1.0.61 rejects --mcp-config; "@file" loads the JSON
+            // and augments the user's own ~/.copilot/mcp-config.json.
+            args.push("--additional-mcp-config", `@${mcp}`);
         }
         const child = spawn(resolveExecutable(this.config.executable), args, {
             cwd: this.options.cwd,
