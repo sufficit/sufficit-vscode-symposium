@@ -12,7 +12,7 @@ import { SessionIndex } from "./sessions/index";
 import { startGeniusSessionRefresh } from "./extension/geniusSessionRefresh";
 import { LiveSessions } from "./sessions/runtime";
 import { SubagentManager } from "./sessions/subagents";
-import { setSubagentHost, setLiveTranscriptReader } from "./adapters/aiTools";
+import { setSubagentHost } from "./adapters/aiTools";
 import { ChatViewProvider } from "./ui/chatView";
 import { ConfigPanel } from "./ui/configPanel";
 import { createSymposiumApi, SymposiumApi } from "./api/symposiumApi";
@@ -39,6 +39,7 @@ import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/
 import { setSufficitIdentityMcpUrl } from "./adapters/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
 import { registerExtensionAhpRuntime } from "./extension/ahpRuntime";
+import { registerSessionReading } from "./extension/localMcp";
 import { registerShutdownTask } from "./extension/shutdown";
 export { deactivate } from "./extension/shutdown";
 export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
@@ -141,9 +142,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     );
     context.subscriptions.push({ dispose: () => setSubagentHost(undefined) });
 
-    // Read live transcripts before disk flush without importing the runtime in tools.
-    setLiveTranscriptReader({ read: (id) => runtime.readTranscript(id) });
-    context.subscriptions.push({ dispose: () => setLiveTranscriptReader(undefined) });
+    await registerSessionReading(context, runtime, symposiumLog);
 
     // Sufficit Identity login (tokens in SecretStorage; basis for memory/MCP).
     const auth = new SufficitAuth(context, symposiumLog);

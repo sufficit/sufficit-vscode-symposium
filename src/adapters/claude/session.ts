@@ -10,6 +10,7 @@ import { ClaudeAdapterConfig, mapUnifiedToClaudeFlag } from "./sessionConfig";
 import { ClaudeEventParser } from "./eventParser";
 import {
     buildClaudeMcpConfig,
+    claudeMcpCliArgs,
     shouldRestartClaudeMcp,
     type ClaudeMcpConfigResult,
 } from "./mcpConfig";
@@ -166,10 +167,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
         }
         // MCP servers: Playwright browser tools (assisted navigation) + any extra
         // servers from settings. Written to a config file passed via --mcp-config.
-        const mcpConfig = this.buildMcpConfig();
-        if (mcpConfig) {
-            args.push("--mcp-config", mcpConfig);
-        }
+        args.push(...claudeMcpCliArgs(this.buildMcpConfig()));
         const executable = resolveExecutable(this.config.executable);
         this.config.log?.(
             `[claude] spawn ${executable} ${args.join(" ")} (cwd=${this.options.cwd})`,

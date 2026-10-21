@@ -13,6 +13,7 @@ import {
 } from "./codexMcpConfig";
 import { CodexEventParser } from "./eventParser";
 import { syncCodexSufficitMcp } from "./sufficitMcp";
+import { buildLocalMcpCodexArgs, isLocalMcpName } from "../localMcp/endpoint";
 import { isAutomaticSufficitMcpName } from "../sufficitMcp";
 
 /** Resolve a picker value into the explicit model argument for one Codex turn. */
@@ -199,7 +200,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
             ...(this.config.mcpServers ?? {}),
         };
         for (const name of Object.keys(servers)) {
-            if (isAutomaticSufficitMcpName(name)) {
+            if (isAutomaticSufficitMcpName(name) || isLocalMcpName(name)) {
                 delete servers[name];
             }
         }
@@ -208,7 +209,7 @@ export class CodexSession extends EventEmitter implements AgentSession {
         }
         // Merge VSCode MCP servers (from mcp.json), letting explicit config override
         for (const [name, server] of Object.entries(this.vscodeMcpServers)) {
-            if (!isAutomaticSufficitMcpName(name) && !servers[name]) {
+            if (!isAutomaticSufficitMcpName(name) && !isLocalMcpName(name) && !servers[name]) {
                 servers[name] = server;
             }
         }
@@ -220,6 +221,8 @@ export class CodexSession extends EventEmitter implements AgentSession {
                 base.push("-c", `mcp_servers.${name}.args=${JSON.stringify(s.args)}`);
             }
         }
+        // In-memory `read_session` server: -c overrides only, nothing in ~/.codex.
+        base.push(...buildLocalMcpCodexArgs(this.options.guardrailSessionId || this.sessionId));
         // Read every prompt from stdin. Backend handoffs can contain a transcript
         // larger than the operating system's argv limit (spawn E2BIG).
         const args = [...base, ...codexPromptArgs(this.sessionId)];
