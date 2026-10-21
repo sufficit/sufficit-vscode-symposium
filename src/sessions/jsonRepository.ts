@@ -214,11 +214,7 @@ export class JsonSessionRepository extends InMemorySessionRepository {
 
 /** Order-insensitive identity of a provider's rows, used to detect no-op replacements. */
 function fingerprint(sessions: readonly StoredSession[]): string {
-    return JSON.stringify(
-        sessions
-            .map((session) => stableStringify(session))
-            .sort(),
-    );
+    return JSON.stringify(sessions.map((session) => stableStringify(session)).sort());
 }
 
 function stableStringify(value: unknown): string {

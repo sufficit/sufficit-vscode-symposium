@@ -141,7 +141,12 @@ test("reconcile does not wait for a slow repository write and keeps the catalog 
 });
 
 test("a failing repository write is logged and never fails the reconcile", async () => {
-    const info: SessionInfo = { backend: "claude", sessionId: "x", title: "X", updatedAt: new Date(1) };
+    const info: SessionInfo = {
+        backend: "claude",
+        sessionId: "x",
+        title: "X",
+        updatedAt: new Date(1),
+    };
     class FailingRepository extends InMemorySessionRepository {
         override replaceProvider(): Promise<void> {
             return Promise.reject(new Error("disk full"));
@@ -167,7 +172,12 @@ test("a failing repository write is logged and never fails the reconcile", async
 });
 
 test("forget flushes the repository so a deletion is durable immediately", async () => {
-    const info: SessionInfo = { backend: "claude", sessionId: "gone", title: "Gone", updatedAt: new Date(1) };
+    const info: SessionInfo = {
+        backend: "claude",
+        sessionId: "gone",
+        title: "Gone",
+        updatedAt: new Date(1),
+    };
     let flushed = 0;
     class DebouncedRepository extends InMemorySessionRepository {
         flush(): Promise<void> {

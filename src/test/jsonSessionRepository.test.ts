@@ -35,10 +35,16 @@ test("JSON session index preserves providers updated by sibling Extension Hosts"
 });
 
 /** Counts snapshot commits (atomic renames onto the index file). */
-async function countWrites<T>(file: string, action: () => Promise<T>): Promise<{ writes: number; result: T }> {
+async function countWrites<T>(
+    file: string,
+    action: () => Promise<T>,
+): Promise<{ writes: number; result: T }> {
     const original = fsp.rename;
     let writes = 0;
-    fsp.rename = (async (from: Parameters<typeof original>[0], to: Parameters<typeof original>[1]) => {
+    fsp.rename = (async (
+        from: Parameters<typeof original>[0],
+        to: Parameters<typeof original>[1],
+    ) => {
         if (String(to) === file) writes++;
         return original(from, to);
     }) as typeof original;
@@ -85,7 +91,10 @@ test("replacing a provider with identical rows does not rewrite the snapshot", a
             // Same content, new object identity and different key order.
             const clone = rows.map((row) => JSON.parse(JSON.stringify(row)) as typeof row);
             await repository.replaceProvider("claude", clone);
-            await repository.replaceProvider("claude", clone.map((row) => ({ ...row })));
+            await repository.replaceProvider(
+                "claude",
+                clone.map((row) => ({ ...row })),
+            );
         });
         assert.equal(writes, 0);
         // A real change is still persisted.
@@ -116,7 +125,9 @@ test("dispose persists pending changes so shutdown never loses the latest index"
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-session-dispose-"));
     try {
         const repository = new JsonSessionRepository(directory, { debounceMs: 60_000 });
-        void repository.replaceProvider("claude", [session("claude", "a", "A")]).catch(() => undefined);
+        void repository
+            .replaceProvider("claude", [session("claude", "a", "A")])
+            .catch(() => undefined);
         await repository.dispose();
         assert.equal(new JsonSessionRepository(directory).list().length, 1);
     } finally {
