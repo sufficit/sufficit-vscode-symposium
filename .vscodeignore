@@ -34,3 +34,4 @@ examples/**
 voice-ptbr-*/**
 voice-ptbr-extension.*
 voice-ptbr-package.json
+.markdown-coverage-ignore
