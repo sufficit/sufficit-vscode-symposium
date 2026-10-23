@@ -45,3 +45,7 @@ Cada avaliação deve registrar:
 Uma avaliação concluída permanece nesta pasta. Trabalho futuro identificado por
 ela deve virar um `docs/PLAN-*.md`; depois de implementado, o resultado passa
 para `docs/activities/` seguindo a convenção de data e resumo já usada ali.
+
+## Evaluations
+
+- [PR #41 — startup performance evaluation](20260730-pr-41-startup-performance-evaluation.md)

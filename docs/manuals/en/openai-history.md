@@ -38,3 +38,5 @@ If the model seems confused after the notice:
 3. Start a new session when the old transcript came from another backend or was heavily interrupted.
 
 The key guarantee is that folding affects only the request sent to the provider. Your saved transcript remains unchanged.
+
+Also available in [Portuguese (pt-BR)](../pt-br/openai-history.md).

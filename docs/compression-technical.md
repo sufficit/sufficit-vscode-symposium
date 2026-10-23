@@ -291,7 +291,7 @@ Key test scenarios:
 - `src/compression.ts` - Core compression logic
 - `src/ui/configPanel.ts` - Configuration panel backend
 - `src/ui/configHtml.ts` - Webview HTML generation
-- `docs/compression-guide.md` - User guide
+- [compression-guide.md](compression-guide.md) - User guide
 - `src/extension.ts` - Extension initialization
 
 ## Changelog
@@ -302,3 +302,7 @@ Key test scenarios:
 - Added event listeners for compression actions
 - Created user documentation
 - Integrated with existing CompressionManager
+
+## Related documents
+
+- [Compression manager tests](compression-tests.md)

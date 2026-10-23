@@ -1,0 +1,9 @@
+# Paths exempt from scripts/check-markdown-coverage.mjs (reachability from
+# README.md and missing-link checks). Keep this list short: anything readers or
+# contributors should find belongs in the hierarchy instead.
+#
+# "dir/" exempts a directory; other lines are glob patterns ("*" stays within
+# one path segment).
+
+# Completed-work records: historical evidence, not navigation.
+docs/activities/

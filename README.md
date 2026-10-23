@@ -65,6 +65,9 @@ flowchart TD
     Adapter --> History[Symposium transcript store]
 ```
 
+[ARCHITECTURE.md](ARCHITECTURE.md) covers dependency direction, application
+ports, session lifetime and the verification guardrails.
+
 ## Agent Host Protocol Direction
 
 Symposium is incrementally adopting Microsoft's
@@ -151,6 +154,14 @@ Core settings are available under `Symposium` in VS Code settings.
 | `symposium.codex.executable` | Path to the `codex` binary. |
 | `symposium.copilot.executable` | Path to the `copilot` binary. |
 
+Further configuration guides:
+
+- [Context and history settings](docs/CONTEXT-HISTORY.md) — the Context and history tab of the settings panel.
+- [Settings API](docs/USAGE-api-settings.md) — reading and changing Symposium settings from code.
+- [Compression manual](docs/manuals/en/compression.md) — how history compression reduces token usage.
+- [Compression presets guide](docs/compression-guide.md) and [quick reference](docs/compression-presets.md).
+- [OpenAI history diagnostics](docs/manuals/en/openai-history.md) — when and why request history is reshaped.
+
 ## Hand-Off Between Agents
 
 A live dialogue can be handed off to a different backend without leaving the
@@ -170,6 +181,12 @@ session id and can be reopened from the sessions list.
 | GitHub organization | <https://github.com/sufficit> |
 | Extension repository | <https://github.com/sufficit/sufficit-vscode-symposium> |
 | VS Code Marketplace | <https://marketplace.visualstudio.com/items?itemName=sufficit.sufficit-vscode-symposium> |
+
+## Remote access
+
+- [Remote access](docs/REMOTE-ACCESS.md) — driving an agent session from a phone through the bridge.
+- [Sufficit Relay Protocol](docs/RELAY-PROTOCOL.md) — public Symposium access over HTTP and AHP WebSocket.
+- [API discovery](docs/API-DISCOVERY.md) — the discovery contract published for external clients.
 
 ## Authentication browser
 
@@ -192,3 +209,14 @@ npx @vscode/vsce package
 ```
 
 Stable releases are published from version tags by the repository workflow.
+
+Development references:
+
+- [Release and publishing](docs/RELEASE.md) — the mandatory release guardrail and flow.
+- [Versioning policy](VERSION.md) and [feature versioning](docs/FEATURE-VERSIONING.md).
+- [UI guidelines](docs/USAGE-guidelines-ui.md) — the standard for Symposium webviews.
+- [Offline testing of the config UI, public API and remote bridge](docs/TESTING-config-and-bridge.md).
+- [Pull request evaluations](docs/pullrequests/README.md).
+- Every Markdown file must be reachable from this README through links from its natural parent;
+  `npm run check:markdown` (part of `npm test`) enforces it. Only `docs/activities/` is exempt
+  (`.markdown-coverage-ignore`).

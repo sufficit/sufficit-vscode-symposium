@@ -1193,7 +1193,7 @@
         "verify": "npm run check:release && npm run format:check && npm run lint && npm run typecheck && npm run typecheck:webview && npm test && npm run compile",
         "check:release": "node scripts/check-release-guardrail.mjs",
         "verify:package": "npm run verify && npm run package:vsix && npm run check:vsix",
-        "test": "npm run compile:test && npm run coverage:run && npm run check:webview && npm run check:configscript && npm run check:size && npm run check:complexity && npm run check:engineering && npm run check:architecture",
+        "test": "npm run compile:test && npm run coverage:run && npm run check:webview && npm run check:configscript && npm run check:size && npm run check:complexity && npm run check:engineering && npm run check:architecture && npm run check:markdown",
         "test:unit": "node --require ./test/register-vscode-stub.cjs --test out/test/*.test.js test/*.test.cjs",
         "coverage": "npm run compile:test && npm run coverage:run",
         "coverage:run": "c8 --all --src out --include 'out/**/*.js' --exclude 'out/test/**' --exclude 'out/ui/**' --check-coverage --statements 39 --branches 66 --functions 56 --lines 39 --reporter=text --reporter=json --reporter=json-summary npm run test:unit && npm run coverage:changed",
@@ -1224,7 +1224,8 @@
         "check:vsix": "node scripts/check-vsix.mjs",
         "check:unused": "knip",
         "package:vsix": "vsce package --allow-missing-repository",
-        "vscode:prepublish": "npm run compile && npm run check:webview"
+        "vscode:prepublish": "npm run compile && npm run check:webview",
+        "check:markdown": "node scripts/check-markdown-coverage.mjs"
     },
     "devDependencies": {
         "@microsoft/agent-host-protocol": "0.6.0",
@@ -1241,6 +1242,7 @@
         "eslint": "^9.17.0",
         "jsdom": "29.1.1",
         "knip": "^6.32.1",
+        "markdown-it": "14.3.0",
         "ovsx": "^1.1.0",
         "prettier": "^3.4.2",
         "qrcode-generator": "2.0.4",

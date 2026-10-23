@@ -179,3 +179,5 @@ Change compression mid-conversation:
 2. Verify auto-compact threshold > 0
 3. Check session didn't override to `none`
 4. Look for compression diagnostics in usage events
+
+Also available in [Portuguese (pt-BR)](../pt-br/compression.md).
