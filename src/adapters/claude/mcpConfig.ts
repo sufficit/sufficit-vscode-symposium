@@ -3,6 +3,13 @@ import * as os from "os";
 import * as path from "path";
 
 import {
+    LOCAL_MCP_READ_SESSION_TOOL,
+    LOCAL_MCP_SERVER,
+    buildLocalMcpServer,
+    currentLocalMcpUrl,
+    isLocalMcpName,
+} from "../localMcp/endpoint";
+import {
     SUFFICIT_IDENTITY_MCP_SERVER,
     SUFFICIT_MCP_SERVER,
     buildAutomaticSufficitMcpServers,
@@ -32,8 +39,10 @@ export function buildClaudeMcpConfig(
 ): ClaudeMcpConfigResult {
     const servers: Record<string, unknown> = { ...(config.mcpServers ?? {}) };
     for (const name of Object.keys(servers)) {
-        if (isAutomaticSufficitMcpName(name)) delete servers[name];
+        if (isAutomaticSufficitMcpName(name) || isLocalMcpName(name)) delete servers[name];
     }
+    const local = buildLocalMcpServer(sessionId);
+    if (local) servers[LOCAL_MCP_SERVER] = local;
     const token = currentSufficitMcpToken();
     const automatic = buildAutomaticSufficitMcpServers(
         token,
@@ -68,6 +77,18 @@ export function buildClaudeMcpConfig(
         config.log?.(`[claude] mcp config write failed: ${error}`);
         return {};
     }
+}
+
+/**
+ * CLI arguments for the generated config. Claude's non-bypass permission modes
+ * (e.g. acceptEdits) refuse MCP tools that are not pre-approved, so the local
+ * read-only `read_session` is allowed explicitly.
+ */
+export function claudeMcpCliArgs(configPath: string | undefined): string[] {
+    if (!configPath) return [];
+    const args = ["--mcp-config", configPath];
+    if (currentLocalMcpUrl()) args.push(`--allowedTools=${LOCAL_MCP_READ_SESSION_TOOL}`);
+    return args;
 }
 
 export function shouldRestartClaudeMcp(

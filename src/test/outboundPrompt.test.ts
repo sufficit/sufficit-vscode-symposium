@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { LOCAL_MCP_READ_SESSION_TOOL } from "../adapters/localMcp/endpoint";
 import {
     AUTONOMY_PREAMBLE,
     buildOutboundPrompt,
@@ -11,6 +12,7 @@ import {
     planTrackingPreamble,
     responseLanguageName,
     responseLanguagePreamble,
+    sessionIdNote,
 } from "../application/outboundPrompt";
 
 test("response language is reasserted on every turn, including resumed sessions", () => {
@@ -370,4 +372,17 @@ test("role-aware backends receive session note as developer preamble, not user t
     assert.equal(out.text, "Investigate");
     assert.ok(out.preamble.includes(SHELL_EXECUTION_PREAMBLE));
     assert.ok(out.preamble.some((p) => /\[session: 54c22186a57a42058de358784ffd192b\]/.test(p)));
+});
+
+test("session and handoff notes name the namespaced read_session tool and a safe fallback", () => {
+    assert.equal(LOCAL_MCP_READ_SESSION_TOOL, "mcp__symposium__read_session");
+    const handoff = handoffReferenceNote({
+        sessionId: "parent-1",
+        backend: "Sufficit AI",
+        title: "Parent",
+    });
+    assert.ok(handoff.includes(LOCAL_MCP_READ_SESSION_TOOL));
+    assert.match(handoff, /If that tool is unavailable, follow the user's latest request/);
+    assert.match(handoff, /do not guess the parent from memory/);
+    assert.ok(sessionIdNote("session-1").includes(LOCAL_MCP_READ_SESSION_TOOL));
 });

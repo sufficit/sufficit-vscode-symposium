@@ -11,5 +11,5 @@
         "src/test/**",
         "test/**"
     ],
-    "ignoreDependencies": ["@vscode/test-electron"]
+    "ignoreDependencies": ["@vscode/test-electron", "markdown-it"]
 }

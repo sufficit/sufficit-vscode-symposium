@@ -1,4 +1,3 @@
-import { normalizeContextPolicy } from "../openai/contextPolicy";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
@@ -8,10 +7,10 @@ import {
     resourceContentPath,
     workspaceKey,
 } from "../../config/root";
-import { dumpToText, readSession } from "../../sessionReader";
 import { runLocalFileTool } from "./localFileRun";
 import { runLocalShellTool } from "./localShellRun";
-import { getLiveTranscriptReader, type ToolContext } from "./types";
+import { readSessionText } from "./readSession";
+import type { ToolContext } from "./types";
 
 export async function runLocalTool(
     name: string,
@@ -20,7 +19,7 @@ export async function runLocalTool(
 ): Promise<string | undefined> {
     const web = await runWebTool(name, args);
     if (web !== undefined) return web;
-    if (name === "read_session") return readSessionTool(args, ctx);
+    if (name === "read_session") return readSessionText(args, ctx.sessionId);
     const bootstrap = runBootstrapTool(name, args, ctx);
     if (bootstrap !== undefined) return bootstrap;
     const shell = await runLocalShellTool(name, args, ctx);
@@ -55,52 +54,6 @@ async function runWebTool(
         content: body.slice(0, max),
         truncated: body.length > max,
     });
-}
-
-function readSessionTool(args: Record<string, unknown>, ctx: ToolContext): string {
-    const id = String(args.id ?? "").trim() || ctx.sessionId;
-    if (!id)
-        return JSON.stringify({ error: "no session id (none provided and no current session)" });
-    const options = {
-        tail: typeof args.tail === "number" ? args.tail : undefined,
-        maxChars:
-            typeof args.max_chars === "number"
-                ? args.max_chars
-                : normalizeContextPolicy(
-                      vscode.workspace.getConfiguration("symposium.openai").get("contextPolicy"),
-                  ).readMaxCharacters,
-        offset: typeof args.char_offset === "number" ? args.char_offset : undefined,
-    };
-    const disk = readSession(id);
-    const live = getLiveTranscriptReader()?.read(id);
-    const liveCount = live?.messages.length ?? 0;
-    if (live && liveCount > disk.count) {
-        return dumpToText(
-            {
-                id,
-                source: "live",
-                backend: live.backend ?? disk.backend,
-                title: live.title ?? disk.title,
-                count: liveCount,
-                messages: live.messages,
-            },
-            options,
-        );
-    }
-    if (disk.source !== "none") return dumpToText(disk, options);
-    return dumpToText(
-        live
-            ? {
-                  id,
-                  source: "live",
-                  backend: live.backend,
-                  title: live.title,
-                  count: liveCount,
-                  messages: live.messages,
-              }
-            : { id, source: "none", count: 0, messages: [] },
-        options,
-    );
 }
 
 function runBootstrapTool(

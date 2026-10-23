@@ -115,3 +115,13 @@ zero-tolerance burn-down check.
 The transport-independent authoritative channel store in `ahp/channelStore.ts`
 provides sequencing, snapshots and replay for the gradual Agent Host Protocol
 adoption described in [docs/AHP-ADOPTION.md](docs/AHP-ADOPTION.md).
+
+## Related documents
+
+- [Tool-name mapping boundaries](docs/ARCHITECTURE-tool-name-mapping-boundaries.md)
+- [AHP async persistence](docs/async-ahp-persistence.md)
+- [Opening long sessions](docs/SESSION-LOADING.md)
+- [Compression system — technical documentation](docs/compression-technical.md)
+- [Symposium × Hermes Agent conversation flow comparison](docs/COMPARISON-HERMES-CONVERSATION-FLOW.md)
+- [Conversation flow and scope control audit (2026-07-28)](docs/AUDIT-20260728-232617-glm-5.2.md)
+- [Claude history-to-AHP flow diagnostic notes](docs/INVESTIGATION-sol.md)

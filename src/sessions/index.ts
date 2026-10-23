@@ -86,7 +86,11 @@ export class SessionIndex {
             (session) => session.backend === backend,
         );
         try {
-            await this.repository.replaceProvider(backend, remaining);
+            // A deletion is user-initiated and rare: write it now instead of
+            // waiting out the repository's debounce window.
+            const pending = Promise.resolve(this.repository.replaceProvider(backend, remaining));
+            void this.repository.flush?.();
+            await pending;
         } catch (error) {
             this.log(
                 `[sessions] failed to persist deletion for ${backend}/${sessionId}: ${error instanceof Error ? error.message : String(error)}`,
@@ -115,6 +119,23 @@ export class SessionIndex {
                 `[sessions] repository flush failed: ${error instanceof Error ? error.message : String(error)}`,
             );
         }
+    }
+
+    /** Hands rows to the repository and only logs a failed write; never blocks the caller. */
+    private persistInBackground(backend: string, listed: readonly StoredSession[]): void {
+        try {
+            void Promise.resolve(this.repository.replaceProvider(backend, listed)).catch(
+                (error: unknown) => this.logPersistFailure(backend, error),
+            );
+        } catch (error) {
+            this.logPersistFailure(backend, error);
+        }
+    }
+
+    private logPersistFailure(backend: string, error: unknown): void {
+        this.log(
+            `[sessions] ${backend} persistence failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
     }
 
     private async scan(generation: number): Promise<SessionInfo[]> {
@@ -153,25 +174,22 @@ export class SessionIndex {
         if (this.disposed || generation !== this.generation) {
             return this.listCached();
         }
+        // No await between the generation check above and the cache update, so a
+        // concurrent forget()/invalidate() cannot interleave with this loop.
+        // Durability is the repository's job and may be debounced: the catalog is
+        // already correct in memory, so the scan must not wait for the disk.
         for (const result of providerResults) {
             if (!result) {
                 continue;
             }
-            try {
-                await this.repository.replaceProvider(result.backend, result.listed);
-                if (this.disposed || generation !== this.generation) return this.listCached();
-                for (const [key, session] of this.sessions) {
-                    if (session.backend === result.backend) {
-                        this.sessions.delete(key);
-                    }
+            this.persistInBackground(result.backend, result.listed);
+            for (const [key, session] of this.sessions) {
+                if (session.backend === result.backend) {
+                    this.sessions.delete(key);
                 }
-                for (const session of result.listed) {
-                    this.sessions.set(keyOf(session), session);
-                }
-            } catch (error) {
-                this.log(
-                    `[sessions] ${result.backend} persistence failed: ${error instanceof Error ? error.message : String(error)}`,
-                );
+            }
+            for (const session of result.listed) {
+                this.sessions.set(keyOf(session), session);
             }
         }
         this.log(
