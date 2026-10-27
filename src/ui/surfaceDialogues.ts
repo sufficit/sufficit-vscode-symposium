@@ -31,8 +31,8 @@ export class SurfaceDialogues {
      * Restores the last active session on open, or starts a default dialogue.
      * Implemented in surfaceDialoguesStartup.ts.
      */
-    restoreOrStart(): Promise<void> {
-        return restoreOrStartFlow(
+    restoreOrStart(): void {
+        restoreOrStartFlow(
             this.d,
             (info) => this.openSession(info),
             () => this.startDefaultDialogue(),

@@ -32,6 +32,7 @@ import {
     buildCustomAdapters,
 } from "./extension/config";
 import { buildChatSurfaceDeps } from "./extension/surfaceDeps";
+import { createSessionLookup } from "./sessions/sessionLookup";
 import { registerCommands } from "./extension/commands";
 import { initSttStorage } from "./voice/sttService";
 import { initVscodeSpeechBridge } from "./voice/vscodeSpeechBridge";
@@ -324,6 +325,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
         context,
         runtime,
         store,
+        getSession: createSessionLookup({
+            runtime,
+            store,
+            indexGet: (backend, sessionId) => sessionIndex?.get(backend, sessionId),
+        }),
         adapterByBackend,
         auth,
         deleting,
