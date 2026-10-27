@@ -7,10 +7,9 @@
 // paths post ONE `sessions-bulk` message; the extension host expands the
 // cascades (subagents + edit branches), confirms once and runs the batch.
 import { postMessage } from "./vscode";
-import { sessionsList, ctxMenu } from "./dom";
+import { sessionsList, ctxMenu, hideCtxMenu } from "./dom";
 import { sessions } from "./state";
 import { svgIcon } from "./icons";
-import { hideCtx } from "./menus";
 import { refreshSessionList } from "./sessionBridge";
 import type { SessionListItem } from "./types";
 
@@ -59,7 +58,7 @@ export function stopSelection(): void {
     selecting = false;
     selected.clear();
     selectBtn?.classList.remove("active");
-    hideCtx();
+    hideCtxMenu();
     refreshSessionList();
     renderSelectionBar();
 }
@@ -168,7 +167,7 @@ export function showGroupActionsMenu(
         mi.appendChild(ic);
         mi.appendChild(document.createTextNode(text));
         mi.addEventListener("click", () => {
-            hideCtx();
+            hideCtxMenu();
             postBulkAction(action, clean);
         });
         ctxMenu.appendChild(mi);
