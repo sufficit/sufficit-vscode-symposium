@@ -7,7 +7,7 @@
 export type SessionStatusName = "working" | "idle" | "error" | "inputNeeded";
 
 export interface DecodedSessionStatus {
-    /** Named activity state; `working` covers inProgress (8) and inputNeeded (24). */
+    /** Named activity state: idle (1), error (2), working (8), inputNeeded (24). */
     name: SessionStatusName;
     read: boolean;
     archived: boolean;
@@ -44,17 +44,14 @@ export function decodeSessionStatus(status: number): DecodedSessionStatus {
     const base = status & 31;
     return {
         name:
-            base === AHP_STATUS.inProgress || base === AHP_STATUS.inputNeeded
+            base === AHP_STATUS.inProgress
                 ? "working"
-                : base === AHP_STATUS.error
-                  ? "error"
-                  : "idle",
+                : base === AHP_STATUS.inputNeeded
+                  ? "inputNeeded"
+                  : base === AHP_STATUS.error
+                    ? "error"
+                    : "idle",
         read: (status & AHP_STATUS.isRead) !== 0,
         archived: (status & AHP_STATUS.isArchived) !== 0,
     };
-}
-
-/** Activity state that still needs the user's attention (`inputNeeded`, 24). */
-export function isInputNeededStatus(status: number): boolean {
-    return (status & 31) === AHP_STATUS.inputNeeded;
 }
