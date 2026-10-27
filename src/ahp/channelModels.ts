@@ -8,8 +8,14 @@ import type {
     SessionSummary,
     URI,
 } from "@microsoft/agent-host-protocol";
-import { AHP_STATUS, statusWithFlags } from "./status";
-export { AHP_STATUS, isArchivedStatus, replaceActivityStatus, statusWithFlags } from "./status";
+import { AHP_STATUS, decodeSessionStatus, statusWithFlags } from "./status";
+export {
+    AHP_STATUS,
+    decodeSessionStatus,
+    isArchivedStatus,
+    replaceActivityStatus,
+    statusWithFlags,
+} from "./status";
 
 export interface AhpSessionRegistration {
     resource: URI;
@@ -82,11 +88,18 @@ export function sessionSummary(
     createdAt?: string,
 ): SessionSummary {
     const timestamp = createdAt ?? metaCreatedAt(state) ?? new Date().toISOString();
+    // Named status fields ride alongside the raw bitmask for clients that do
+    // not decode bits themselves (issue #56); 40 (inProgress|isRead) arrives as
+    // statusName "working" instead of an unknown number.
+    const decoded = decodeSessionStatus(state.status);
     return {
         resource,
         provider: state.provider,
         title: state.title,
         status: state.status,
+        statusName: decoded.name,
+        read: decoded.read,
+        archived: decoded.archived,
         activity: state.activity,
         workingDirectory: state.workingDirectory,
         createdAt: timestamp,
