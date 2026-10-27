@@ -36,7 +36,7 @@ test("surface router dispatches sessions-bulk to the session message handlers", 
 test("bulk cascade expands lineage mates and subagent descendants with dedupe", () => {
     const cascade = read("../../src/ui/surfaceSessionCascade.ts");
     assert.match(cascade, /export interface SessionCascadeTarget/);
-    assert.match(cascade, /export function expandSessionCascadeTargets\(/);
+    assert.match(cascade, /export function expandSessionCascadeTargets</);
     assert.match(cascade, /lineageKey/);
     assert.match(cascade, /descendants/);
 });
