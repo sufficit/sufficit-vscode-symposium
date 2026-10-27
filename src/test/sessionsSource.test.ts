@@ -32,13 +32,22 @@ test("cold index primes once, then serves the cached snapshot without rescanning
 
     const first = await rawSessions();
 
-    assert.deepEqual(first.map((s) => s.sessionId), ["s1"]);
-    assert.deepEqual(recorder.cached.map((s) => s.sessionId), ["s1"]);
+    assert.deepEqual(
+        first.map((s) => s.sessionId),
+        ["s1"],
+    );
+    assert.deepEqual(
+        recorder.cached.map((s) => s.sessionId),
+        ["s1"],
+    );
 
     const second = await rawSessions();
 
     assert.equal(recorder.reconcileCalls(), 1);
-    assert.deepEqual(second.map((s) => s.sessionId), ["s1"]);
+    assert.deepEqual(
+        second.map((s) => s.sessionId),
+        ["s1"],
+    );
 });
 
 test("warm index returns the cache immediately and throttles background reconciles", async () => {
@@ -48,7 +57,10 @@ test("warm index returns the cache immediately and throttles background reconcil
 
     const first = await rawSessions();
 
-    assert.deepEqual(first.map((s) => s.sessionId), ["warm-1"]);
+    assert.deepEqual(
+        first.map((s) => s.sessionId),
+        ["warm-1"],
+    );
     await flush();
     assert.equal(recorder.reconcileCalls(), 1);
 
