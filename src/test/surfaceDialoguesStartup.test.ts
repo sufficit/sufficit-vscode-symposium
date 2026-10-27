@@ -30,11 +30,7 @@ test("restoreOrStart restores the last session through the direct lookup", () =>
     let opened: SessionInfo | undefined;
     let defaults = 0;
 
-    restoreOrStart(
-        makeDeps(() => info),
-        (i) => (opened = i),
-        () => (defaults += 1),
-    );
+    restoreOrStart(makeDeps(() => info), (i) => (opened = i), () => (defaults += 1));
 
     assert.deepEqual(opened, info);
     assert.equal(defaults, 0);
@@ -44,11 +40,7 @@ test("restoreOrStart falls back to the default dialogue when the lookup misses",
     let defaults = 0;
     let opened = 0;
 
-    restoreOrStart(
-        makeDeps(() => undefined),
-        () => (opened += 1),
-        () => (defaults += 1),
-    );
+    restoreOrStart(makeDeps(() => undefined), () => (opened += 1), () => (defaults += 1));
 
     assert.equal(opened, 0);
     assert.equal(defaults, 1);
