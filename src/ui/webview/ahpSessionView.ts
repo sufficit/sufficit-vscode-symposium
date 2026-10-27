@@ -1,5 +1,6 @@
 import type { SessionState, SessionSummary } from "@microsoft/agent-host-protocol";
 import { nativeSessionId } from "../../ahp/client/state";
+import { decodeSessionStatus, type SessionStatusName } from "../../ahp/status";
 import { applyMeta } from "./meta";
 import { renderSessions } from "./sessions";
 import { setSessions } from "./state";
@@ -51,15 +52,27 @@ function summaryItem(item: SessionSummary): SessionListItem {
         backendName: item.provider,
         title: item.title,
         cwd: filePath(item.workingDirectory),
-        status: activityStatus(item.status),
+        status: summaryStatus(item),
         terminalStatus: symposium?.terminalStatus,
         resource: item.resource,
     };
 }
 
+/** Display status: prefer the wire's named `statusName` when the host sends one (issue #56). */
+function summaryStatus(item: SessionSummary): "working" | "idle" | "error" {
+    const raw = (item as { statusName?: unknown }).statusName;
+    if (raw === "working" || raw === "idle" || raw === "error" || raw === "inputNeeded") {
+        return displayStatus(raw);
+    }
+    return activityStatus(item.status);
+}
+
 function activityStatus(status: number): "working" | "idle" | "error" {
-    const base = status & 31;
-    return base === 8 || base === 24 ? "working" : base === 2 ? "error" : "idle";
+    return displayStatus(decodeSessionStatus(status).name);
+}
+
+function displayStatus(name: SessionStatusName): "working" | "idle" | "error" {
+    return name === "error" ? "error" : name === "idle" ? "idle" : "working";
 }
 
 function filePath(value: string | undefined): string {
