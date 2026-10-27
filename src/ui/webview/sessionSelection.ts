@@ -92,10 +92,7 @@ export function postSelectedBulkAction(action: BulkSessionAction): void {
 }
 
 /** Posts one sessions-bulk message for an explicit batch (group menu). */
-export function postBulkAction(
-    action: BulkSessionAction,
-    items: SessionListItem[],
-): void {
+export function postBulkAction(action: BulkSessionAction, items: SessionListItem[]): void {
     const clean = items.filter((s) => !s.deleting);
     if (!clean.length) {
         return;
@@ -109,11 +106,7 @@ export function postBulkAction(
 
 let bar: HTMLDivElement | null = null;
 
-function barButton(
-    label: string,
-    onClick: () => void,
-    danger = false,
-): HTMLButtonElement {
+function barButton(label: string, onClick: () => void, danger = false): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "bulkBtn" + (danger ? " danger" : "");
@@ -144,12 +137,8 @@ export function renderSelectionBar(): void {
     count.textContent = `${selected.size} selected`;
     bar.appendChild(count);
     bar.appendChild(barButton("Archive", () => postSelectedBulkAction("archive")));
-    bar.appendChild(
-        barButton("Unarchive", () => postSelectedBulkAction("unarchive")),
-    );
-    bar.appendChild(
-        barButton("Delete", () => postSelectedBulkAction("delete"), true),
-    );
+    bar.appendChild(barButton("Unarchive", () => postSelectedBulkAction("unarchive")));
+    bar.appendChild(barButton("Delete", () => postSelectedBulkAction("delete"), true));
     bar.appendChild(barButton("Done", () => stopSelection()));
 }
 
@@ -171,12 +160,7 @@ export function showGroupActionsMenu(
     head.className = "menuGroup";
     head.textContent = label;
     ctxMenu.appendChild(head);
-    const add = (
-        icon: string,
-        text: string,
-        action: BulkSessionAction,
-        danger = false,
-    ): void => {
+    const add = (icon: string, text: string, action: BulkSessionAction, danger = false): void => {
         const mi = document.createElement("div");
         mi.className = "mi" + (danger ? " danger" : "");
         const ic = svgIcon(icon);

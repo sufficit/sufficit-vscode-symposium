@@ -309,9 +309,7 @@ export function renderSessions(): void {
             const count = useLineages
                 ? new Set(g.items.map((s) => conversationKeyOf(s))).size
                 : g.items.length;
-            sessionsList.appendChild(
-                collapsibleGroupHeader(k, g.label, count, expanded, g.items),
-            );
+            sessionsList.appendChild(collapsibleGroupHeader(k, g.label, count, expanded, g.items));
             if (expanded) {
                 if (useLineages) {
                     appendLineages(g.items);

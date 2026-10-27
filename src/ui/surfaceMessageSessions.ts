@@ -11,10 +11,7 @@ import * as vscode from "vscode";
 import type { SessionInfo } from "../adapters/types";
 import type { WebviewToHost } from "../protocol/chat";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
-import {
-    expandBulkCascadeTargets,
-    expandSessionCascadeTargets,
-} from "./surfaceSessionCascade";
+import { expandBulkCascadeTargets, expandSessionCascadeTargets } from "./surfaceSessionCascade";
 
 /**
  * Deletes a batch of sessions with ONE confirm (shown by the caller) and ONE

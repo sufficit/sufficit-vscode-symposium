@@ -36,19 +36,13 @@ test("subagent child cascades only to itself and its own descendants", () => {
         session("grandchild", { parentId: "child-a1" }),
     ];
     const targets = expandSessionCascadeTargets(sessions[1], sessions);
-    assert.deepEqual(
-        targets.map((t) => t.sessionId).sort(),
-        ["child-a1", "grandchild"].sort(),
-    );
+    assert.deepEqual(targets.map((t) => t.sessionId).sort(), ["child-a1", "grandchild"].sort());
 });
 
 test("root without lineageId expands only to itself and its descendants", () => {
     const sessions = [session("solo-root"), session("kid", { parentId: "solo-root" })];
     const targets = expandSessionCascadeTargets(sessions[0], sessions);
-    assert.deepEqual(
-        targets.map((t) => t.sessionId).sort(),
-        ["solo-root", "kid"].sort(),
-    );
+    assert.deepEqual(targets.map((t) => t.sessionId).sort(), ["solo-root", "kid"].sort());
 });
 
 test("bulk expansion unions overlapping cascades, dedupes and skips unknown ids", () => {
