@@ -25,7 +25,14 @@ export function createSessionLookup(
             .liveInfos()
             .find((info) => info.backend === backend && info.sessionId === sessionId);
         if (live) {
-            return { ...live, updatedAt: new Date() };
+            // decorate applies user metadata (custom title, archived/pinned,
+            // lineage) exactly like the indexed branch, while filtering ids
+            // that were permanently deleted from the store.
+            const [decorated] = deps.store.decorate([live], true);
+            if (!decorated) {
+                return undefined;
+            }
+            return { ...decorated, updatedAt: new Date() };
         }
         const indexed = deps.indexGet?.(backend, sessionId);
         if (!indexed) {
