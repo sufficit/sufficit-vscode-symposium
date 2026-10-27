@@ -6,7 +6,7 @@ import { GeniusAdapter } from "./adapters/genius/adapter";
 import { CopilotAdapter } from "./adapters/copilot";
 import { GeminiAdapter } from "./adapters/gemini";
 import { OpenAIAdapter, setOpenAITokenProvider } from "./adapters/openai";
-import { AgentAdapter, SessionInfo } from "./adapters/types";
+import { AgentAdapter } from "./adapters/types";
 import { SessionStore } from "./sessions/store";
 import { SessionIndex } from "./sessions/index";
 import { startGeniusSessionRefresh } from "./extension/geniusSessionRefresh";
@@ -32,6 +32,7 @@ import {
     buildCustomAdapters,
 } from "./extension/config";
 import { buildChatSurfaceDeps } from "./extension/surfaceDeps";
+import { createSessionsSource } from "./extension/sessionsSource";
 import { createSessionLookup } from "./sessions/sessionLookup";
 import { registerCommands } from "./extension/commands";
 import { initSttStorage } from "./voice/sttService";
@@ -297,29 +298,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     });
     context.subscriptions.push(sessionIndex);
     registerShutdownTask(() => sessionIndex?.dispose() ?? Promise.resolve());
-    let indexPrimed = sessionIndex.listCached().length > 0;
-    let lastReconcileAt = 0;
-    const RECONCILE_INTERVAL_MS = 5_000;
-    const rawSessions = (): Promise<SessionInfo[]> => {
-        if (!sessionIndex) {
-            return Promise.resolve([]);
-        }
-        const cached = sessionIndex.listCached();
-        if (indexPrimed) {
-            if (Date.now() - lastReconcileAt >= RECONCILE_INTERVAL_MS) {
-                lastReconcileAt = Date.now();
-                void sessionIndex.reconcile();
-            }
-            return Promise.resolve(cached);
-        }
-        lastReconcileAt = Date.now();
-        return sessionIndex
-            .reconcile()
-            .then((sessions: import("./adapters/types").SessionInfo[]) => {
-                indexPrimed = true;
-                return sessions;
-            });
-    };
+    const rawSessions = createSessionsSource(sessionIndex);
 
     const surfaceDeps = buildChatSurfaceDeps({
         context,
