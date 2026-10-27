@@ -14,7 +14,7 @@ function makeRecorder() {
     const cached: SessionInfo[] = [];
     let reconcileCalls = 0;
     const index: SessionsSourceIndex = {
-        listCached: () => cached,
+        listCached: () => cached.slice(),
         reconcile: () => {
             reconcileCalls += 1;
             cached.push(session(`s${reconcileCalls}`));
