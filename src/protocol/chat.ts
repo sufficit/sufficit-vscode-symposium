@@ -128,6 +128,11 @@ export type WebviewToHost =
     | { type: "show-manual"; manualId: string }
     | { type: "show-tool-manual"; toolName: string }
     | { type: "session-action"; sessionId: string; backend: string; action: SessionActionKind }
+    | {
+          type: "sessions-bulk";
+          action: "archive" | "unarchive" | "delete";
+          items: { sessionId: string; backend: string }[];
+      }
     | { type: "session-list-backends"; sessionId: string; backend: string }
     | { type: "session-switch-backend"; sessionId: string; backend: string; targetBackend: string }
     // --- forwarded to ChatController ---

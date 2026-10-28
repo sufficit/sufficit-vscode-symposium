@@ -6,6 +6,9 @@ import { t } from "./i18n";
 import { lastAutoScroll } from "./scroll";
 import { setPendingSessionSwitch } from "./state";
 import { copyText } from "./markdownCode";
+// #57: while multi-select is active the single-row session menu is suppressed
+// so a stray click cannot run a destructive action outside the batch.
+import { selectionActive } from "./sessionSelection";
 import type { SessionActionKind } from "../../protocol/chat";
 import type { SessionListItem } from "./types";
 
@@ -192,6 +195,11 @@ interface SessionMenuAction {
 export function actionsFor(s: SessionListItem): SessionMenuAction[] {
     const cli = !!CLI_BACKENDS[s.backend];
     const list: SessionMenuAction[] = [];
+    if (selectionActive()) {
+        // Multi-select is on: opening/pinning/switching one row makes no sense
+        // and archive/delete would bypass the explicit batch selection.
+        return list;
+    }
     if (cli) {
         list.push({ id: "open", icon: "terminal", label: "Resume in terminal" });
     }

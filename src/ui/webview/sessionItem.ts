@@ -9,6 +9,7 @@ import { relTime } from "./format";
 import { sessionMetadata } from "./sessionMetadata";
 import { t } from "./i18n";
 import { refreshSessionList, sessionBackendName } from "./sessionBridge";
+import { isSelected, selectionActive, toggleSelection } from "./sessionSelection";
 import type { SessionListItem } from "./types";
 
 let dragPinId: string | null = null;
@@ -67,9 +68,23 @@ export function renderSessionItem(
         (s.archived ? " archived" : "") +
         (s.pinned ? " pinned" : "") +
         (s.deleting ? " deleting" : "") +
-        (isSubagent ? " subagentChild" : "");
+        (isSubagent ? " subagentChild" : "") +
+        (selectionActive() ? " selecting" : "");
     if (depth) {
         el.style.marginLeft = depth * 16 + "px";
+    }
+    // Multi-select mode (#57): rows become checkboxes instead of open targets.
+    let chk: HTMLInputElement | null = null;
+    if (!s.deleting && selectionActive()) {
+        chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.className = "selChk";
+        chk.checked = isSelected(s);
+        chk.setAttribute("aria-label", `Select ${s.title} for bulk action`);
+        chk.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            toggleSelection(s);
+        });
     }
     // Caret to collapse/expand a parent's subagent children.
     let caretEl: HTMLButtonElement | null = null;
@@ -124,8 +139,9 @@ export function renderSessionItem(
             }
         }
     });
-    // Pinned items reorder by drag-and-drop (the up/down menu still works).
-    if (s.pinned) {
+    // Pinned items reorder by drag-and-drop (the up/down menu still works);
+    // suspended while multi-selecting so a drag cannot reorder pins mid-batch.
+    if (s.pinned && !selectionActive()) {
         el.draggable = true;
         el.addEventListener("dragstart", (e) => {
             dragPinId = s.sessionId;
@@ -255,6 +271,10 @@ export function renderSessionItem(
     // While a delete scrub is in flight the row is inert (no open / no menu).
     if (!s.deleting) {
         body.addEventListener("click", () => {
+            if (selectionActive()) {
+                toggleSelection(s);
+                return;
+            }
             root.classList.remove("listOpen");
             setActiveSessionId(s.sessionId);
             refreshSessionList();
@@ -267,6 +287,9 @@ export function renderSessionItem(
         });
         // Double-click: force open in editor tab (center), regardless of openIn pref.
         el.addEventListener("dblclick", () => {
+            if (selectionActive()) {
+                return;
+            }
             postMessage({
                 type: "open-session-editor",
                 sessionId: s.sessionId,
@@ -292,6 +315,9 @@ export function renderSessionItem(
 
     if (caretEl) {
         el.appendChild(caretEl);
+    }
+    if (chk) {
+        el.appendChild(chk);
     }
     el.appendChild(statusDot);
     el.appendChild(body);
