@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -14,7 +14,7 @@ import {
 } from "../auth/identityTypes";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
-
+const ok = (body: string) => new Response(body, { status: 200 });
 const DISCOVERY = JSON.stringify({ userinfo_endpoint: "https://identity.test/userinfo" });
 const LIVE_PROFILE = JSON.stringify({ sub: "sub-1", name: "Live Profile" });
 
@@ -95,31 +95,21 @@ async function withAuth(
     }
 }
 
-function mockIdentityFetch(t: {
-    mock: {
-        method: (
-            object: typeof globalThis,
-            name: "fetch",
-            impl: (input: unknown) => Promise<Response>,
-        ) => unknown;
-    };
-}, userinfo: (request: number) => Response): { userinfoRequests: () => number } {
+function mockIdentityFetch(t: TestContext, respond: () => Response) {
     let userinfoRequests = 0;
     t.mock.method(globalThis, "fetch", async (input: unknown) => {
         const url = String(input);
         if (url.includes("openid-configuration")) {
-            return new Response(DISCOVERY, { status: 200 });
+            return ok(DISCOVERY);
         }
         userinfoRequests += 1;
-        return userinfo(userinfoRequests);
+        return respond();
     });
     return { userinfoRequests: () => userinfoRequests };
 }
 
 test("concurrent getProfile(true) callers share one userinfo request", async (t) => {
-    const { userinfoRequests } = mockIdentityFetch(t, () => new Response(LIVE_PROFILE, {
-        status: 200,
-    }));
+    const { userinfoRequests } = mockIdentityFetch(t, () => ok(LIVE_PROFILE));
     await withAuth(freshTokens(), async (auth) => {
         const results = await Promise.all([
             auth.getProfile(true),
@@ -135,14 +125,12 @@ test("concurrent getProfile(true) callers share one userinfo request", async (t)
 });
 
 test("startup restore publishes a single effective onDidChange transition", async (t) => {
-    const { userinfoRequests } = mockIdentityFetch(t, () => new Response(LIVE_PROFILE, {
-        status: 200,
-    }));
+    const { userinfoRequests } = mockIdentityFetch(t, () => ok(LIVE_PROFILE));
     await withAuth(freshTokens(), async (auth, emitter) => {
         const restored = await auth.getProfile(false);
         assert.equal(restored?.name, "Saved Profile");
-        // The deferred force-fetch races with other forced callers; all of
-        // them must still share one request and publish one transition.
+        // The deferred force-fetch races other forced callers; all of them
+        // must still share one request and publish one transition.
         await Promise.all([auth.getProfile(true), auth.getProfile(true), auth.getProfile(true)]);
         await flush();
         await flush();
@@ -168,10 +156,10 @@ test("ProfileChangeGate collapses concurrent notifies into one fire", async () =
         },
     });
     const profile: SufficitProfile = { sub: "sub-1", name: "Live Profile" };
-    let release: (() => void) | undefined;
+    let resolveTask: ((value: SufficitProfile | undefined) => void) | undefined;
     const task = () =>
         new Promise<SufficitProfile | undefined>((resolve) => {
-            release = () => resolve(profile);
+            resolveTask = resolve;
         });
     const shared = [gate.run(task), gate.run(task), gate.run(task)];
     gate.notify();
@@ -179,7 +167,7 @@ test("ProfileChangeGate collapses concurrent notifies into one fire", async () =
     gate.notify();
     await flush();
     assert.equal(fires, 1);
-    release!();
+    resolveTask!(profile);
     assert.deepEqual(await Promise.all(shared), [profile, profile, profile]);
     await flush();
     assert.equal(fires, 1);
@@ -191,12 +179,9 @@ test("fetchSufficitProfile maps sub to the contact avatar and keeps fallbacks", 
         const url = String(input);
         seen.push(url);
         if (url.includes("openid-configuration")) {
-            return new Response(DISCOVERY, { status: 200 });
+            return ok(DISCOVERY);
         }
-        return new Response(
-            JSON.stringify({ sub: "user 42", preferred_username: "u42", email: "u@t" }),
-            { status: 200 },
-        );
+        return ok(JSON.stringify({ sub: "user 42", preferred_username: "u42", email: "u@t" }));
     });
     const profile = await fetchSufficitProfile(
         "https://identity.test",
@@ -215,7 +200,7 @@ test("fetchSufficitProfile returns undefined when userinfo rejects", async (t) =
     t.mock.method(globalThis, "fetch", async (input: unknown) => {
         const url = String(input);
         if (url.includes("openid-configuration")) {
-            return new Response(DISCOVERY, { status: 200 });
+            return ok(DISCOVERY);
         }
         return new Response("nope", { status: 401 });
     });

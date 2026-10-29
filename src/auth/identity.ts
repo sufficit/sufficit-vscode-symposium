@@ -369,9 +369,8 @@ export class SufficitAuth {
         // (issue #40, phase 8); transient failures keep the cached profile.
         return this.profileGate.run(async () => {
             try {
-                const profile = await fetchSufficitProfile(this.issuer(), token, () =>
-                    this.discovery(),
-                );
+                const disco = await this.discovery();
+                const profile = await fetchSufficitProfile(this.issuer(), token, () => disco);
                 if (profile) {
                     this.profileCache = profile;
                     await this.context.globalState.update(PROFILE_KEY, profile);
