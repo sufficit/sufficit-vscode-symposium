@@ -43,6 +43,7 @@ import { migrateLegacySettings } from "./extension/legacySettings";
 import { registerExtensionAhpRuntime } from "./extension/ahpRuntime";
 import { registerSessionReading } from "./extension/localMcp";
 import { registerShutdownTask } from "./extension/shutdown";
+import { createAuthStartupTasks } from "./extension/startupDedupe";
 export { deactivate } from "./extension/shutdown";
 export let sessionIndex: import("./sessions/index").SessionIndex | undefined;
 
@@ -161,7 +162,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
             },
         }),
     );
-    context.subscriptions.push(auth.onDidChange(() => ConfigPanel.refresh()));
     context.subscriptions.push({ dispose: () => auth.dispose() });
     void auth.startAutoRefresh(); // silent token refresh so the session never lapses
     // Both native Sufficit MCPs reuse the Identity login token automatically.
@@ -173,13 +173,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
         setSufficitIdentityMcpUrl(`${issuer.replace(/\/+$/, "")}/api/mcp`);
         void syncCodexSufficitMcp().catch((error) => symposiumLog(`[mcp] sync failed: ${error}`));
     };
-    context.subscriptions.push(auth.onDidChange(syncAuthenticatedMcps));
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration("symposium.identity.url")) syncAuthenticatedMcps();
         }),
     );
-    syncAuthenticatedMcps();
     // Native Accounts-menu integration (avatar/login at the bottom of the activity bar).
     SufficitAuthProvider.register(context, auth);
     // Hub/MCP requests use the logged-in identity token when available.
@@ -204,8 +202,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
             }
         })();
     };
-    context.subscriptions.push(auth.onDidChange(checkSufficit));
-    checkSufficit();
 
     // Auto-sync agent knowledge from the hub: pull on activation/reload and
     // whenever login state changes, as long as the user is logged in and the
@@ -230,8 +226,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
             }
         })();
     };
-    context.subscriptions.push(auth.onDidChange(() => autoSync("login-change")));
-    autoSync("activate");
 
     // Join the Sufficit tailnet (self-hosted Headscale) so Symposium's remote bridge is
     // reachable without manual NAT/port-forward setup. Background, best-effort — see
@@ -244,8 +238,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
             await ensureTailnetJoined(new HubClient(), (msg) => symposiumLog(`${msg} (${reason})`));
         })();
     };
-    context.subscriptions.push(auth.onDidChange(() => joinTailnet("login-change")));
-    joinTailnet("activate");
+
+    // Phase 8 (issue #40): one coalesced auth fan-out — activation and a
+    // login-change burst share one in-flight run of each startup task.
+    context.subscriptions.push(
+        createAuthStartupTasks({
+            onDidChange: auth.onDidChange,
+            tasks: {
+                mcps: syncAuthenticatedMcps,
+                health: checkSufficit,
+                sync: autoSync,
+                tailnet: joinTailnet,
+                panel: ConfigPanel.refresh,
+            },
+        }),
+    );
 
     // First install: offer to auto-approve agent tool calls so browser/navigation
     // tools don't keep prompting. Ask ONCE (a globalState flag), only if the user

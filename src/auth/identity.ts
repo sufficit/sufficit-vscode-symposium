@@ -9,6 +9,7 @@ import {
     requestDeviceAuthorization,
 } from "./identityDeviceFlow";
 import { parseOAuthJson } from "./oauthHttp";
+import { fetchSufficitProfile, ProfileChangeGate } from "./identityProfile";
 
 export type { SufficitProfile } from "./identityTypes";
 
@@ -18,6 +19,10 @@ export class SufficitAuth {
     private profileCache: SufficitProfile | undefined;
     private readonly onChangeEmitter = new vscode.EventEmitter<void>();
     readonly onDidChange = this.onChangeEmitter.event;
+
+    // Shares forced profile fetches and collapses equivalent change
+    // notifications into one published transition (issue #40, phase 8).
+    private readonly profileGate = new ProfileChangeGate(this.onChangeEmitter);
     // Guards the "credentials not in keyring" notice (shown once per fallback login).
     private persistNoticeShown = false;
     private readonly tokens: IdentityTokenManager;
@@ -337,7 +342,7 @@ export class SufficitAuth {
                 this.profileCache = saved;
                 void this.getProfile(true).then((p) => {
                     if (p) {
-                        this.onChangeEmitter.fire();
+                        this.profileGate.notify();
                     }
                 });
                 return saved;
@@ -351,7 +356,7 @@ export class SufficitAuth {
             // stale logged-in footer (or vice-versa).
             if (saved) {
                 void this.getProfile(true).then(() => {
-                    this.onChangeEmitter.fire();
+                    this.profileGate.notify();
                 });
             }
             return undefined;
@@ -360,37 +365,22 @@ export class SufficitAuth {
         if (!token) {
             return undefined;
         }
-        try {
-            const disco = await this.discovery();
-            const res = await fetch(
-                disco.userinfo_endpoint ?? `${this.issuer()}/connect/userinfo`,
-                { headers: { authorization: `Bearer ${token}` } },
-            );
-            if (!res.ok) {
+        // One in-flight userinfo request is shared by every forced caller
+        // (issue #40, phase 8); transient failures keep the cached profile.
+        return this.profileGate.run(async () => {
+            try {
+                const profile = await fetchSufficitProfile(this.issuer(), token, () =>
+                    this.discovery(),
+                );
+                if (profile) {
+                    this.profileCache = profile;
+                    await this.context.globalState.update(PROFILE_KEY, profile);
+                }
                 return this.profileCache;
-            } // keep what we have on a transient failure
-            const j = await parseOAuthJson<{
-                sub?: string;
-                name?: string;
-                preferred_username?: string;
-                email?: string;
-                picture?: string;
-            }>(res, "Sufficit userinfo endpoint");
-            // Avatar comes from the Sufficit contact endpoint keyed by the user id.
-            const picture = j.sub
-                ? `https://endpoints.sufficit.com.br/contact/avatar?contextid=${encodeURIComponent(j.sub)}`
-                : j.picture;
-            this.profileCache = {
-                sub: j.sub ?? "",
-                name: j.name ?? j.preferred_username,
-                email: j.email,
-                picture,
-            };
-            await this.context.globalState.update(PROFILE_KEY, this.profileCache);
-            return this.profileCache;
-        } catch {
-            return this.profileCache;
-        }
+            } catch {
+                return this.profileCache;
+            }
+        });
     }
 
     async logout(): Promise<void> {
