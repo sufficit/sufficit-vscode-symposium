@@ -30,7 +30,11 @@ export function storePath(backend: string, id: string, homeDir?: string): string
 export function metaPath(backend: string, id: string, homeDir?: string): string {
     return path.join(storeDir(backend, homeDir), id + ".meta.json");
 }
-export function readStored(backend: string, id: string, homeDir?: string): StoredSession | undefined {
+export function readStored(
+    backend: string,
+    id: string,
+    homeDir?: string,
+): StoredSession | undefined {
     try {
         return JSON.parse(fs.readFileSync(storePath(backend, id, homeDir), "utf8"));
     } catch {
