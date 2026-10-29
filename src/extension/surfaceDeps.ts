@@ -20,6 +20,8 @@ export interface SurfaceDepsArgs {
     deleting: Set<string>;
     /** All persisted sessions across adapters, newest first. */
     rawSessions: () => Promise<SessionInfo[]>;
+    /** Direct last-session lookup for restore (live runtime → cached index); never scans. */
+    getSession?: (backend: string, sessionId: string) => SessionInfo | undefined;
     api: SymposiumApi;
     ahpRuntime: () => AhpHostRuntime;
     syncAhp: () => void;
@@ -28,9 +30,11 @@ export interface SurfaceDepsArgs {
 
 /** Assembles the ChatSurface dependency bundle shared by the sidebar + panel hosts. */
 export function buildChatSurfaceDeps(args: SurfaceDepsArgs): ChatSurfaceDeps {
-    const { context, runtime, store, adapterByBackend, auth, deleting, rawSessions } = args;
+    const { context, runtime, store, adapterByBackend, auth, deleting, rawSessions, getSession } =
+        args;
     return {
         adapterByBackend,
+        getSession,
         // Return ALL sessions (archived flag + live runtime status); the webview
         // list shows/hides archived itself and renders the working indicator.
         // Live sessions not yet written to disk are merged in (top) so a brand-

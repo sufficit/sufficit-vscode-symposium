@@ -12,28 +12,24 @@ import type { SurfaceDialoguesDeps } from "./surfaceDialoguesTypes";
 
 type OpenDialogue = (backend: string, options: SessionStartOptions, title: string) => void;
 
-/** Restores the last active session on open, or starts a default dialogue. */
-export async function restoreOrStart(
+/**
+ * Restores the last active session from the live runtime / cached SessionIndex
+ * snapshot via deps.getSession — never through listSessions(), which scans
+ * every backend (its former 6s Promise.race abandoned the scan it started;
+ * the scan kept reading multi-GB corpora in the background). A cold index that
+ * has not indexed the session yet falls back to the default dialogue; the
+ * background index reconcile repopulates the snapshot without blocking here.
+ */
+export function restoreOrStart(
     d: SurfaceDialoguesDeps,
     openSession: (info: SessionInfo) => void,
     startDefaultDialogue: () => void,
-): Promise<void> {
+): void {
     const last = d.deps.lastActive.get();
-    if (last) {
-        // Time-bound: a backend's listSessions() (e.g. HTTP model discovery)
-        // can hang on code-server with no network/auth; never let it block
-        // startup and trap the UI on the boot screen.
-        const sessions = await Promise.race([
-            d.deps.listSessions().catch(() => [] as SessionInfo[]),
-            new Promise<SessionInfo[]>((resolve) => setTimeout(() => resolve([]), 6000)),
-        ]);
-        const info = sessions.find(
-            (s) => s.sessionId === last.sessionId && s.backend === last.backend,
-        );
-        if (info) {
-            openSession(info);
-            return;
-        }
+    const info = last ? d.deps.getSession?.(last.backend, last.sessionId) : undefined;
+    if (info) {
+        openSession(info);
+        return;
     }
     startDefaultDialogue();
 }

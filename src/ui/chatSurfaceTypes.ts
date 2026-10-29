@@ -7,6 +7,8 @@ import type { SymposiumApi } from "../api/symposiumApi";
 export interface ChatSurfaceDeps {
     adapterByBackend: Map<string, AgentAdapter>;
     listSessions(): Promise<SessionInfo[]>;
+    /** Synchronous (backend, sessionId) lookup: live runtime → cached index. Never scans. */
+    getSession?(backend: string, sessionId: string): SessionInfo | undefined;
     cwdFor(info: SessionInfo): string;
     runtime: LiveSessions;
     ahp: {

@@ -17,7 +17,7 @@ import * as ledger from "../../ledger";
 import { buildOpenAIModelList } from "../openaiModels";
 import { getCached, isFresh } from "../modelCache";
 import { OpenAIAdapterConfig } from "./types";
-import { readStored, storeDir, storePath } from "./store";
+import { deleteStored, readStored, readStoredMeta, storeDir } from "./store";
 import { contentText } from "./transform";
 import {
     getDiscoveredLabels,
@@ -46,6 +46,8 @@ export class OpenAIAdapter implements AgentAdapter {
         readonly backend: string,
         readonly displayName: string,
         private readonly getConfig: () => OpenAIAdapterConfig,
+        /** Overrides the store root (tests); defaults to the user's home. */
+        private readonly homeDir?: string,
     ) {
         // The built-in Sufficit adapter resolves account usage per selected
         // preset. Custom OpenAI-compatible endpoints stay isolated and do not
@@ -68,18 +70,22 @@ export class OpenAIAdapter implements AgentAdapter {
         return { ok: true, version: cfg.baseUrl };
     }
 
-    listSessions(): Promise<SessionInfo[]> {
-        const dir = storeDir(this.backend);
+    async listSessions(): Promise<SessionInfo[]> {
+        const dir = storeDir(this.backend, this.homeDir);
         let files: string[] = [];
         try {
-            files = fs.readdirSync(dir).filter((f) => f.endsWith(".json"));
+            // `.meta.json` sidecars are listing metadata, not transcripts.
+            files = fs
+                .readdirSync(dir)
+                .filter((f) => f.endsWith(".json") && !f.endsWith(".meta.json"));
         } catch {
             /* store dir may not exist yet */
         }
         const out: SessionInfo[] = [];
         const seen = new Set<string>();
         for (const f of files) {
-            const s = readStored(this.backend, f.slice(0, -5));
+            const id = f.slice(0, -5);
+            const s = await readStoredMeta(this.backend, id, this.homeDir);
             if (s && !ledger.isLedgerDeleted(s.id)) {
                 seen.add(s.id);
                 out.push({
@@ -125,7 +131,7 @@ export class OpenAIAdapter implements AgentAdapter {
         if (ledger.hasLedger(info.sessionId) && ledgerWasCompacted(info.sessionId)) {
             return Promise.resolve({ messages: historyFromLedger(info.sessionId) });
         }
-        const s = readStored(this.backend, info.sessionId);
+        const s = readStored(this.backend, info.sessionId, this.homeDir);
         if (!s) {
             return Promise.resolve({ messages: [] });
         }
@@ -189,11 +195,7 @@ export class OpenAIAdapter implements AgentAdapter {
     }
 
     deleteSession(info: SessionInfo): Promise<void> {
-        try {
-            fs.rmSync(storePath(this.backend, info.sessionId), { force: true });
-        } catch {
-            /* ignore */
-        }
+        deleteStored(this.backend, info.sessionId, this.homeDir);
         return Promise.resolve();
     }
 
