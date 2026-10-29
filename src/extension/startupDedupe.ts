@@ -44,7 +44,7 @@ export interface StartupAuthTaskSet {
     health: (reason: string) => void;
     sync: (reason: string) => void;
     tailnet: (reason: string) => void;
-    panel: () => void;
+    panel: (reason: string) => void;
 }
 
 /**
