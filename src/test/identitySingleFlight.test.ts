@@ -83,6 +83,7 @@ async function withAuth(
     mutable.EventEmitter = class extends RecordingEmitter {
         constructor() {
             super();
+            // eslint-disable-next-line @typescript-eslint/no-this-alias -- test double captures the instance built by the SUT
             emitter ??= this;
         }
     };
@@ -97,13 +98,13 @@ async function withAuth(
 
 function mockIdentityFetch(t: TestContext, respond: () => Response) {
     let userinfoRequests = 0;
-    t.mock.method(globalThis, "fetch", async (input: unknown) => {
+    t.mock.method(globalThis, "fetch", (input: unknown) => {
         const url = String(input);
         if (url.includes("openid-configuration")) {
-            return ok(DISCOVERY);
+            return Promise.resolve(ok(DISCOVERY));
         }
         userinfoRequests += 1;
-        return respond();
+        return Promise.resolve(respond());
     });
     return { userinfoRequests: () => userinfoRequests };
 }
@@ -175,16 +176,20 @@ test("ProfileChangeGate collapses concurrent notifies into one fire", async () =
 
 test("fetchSufficitProfile maps sub to the contact avatar and keeps fallbacks", async (t) => {
     const seen: string[] = [];
-    t.mock.method(globalThis, "fetch", async (input: unknown) => {
+    t.mock.method(globalThis, "fetch", (input: unknown) => {
         const url = String(input);
         seen.push(url);
         if (url.includes("openid-configuration")) {
-            return ok(DISCOVERY);
+            return Promise.resolve(ok(DISCOVERY));
         }
-        return ok(JSON.stringify({ sub: "user 42", preferred_username: "u42", email: "u@t" }));
+        return Promise.resolve(
+            ok(JSON.stringify({ sub: "user 42", preferred_username: "u42", email: "u@t" })),
+        );
     });
-    const profile = await fetchSufficitProfile("https://identity.test", "token", async () =>
-        JSON.parse(DISCOVERY),
+    const profile = await fetchSufficitProfile(
+        "https://identity.test",
+        "token",
+        () => Promise.resolve(JSON.parse(DISCOVERY)),
     );
     assert.equal(profile?.name, "u42");
     assert.equal(
@@ -195,15 +200,17 @@ test("fetchSufficitProfile maps sub to the contact avatar and keeps fallbacks", 
 });
 
 test("fetchSufficitProfile returns undefined when userinfo rejects", async (t) => {
-    t.mock.method(globalThis, "fetch", async (input: unknown) => {
+    t.mock.method(globalThis, "fetch", (input: unknown) => {
         const url = String(input);
         if (url.includes("openid-configuration")) {
-            return ok(DISCOVERY);
+            return Promise.resolve(ok(DISCOVERY));
         }
-        return new Response("nope", { status: 401 });
+        return Promise.resolve(new Response("nope", { status: 401 }));
     });
-    const profile = await fetchSufficitProfile("https://identity.test", "token", async () =>
-        JSON.parse(DISCOVERY),
+    const profile = await fetchSufficitProfile(
+        "https://identity.test",
+        "token",
+        () => Promise.resolve(JSON.parse(DISCOVERY)),
     );
     assert.equal(profile, undefined);
 });
