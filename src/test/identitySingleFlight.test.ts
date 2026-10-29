@@ -186,10 +186,8 @@ test("fetchSufficitProfile maps sub to the contact avatar and keeps fallbacks", 
             ok(JSON.stringify({ sub: "user 42", preferred_username: "u42", email: "u@t" })),
         );
     });
-    const profile = await fetchSufficitProfile(
-        "https://identity.test",
-        "token",
-        () => Promise.resolve(JSON.parse(DISCOVERY)),
+    const profile = await fetchSufficitProfile("https://identity.test", "token", () =>
+        Promise.resolve(JSON.parse(DISCOVERY)),
     );
     assert.equal(profile?.name, "u42");
     assert.equal(
@@ -207,10 +205,8 @@ test("fetchSufficitProfile returns undefined when userinfo rejects", async (t) =
         }
         return Promise.resolve(new Response("nope", { status: 401 }));
     });
-    const profile = await fetchSufficitProfile(
-        "https://identity.test",
-        "token",
-        () => Promise.resolve(JSON.parse(DISCOVERY)),
+    const profile = await fetchSufficitProfile("https://identity.test", "token", () =>
+        Promise.resolve(JSON.parse(DISCOVERY)),
     );
     assert.equal(profile, undefined);
 });
