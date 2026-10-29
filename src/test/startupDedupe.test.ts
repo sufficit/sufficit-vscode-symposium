@@ -1,10 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-    coalescedChange,
-    createAuthStartupTasks,
-    singleFlight,
-} from "../extension/startupDedupe";
+import { coalescedChange, createAuthStartupTasks, singleFlight } from "../extension/startupDedupe";
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
 
