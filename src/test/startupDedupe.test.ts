@@ -27,7 +27,7 @@ test("singleFlight shares one in-flight run across concurrent callers", async ()
 
 test("singleFlight clears the slot after a failure so later triggers run", async () => {
     let attempts = 0;
-    const run = singleFlight(async () => {
+    const run = singleFlight(() => {
         attempts += 1;
         if (attempts === 1) {
             throw new Error("boom");
