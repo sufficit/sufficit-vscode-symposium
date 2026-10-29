@@ -71,3 +71,24 @@ test("createSessionLookup drops sessions removed by decoration (permanent delete
 
     assert.equal(lookup("claude", "sess-1"), undefined);
 });
+
+test("createSessionLookup decorates a live session with user metadata", () => {
+    const live = { ...indexed, title: "Live title", status: "working" as const };
+    const decorate = (sessions: SessionInfo[]) =>
+        sessions.map((s) => ({ ...s, title: "Custom title", archived: true }));
+    const lookup = createSessionLookup(makeDeps([live], { decorate }));
+
+    const info = lookup("claude", "sess-1");
+
+    assert.ok(info);
+    assert.equal(info.title, "Custom title");
+    assert.equal(info.archived, true);
+    assert.equal(info.status, "working");
+});
+
+test("createSessionLookup drops a live session removed by decoration (permanent delete)", () => {
+    const live = { ...indexed, title: "Live title", status: "working" as const };
+    const lookup = createSessionLookup(makeDeps([live], { decorate: () => [] }));
+
+    assert.equal(lookup("claude", "sess-1"), undefined);
+});
