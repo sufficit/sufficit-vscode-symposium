@@ -21,8 +21,10 @@ test("singleFlight shares one in-flight run across concurrent callers", async ()
     await Promise.all(calls);
     assert.equal(started, 1);
     assert.deepEqual(traces, ["activate"]);
-    await run("login-change");
+    const second = run("login-change");
     assert.equal(started, 2);
+    release!();
+    await second;
 });
 
 test("singleFlight clears the slot after a failure so later triggers run", async () => {
