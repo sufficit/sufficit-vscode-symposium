@@ -18,27 +18,20 @@ const ok = (body: string) => new Response(body, { status: 200 });
 const DISCOVERY = JSON.stringify({ userinfo_endpoint: "https://identity.test/userinfo" });
 const LIVE_PROFILE = JSON.stringify({ sub: "sub-1", name: "Live Profile" });
 
-/** Minimal EventEmitter double so tests observe real onDidChange transitions. */
-class RecordingEmitter {
-    private listeners: (() => void)[] = [];
-    fires = 0;
-    readonly event = (listener: () => void) => {
-        this.listeners.push(listener);
-        return {
-            dispose: () => {
-                this.listeners = this.listeners.filter((current) => current !== listener);
-            },
-        };
+/** Counts real onDidChange transitions on the auth's own change emitter. */
+function fireCounter(auth: SufficitAuth): { fires: number } {
+    // The namespace import copy exposes getter-only bindings, so swapping
+    // vscode.EventEmitter cannot work (it threw in CI). The SUT's emitter is
+    // private only at compile time; wrap its fire() to observe real fires.
+    const emitter = (auth as unknown as { onChangeEmitter: { fire(): void } }).onChangeEmitter;
+    assert.ok(emitter, "SufficitAuth did not construct the change emitter");
+    const counter = { fires: 0 };
+    const original = emitter.fire.bind(emitter);
+    emitter.fire = () => {
+        counter.fires += 1;
+        original();
     };
-    fire(): void {
-        this.fires += 1;
-        for (const listener of [...this.listeners]) {
-            listener();
-        }
-    }
-    dispose(): void {
-        this.listeners = [];
-    }
+    return counter;
 }
 
 function fakeContext(tokens: object | undefined): vscode.ExtensionContext {
@@ -75,25 +68,10 @@ const freshTokens = () => ({
 
 async function withAuth(
     tokens: object | undefined,
-    run: (auth: SufficitAuth, emitter: RecordingEmitter) => Promise<void>,
+    run: (auth: SufficitAuth, emitter: { fires: number }) => Promise<void>,
 ): Promise<void> {
-    const mutable = vscode as unknown as { EventEmitter: unknown };
-    const original = mutable.EventEmitter;
-    let emitter: RecordingEmitter | undefined;
-    mutable.EventEmitter = class extends RecordingEmitter {
-        constructor() {
-            super();
-            // eslint-disable-next-line @typescript-eslint/no-this-alias -- test double captures the instance built by the SUT
-            emitter ??= this;
-        }
-    };
-    try {
-        const auth = new SufficitAuth(fakeContext(tokens), () => undefined);
-        assert.ok(emitter, "SufficitAuth did not construct the recording emitter");
-        await run(auth, emitter);
-    } finally {
-        mutable.EventEmitter = original;
-    }
+    const auth = new SufficitAuth(fakeContext(tokens), () => undefined);
+    await run(auth, fireCounter(auth));
 }
 
 function mockIdentityFetch(t: TestContext, respond: () => Response) {
