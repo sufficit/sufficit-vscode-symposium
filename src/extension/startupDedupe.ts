@@ -7,7 +7,7 @@ import type * as vscode from "vscode";
 
 /** Shares one in-flight execution; overlapping callers await the same promise. */
 export function singleFlight<A extends unknown[]>(
-    task: (...args: A) => Promise<void> | void,
+    task: (...args: A) => Promise<unknown> | void,
 ): (...args: A) => Promise<void> {
     let inFlight: Promise<void> | undefined;
     return (...args: A): Promise<void> => {
@@ -19,7 +19,7 @@ export function singleFlight<A extends unknown[]>(
         // begins in the same tick so callers observe deterministic progress.
         let result: Promise<void>;
         try {
-            result = Promise.resolve(task(...args));
+            result = Promise.resolve(task(...args)).then(() => undefined);
         } catch (error) {
             return Promise.reject(error);
         }
@@ -48,11 +48,16 @@ export function coalescedChange(handler: () => void): () => void {
     };
 }
 
+/**
+ * The asynchronous tasks must return the promise of their whole run: a
+ * fire-and-forget task resolves at once, frees its single-flight slot in the
+ * next microtask and no concurrent trigger ever shares it.
+ */
 export interface StartupAuthTaskSet {
-    mcps: (reason: string) => void;
-    health: (reason: string) => void;
-    sync: (reason: string) => void;
-    tailnet: (reason: string) => void;
+    mcps: (reason: string) => Promise<unknown>;
+    health: (reason: string) => Promise<unknown>;
+    sync: (reason: string) => Promise<unknown>;
+    tailnet: (reason: string) => Promise<unknown>;
     panel: (reason: string) => void;
 }
 
