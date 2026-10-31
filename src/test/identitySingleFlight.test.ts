@@ -18,13 +18,15 @@ const ok = (body: string) => new Response(body, { status: 200 });
 const DISCOVERY = JSON.stringify({ userinfo_endpoint: "https://identity.test/userinfo" });
 const LIVE_PROFILE = JSON.stringify({ sub: "sub-1", name: "Live Profile" });
 
+/** SufficitAuth's change emitter is private only at compile time. */
+type ChangeEmitterHolder = { onChangeEmitter: { fire(): void } };
+
 /** Counts real onDidChange transitions on the auth's own change emitter. */
 function fireCounter(auth: SufficitAuth): { fires: number } {
     // The namespace import copy exposes getter-only bindings, so swapping
-    // vscode.EventEmitter cannot work (it threw in CI). The SUT's emitter is
-    // private only at compile time; wrap its fire() to observe real fires.
-    const emitter = (auth as unknown as { onChangeEmitter: { fire(): void } })
-        .onChangeEmitter;
+    // vscode.EventEmitter cannot work (it threw in CI). Wrap the emitter
+    // instance the SUT already constructed to observe its real fires.
+    const emitter = (auth as unknown as ChangeEmitterHolder).onChangeEmitter;
     assert.ok(emitter, "SufficitAuth did not construct the change emitter");
     const counter = { fires: 0 };
     const original = emitter.fire.bind(emitter);
