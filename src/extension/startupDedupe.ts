@@ -13,6 +13,12 @@ export function singleFlight<A extends unknown[]>(
     return (...args: A): Promise<void> => {
         if (!inFlight) {
             inFlight = (async () => {
+                // Yield once so this closure only starts after the slot above
+                // has been assigned; otherwise a synchronously throwing task
+                // clears the slot before it is ever stored and every later
+                // caller reawaits the same rejection (startupDedupe test,
+                // CI job 124383626548).
+                await Promise.resolve();
                 try {
                     await task(...args);
                 } finally {
