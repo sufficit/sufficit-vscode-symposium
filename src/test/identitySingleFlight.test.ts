@@ -23,7 +23,8 @@ function fireCounter(auth: SufficitAuth): { fires: number } {
     // The namespace import copy exposes getter-only bindings, so swapping
     // vscode.EventEmitter cannot work (it threw in CI). The SUT's emitter is
     // private only at compile time; wrap its fire() to observe real fires.
-    const emitter = (auth as unknown as { onChangeEmitter: { fire(): void } }).onChangeEmitter;
+    const emitter = (auth as unknown as { onChangeEmitter: { fire(): void } })
+        .onChangeEmitter;
     assert.ok(emitter, "SufficitAuth did not construct the change emitter");
     const counter = { fires: 0 };
     const original = emitter.fire.bind(emitter);
