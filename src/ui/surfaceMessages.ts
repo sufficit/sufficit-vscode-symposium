@@ -310,6 +310,7 @@ export class SurfaceMessages {
                     return;
                 }
                 case "session-action":
+                case "sessions-bulk":
                 case "session-list-backends":
                 case "session-switch-backend": {
                     if (await handleSessionMessage(message, this.d)) {

@@ -15,6 +15,7 @@ import {
     updateFilterButtonState,
 } from "./sessionFilters";
 import { registerSessionBridge } from "./sessionBridge";
+import { showGroupActionsMenu } from "./sessionSelection";
 import { isParentExpanded, renderSessionItem } from "./sessionItem";
 export { dropPinnedOn, renderSessionItem, toggleCollapsed } from "./sessionItem";
 import type { AccountProfile, SessionListItem } from "./types";
@@ -79,6 +80,7 @@ function collapsibleGroupHeader(
     label: string,
     count: number,
     expanded: boolean,
+    items?: SessionListItem[],
 ): HTMLDivElement {
     const gh = document.createElement("div");
     gh.className = "groupHeader collapsible" + (expanded ? " expanded" : "");
@@ -96,6 +98,24 @@ function collapsibleGroupHeader(
     gc.textContent = String(count);
     gh.appendChild(gl);
     gh.appendChild(gc);
+    // Bulk actions for the whole project/branch group (#57): hover "..."
+    // button and right-click open the same context menu.
+    if (items) {
+        const more = document.createElement("button");
+        more.type = "button";
+        more.className = "groupMore";
+        more.title = "Project actions";
+        more.setAttribute("aria-label", `Project actions for ${label}`);
+        more.appendChild(svgIcon("more"));
+        more.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            showGroupActionsMenu(ev, items, label);
+        });
+        gh.appendChild(more);
+        gh.addEventListener("contextmenu", (ev) => {
+            showGroupActionsMenu(ev, items, label);
+        });
+    }
     gh.onclick = () => toggleGroup(key);
     return gh;
 }
@@ -289,7 +309,7 @@ export function renderSessions(): void {
             const count = useLineages
                 ? new Set(g.items.map((s) => conversationKeyOf(s))).size
                 : g.items.length;
-            sessionsList.appendChild(collapsibleGroupHeader(k, g.label, count, expanded));
+            sessionsList.appendChild(collapsibleGroupHeader(k, g.label, count, expanded, g.items));
             if (expanded) {
                 if (useLineages) {
                     appendLineages(g.items);

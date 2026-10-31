@@ -53,6 +53,12 @@ export const panelBody = document.getElementById("panelBody") as HTMLElement;
 export const panelTabs = document.getElementById("panelTabs") as HTMLElement;
 export const attachedPanel = document.getElementById("attachedPanel") as HTMLElement;
 export const ctxMenu = document.getElementById("ctxMenu") as HTMLElement;
+// #57: leaf helpers for the shared context-menu element. sessionSelection must
+// not import menus.ts (that would close a menus→sessionSelection cycle the
+// architecture gate rejects); these keep menu plumbing in dependency-free dom.
+export const hideCtxMenu = (): void => {
+    ctxMenu.style.display = "none";
+};
 export const statusbar = document.getElementById("statusbar") as HTMLElement;
 export const slash = document.getElementById("slash") as HTMLElement;
 export const addBrowserPage = document.getElementById("addBrowserPage") as HTMLButtonElement;

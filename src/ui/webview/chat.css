@@ -287,6 +287,11 @@
         background: color-mix(in srgb, var(--vscode-focusBorder) 16%, transparent);
         outline: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 55%, transparent);
     }
+    #sessionSelectBtn.active {
+        color: var(--vscode-button-foreground, var(--vscode-foreground));
+        background: color-mix(in srgb, var(--vscode-focusBorder) 16%, transparent);
+        outline: 1px solid color-mix(in srgb, var(--vscode-focusBorder) 55%, transparent);
+    }
     .sessionSearch {
         margin: 0 10px 6px; padding: 4px 8px; font: inherit; font-size: 12px;
         color: var(--vscode-input-foreground); background: var(--vscode-input-background);
@@ -296,6 +301,20 @@
     .sessionSearch:focus { border-color: var(--vscode-focusBorder); }
     .sessionSearch::placeholder { color: var(--vscode-input-placeholderForeground, rgba(128,128,128,0.7)); }
     #sessionsList { flex: 1; overflow-y: auto; }
+    #sessionsBulkBar {
+        display: none; align-items: center; gap: 4px; padding: 6px 10px;
+        border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+    }
+    #sessionsBulkBar.on { display: flex; }
+    #sessionsBulkBar .bulkCount { flex: 1; min-width: 0; font-size: 0.82em; opacity: 0.8; }
+    #sessionsBulkBar .bulkBtn {
+        padding: 3px 8px; border-radius: 4px; cursor: pointer; font: inherit; font-size: 0.8em;
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, inherit);
+        border: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.3));
+    }
+    #sessionsBulkBar .bulkBtn:hover { background: var(--vscode-list-hoverBackground); }
+    #sessionsBulkBar .bulkBtn.danger { color: var(--vscode-errorForeground); }
     .sessionsPlaceholder {
         display: flex; align-items: flex-start; gap: 9px;
         padding: 14px 12px; color: var(--vscode-descriptionForeground, var(--vscode-disabledForeground));
@@ -341,6 +360,14 @@
     .groupHeader.collapsible:hover { background: var(--vscode-list-hoverBackground); opacity: 0.95; }
     .groupHeader.collapsible .groupCaret { width: 12px; height: 12px; flex: 0 0 auto; opacity: 0.7; }
     .groupHeader.collapsible .glabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: normal; }
+    .groupHeader .groupMore {
+        display: none; background: none; border: none; cursor: pointer; padding: 2px;
+        color: var(--vscode-icon-foreground, inherit); border-radius: 3px;
+    }
+    .groupHeader:hover .groupMore,
+    .groupHeader:focus-within .groupMore { display: inline-flex; }
+    .groupHeader .groupMore:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.25)); }
+    .groupHeader .groupMore svg { width: 13px; height: 13px; }
     .sessionItem {
         padding: 7px 10px; cursor: pointer; border-left: 2px solid transparent;
         display: flex; align-items: center; gap: 8px;
@@ -399,6 +426,9 @@
     .sessionItem .acts button svg { width: 14px; height: 14px; }
     .sessionItem .acts button:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.25)); }
     .sessionItem .acts button.danger:hover { color: var(--vscode-errorForeground); }
+    .sessionItem .selChk { margin: 0; flex: 0 0 auto; accent-color: var(--vscode-focusBorder); }
+    .sessionItem.selecting .acts { display: none; }
+    .sessionItem.selecting .statusDot { opacity: 0.45; }
     .ttlIcon { width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; opacity: 0.7; }
     .ttlIcon.subagentBadge {
         opacity: 1;
