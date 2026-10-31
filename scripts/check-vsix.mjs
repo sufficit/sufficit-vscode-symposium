@@ -102,7 +102,10 @@ const budgets = new Map([
     // skip, flush on delete/dispose and background reconcile persistence)
     // measures 938303 bytes (916.31 KiB). Keep a bounded 917 KiB host budget;
     // retain the existing 1 MiB archive cap.
-    ["extension/out/extension.js", 917 * 1024],
+    // Startup dedupe single-flight plus auth identity single-flight (issue #40
+    // phase 8) measure 941550 bytes (919.48 KiB). Keep a bounded 920 KiB host
+    // budget; retain the existing 1 MiB archive cap.
+    ["extension/out/extension.js", 920 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
