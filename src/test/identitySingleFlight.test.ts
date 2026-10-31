@@ -1,0 +1,193 @@
+import { test, type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import * as vscode from "vscode";
+import { SufficitAuth } from "../auth/identity";
+import { fetchSufficitProfile, ProfileChangeGate } from "../auth/identityProfile";
+import { DEFAULT_IDENTITY_SCOPE } from "../auth/identityScopes";
+import {
+    IDENTITY_PROFILE_KEY as PROFILE_KEY,
+    IDENTITY_SECRET_KEY as SECRET_KEY,
+    SufficitProfile,
+} from "../auth/identityTypes";
+
+const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+const ok = (body: string) => new Response(body, { status: 200 });
+const DISCOVERY = JSON.stringify({ userinfo_endpoint: "https://identity.test/userinfo" });
+const LIVE_PROFILE = JSON.stringify({ sub: "sub-1", name: "Live Profile" });
+
+/** SufficitAuth's change emitter is private only at compile time. */
+type ChangeEmitterHolder = { onChangeEmitter: { fire(): void } };
+
+/** Counts real onDidChange transitions on the auth's own change emitter. */
+function fireCounter(auth: SufficitAuth): { fires: number } {
+    // The namespace import copy exposes getter-only bindings, so swapping
+    // vscode.EventEmitter cannot work (it threw in CI). Wrap the emitter
+    // instance the SUT already constructed to observe its real fires.
+    const emitter = (auth as unknown as ChangeEmitterHolder).onChangeEmitter;
+    assert.ok(emitter, "SufficitAuth did not construct the change emitter");
+    const counter = { fires: 0 };
+    const original = emitter.fire.bind(emitter);
+    emitter.fire = () => {
+        counter.fires += 1;
+        original();
+    };
+    return counter;
+}
+
+function fakeContext(tokens: object | undefined): vscode.ExtensionContext {
+    const state = new Map<string, unknown>([
+        [PROFILE_KEY, { sub: "sub-1", name: "Saved Profile", email: "saved@example.test" }],
+    ]);
+    return {
+        globalState: {
+            get: (key: string) => state.get(key),
+            update: (key: string, value: unknown) => {
+                state.set(key, value);
+                return Promise.resolve();
+            },
+        },
+        secrets: {
+            get: (key: string) =>
+                key === SECRET_KEY && tokens ? JSON.stringify(tokens) : undefined,
+            store: () => Promise.resolve(),
+            delete: () => Promise.resolve(),
+        },
+        globalStorageUri: {
+            fsPath: fs.mkdtempSync(path.join(os.tmpdir(), "symposium-auth-dedupe-")),
+        },
+        subscriptions: [],
+    } as unknown as vscode.ExtensionContext;
+}
+
+const freshTokens = () => ({
+    accessToken: "access-token-1",
+    refreshToken: "refresh-token-1",
+    scope: DEFAULT_IDENTITY_SCOPE,
+    expiresAtMs: Date.now() + 3_600_000,
+});
+
+async function withAuth(
+    tokens: object | undefined,
+    run: (auth: SufficitAuth, emitter: { fires: number }) => Promise<void>,
+): Promise<void> {
+    const auth = new SufficitAuth(fakeContext(tokens), () => undefined);
+    await run(auth, fireCounter(auth));
+}
+
+function mockIdentityFetch(t: TestContext, respond: () => Response) {
+    let userinfoRequests = 0;
+    t.mock.method(globalThis, "fetch", (input: unknown) => {
+        const url = String(input);
+        if (url.includes("openid-configuration")) {
+            return Promise.resolve(ok(DISCOVERY));
+        }
+        userinfoRequests += 1;
+        return Promise.resolve(respond());
+    });
+    return { userinfoRequests: () => userinfoRequests };
+}
+
+test("concurrent getProfile(true) callers share one userinfo request", async (t) => {
+    const { userinfoRequests } = mockIdentityFetch(t, () => ok(LIVE_PROFILE));
+    await withAuth(freshTokens(), async (auth) => {
+        const results = await Promise.all([
+            auth.getProfile(true),
+            auth.getProfile(true),
+            auth.getProfile(true),
+            auth.getProfile(true),
+        ]);
+        assert.equal(userinfoRequests(), 1);
+        assert.ok(results.every((profile) => profile?.name === "Live Profile"));
+        await auth.getProfile(true);
+        assert.equal(userinfoRequests(), 2);
+    });
+});
+
+test("startup restore publishes a single effective onDidChange transition", async (t) => {
+    const { userinfoRequests } = mockIdentityFetch(t, () => ok(LIVE_PROFILE));
+    await withAuth(freshTokens(), async (auth, emitter) => {
+        const restored = await auth.getProfile(false);
+        assert.equal(restored?.name, "Saved Profile");
+        // The deferred force-fetch races other forced callers; all of them
+        // must still share one request and publish one transition.
+        await Promise.all([auth.getProfile(true), auth.getProfile(true), auth.getProfile(true)]);
+        await flush();
+        await flush();
+        assert.equal(userinfoRequests(), 1);
+        assert.equal(emitter.fires, 1);
+    });
+});
+
+test("transient userinfo failure keeps the cached profile", async (t) => {
+    mockIdentityFetch(t, () => new Response("temporarily unavailable", { status: 503 }));
+    await withAuth(freshTokens(), async (auth) => {
+        await auth.getProfile(false); // primes profileCache from persisted state
+        const profile = await auth.getProfile(true);
+        assert.equal(profile?.name, "Saved Profile");
+    });
+});
+
+test("ProfileChangeGate collapses concurrent notifies into one fire", async () => {
+    let fires = 0;
+    const gate = new ProfileChangeGate({
+        fire: () => {
+            fires += 1;
+        },
+    });
+    const profile: SufficitProfile = { sub: "sub-1", name: "Live Profile" };
+    let resolveTask: ((value: SufficitProfile | undefined) => void) | undefined;
+    const task = () =>
+        new Promise<SufficitProfile | undefined>((resolve) => {
+            resolveTask = resolve;
+        });
+    const shared = [gate.run(task), gate.run(task), gate.run(task)];
+    gate.notify();
+    gate.notify();
+    gate.notify();
+    await flush();
+    assert.equal(fires, 1);
+    resolveTask!(profile);
+    assert.deepEqual(await Promise.all(shared), [profile, profile, profile]);
+    await flush();
+    assert.equal(fires, 1);
+});
+
+test("fetchSufficitProfile maps sub to the contact avatar and keeps fallbacks", async (t) => {
+    const seen: string[] = [];
+    t.mock.method(globalThis, "fetch", (input: unknown) => {
+        const url = String(input);
+        seen.push(url);
+        if (url.includes("openid-configuration")) {
+            return Promise.resolve(ok(DISCOVERY));
+        }
+        return Promise.resolve(
+            ok(JSON.stringify({ sub: "user 42", preferred_username: "u42", email: "u@t" })),
+        );
+    });
+    const profile = await fetchSufficitProfile("https://identity.test", "token", () =>
+        Promise.resolve(JSON.parse(DISCOVERY)),
+    );
+    assert.equal(profile?.name, "u42");
+    assert.equal(
+        profile?.picture,
+        "https://endpoints.sufficit.com.br/contact/avatar?contextid=user%2042",
+    );
+    assert.deepEqual(seen, ["https://identity.test/userinfo"]);
+});
+
+test("fetchSufficitProfile returns undefined when userinfo rejects", async (t) => {
+    t.mock.method(globalThis, "fetch", (input: unknown) => {
+        const url = String(input);
+        if (url.includes("openid-configuration")) {
+            return Promise.resolve(ok(DISCOVERY));
+        }
+        return Promise.resolve(new Response("nope", { status: 401 }));
+    });
+    const profile = await fetchSufficitProfile("https://identity.test", "token", () =>
+        Promise.resolve(JSON.parse(DISCOVERY)),
+    );
+    assert.equal(profile, undefined);
+});
