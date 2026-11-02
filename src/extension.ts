@@ -171,11 +171,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
             .getConfiguration("symposium.identity")
             .get<string>("url", "https://identity.sufficit.com.br");
         setSufficitIdentityMcpUrl(`${issuer.replace(/\/+$/, "")}/api/mcp`);
-        void syncCodexSufficitMcp().catch((error) => symposiumLog(`[mcp] sync failed: ${error}`));
+        return syncCodexSufficitMcp().catch((error) => symposiumLog(`[mcp] sync failed: ${error}`));
     };
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration("symposium.identity.url")) syncAuthenticatedMcps();
+            if (event.affectsConfiguration("symposium.identity.url")) void syncAuthenticatedMcps();
         }),
     );
     // Native Accounts-menu integration (avatar/login at the bottom of the activity bar).
@@ -187,8 +187,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     // Verify the Sufficit AI backend in the background (never blocks the UI):
     // on activation/reload and whenever login state changes. Discovery primes
     // the model picker; only warn (non-modal) when logged in but unreachable.
-    const checkSufficit = () => {
-        void (async () => {
+    const checkSufficit = () =>
+        (async () => {
             try {
                 const r = await sufficitAdapter.available();
                 symposiumLog(`[sufficit-ai] health: ${r.ok ? "ok" : "FAIL " + (r.error ?? "")}`);
@@ -201,7 +201,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
                 symposiumLog(`[sufficit-ai] health check error: ${e}`);
             }
         })();
-    };
 
     // Auto-sync agent knowledge from the hub: pull on activation/reload and
     // whenever login state changes, as long as the user is logged in and the
@@ -209,8 +208,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     // re-scans the local repo afterwards so new agents appear without a manual
     // Sync → Pull. Guarded so overlapping triggers don't run concurrently.
     let autoSyncing = false;
-    const autoSync = (reason: string) => {
-        void (async () => {
+    const autoSync = (reason: string) =>
+        (async () => {
             if (autoSyncing || !api.sync.configured() || !(await auth.isLoggedIn())) {
                 return;
             }
@@ -225,22 +224,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
                 autoSyncing = false;
             }
         })();
-    };
 
     // Join the Sufficit tailnet (self-hosted Headscale) so Symposium's remote bridge is
     // reachable without manual NAT/port-forward setup. Background, best-effort — see
     // net/tailnet.ts for why login failures here must never surface to the user.
-    const joinTailnet = (reason: string) => {
-        void (async () => {
+    const joinTailnet = (reason: string) =>
+        (async () => {
             if (!(await auth.isLoggedIn())) {
                 return;
             }
             await ensureTailnetJoined(new HubClient(), (msg) => symposiumLog(`${msg} (${reason})`));
         })();
-    };
 
     // Phase 8 (issue #40): one coalesced auth fan-out — activation and a
-    // login-change burst share one in-flight run of each startup task.
+    // login-change burst share one in-flight run of each startup task. Each
+    // task returns the promise of its whole run: a task that fires and forgets
+    // would release its single-flight slot immediately and dedupe nothing.
     context.subscriptions.push(
         createAuthStartupTasks({
             onDidChange: auth.onDidChange,

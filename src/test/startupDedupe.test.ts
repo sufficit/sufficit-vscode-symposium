@@ -70,10 +70,22 @@ test("createAuthStartupTasks dispatches every startup task once at activation", 
     const work = createAuthStartupTasks({
         onDidChange,
         tasks: {
-            mcps: (reason) => calls.push(`mcps:${reason}`),
-            health: (reason) => calls.push(`health:${reason}`),
-            sync: (reason) => calls.push(`sync:${reason}`),
-            tailnet: (reason) => calls.push(`tailnet:${reason}`),
+            mcps: (reason) => {
+                calls.push(`mcps:${reason}`);
+                return Promise.resolve();
+            },
+            health: (reason) => {
+                calls.push(`health:${reason}`);
+                return Promise.resolve();
+            },
+            sync: (reason) => {
+                calls.push(`sync:${reason}`);
+                return Promise.resolve();
+            },
+            tailnet: (reason) => {
+                calls.push(`tailnet:${reason}`);
+                return Promise.resolve();
+            },
             panel: () => calls.push("panel"),
         },
     });
@@ -100,9 +112,18 @@ test("login-change bursts coalesce and share the in-flight activation run", asyn
     createAuthStartupTasks({
         onDidChange,
         tasks: {
-            mcps: (reason) => calls.push(`mcps:${reason}`),
-            health: (reason) => calls.push(`health:${reason}`),
-            sync: (reason) => calls.push(`sync:${reason}`),
+            mcps: (reason) => {
+                calls.push(`mcps:${reason}`);
+                return Promise.resolve();
+            },
+            health: (reason) => {
+                calls.push(`health:${reason}`);
+                return Promise.resolve();
+            },
+            sync: (reason) => {
+                calls.push(`sync:${reason}`);
+                return Promise.resolve();
+            },
             tailnet: (reason) => {
                 tailnetRuns += 1;
                 calls.push(`tailnet:${reason}`);
@@ -138,13 +159,54 @@ test("a failing task does not break its siblings", async () => {
             mcps: () => {
                 throw new Error("mcp down");
             },
-            health: () => calls.push("health"),
+            health: () => {
+                calls.push("health");
+                return Promise.resolve();
+            },
             sync: () => Promise.reject(new Error("sync down")),
-            tailnet: () => calls.push("tailnet"),
+            tailnet: () => {
+                calls.push("tailnet");
+                return Promise.resolve();
+            },
             panel: () => calls.push("panel"),
         },
     });
     await flush();
     await flush();
     assert.deepEqual(calls.sort(), ["health", "panel", "tailnet"]);
+});
+
+test("production-shaped tasks (async IIFE) keep the slot until the whole run ends", async () => {
+    // Mirrors extension.ts: each task returns `(async () => { ... })()`. A task
+    // that fired the IIFE with `void` resolved at once and deduped nothing.
+    const runs = { mcps: 0, health: 0, sync: 0, tailnet: 0 };
+    const gates: Array<() => void> = [];
+    const gated = (name: keyof typeof runs) => () =>
+        (async () => {
+            runs[name] += 1;
+            await new Promise<void>((resolve) => gates.push(resolve));
+        })();
+    const { onDidChange, fire } = recordAuthListener();
+    createAuthStartupTasks({
+        onDidChange,
+        tasks: {
+            mcps: gated("mcps"),
+            health: gated("health"),
+            sync: gated("sync"),
+            tailnet: gated("tailnet"),
+            panel: () => undefined,
+        },
+    });
+    await flush();
+    fire();
+    await flush();
+    fire();
+    await flush();
+    assert.deepEqual(runs, { mcps: 1, health: 1, sync: 1, tailnet: 1 });
+    for (const release of gates.splice(0)) release();
+    await flush();
+    fire();
+    await flush();
+    assert.deepEqual(runs, { mcps: 2, health: 2, sync: 2, tailnet: 2 });
+    for (const release of gates.splice(0)) release();
 });
