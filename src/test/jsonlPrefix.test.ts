@@ -116,10 +116,12 @@ test("JsonlMetadataCache counts hits, misses and joined concurrent loaders", asy
         return { v: loads };
     };
 
+    // Known stat skips the internal async stat, so all three calls run in the same tick.
+    const knownStat = fs.statSync(file);
     const before = jsonlMetadataCacheStats();
-    const first = cache.get(file, load);
-    const second = cache.get(file, load);
-    const third = cache.get(file, load);
+    const first = cache.get(file, load, knownStat);
+    const second = cache.get(file, load, knownStat);
+    const third = cache.get(file, load, knownStat);
     releaseLoad();
     const [a, b, c] = await Promise.all([first, second, third]);
     const joined = jsonlMetadataCacheStats();
@@ -129,7 +131,7 @@ test("JsonlMetadataCache counts hits, misses and joined concurrent loaders", asy
     assert.equal(joined.misses - before.misses, 1);
     assert.equal(joined.joined - before.joined, 2);
 
-    const hit = await cache.get(file, load);
+    const hit = await cache.get(file, load, knownStat);
     assert.deepEqual(hit, { v: 1 });
     assert.equal(jsonlMetadataCacheStats().hits - joined.hits, 1);
     assert.equal(loads, 1);
