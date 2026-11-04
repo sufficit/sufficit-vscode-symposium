@@ -13,21 +13,21 @@ function info(backend: string, sessionId: string): SessionInfo {
     };
 }
 
-test("reconcile logs snapshot load, per-backend discovery timing and read counters", async () => {
+test("reconcile logs snapshot load, per-backend timing and read counters", async () => {
     const logs: string[] = [];
-    const slow: SessionInfo = info("claude", "slow");
+    const target = info("claude", "slow");
     let calls = 0;
     const adapter = {
         backend: "claude",
         listSessions: () => {
             calls++;
-            return new Promise<SessionInfo[]>((resolve) =>
-                setTimeout(() => resolve([slow]), 20),
-            );
+            return new Promise<SessionInfo[]>((resolve) => {
+                setTimeout(() => resolve([target]), 20);
+            });
         },
     } as unknown as AgentAdapter;
     const repository = new InMemorySessionRepository();
-    repository.replaceAll([{ ...slow, updatedAt: slow.updatedAt?.getTime() }]);
+    repository.replaceAll([{ ...target, updatedAt: 1000 }]);
     const index = new SessionIndex({
         storageDir: "/unused",
         adapters: [adapter],
@@ -37,21 +37,14 @@ test("reconcile logs snapshot load, per-backend discovery timing and read counte
 
     await index.reconcile();
 
-    assert.ok(
-        logs.some((line) => /index snapshot loaded \d+ sessions in \d+ ms/.test(line)),
-        `missing snapshot-load timing: ${logs.join(" | ")}`,
-    );
-    assert.ok(
-        logs.some((line) => /claude discovery \d+ ms, 1 sessions/.test(line)),
-        `missing per-backend timing: ${logs.join(" | ")}`,
-    );
-    assert.ok(
-        logs.some((line) =>
-            /reconciled 1 sessions in \d+ ms \([^)]*reads=\d+ bytes=\d+ cache hits=\d+ misses=\d+ joined=\d+/.test(
-                line,
-            )),
-        `missing read counters: ${logs.join(" | ")}`,
-    );
+    const snapshot = logs.find((line) => line.includes("index snapshot loaded")) ?? "";
+    assert.match(snapshot, /index snapshot loaded \d+ sessions in \d+ ms/);
+
+    const discovery = logs.find((line) => line.includes("claude discovery")) ?? "";
+    assert.match(discovery, /claude discovery \d+ ms, 1 sessions/);
+
+    const summary = logs.find((line) => line.includes("reconciled 1 sessions")) ?? "";
+    assert.match(summary, /reads=\d+ bytes=\d+ cache hits=\d+ misses=\d+ joined=\d+/);
     assert.equal(calls, 1);
 });
 
@@ -85,15 +78,10 @@ test("concurrent reconcile callers join one scan instead of duplicating it", asy
     releaseScan([target]);
     const results = await Promise.all([first, second, third]);
 
-    assert.equal(calls, 1, "concurrent callers must share one backend scan");
-    assert.ok(
-        logs.some((line) => line.includes("reconcile joined an in-flight scan")),
-        `missing join log: ${logs.join(" | ")}`,
-    );
+    assert.equal(calls, 1);
+    const joinLog = logs.find((line) => line.includes("joined callers")) ?? "";
+    assert.match(joinLog, /joined callers: 2/);
     for (const list of results) {
-        assert.deepEqual(
-            list.map((s) => s.sessionId),
-            ["target"],
-        );
+        assert.deepEqual(list.map((s) => s.sessionId), ["target"]);
     }
 });
