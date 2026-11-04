@@ -82,6 +82,9 @@ test("concurrent reconcile callers join one scan instead of duplicating it", asy
     const joinLog = logs.find((line) => line.includes("joined callers")) ?? "";
     assert.match(joinLog, /joined callers: 2/);
     for (const list of results) {
-        assert.deepEqual(list.map((s) => s.sessionId), ["target"]);
+        assert.deepEqual(
+            list.map((s) => s.sessionId),
+            ["target"],
+        );
     }
 });
