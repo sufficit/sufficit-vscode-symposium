@@ -139,9 +139,9 @@ test("JsonlMetadataCache reparses when the file changes", async () => {
     const cache = new JsonlMetadataCache<string>();
     const file = tempFile("stale.jsonl");
     fs.writeFileSync(file, "one\n");
-    assert.equal(await cache.get(file, async () => "first"), "first");
+    assert.equal(await cache.get(file, () => Promise.resolve("first")), "first");
 
     fs.writeFileSync(file, "one\ntwo\n");
-    assert.equal(await cache.get(file, async () => "second"), "second");
+    assert.equal(await cache.get(file, () => Promise.resolve("second")), "second");
     assert.ok(jsonlMetadataCacheStats().misses >= 2);
 });
