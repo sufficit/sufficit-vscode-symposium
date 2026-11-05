@@ -23,10 +23,7 @@ test("misc commands import config, seed and remote-access panels on demand", asy
     const messages: string[] = [];
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-misc-"));
 
-    vscode.commands.registerCommand = ((
-        name: string,
-        handler: (...args: unknown[]) => unknown,
-    ) => {
+    vscode.commands.registerCommand = ((name: string, handler: (...args: unknown[]) => unknown) => {
         registered.set(name, handler);
         return { dispose() {} };
     }) as typeof vscode.commands.registerCommand;
