@@ -178,6 +178,21 @@ export function renderAccount(profile?: AccountProfile | null): void {
     }
 }
 export function renderSessions(): void {
+    const focused = document.activeElement;
+    const key =
+        focused instanceof HTMLElement && focused.classList.contains("sessionItem")
+            ? focused.dataset.sessionKey
+            : undefined;
+    renderSessionsContent();
+    if (key) {
+        const row = Array.from(sessionsList.querySelectorAll<HTMLElement>(".sessionItem")).find(
+            (item) => item.dataset.sessionKey === key,
+        );
+        row?.focus({ preventScroll: true });
+    }
+}
+
+function renderSessionsContent(): void {
     sessionsList.textContent = "";
     updateFilterButtonState();
     if (!sessionsLoaded) {

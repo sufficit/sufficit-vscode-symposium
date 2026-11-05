@@ -27,6 +27,6 @@ The vsce tool (VS Code Extension Manager) and semver specification **FORBID** le
 2. Only increment the last segment (`.1`, `.2`, `.3`, etc.)
 3. Reset to `.1` when starting a new day
 
-## Current Date: 2026-10-21
-## Correct Version Format: 2026.1023.X
-## Current Release: 2026.1023.1
+## Current Date: 2026-11-05
+## Correct Version Format: 2026.1105.X
+## Current Release: 2026.1105.1

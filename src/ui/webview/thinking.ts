@@ -1,3 +1,4 @@
+import { preserveTextSelection } from "./textSelection";
 import { log } from "./dom";
 import { autoScroll, nearBottom, refreshEmpty } from "./scroll";
 
@@ -76,7 +77,12 @@ export function streamThinkingDelta(text: string): void {
         streamThinkText = "";
     }
     streamThinkText += text;
-    if (streamThinkBody) streamThinkBody.textContent = streamThinkText;
+    if (streamThinkBody) {
+        const body = streamThinkBody;
+        preserveTextSelection(body, () => {
+            body.textContent = streamThinkText;
+        });
+    }
     if (streamThinkLen) streamThinkLen.textContent = streamThinkText.length + " chars";
     autoScroll(stick);
 }
