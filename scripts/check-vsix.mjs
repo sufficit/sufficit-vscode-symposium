@@ -108,7 +108,9 @@ const budgets = new Map([
     // Startup dedupe single-flight plus auth identity single-flight (issue #40
     // phase 8) measure 941550 bytes (919.48 KiB) on top of the above. Keep a
     // bounded 920 KiB host budget; retain the existing 1 MiB archive cap.
-    ["extension/out/extension.js", 920 * 1024],
+    // Session-read instrumentation (issue #40 phase 1) measures 942286 bytes
+    // (920.2 KiB); keep a bounded 921 KiB host budget; archive cap unchanged.
+    ["extension/out/extension.js", 921 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
