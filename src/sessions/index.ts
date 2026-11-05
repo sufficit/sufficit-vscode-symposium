@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import { AgentAdapter, SessionInfo } from "../adapters/types";
+import { jsonlMetadataCacheStats, jsonlReadStats } from "../adapters/jsonlPrefix";
 import { createSessionRepository } from "./repositoryFactory";
 import { SessionRepository, StoredSession } from "./repository";
 
@@ -20,6 +21,7 @@ export class SessionIndex {
     private readonly repository: SessionRepository;
     private sessions = new Map<string, StoredSession>();
     private reconcilePromise: Promise<SessionInfo[]> | undefined;
+    private reconcileJoins = 0;
     private generation = 0;
     private disposed = false;
 
@@ -33,9 +35,13 @@ export class SessionIndex {
                 log: this.log,
                 disableSqlite: options.disableSqlite,
             });
+        const loadedAt = Date.now();
         for (const stored of this.repository.list()) {
             this.sessions.set(keyOf(stored), stored);
         }
+        this.log(
+            `[sessions] index snapshot loaded ${this.sessions.size} sessions in ${Date.now() - loadedAt} ms (${this.repository.kind})`,
+        );
     }
 
     get repositoryKind(): SessionRepository["kind"] {
@@ -61,6 +67,10 @@ export class SessionIndex {
             return Promise.resolve(this.listCached());
         }
         if (this.reconcilePromise) {
+            this.reconcileJoins++;
+            this.log(
+                `[sessions] reconcile joined an in-flight scan (joined callers: ${this.reconcileJoins})`,
+            );
             return this.reconcilePromise;
         }
         const generation = ++this.generation;
@@ -142,6 +152,7 @@ export class SessionIndex {
         const startedAt = Date.now();
         const providerResults = await Promise.all(
             this.adapters.map(async (adapter) => {
+                const backendStartedAt = Date.now();
                 try {
                     const cached = [...this.sessions.values()]
                         .filter((session) => session.backend === adapter.backend)
@@ -158,6 +169,9 @@ export class SessionIndex {
                     if (!Array.isArray(listed)) {
                         listed = [];
                     }
+                    this.log(
+                        `[sessions] ${adapter.backend} discovery ${Date.now() - backendStartedAt} ms, ${listed.length} sessions`,
+                    );
                     return {
                         backend: adapter.backend,
                         listed: await Promise.all(listed.map(toStored)),
@@ -192,8 +206,10 @@ export class SessionIndex {
                 this.sessions.set(keyOf(session), session);
             }
         }
+        const reads = jsonlReadStats();
+        const cache = jsonlMetadataCacheStats();
         this.log(
-            `[sessions] reconciled ${this.sessions.size} sessions in ${Date.now() - startedAt} ms (${this.repository.kind})`,
+            `[sessions] reconciled ${this.sessions.size} sessions in ${Date.now() - startedAt} ms (${this.repository.kind}; reads=${reads.reads} bytes=${reads.bytesRead} cache hits=${cache.hits} misses=${cache.misses} joined=${cache.joined})`,
         );
         return this.listCached();
     }

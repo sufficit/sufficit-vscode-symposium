@@ -1,5 +1,25 @@
 import * as fs from "fs";
 
+/** Bounded-reader counters for issue #40 phase 1 instrumentation. */
+export interface JsonlReadStats {
+    /** Bounded read operations issued (prefix, tail and window reads). */
+    reads: number;
+    /** Logical bytes read from transcripts; every read is capped, so this never scales with full transcript sizes. */
+    bytesRead: number;
+}
+
+const readStats: JsonlReadStats = { reads: 0, bytesRead: 0 };
+
+/** Snapshot of the process-wide bounded-reader counters. */
+export function jsonlReadStats(): Readonly<JsonlReadStats> {
+    return { ...readStats };
+}
+
+function trackRead(bytesRead: number): void {
+    readStats.reads++;
+    readStats.bytesRead += bytesRead;
+}
+
 /**
  * Reads only a bounded prefix of a JSONL file. Session listing needs metadata,
  * not the complete (sometimes 100+ MB) transcript. The returned text always
@@ -17,6 +37,7 @@ export async function readJsonlPrefix(file: string, maxBytes: number): Promise<s
         }
         const buffer = Buffer.allocUnsafe(length);
         const { bytesRead } = await handle.read(buffer, 0, length, 0);
+        trackRead(bytesRead);
         let text = buffer.subarray(0, bytesRead).toString("utf8");
         if (bytesRead < stat.size) {
             const lastNewline = text.lastIndexOf("\n");
@@ -47,6 +68,7 @@ export async function readJsonlTail(file: string, maxBytes: number): Promise<str
         const position = stat.size - length;
         const buffer = Buffer.allocUnsafe(length);
         const { bytesRead } = await handle.read(buffer, 0, length, position);
+        trackRead(bytesRead);
         let text = buffer.subarray(0, bytesRead).toString("utf8");
         if (position > 0) {
             const firstNewline = text.indexOf("\n");
@@ -88,6 +110,7 @@ export async function readJsonlRange(
         const position = end - length;
         const buffer = Buffer.allocUnsafe(length);
         const { bytesRead } = await handle.read(buffer, 0, length, position);
+        trackRead(bytesRead);
         let text = buffer.subarray(0, bytesRead).toString("utf8");
         // Trim a leading partial row so callers never parse a half JSON object;
         // the dropped bytes belong to the row that continues above this window.
@@ -128,6 +151,23 @@ export function decodeHistoryCursor(cursor: string | undefined): number | undefi
     return Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }
 
+/** Metadata-cache counters for issue #40 phase 1 instrumentation. */
+export interface MetadataCacheStats {
+    /** Reads served from cache: no filesystem access at all. */
+    hits: number;
+    /** Misses that ran the bounded loader. */
+    misses: number;
+    /** Concurrent callers that joined an already in-flight load. */
+    joined: number;
+}
+
+const cacheStats: MetadataCacheStats = { hits: 0, misses: 0, joined: 0 };
+
+/** Snapshot of the process-wide metadata-cache counters (all backends). */
+export function jsonlMetadataCacheStats(): Readonly<MetadataCacheStats> {
+    return { ...cacheStats };
+}
+
 interface CachedPrefix<T> {
     size: number;
     mtimeMs: number;
@@ -158,12 +198,15 @@ export class JsonlMetadataCache<T> {
         }
         const cached = this.values.get(file);
         if (stat && cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+            cacheStats.hits++;
             return cached.value;
         }
         const current = this.pending.get(file);
         if (current) {
+            cacheStats.joined++;
             return current;
         }
+        cacheStats.misses++;
         const promise = load()
             .then((value) => {
                 if (stat) {
