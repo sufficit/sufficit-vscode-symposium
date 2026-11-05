@@ -14,7 +14,6 @@ import { LiveSessions } from "./sessions/runtime";
 import { SubagentManager } from "./sessions/subagents";
 import { setSubagentHost } from "./adapters/aiTools";
 import { ChatViewProvider } from "./ui/chatView";
-import { ConfigPanel } from "./ui/configPanel";
 import { createSymposiumApi, SymposiumApi } from "./api/symposiumApi";
 import { RemoteBridge } from "./api/bridge";
 import { SufficitAuth } from "./auth/identity";
@@ -217,7 +216,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
             try {
                 const r = await api.sync.pull();
                 symposiumLog(`[sync] auto-pull (${reason}): ${JSON.stringify(r)}`);
-                ConfigPanel.refresh();
+                void import("./ui/configPanel").then((m) => m.ConfigPanel.refresh());
             } catch (e) {
                 symposiumLog(`[sync] auto-pull failed (${reason}): ${e}`);
             } finally {
@@ -248,7 +247,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
                 health: checkSufficit,
                 sync: autoSync,
                 tailnet: joinTailnet,
-                panel: ConfigPanel.refresh,
+                panel: () => import("./ui/configPanel").then((m) => m.ConfigPanel.refresh()),
             },
         }),
     );
