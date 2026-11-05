@@ -21,6 +21,20 @@ import { createSurfaceAhpPort } from "./surfaceAhp";
 
 export type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
+/** Webview resource URIs for the compiled chat client bundle and stylesheet. */
+function buildWebviewAssets(
+    webview: vscode.Webview,
+    extensionUri: vscode.Uri,
+): import("./chatHtml").ChatWebviewAssets {
+    const scriptAsset = vscode.Uri.joinPath(extensionUri, "out/ui/webview.bundle.js");
+    const styleAsset = vscode.Uri.joinPath(extensionUri, "out/ui/webview.css");
+    return {
+        scriptUri: webview.asWebviewUri(scriptAsset).toString(),
+        styleUri: webview.asWebviewUri(styleAsset).toString(),
+        cspSource: webview.cspSource,
+    };
+}
+
 /** Wires one sidebar/editor webview to the shared chat machinery. */
 export class ChatSurface {
     private controller: ChatController | undefined;
@@ -160,17 +174,7 @@ export class ChatSurface {
         // Load the compiled webview JS/CSS as webview resources (issue #40 phase 9)
         // instead of inlining them into one large HTML string; the inline path
         // remains for hosts without an extension install (PWA shell, jsdom harness).
-        const assets = extension
-            ? {
-                  scriptUri: webview
-                      .asWebviewUri(vscode.Uri.joinPath(extension.extensionUri, "out/ui/webview.bundle.js"))
-                      .toString(),
-                  styleUri: webview
-                      .asWebviewUri(vscode.Uri.joinPath(extension.extensionUri, "out/ui/webview.css"))
-                      .toString(),
-                  cspSource: webview.cspSource,
-              }
-            : undefined;
+        const assets = extension ? buildWebviewAssets(webview, extension.extensionUri) : undefined;
         webview.html = renderHtml(version, assets);
         webview.onDidReceiveMessage((message) => void this.onMessage(message));
         registerChatSurfaceListeners({
