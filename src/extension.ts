@@ -20,6 +20,7 @@ import { SufficitAuth } from "./auth/identity";
 import { SufficitAuthProvider } from "./auth/provider";
 import { setHubTokenProvider, HubClient } from "./sync/hubClient";
 import { ensureTailnetJoined } from "./net/tailnet";
+import { initSttStorage } from "./voice/sttService";
 import { symposiumLog, setSymposiumOutput } from "./extension/log";
 import {
     claudeConfig,
@@ -34,8 +35,6 @@ import { buildChatSurfaceDeps } from "./extension/surfaceDeps";
 import { createSessionsSource } from "./extension/sessionsSource";
 import { createSessionLookup } from "./sessions/sessionLookup";
 import { registerCommands } from "./extension/commands";
-import { initSttStorage } from "./voice/sttService";
-import { initVscodeSpeechBridge } from "./voice/vscodeSpeechBridge";
 import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/codex/sufficitMcp";
 import { setSufficitIdentityMcpUrl } from "./adapters/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
@@ -64,7 +63,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     });
 
     initSttStorage(context);
-    initVscodeSpeechBridge(context.globalStorageUri.fsPath);
     const sufficitAdapter = new OpenAIAdapter("openai", "Sufficit AI", () => openaiConfig(context));
     const geniusAdapter = new GeniusAdapter(geniusConfig);
     const adapters: AgentAdapter[] = [
