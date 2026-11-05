@@ -79,8 +79,10 @@ test("concurrent reconcile callers join one scan instead of duplicating it", asy
     const results = await Promise.all([first, second, third]);
 
     assert.equal(calls, 1);
-    const joinLog = logs.find((line) => line.includes("joined callers")) ?? "";
-    assert.match(joinLog, /joined callers: 2/);
+    const joinLogs = logs.filter((line) => line.includes("joined callers"));
+    assert.equal(joinLogs.length, 2);
+    assert.match(joinLogs[0], /joined callers: 1/);
+    assert.match(joinLogs[1], /joined callers: 2/);
     for (const list of results) {
         assert.deepEqual(
             list.map((s) => s.sessionId),
