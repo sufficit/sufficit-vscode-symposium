@@ -245,7 +245,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
                 health: checkSufficit,
                 sync: autoSync,
                 tailnet: joinTailnet,
-                panel: () => import("./ui/configPanel").then((m) => m.ConfigPanel.refresh()),
+                panel: () => {
+                    void import("./ui/configPanel").then((m) => m.ConfigPanel.refresh());
+                },
             },
         }),
     );

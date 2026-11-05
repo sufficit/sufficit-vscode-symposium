@@ -96,7 +96,7 @@ export function registerMiscCommands(ctx: CommandContext): void {
         // Dynamic configuration surface: agents/skills/tools/backends/sync.
         vscode.commands.registerCommand("symposium.openConfig", async () => {
             const { ConfigPanel } = await import("../../ui/configPanel");
-            await ConfigPanel.show(context, configPanelDeps);
+            void ConfigPanel.show(context, configPanelDeps);
         }),
 
         // Sufficit Identity login / logout via the native auth provider (also
@@ -135,7 +135,7 @@ export function registerMiscCommands(ctx: CommandContext): void {
                     : "Symposium: examples already existed (nothing created).",
             );
             const { ConfigPanel } = await import("../../ui/configPanel");
-            await ConfigPanel.show(context, configPanelDeps);
+            void ConfigPanel.show(context, configPanelDeps);
         }),
 
         // Manual recovery action; bridge setting changes are also applied live.
