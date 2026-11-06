@@ -151,7 +151,7 @@ export function handleCatalogMessage(data: HostToWebview): boolean {
         }
         case "toast": {
             if (data.text) {
-                showToast(String(data.text));
+                showToast(String(data.text), data.kind === "error" ? "error" : undefined);
             }
             break;
         }

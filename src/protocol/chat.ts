@@ -60,6 +60,7 @@ export type SessionActionKind =
 export type WebviewToHost =
     // --- handled by ChatSurface ---
     | { type: "ready" }
+    | { type: "copy-text"; id: string; text: string }
     | { type: "webview-error"; message: string }
     | { type: "set-tools"; tools: unknown[] }
     | { type: "set-permission"; permission: string }
@@ -216,6 +217,7 @@ export const HOST_MESSAGE_TYPES = [
     "todos-snapshot",
     "title-update",
     "toast",
+    "clipboard-result",
     "user",
     "voice-recording",
     "voice-preview-result",

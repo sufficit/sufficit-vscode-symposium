@@ -214,6 +214,7 @@ Development references:
 
 - [Release and publishing](docs/RELEASE.md) — the mandatory release guardrail and flow.
 - [Versioning policy](VERSION.md) and [feature versioning](docs/FEATURE-VERSIONING.md).
+- [Clipboard and Genius authentication investigation](docs/PLAN-COPY-GENIUS-AUTH.md).
 - [UI guidelines](docs/USAGE-guidelines-ui.md) — the standard for Symposium webviews.
 - [Offline testing of the config UI, public API and remote bridge](docs/TESTING-config-and-bridge.md).
 - [Pull request evaluations](docs/pullrequests/README.md).

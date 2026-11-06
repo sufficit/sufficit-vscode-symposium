@@ -10,6 +10,15 @@ export async function handleSurfaceCommandMessage(
     deps: SurfaceMessagesDeps,
 ): Promise<boolean> {
     switch (message.type) {
+        case "copy-text": {
+            try {
+                await vscode.env.clipboard.writeText(message.text);
+                deps.post({ type: "clipboard-result", id: message.id, ok: true });
+            } catch {
+                deps.post({ type: "clipboard-result", id: message.id, ok: false });
+            }
+            return true;
+        }
         case "recheck-shell-tools": {
             const cwd = deps.getController()?.cwd ?? process.cwd();
             void probeRtk(cwd, true).then((ok) => {
