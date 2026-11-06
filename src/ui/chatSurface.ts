@@ -286,7 +286,7 @@ export class ChatSurface {
         this.post({ type: "agent-picker-update", agents });
     }
 
-    async refreshSessions(): Promise<void> => void {
+    async refreshSessions(): Promise<void> {
         const sessions = await this.deps.listSessions();
         // Forward the whole SessionInfo (only normalize the Date) — no field
         // whitelist, which previously dropped new fields (pinned, etc.).
