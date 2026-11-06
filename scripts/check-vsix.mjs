@@ -110,7 +110,10 @@ const budgets = new Map([
     // bounded 920 KiB host budget; retain the existing 1 MiB archive cap.
     // Session-read instrumentation (issue #40 phase 1) measures 942286 bytes
     // (920.2 KiB); keep a bounded 921 KiB host budget; archive cap unchanged.
-    ["extension/out/extension.js", 921 * 1024],
+    // Issue #40 chat-surface extraction and startup-perf slices measure
+    // 922.50 KB (about 944640 bytes). Keep a bounded 923 KiB host budget;
+    // archive cap unchanged.
+    ["extension/out/extension.js", 923 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
