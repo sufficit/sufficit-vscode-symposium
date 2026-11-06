@@ -105,12 +105,22 @@ export function renderSessionItem(
             toggleCollapsed(s.sessionId);
         });
     }
+    el.dataset.sessionKey = JSON.stringify([s.backend, s.sessionId]);
     el.tabIndex = 0;
     el.setAttribute("role", "option");
     el.setAttribute("aria-selected", s.sessionId === activeSessionId ? "true" : "false");
     const item = el as HTMLElement;
     el.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
+        if (e.key === "F2" && e.target === el && !s.deleting && !selectionActive()) {
+            e.preventDefault();
+            e.stopPropagation();
+            postMessage({
+                type: "session-action",
+                action: "rename",
+                sessionId: s.sessionId,
+                backend: s.backend,
+            });
+        } else if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             body.click();
         } else if (e.key === "ArrowDown") {
@@ -275,6 +285,7 @@ export function renderSessionItem(
                 toggleSelection(s);
                 return;
             }
+            el.focus({ preventScroll: true });
             root.classList.remove("listOpen");
             setActiveSessionId(s.sessionId);
             refreshSessionList();

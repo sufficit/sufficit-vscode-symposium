@@ -1175,3 +1175,53 @@ test("sandbox image previews resolve, load and open with keyboard and mouse", ()
         harness.dom.window.close();
     }
 });
+
+test("streaming preserves selected response text through updates and turn end", async () => {
+    const h = createHarness();
+    h.deliver(meta("alpha", "luna"));
+    h.deliver({ type: "event", event: { kind: "text", text: "Select this text" } });
+    await new Promise(resolve => h.dom.window.requestAnimationFrame(resolve));
+    const body = h.document.querySelector("#log .assistant .md") || h.document.querySelector("#log .md");
+    const selection = h.dom.window.getSelection();
+    const range = h.document.createRange();
+    range.selectNodeContents(body);
+    selection.addRange(range);
+    h.deliver({ type: "event", event: { kind: "text", text: " with more tokens" } });
+    await new Promise(resolve => h.dom.window.requestAnimationFrame(resolve));
+    assert.equal(selection.toString(), "Select this text");
+    h.deliver({ type: "event", event: { kind: "text", text: " at the end" } });
+    h.deliver({ type: "event", event: { kind: "turn-end" } });
+    assert.equal(selection.toString(), "Select this text");
+    assert.match(body.textContent, /at the end/);
+    h.dom.window.close();
+});
+
+test("F2 renames the clicked session after list refresh without stealing composer focus", () => {
+    const h = createHarness();
+    const items = [{ sessionId: "alpha", backend: "codex", title: "Alpha", status: "idle" }];
+    h.deliver({ type: "sessions", items });
+    h.document.querySelector(".sessionItem .body").click();
+    h.deliver({ type: "sessions", items });
+    assert.ok(h.document.activeElement.classList.contains("sessionItem"));
+    h.document.activeElement.dispatchEvent(new h.dom.window.KeyboardEvent("keydown", { key: "F2", bubbles: true, cancelable: true }));
+    assert.ok(h.sent.some(m => m.type === "session-action" && m.action === "rename" && m.sessionId === "alpha" && m.backend === "codex"));
+    h.document.querySelector("#input").focus();
+    h.deliver({ type: "sessions", items });
+    assert.equal(h.document.activeElement.id, "input");
+    h.dom.window.close();
+});
+
+
+test("thinking updates retain a backwards partial selection", () => {
+    const h = createHarness();
+    h.deliver(meta("alpha", "luna"));
+    h.deliver({ type: "event", event: { kind: "thinking", text: "Thinking about selection" } });
+    const body = h.document.querySelector(".thinkBody");
+    const selection = h.dom.window.getSelection();
+    selection.setBaseAndExtent(body.firstChild, 14, body.firstChild, 9);
+    h.deliver({ type: "event", event: { kind: "thinking", text: " during updates" } });
+    assert.equal(selection.toString(), "about");
+    assert.equal(selection.anchorOffset, 14);
+    assert.equal(selection.focusOffset, 9);
+    h.dom.window.close();
+});

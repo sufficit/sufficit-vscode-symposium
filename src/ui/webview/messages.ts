@@ -4,6 +4,7 @@ import { log } from "./dom";
 import { conversationRows, activeModel, busy, setBusy } from "./state";
 import { setStatus } from "./status";
 import { autoScroll, nearBottom, refreshEmpty } from "./scroll";
+import { preserveTextSelection } from "./textSelection";
 import { renderMarkdown } from "./markdown";
 import { svgIcon } from "./icons";
 import { beginComposerEdit, lastComposerUserRow } from "./composerBridge";
@@ -302,8 +303,11 @@ let streamRaf = 0;
 function flushStreamRender() {
     streamRaf = 0;
     if (streamBody) {
-        streamBody.textContent = "";
-        renderMarkdown(streamBody, streamText);
+        const body = streamBody;
+        preserveTextSelection(body, () => {
+            body.textContent = "";
+            renderMarkdown(body, streamText);
+        });
     }
 }
 export function streamDelta(
