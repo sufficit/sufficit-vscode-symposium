@@ -23,20 +23,6 @@ import { symposiumCommands } from "./chatSurfaceCommands";
 
 export type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
-/** Webview resource URIs for the compiled chat client bundle and stylesheet. */
-function buildWebviewAssets(
-    webview: vscode.Webview,
-    extensionUri: vscode.Uri,
-): import("./chatHtml").ChatWebviewAssets {
-    const scriptAsset = vscode.Uri.joinPath(extensionUri, "out/ui/webview.bundle.js");
-    const styleAsset = vscode.Uri.joinPath(extensionUri, "out/ui/webview.css");
-    return {
-        scriptUri: webview.asWebviewUri(scriptAsset).toString(),
-        styleUri: webview.asWebviewUri(styleAsset).toString(),
-        cspSource: webview.cspSource,
-    };
-}
-
 /** Wires one sidebar/editor webview to the shared chat machinery. */
 export class ChatSurface {
     private controller: ChatController | undefined;
@@ -300,16 +286,7 @@ export class ChatSurface {
         this.post({ type: "agent-picker-update", agents });
     }
 
-    /** Symposium-level slash commands injected into every backend's autocomplete. */
-    private readonly symposiumCommands: import("../adapters/types").SlashCommand[] = [
-        {
-            name: "refresh-models",
-            description: "Refresh the model list from the provider API",
-            kind: "builtin",
-        },
-    ];
-
-    async refreshSessions(): Promise<void> {
+    async refreshSessions(): Promise<void> => void {
         const sessions = await this.deps.listSessions();
         // Forward the whole SessionInfo (only normalize the Date) — no field
         // whitelist, which previously dropped new fields (pinned, etc.).
