@@ -18,6 +18,7 @@ test("misc commands import config, seed and remote-access panels on demand", asy
     const originalRegister = vscode.commands.registerCommand;
     const originalProvider = vscode.window.registerWebviewViewProvider;
     const originalCreate = vscode.window.createWebviewPanel;
+    const originalViewColumn = vscode.ViewColumn;
     const originalInfo = vscode.window.showInformationMessage;
     const originalConfig = vscode.workspace.getConfiguration;
     const messages: string[] = [];
@@ -33,6 +34,10 @@ test("misc commands import config, seed and remote-access panels on demand", asy
     vscode.window.createWebviewPanel = (() => {
         throw new Error("webview unavailable in tests");
     }) as typeof vscode.window.createWebviewPanel;
+    // Lazy panels evaluate vscode.ViewColumn.Active before createWebviewPanel
+    // runs; the vscode test stub has no enum object, so provide one to reach
+    // the stub's own error.
+    (vscode as unknown as { ViewColumn: unknown }).ViewColumn = { Active: -1 };
     vscode.window.showInformationMessage = ((message: string) => {
         messages.push(message);
         return Promise.resolve(undefined);
@@ -85,6 +90,7 @@ test("misc commands import config, seed and remote-access panels on demand", asy
         vscode.commands.registerCommand = originalRegister;
         vscode.window.registerWebviewViewProvider = originalProvider;
         vscode.window.createWebviewPanel = originalCreate;
+        (vscode as unknown as { ViewColumn: unknown }).ViewColumn = originalViewColumn;
         vscode.window.showInformationMessage = originalInfo;
         vscode.workspace.getConfiguration = originalConfig;
         fs.rmSync(root, { recursive: true, force: true });
