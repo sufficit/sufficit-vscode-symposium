@@ -18,6 +18,8 @@ import { buildSurfaceLanguageHint, resolveSurfaceLanguage } from "./chatSurfaceL
 import { SurfaceQuota } from "./surfaceQuota";
 import { AhpMessagePortTransport } from "../ahp/messagePortTransport";
 import { createSurfaceAhpPort } from "./surfaceAhp";
+import { buildWebviewAssets } from "./chatSurfaceAssets";
+import { symposiumCommands } from "./chatSurfaceCommands";
 
 export type { ChatSurfaceDeps } from "./chatSurfaceTypes";
 
