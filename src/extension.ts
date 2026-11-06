@@ -14,13 +14,13 @@ import { LiveSessions } from "./sessions/runtime";
 import { SubagentManager } from "./sessions/subagents";
 import { setSubagentHost } from "./adapters/aiTools";
 import { ChatViewProvider } from "./ui/chatView";
-import { ConfigPanel } from "./ui/configPanel";
 import { createSymposiumApi, SymposiumApi } from "./api/symposiumApi";
 import { RemoteBridge } from "./api/bridge";
 import { SufficitAuth } from "./auth/identity";
 import { SufficitAuthProvider } from "./auth/provider";
 import { setHubTokenProvider, HubClient } from "./sync/hubClient";
 import { ensureTailnetJoined } from "./net/tailnet";
+import { initSttStorage } from "./voice/sttService";
 import { symposiumLog, setSymposiumOutput } from "./extension/log";
 import {
     claudeConfig,
@@ -35,8 +35,6 @@ import { buildChatSurfaceDeps } from "./extension/surfaceDeps";
 import { createSessionsSource } from "./extension/sessionsSource";
 import { createSessionLookup } from "./sessions/sessionLookup";
 import { registerCommands } from "./extension/commands";
-import { initSttStorage } from "./voice/sttService";
-import { initVscodeSpeechBridge } from "./voice/vscodeSpeechBridge";
 import { setCodexSufficitTokenProvider, syncCodexSufficitMcp } from "./adapters/codex/sufficitMcp";
 import { setSufficitIdentityMcpUrl } from "./adapters/sufficitMcp";
 import { migrateLegacySettings } from "./extension/legacySettings";
@@ -65,7 +63,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     });
 
     initSttStorage(context);
-    initVscodeSpeechBridge(context.globalStorageUri.fsPath);
     const sufficitAdapter = new OpenAIAdapter("openai", "Sufficit AI", () => openaiConfig(context));
     const geniusAdapter = new GeniusAdapter(geniusConfig);
     const adapters: AgentAdapter[] = [
@@ -217,7 +214,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
             try {
                 const r = await api.sync.pull();
                 symposiumLog(`[sync] auto-pull (${reason}): ${JSON.stringify(r)}`);
-                ConfigPanel.refresh();
+                void import("./ui/configPanel").then((m) => m.ConfigPanel.refresh());
             } catch (e) {
                 symposiumLog(`[sync] auto-pull failed (${reason}): ${e}`);
             } finally {
@@ -248,7 +245,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
                 health: checkSufficit,
                 sync: autoSync,
                 tailnet: joinTailnet,
-                panel: ConfigPanel.refresh,
+                panel: () => {
+                    void import("./ui/configPanel").then((m) => m.ConfigPanel.refresh());
+                },
             },
         }),
     );

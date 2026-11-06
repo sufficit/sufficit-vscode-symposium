@@ -150,27 +150,39 @@ export function chatBodyMarkup(version?: string): string {
  * surface is wide enough and collapsible behind a toggle when narrow. The
  * pane side (left/right) comes from the `meta` message.
  */
-export function renderHtml(version?: string): string {
+export interface ChatWebviewAssets {
+    scriptUri: string;
+    styleUri: string;
+    cspSource: string;
+}
+
+export function renderHtml(version?: string, assets?: ChatWebviewAssets): string {
     // Nonce required by VSCode 1.90+ webview CSP enforcement (unsafe-inline alone is blocked).
     // The pinned, integrity-checked mermaid renderer is the ONE external script
     // allowed: it never enters the VSIX (size budget) and stays optional — if
     // the CDN is unreachable the diagram falls back to highlighted source.
     const nonce = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
-    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}' https://cdn.jsdelivr.net;`;
+    const style = assets
+        ? /* html */ `<link rel="stylesheet" href="${assets.styleUri}">`
+        : /* html */ `<style>
+${chatStyles}
+</style>`;
+    const clientScript = assets
+        ? /* html */ `<script nonce="${nonce}" src="${assets.scriptUri}"></script>`
+        : /* html */ `<script nonce="${nonce}">
+${chatClientJs}
+</script>`;
+    const csp = `default-src 'none'; img-src https: data:; style-src 'unsafe-inline'${assets ? ` ${assets.cspSource}` : ""}; script-src 'nonce-${nonce}'${assets ? ` ${assets.cspSource}` : ""} https://cdn.jsdelivr.net;`;
     return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
-<style>
-${chatStyles}
-</style>
+${style}
 </head>
 <body>
 ${chatBodyMarkup(version)}
-<script nonce="${nonce}">
-${chatClientJs}
-</script>
+${clientScript}
 </body>
 </html>`;
 }

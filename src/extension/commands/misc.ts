@@ -1,10 +1,7 @@
 import * as vscode from "vscode";
 import { ChatViewProvider } from "../../ui/chatView";
-import { ConfigPanel } from "../../ui/configPanel";
-import { RemoteAccessPanel } from "../../ui/remoteAccessPanel";
 import { SufficitAuthProvider } from "../../auth/provider";
 import { DEFAULT_IDENTITY_SCOPE } from "../../auth/identityScopes";
-import { seedExamples } from "../../config/seed";
 import { symposiumLog } from "../log";
 import { CommandContext } from "./helpers";
 
@@ -97,9 +94,10 @@ export function registerMiscCommands(ctx: CommandContext): void {
         ),
 
         // Dynamic configuration surface: agents/skills/tools/backends/sync.
-        vscode.commands.registerCommand("symposium.openConfig", () =>
-            ConfigPanel.show(context, configPanelDeps),
-        ),
+        vscode.commands.registerCommand("symposium.openConfig", async () => {
+            const { ConfigPanel } = await import("../../ui/configPanel");
+            void ConfigPanel.show(context, configPanelDeps);
+        }),
 
         // Sufficit Identity login / logout via the native auth provider (also
         // shows in the VS Code Accounts menu).
@@ -128,14 +126,16 @@ export function registerMiscCommands(ctx: CommandContext): void {
 
         // Writes example resources into ~/.symposium so the config UI and API
         // can be validated fully offline.
-        vscode.commands.registerCommand("symposium.seedExamples", () => {
+        vscode.commands.registerCommand("symposium.seedExamples", async () => {
+            const { seedExamples } = await import("../../config/seed");
             const created = seedExamples();
             void vscode.window.showInformationMessage(
                 created > 0
                     ? `Symposium: created ${created} example(s) in ~/.symposium/repo.`
                     : "Symposium: examples already existed (nothing created).",
             );
-            ConfigPanel.show(context, configPanelDeps);
+            const { ConfigPanel } = await import("../../ui/configPanel");
+            void ConfigPanel.show(context, configPanelDeps);
         }),
 
         // Manual recovery action; bridge setting changes are also applied live.
@@ -173,6 +173,7 @@ export function registerMiscCommands(ctx: CommandContext): void {
                     await sleep(100);
                 }
             }
+            const { RemoteAccessPanel } = await import("../../ui/remoteAccessPanel");
             await RemoteAccessPanel.show(context, bridge);
         }),
     );
