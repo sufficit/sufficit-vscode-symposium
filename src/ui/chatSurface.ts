@@ -70,7 +70,7 @@ export class ChatSurface {
         setLoggedIn: (v) => {
             this.loggedIn = v;
         },
-        getCommands: () => this.symposiumCommands,
+        getCommands: () => symposiumCommands,
     });
     // Constructor-initialized (not field initializers): they eagerly read
     // parameter properties (deps/webview/chatOnly/onTitleChange) and the
