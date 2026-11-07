@@ -3,6 +3,7 @@ import { AgentAdapter, SessionInfo } from "../adapters/types";
 import { jsonlMetadataCacheStats, jsonlReadStats } from "../adapters/jsonlPrefix";
 import { createSessionRepository } from "./repositoryFactory";
 import { SessionRepository, StoredSession } from "./repository";
+import { applyProviderResult, providerSignature, resolveColdWaiters } from "./indexSupport";
 
 export * from "./feature";
 
@@ -148,70 +149,86 @@ export class SessionIndex {
         );
     }
 
-    private async scan(generation: number): Promise<SessionInfo[]> {
+    private async scan(
+        generation: number,
+        only?: ReadonlySet<string>,
+    ): Promise<SessionInfo[]> {
         const startedAt = Date.now();
-        const providerResults = await Promise.all(
+        // Issue #40: each provider's rows are applied the moment its own scan
+        // finishes, so the catalog (and any cold-start waiter) sees the first
+        // useful partial list without waiting for the slowest backend.
+        await Promise.all(
             this.adapters.map(async (adapter) => {
+                if (only && !only.has(adapter.backend)) {
+                    return;
+                }
                 const backendStartedAt = Date.now();
+                let listed: StoredSession[] | undefined;
                 try {
                     const cached = [...this.sessions.values()]
                         .filter((session) => session.backend === adapter.backend)
                         .map(fromStored);
-                    let listed: SessionInfo[];
+                    let sessions: SessionInfo[];
                     try {
-                        listed = adapter.listSessionsIncremental
+                        sessions = adapter.listSessionsIncremental
                             ? await adapter.listSessionsIncremental(cached)
                             : await adapter.listSessions();
                     } catch {
-                        listed = await adapter.listSessions().catch(() => []);
+                        sessions = await adapter.listSessions().catch(() => []);
                     }
                     // Guard: if listSessions returned undefined/null, use empty array
-                    if (!Array.isArray(listed)) {
-                        listed = [];
+                    if (!Array.isArray(sessions)) {
+                        sessions = [];
                     }
-                    this.log(
-                        `[sessions] ${adapter.backend} discovery ${Date.now() - backendStartedAt} ms, ${listed.length} sessions`,
-                    );
-                    return {
-                        backend: adapter.backend,
-                        listed: await Promise.all(listed.map(toStored)),
-                    };
+                    listed = await Promise.all(sessions.map(toStored));
                 } catch (error) {
                     this.log(
                         `[sessions] ${adapter.backend} reconciliation failed: ${error instanceof Error ? error.message : String(error)}`,
                     );
-                    return undefined;
+                    return;
                 }
+                // No await between the generation check and the cache update,
+                // so a concurrent forget()/invalidate() cannot interleave.
+                // Durability is the repository's job and may be debounced: the
+                // catalog is already correct in memory, so the scan must not
+                // wait for the disk.
+                if (this.disposed || generation !== this.generation || !listed) {
+                    return;
+                }
+                const before = providerSignature(this.sessions, adapter.backend);
+                this.applyProvider(adapter.backend, listed);
+                const unchanged =
+                    providerSignature(this.sessions, adapter.backend) === before;
+                this.log(
+                    `[sessions] ${adapter.backend} discovery ${Date.now() - backendStartedAt} ms, ${listed.length} sessions${unchanged ? " (unchanged)" : ""}`,
+                );
+                if (!unchanged) {
+                    this.onChange?.();
+                }
+                this.releaseColdWaiters();
             }),
         );
-
-        if (this.disposed || generation !== this.generation) {
-            return this.listCached();
+        if (!only) {
+            const reads = jsonlReadStats();
+            const cache = jsonlMetadataCacheStats();
+            this.log(
+                `[sessions] reconciled ${this.sessions.size} sessions in ${Date.now() - startedAt} ms (${this.repository.kind}; reads=${reads.reads} bytes=${reads.bytesRead} cache hits=${cache.hits} misses=${cache.misses} joined=${cache.joined})`,
+            );
         }
-        // No await between the generation check above and the cache update, so a
-        // concurrent forget()/invalidate() cannot interleave with this loop.
-        // Durability is the repository's job and may be debounced: the catalog is
-        // already correct in memory, so the scan must not wait for the disk.
-        for (const result of providerResults) {
-            if (!result) {
-                continue;
-            }
-            this.persistInBackground(result.backend, result.listed);
-            for (const [key, session] of this.sessions) {
-                if (session.backend === result.backend) {
-                    this.sessions.delete(key);
-                }
-            }
-            for (const session of result.listed) {
-                this.sessions.set(keyOf(session), session);
-            }
-        }
-        const reads = jsonlReadStats();
-        const cache = jsonlMetadataCacheStats();
-        this.log(
-            `[sessions] reconciled ${this.sessions.size} sessions in ${Date.now() - startedAt} ms (${this.repository.kind}; reads=${reads.reads} bytes=${reads.bytesRead} cache hits=${cache.hits} misses=${cache.misses} joined=${cache.joined})`,
-        );
+        this.releaseColdWaiters();
         return this.listCached();
+    }
+
+    /** Applies one provider's rows to the catalog and persists in background. */
+    private applyProvider(backend: string, listed: readonly StoredSession[]): void {
+        applyProviderResult(this.sessions, backend, listed);
+        this.persistInBackground(backend, listed);
+    }
+
+    private releaseColdWaiters(): void {
+        if (this.coldWaiters.length) {
+            resolveColdWaiters(this.coldWaiters, () => this.listCached());
+        }
     }
 }
 
