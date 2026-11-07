@@ -71,12 +71,6 @@ export function resolveInvalidateBackends(
                 backends.add(session.backend);
             }
         }
-        for (const adapter of adapters) {
-            const roots = adapter.sessionsDir?.();
-            if (roots?.some((root) => change.path!.startsWith(root))) {
-                backends.add(adapter.backend);
-            }
-        }
         return [...backends];
     }
     if (change.sessionId) {
