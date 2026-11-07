@@ -13,6 +13,8 @@ export interface SessionIndexOptions {
     log?: (message: string) => void;
     repository?: SessionRepository;
     disableSqlite?: boolean;
+    /** Fires when an applied scan changes the effective catalog (issue #40). */
+    onChange?: () => void;
 }
 
 /** Stale-while-revalidate catalog backed by SQLite with portable fallbacks. */
@@ -25,9 +27,14 @@ export class SessionIndex {
     private reconcileJoins = 0;
     private generation = 0;
     private disposed = false;
+    private readonly onChange?: () => void;
+    private readonly coldWaiters: { resolve(sessions: SessionInfo[]): void }[] = [];
+    private pendingTargeted = new Set<string>();
+    private targetedScan: Promise<void> | undefined;
 
     constructor(options: SessionIndexOptions) {
         this.adapters = options.adapters;
+        this.onChange = options.onChange;
         this.log = options.log ?? (() => undefined);
         this.repository =
             options.repository ??
@@ -61,6 +68,20 @@ export class SessionIndex {
     get(backend: string, sessionId: string): SessionInfo | undefined {
         const stored = this.sessions.get(keyOf({ backend, sessionId }));
         return stored ? fromStored(stored) : undefined;
+    }
+
+    /**
+     * Cold start (issue #40): resolves with the first useful snapshot — as
+     * soon as one backend's rows land — instead of waiting for every backend.
+     * Fresh installs fall back to the end-of-scan snapshot; never hangs.
+     */
+    ready(): Promise<SessionInfo[]> {
+        if (this.sessions.size > 0 || this.disposed) {
+            return Promise.resolve(this.listCached());
+        }
+        return new Promise<SessionInfo[]>((resolve) => {
+            this.coldWaiters.push(resolve);
+        });
     }
 
     reconcile(): Promise<SessionInfo[]> {
