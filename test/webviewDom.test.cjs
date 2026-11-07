@@ -1225,3 +1225,43 @@ test("thinking updates retain a backwards partial selection", () => {
     assert.equal(selection.focusOffset, 9);
     h.dom.window.close();
 });
+
+test("denied browser clipboard delegates copy without removing the selection or reporting false success", async () => {
+    const h = createHarness();
+    h.deliver(meta("alpha", "luna"));
+    h.deliver({ type: "event", event: { kind: "text", text: "Copy this response" } });
+    h.deliver({ type: "event", event: { kind: "turn-end" } });
+    const body = h.document.querySelector("#log .md");
+    const range = h.document.createRange();
+    range.selectNodeContents(body);
+    h.dom.window.getSelection().addRange(range);
+    h.dom.window.navigator.clipboard.writeText = async () => { throw new Error("NotAllowedError"); };
+    h.document.execCommand = () => false;
+    const copy = h.document.querySelector(".msgCopy");
+    copy.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.equal(h.dom.window.getSelection().toString(), "Copy this response");
+    assert.equal(copy.classList.contains("done"), false);
+    const request = h.sent.findLast(m => m.type === "copy-text");
+    assert.equal(request?.text, "Copy this response");
+    h.deliver({ type: "clipboard-result", id: request.id, ok: true });
+    assert.equal(copy.classList.contains("done"), true);
+    h.dom.window.close();
+});
+
+
+test("failed host clipboard does not mark the response copied", async () => {
+    const h = createHarness();
+    h.deliver(meta("alpha", "luna"));
+    h.deliver({ type: "event", event: { kind: "text", text: "Copy failure" } });
+    h.deliver({ type: "event", event: { kind: "turn-end" } });
+    h.dom.window.navigator.clipboard.writeText = async () => { throw new Error("denied"); };
+    const copy = h.document.querySelector(".msgCopy");
+    copy.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const request = h.sent.findLast(m => m.type === "copy-text");
+    h.deliver({ type: "clipboard-result", id: request.id, ok: false });
+    assert.equal(copy.classList.contains("done"), false);
+    assert.match(h.document.querySelector("#toast.error").textContent, /Could not copy/);
+    h.dom.window.close();
+});

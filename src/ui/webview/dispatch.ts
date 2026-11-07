@@ -1,4 +1,5 @@
 // Inbound message dispatch from the extension host. Registers the listener on import.
+import { completeClipboardCopy } from "./clipboard";
 import { bootComplete, bootStep, bootTimer } from "./boot";
 import { clearComposer, renderChips, saveCurrentComposerDraft, setBrowserOpen } from "./composer";
 import { resizeInput } from "./inputSizing";
@@ -81,6 +82,10 @@ export function handleHostMessage(payload: unknown): void {
     const data = payload as DispatchMessage;
     if (handleCatalogMessage(data)) return;
     switch (data.type) {
+        case "clipboard-result": {
+            completeClipboardCopy(String(data.id), data.ok === true);
+            break;
+        }
         case "boot": {
             if (data.complete) {
                 clearTimeout(bootTimer);

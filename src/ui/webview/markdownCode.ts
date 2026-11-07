@@ -1,41 +1,7 @@
 // Markdown code blocks, structural tags and syntax highlighting.
 
-export function copyText(text: string, done?: () => void): void {
-    const finish = () => {
-        if (typeof done === "function") {
-            done();
-        }
-    };
-    const fallback = () => {
-        try {
-            const ta = document.createElement("textarea");
-            ta.value = text;
-            ta.style.position = "fixed";
-            ta.style.opacity = "0";
-            ta.style.pointerEvents = "none";
-            document.body.appendChild(ta);
-            ta.select();
-            // Deprecated, but still the only fallback when navigator.clipboard is
-            // unavailable (older webviews / restricted contexts).
-            // eslint-disable-next-line @typescript-eslint/no-deprecated
-            document.execCommand("copy");
-            document.body.removeChild(ta);
-        } catch (_) {
-            // Clipboard is best-effort in VS Code webviews; UI feedback should not
-            // depend on a permission gate we do not control.
-        }
-        finish();
-    };
-    try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(finish, fallback);
-            return;
-        }
-    } catch (_) {
-        // Some webview environments expose navigator.clipboard but throw on use.
-    }
-    fallback();
-}
+export { copyText } from "./clipboard";
+import { copyText } from "./clipboard";
 
 export function codeBlock(lang: string, code: string): HTMLDivElement {
     const block = document.createElement("div");
