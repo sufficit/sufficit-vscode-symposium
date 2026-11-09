@@ -3,6 +3,13 @@ import { AgentAdapter, SessionInfo } from "../adapters/types";
 import { jsonlMetadataCacheStats, jsonlReadStats } from "../adapters/jsonlPrefix";
 import { createSessionRepository } from "./repositoryFactory";
 import { SessionRepository, StoredSession } from "./repository";
+import {
+    applyProviderResult,
+    InvalidateChange,
+    providerSignature,
+    resolveColdWaiters,
+    resolveInvalidateBackends,
+} from "./indexSupport";
 
 export * from "./feature";
 
@@ -12,6 +19,8 @@ export interface SessionIndexOptions {
     log?: (message: string) => void;
     repository?: SessionRepository;
     disableSqlite?: boolean;
+    /** Fires when an applied scan changes the effective catalog (issue #40). */
+    onChange?: () => void;
 }
 
 /** Stale-while-revalidate catalog backed by SQLite with portable fallbacks. */
@@ -24,9 +33,14 @@ export class SessionIndex {
     private reconcileJoins = 0;
     private generation = 0;
     private disposed = false;
+    private readonly onChange?: () => void;
+    private readonly coldWaiters: { resolve(sessions: SessionInfo[]): void }[] = [];
+    private pendingTargeted = new Set<string>();
+    private targetedScan: Promise<void> | undefined;
 
     constructor(options: SessionIndexOptions) {
         this.adapters = options.adapters;
+        this.onChange = options.onChange;
         this.log = options.log ?? (() => undefined);
         this.repository =
             options.repository ??
@@ -62,6 +76,20 @@ export class SessionIndex {
         return stored ? fromStored(stored) : undefined;
     }
 
+    /**
+     * Cold start (issue #40): resolves with the first useful snapshot — as
+     * soon as one backend's rows land — instead of waiting for every backend.
+     * Fresh installs fall back to the end-of-scan snapshot; never hangs.
+     */
+    ready(): Promise<SessionInfo[]> {
+        if (this.sessions.size > 0 || this.disposed) {
+            return Promise.resolve(this.listCached());
+        }
+        return new Promise<SessionInfo[]>((resolve) => {
+            this.coldWaiters.push({ resolve: (sessions) => resolve(sessions) });
+        });
+    }
+
     reconcile(): Promise<SessionInfo[]> {
         if (this.disposed) {
             return Promise.resolve(this.listCached());
@@ -80,8 +108,58 @@ export class SessionIndex {
         return this.reconcilePromise;
     }
 
-    invalidate(): void {
-        this.generation++;
+    /**
+     * Marks cached knowledge stale (issue #40 phase 7). With a change, only
+     * the affected backends are queued for a coalesced targeted rescan; a
+     * changeless call (manual refresh) queues every backend the same way.
+     * Unlike forget(), this must not bump the scan generation: an unrelated
+     * invalidation would discard a fresh targeted result still in flight.
+     * In-flight scans may still apply; the rescan converges the catalog.
+     */
+    invalidate(change?: InvalidateChange): void {
+        if (this.disposed) {
+            return;
+        }
+        const backends = change
+            ? resolveInvalidateBackends(change, this.adapters, this.sessions)
+            : this.adapters.map((adapter) => adapter.backend);
+        for (const backend of backends) {
+            this.pendingTargeted.add(backend);
+        }
+        if (this.pendingTargeted.size > 0) {
+            void this.drainTargeted();
+        }
+    }
+
+    /**
+     * Runs one coalesced targeted rescan at a time. A targeted scan never
+     * races a full reconcile: it waits for the shared scan to settle so the
+     * catalog only ever advances one generation at a time.
+     */
+    private async drainTargeted(): Promise<void> {
+        if (this.targetedScan) {
+            return;
+        }
+        const drain = (async () => {
+            while (this.pendingTargeted.size > 0 && !this.disposed) {
+                if (this.reconcilePromise) {
+                    try {
+                        await this.reconcilePromise;
+                    } catch {
+                        /* provider failures are already logged by the scan */
+                    }
+                    continue;
+                }
+                const only = new Set(this.pendingTargeted);
+                this.pendingTargeted.clear();
+                const generation = ++this.generation;
+                await this.scan(generation, only);
+            }
+        })();
+        this.targetedScan = drain.finally(() => {
+            this.targetedScan = undefined;
+        });
+        await this.targetedScan;
     }
 
     /**
@@ -148,70 +226,82 @@ export class SessionIndex {
         );
     }
 
-    private async scan(generation: number): Promise<SessionInfo[]> {
+    private async scan(generation: number, only?: ReadonlySet<string>): Promise<SessionInfo[]> {
         const startedAt = Date.now();
-        const providerResults = await Promise.all(
+        // Issue #40: each provider's rows are applied the moment its own scan
+        // finishes, so the catalog (and any cold-start waiter) sees the first
+        // useful partial list without waiting for the slowest backend.
+        await Promise.all(
             this.adapters.map(async (adapter) => {
+                if (only && !only.has(adapter.backend)) {
+                    return;
+                }
                 const backendStartedAt = Date.now();
+                let listed: StoredSession[] | undefined;
                 try {
                     const cached = [...this.sessions.values()]
                         .filter((session) => session.backend === adapter.backend)
                         .map(fromStored);
-                    let listed: SessionInfo[];
+                    let sessions: SessionInfo[];
                     try {
-                        listed = adapter.listSessionsIncremental
+                        sessions = adapter.listSessionsIncremental
                             ? await adapter.listSessionsIncremental(cached)
                             : await adapter.listSessions();
                     } catch {
-                        listed = await adapter.listSessions().catch(() => []);
+                        sessions = await adapter.listSessions().catch(() => []);
                     }
                     // Guard: if listSessions returned undefined/null, use empty array
-                    if (!Array.isArray(listed)) {
-                        listed = [];
+                    if (!Array.isArray(sessions)) {
+                        sessions = [];
                     }
-                    this.log(
-                        `[sessions] ${adapter.backend} discovery ${Date.now() - backendStartedAt} ms, ${listed.length} sessions`,
-                    );
-                    return {
-                        backend: adapter.backend,
-                        listed: await Promise.all(listed.map(toStored)),
-                    };
+                    listed = await Promise.all(sessions.map(toStored));
                 } catch (error) {
                     this.log(
                         `[sessions] ${adapter.backend} reconciliation failed: ${error instanceof Error ? error.message : String(error)}`,
                     );
-                    return undefined;
+                    return;
                 }
+                // No await between the generation check and the cache update,
+                // so a concurrent forget()/invalidate() cannot interleave.
+                // Durability is the repository's job and may be debounced: the
+                // catalog is already correct in memory, so the scan must not
+                // wait for the disk.
+                if (this.disposed || generation !== this.generation || !listed) {
+                    return;
+                }
+                const before = providerSignature(this.sessions, adapter.backend);
+                this.applyProvider(adapter.backend, listed);
+                const unchanged = providerSignature(this.sessions, adapter.backend) === before;
+                this.log(
+                    `[sessions] ${adapter.backend} discovery ${Date.now() - backendStartedAt} ms, ${listed.length} sessions${unchanged ? " (unchanged)" : ""}`,
+                );
+                if (!unchanged) {
+                    this.onChange?.();
+                }
+                this.releaseColdWaiters();
             }),
         );
-
-        if (this.disposed || generation !== this.generation) {
-            return this.listCached();
+        if (!only) {
+            const reads = jsonlReadStats();
+            const cache = jsonlMetadataCacheStats();
+            this.log(
+                `[sessions] reconciled ${this.sessions.size} sessions in ${Date.now() - startedAt} ms (${this.repository.kind}; reads=${reads.reads} bytes=${reads.bytesRead} cache hits=${cache.hits} misses=${cache.misses} joined=${cache.joined})`,
+            );
         }
-        // No await between the generation check above and the cache update, so a
-        // concurrent forget()/invalidate() cannot interleave with this loop.
-        // Durability is the repository's job and may be debounced: the catalog is
-        // already correct in memory, so the scan must not wait for the disk.
-        for (const result of providerResults) {
-            if (!result) {
-                continue;
-            }
-            this.persistInBackground(result.backend, result.listed);
-            for (const [key, session] of this.sessions) {
-                if (session.backend === result.backend) {
-                    this.sessions.delete(key);
-                }
-            }
-            for (const session of result.listed) {
-                this.sessions.set(keyOf(session), session);
-            }
-        }
-        const reads = jsonlReadStats();
-        const cache = jsonlMetadataCacheStats();
-        this.log(
-            `[sessions] reconciled ${this.sessions.size} sessions in ${Date.now() - startedAt} ms (${this.repository.kind}; reads=${reads.reads} bytes=${reads.bytesRead} cache hits=${cache.hits} misses=${cache.misses} joined=${cache.joined})`,
-        );
+        this.releaseColdWaiters();
         return this.listCached();
+    }
+
+    /** Applies one provider's rows to the catalog and persists in background. */
+    private applyProvider(backend: string, listed: readonly StoredSession[]): void {
+        applyProviderResult(this.sessions, backend, listed);
+        this.persistInBackground(backend, listed);
+    }
+
+    private releaseColdWaiters(): void {
+        if (this.coldWaiters.length) {
+            resolveColdWaiters(this.coldWaiters, () => this.listCached());
+        }
     }
 }
 
