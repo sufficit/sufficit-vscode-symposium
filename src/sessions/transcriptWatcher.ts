@@ -50,7 +50,6 @@ export class TranscriptWatcher {
                 this.scheduleFlush();
             }
         }, this.options.resyncIntervalMs ?? DEFAULT_RESYNC_MS);
-        this.resyncTimer.unref?.();
     }
 
     /** Directory currently watched? Exposed for tests/diagnostics only. */
@@ -132,7 +131,6 @@ export class TranscriptWatcher {
             this.flushTimer = undefined;
             this.flush();
         }, this.options.debounceMs ?? DEFAULT_DEBOUNCE_MS);
-        this.flushTimer.unref?.();
     }
 
     private flush(): void {
