@@ -62,3 +62,5 @@ Confirmed `tasks_create`, `tasks_update` and `tasks_list` results also update th
 Structured Genius cancellation reasons are preserved in adapter errors. Service shutdown and detected timeouts explain the cause and expose an explicit **Continue** action; user cancellation stays stopped. Legacy `Genius command cancelled` is displayed as an unknown source, never attributed to the user without evidence. These events disable both Retry and automatic recovery.
 
 Continue sends a short continuation instruction through `genius exec --resume` to the same native UUID, preserving the previous host instructions and the saved transcript. It does not resend the original user request. Completed tool results stay in context; any tool whose outcome is unknown must be inspected before acting again. The cause marker is kept in the stored error text for compatibility with older transcript projections. Superseded historical errors do not expose recovery buttons.
+
+Release plan: [Cancellation release](PLAN-RELEASE-CANCELLATION.md).
