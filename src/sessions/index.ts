@@ -271,8 +271,7 @@ export class SessionIndex {
                 }
                 const before = providerSignature(this.sessions, adapter.backend);
                 this.applyProvider(adapter.backend, listed);
-                const unchanged =
-                    providerSignature(this.sessions, adapter.backend) === before;
+                const unchanged = providerSignature(this.sessions, adapter.backend) === before;
                 this.log(
                     `[sessions] ${adapter.backend} discovery ${Date.now() - backendStartedAt} ms, ${listed.length} sessions${unchanged ? " (unchanged)" : ""}`,
                 );
