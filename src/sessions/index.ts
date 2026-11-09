@@ -112,9 +112,11 @@ export class SessionIndex {
      * Marks cached knowledge stale (issue #40 phase 7). With a change, only
      * the affected backends are queued for a coalesced targeted rescan; a
      * changeless call (manual refresh) queues every backend the same way.
+     * Unlike forget(), this must not bump the scan generation: an unrelated
+     * invalidation would discard a fresh targeted result still in flight.
+     * In-flight scans may still apply; the rescan converges the catalog.
      */
     invalidate(change?: InvalidateChange): void {
-        this.generation++;
         if (this.disposed) {
             return;
         }
