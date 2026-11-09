@@ -169,7 +169,7 @@ test("invalidate() without a change queues every backend (manual refresh)", asyn
     assert.equal(codex.scans(), 1);
 });
 
-test("invalidate after dispose bumps the generation without scanning", async () => {
+test("invalidate after dispose does not scan", async () => {
     const claude = fakeAdapter("claude", info("claude", "c1", "Claude one"));
     const index = makeIndex([claude.adapter]);
     await index.dispose();
