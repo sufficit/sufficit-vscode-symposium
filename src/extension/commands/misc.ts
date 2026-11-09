@@ -34,7 +34,12 @@ export function registerMiscCommands(ctx: CommandContext): void {
         // Lets an editor-tab conversation jump to the persistent sidebar chat,
         // keeping both surfaces available at the same time.
         vscode.commands.registerCommand("symposium.showChat", () => chatView.focusInput()),
-        vscode.commands.registerCommand("symposium.refreshSessions", () => refreshAll()),
+        vscode.commands.registerCommand("symposium.refreshSessions", () => {
+            // Issue #40 phase 7: a manual refresh converges the index first;
+            // refreshAll alone only repaints surfaces from the cached list.
+            sessionIndex.invalidate();
+            refreshAll();
+        }),
 
         // dev convenience: reload the window so a freshly installed vsix is
         // picked up. restartExtensionHost only reactivates the already-scanned
