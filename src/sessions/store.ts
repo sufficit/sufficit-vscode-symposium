@@ -60,6 +60,8 @@ export class SessionStore {
     private terminalStatuses: Record<string, SessionTerminalStatus>;
     private deleted: Set<string>;
     private displayMeta: Record<string, SessionDisplayMeta>;
+    // Issue #40 phase 7: index-invalidation seam, fired on effective writes.
+    private onMutation?: (sessionId: string) => void;
 
     constructor(private readonly memento: vscode.Memento) {
         const rawTitles = memento.get<Record<string, string>>(TITLES_KEY, {});
@@ -84,6 +86,15 @@ export class SessionStore {
         }
     }
 
+    /**
+     * Issue #40 phase 7: registers (or clears) the index-invalidation seam.
+     * Only effective writes below fire it — reads and deduplicated no-ops
+     * stay silent so listing never invalidates the index.
+     */
+    setMutationListener(listener?: (sessionId: string) => void): void {
+        this.onMutation = listener;
+    }
+
     private key(info: SessionInfo): string {
         return info.sessionId;
     }
@@ -99,6 +110,7 @@ export class SessionStore {
             delete this.titles[this.key(info)];
         }
         await this.memento.update(TITLES_KEY, this.titles);
+        this.onMutation?.(info.sessionId);
     }
 
     isArchived(info: SessionInfo): boolean {
@@ -112,6 +124,7 @@ export class SessionStore {
             this.archived.delete(this.key(info));
         }
         await this.memento.update(ARCHIVED_KEY, [...this.archived]);
+        this.onMutation?.(info.sessionId);
     }
 
     isPinned(info: SessionInfo): boolean {
@@ -125,6 +138,7 @@ export class SessionStore {
             this.pinned.push(id);
         } // newest pin goes to the bottom of the pinned group
         await this.memento.update(PINNED_KEY, this.pinned);
+        this.onMutation?.(info.sessionId);
     }
 
     /** Moves a pinned session up/down within the pinned group. */
@@ -137,6 +151,7 @@ export class SessionStore {
         }
         [this.pinned[i], this.pinned[j]] = [this.pinned[j], this.pinned[i]];
         await this.memento.update(PINNED_KEY, this.pinned);
+        this.onMutation?.(info.sessionId);
     }
 
     /** Reorders the pinned group to match the given id order (drag-and-drop). */
@@ -168,6 +183,7 @@ export class SessionStore {
         }
         this.parents[id] = parentId;
         void this.memento.update(PARENTS_KEY, this.parents);
+        this.onMutation?.(id);
     }
 
     /** Persists edit/restart branch membership across extension reloads. */
@@ -181,6 +197,7 @@ export class SessionStore {
         }
         this.lineages[id] = lineageId;
         void this.memento.update(LINEAGES_KEY, this.lineages);
+        this.onMutation?.(id);
     }
 
     /** Drops all stored metadata for a session (used after permanent delete). */
@@ -274,5 +291,6 @@ export class SessionStore {
         }
         this.displayMeta[sessionId] = next;
         void this.memento.update(DISPLAY_META_KEY, this.displayMeta);
+        this.onMutation?.(sessionId);
     }
 }
