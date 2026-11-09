@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { AgentAdapter, SessionInfo } from "../adapters/types";
+import {
+    JsonlMetadataCache,
+    jsonlMetadataCacheStats,
+    jsonlReadStats,
+    readJsonlPrefix,
+} from "../adapters/jsonlPrefix";
 import { SessionIndex } from "../sessions/index";
 import { InMemorySessionRepository } from "../sessions/memoryRepository";
 
@@ -43,6 +52,16 @@ function fakeAdapter(backend: string, session: SessionInfo) {
 }
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+        if (Date.now() > deadline) {
+            throw new Error("waitFor: condition not met in time");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+}
 
 function makeIndex(adapters: AgentAdapter[], preloaded: SessionInfo[] = []) {
     const repository = new InMemorySessionRepository();
