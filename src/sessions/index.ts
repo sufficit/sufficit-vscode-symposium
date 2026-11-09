@@ -3,7 +3,13 @@ import { AgentAdapter, SessionInfo } from "../adapters/types";
 import { jsonlMetadataCacheStats, jsonlReadStats } from "../adapters/jsonlPrefix";
 import { createSessionRepository } from "./repositoryFactory";
 import { SessionRepository, StoredSession } from "./repository";
-import { applyProviderResult, providerSignature, resolveColdWaiters } from "./indexSupport";
+import {
+    applyProviderResult,
+    InvalidateChange,
+    providerSignature,
+    resolveColdWaiters,
+    resolveInvalidateBackends,
+} from "./indexSupport";
 
 export * from "./feature";
 
@@ -102,8 +108,56 @@ export class SessionIndex {
         return this.reconcilePromise;
     }
 
-    invalidate(): void {
+    /**
+     * Marks cached knowledge stale (issue #40 phase 7). With a change, only
+     * the affected backends are queued for a coalesced targeted rescan; a
+     * changeless call (manual refresh) queues every backend the same way.
+     */
+    invalidate(change?: InvalidateChange): void {
         this.generation++;
+        if (this.disposed) {
+            return;
+        }
+        const backends = change
+            ? resolveInvalidateBackends(change, this.adapters, this.sessions)
+            : this.adapters.map((adapter) => adapter.backend);
+        for (const backend of backends) {
+            this.pendingTargeted.add(backend);
+        }
+        if (this.pendingTargeted.size > 0) {
+            void this.drainTargeted();
+        }
+    }
+
+    /**
+     * Runs one coalesced targeted rescan at a time. A targeted scan never
+     * races a full reconcile: it waits for the shared scan to settle so the
+     * catalog only ever advances one generation at a time.
+     */
+    private async drainTargeted(): Promise<void> {
+        if (this.targetedScan) {
+            return;
+        }
+        const drain = (async () => {
+            while (this.pendingTargeted.size > 0 && !this.disposed) {
+                if (this.reconcilePromise) {
+                    try {
+                        await this.reconcilePromise;
+                    } catch {
+                        /* provider failures are already logged by the scan */
+                    }
+                    continue;
+                }
+                const only = new Set(this.pendingTargeted);
+                this.pendingTargeted.clear();
+                const generation = ++this.generation;
+                await this.scan(generation, only);
+            }
+        })();
+        this.targetedScan = drain.finally(() => {
+            this.targetedScan = undefined;
+        });
+        await this.targetedScan;
     }
 
     /**
