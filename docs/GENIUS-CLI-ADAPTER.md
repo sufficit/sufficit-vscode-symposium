@@ -56,7 +56,6 @@ Confirmed `tasks_create`, `tasks_update` and `tasks_list` results also update th
 
 `genius exec` accepts text only. Symposium reports an explicit error if a message includes an image. The Genius CLI does not yet expose transcript history, so the adapter does not read Genius state files to imitate it. Symposium keeps its own visible transcript for dialogues started there; an older session discovered from Genius may initially show no prior messages even though Genius retains its full context when resumed. The terminal mirror/watch mode also requires a CLI transcript-follow command and is not offered for Genius yet.
 
-Execution plan: [Genius cancellation](PLAN-GENIUS-CANCELLATION.md).
 
 ## Cancellation recovery
 
