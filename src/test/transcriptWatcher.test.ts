@@ -107,10 +107,7 @@ test("caps the number of watched directories", async () => {
     );
     watcher.start();
     try {
-        await waitFor(
-            () => watcher.isWatching(dirs[0]) && watcher.isWatching(dirs[1]),
-            2_000,
-        );
+        await waitFor(() => watcher.isWatching(dirs[0]) && watcher.isWatching(dirs[1]), 2_000);
         assert.equal(watcher.isWatching(dirs[2]), false);
     } finally {
         watcher.dispose();

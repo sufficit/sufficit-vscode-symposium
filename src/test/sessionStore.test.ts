@@ -89,7 +89,10 @@ test("SessionStore notifies the invalidation seam on effective metadata writes",
     store.setLineage(info.sessionId, "lineage-1");
     store.setDisplayMetadata(info.sessionId, "model-x", "high");
 
-    assert.deepEqual(fired, Array.from({ length: 6 }, () => info.sessionId));
+    assert.deepEqual(
+        fired,
+        Array.from({ length: 6 }, () => info.sessionId),
+    );
 });
 
 test("SessionStore movePinned notifies once for an effective reorder", async () => {

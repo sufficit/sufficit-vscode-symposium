@@ -73,9 +73,7 @@ export function resolveInvalidateBackends(
         }
         // An unindexed path is a brand-new (or renamed) transcript: no cached
         // row owns it yet, so only a full pass can discover which backend does.
-        return backends.size > 0
-            ? [...backends]
-            : adapters.map((adapter) => adapter.backend);
+        return backends.size > 0 ? [...backends] : adapters.map((adapter) => adapter.backend);
     }
     if (change.sessionId) {
         const owners = new Set<string>();

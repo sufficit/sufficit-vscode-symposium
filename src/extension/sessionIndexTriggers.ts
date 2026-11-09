@@ -17,9 +17,10 @@ export interface SessionIndexTriggerOptions {
  * non-recursive watcher fire invalidate({ path }). Live-session metadata is
  * persisted through the same store seam, so it converges without extra wiring.
  */
-export function connectSessionIndexTriggers(
-    options: SessionIndexTriggerOptions,
-): { dispose(): void; watcher: TranscriptWatcher } {
+export function connectSessionIndexTriggers(options: SessionIndexTriggerOptions): {
+    dispose(): void;
+    watcher: TranscriptWatcher;
+} {
     const { store, index } = options;
     store.setMutationListener((sessionId) => index.invalidate({ sessionId }));
     const watcher = new TranscriptWatcher(

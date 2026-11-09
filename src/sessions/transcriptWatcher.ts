@@ -85,10 +85,8 @@ export class TranscriptWatcher {
                 continue;
             }
             try {
-                const watcher = fs.watch(
-                    dir,
-                    { persistent: false },
-                    (_event, filename) => this.onWatchEvent(dir, filename),
+                const watcher = fs.watch(dir, { persistent: false }, (_event, filename) =>
+                    this.onWatchEvent(dir, filename),
                 );
                 watcher.on("error", () => this.dropDirectory(dir));
                 this.watchers.set(dir, watcher);
