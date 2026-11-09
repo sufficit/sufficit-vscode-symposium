@@ -226,10 +226,7 @@ export class SessionIndex {
         );
     }
 
-    private async scan(
-        generation: number,
-        only?: ReadonlySet<string>,
-    ): Promise<SessionInfo[]> {
+    private async scan(generation: number, only?: ReadonlySet<string>): Promise<SessionInfo[]> {
         const startedAt = Date.now();
         // Issue #40: each provider's rows are applied the moment its own scan
         // finishes, so the catalog (and any cold-start waiter) sees the first
