@@ -76,7 +76,18 @@ export function renderError(
     if (lastUser && !historical) {
         const bar = document.createElement("div");
         bar.className = "errActions";
-        if (retryable === true) {
+        if (presentation.recovery === "continue") {
+            const resume = document.createElement("button");
+            resume.type = "button";
+            resume.className = "retryBtn errBtn";
+            resume.textContent = t("chat.status.continue");
+            resume.addEventListener("click", () => {
+                resume.disabled = true;
+                resume.textContent = t("chat.status.continuing");
+                postMessage({ type: "continue" });
+            });
+            bar.appendChild(resume);
+        } else if (retryable === true) {
             const retry = document.createElement("button");
             retry.type = "button";
             retry.className = "retryBtn errBtn";

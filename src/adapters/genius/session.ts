@@ -8,6 +8,7 @@ import { GeniusEventParser } from "./eventParser";
 import { resolveGeniusExecutable } from "./executable";
 import type { GeniusMcpServer } from "./mcpConfig";
 import { explicitPreset } from "./presetState";
+import { GENIUS_CONTINUATION_PROMPT } from "./cancellation";
 
 export interface GeniusAdapterConfig {
     executable: string;
@@ -48,6 +49,7 @@ export class GeniusSession extends EventEmitter implements AgentSession {
     /** Bumped on every explicit setModel(); guards a late "session" record
      *  from a process launched before the change from reverting it. */
     private presetRevision = 0;
+    private continuationInstructions: string[] = [];
 
     constructor(
         private readonly config: GeniusAdapterConfig,
@@ -56,6 +58,11 @@ export class GeniusSession extends EventEmitter implements AgentSession {
         super();
         this.sessionId = options.resumeSessionId;
         this.presetId = explicitPreset(options.model || config.model);
+    }
+
+    continueTurn(): void {
+        if (this.currentTurnId || this.disposed || !this.sessionId) return;
+        this.send(GENIUS_CONTINUATION_PROMPT, undefined, this.continuationInstructions);
     }
 
     setModel(model: string): void {
@@ -76,6 +83,7 @@ export class GeniusSession extends EventEmitter implements AgentSession {
         clientMessageId?: string,
     ): void {
         if (this.disposed) return;
+        if (preamble !== undefined) this.continuationInstructions = [...preamble];
         if (this.current) {
             const previousTurn = this.currentTurnId;
             this.stopHostTurn();
