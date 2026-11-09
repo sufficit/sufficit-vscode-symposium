@@ -113,7 +113,10 @@ const budgets = new Map([
     // Issue #40 chat-surface extraction and startup-perf slices measure
     // 922.50 KB (about 944640 bytes). Keep a bounded 923 KiB host budget;
     // archive cap unchanged.
-    ["extension/out/extension.js", 923 * 1024],
+    // Targeted session index invalidation with coalesced rescans (issue #40
+    // phase 7) measures 946471 bytes (924.29 KiB). Keep a bounded 925 KiB
+    // host budget; archive cap unchanged.
+    ["extension/out/extension.js", 925 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
