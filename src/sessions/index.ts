@@ -86,7 +86,7 @@ export class SessionIndex {
             return Promise.resolve(this.listCached());
         }
         return new Promise<SessionInfo[]>((resolve) => {
-            this.coldWaiters.push(resolve);
+            this.coldWaiters.push({ resolve: (sessions) => resolve(sessions) });
         });
     }
 
