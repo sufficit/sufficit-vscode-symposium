@@ -29,7 +29,8 @@ test("watches indexed transcript directories and reports the exact changed file"
     const file = path.join(dir, "s1.jsonl");
     fs.writeFileSync(file, "{}\n");
     const changes: string[] = [];
-    const watcher = new TranscriptWatcher(() => [info("claude", "s1", file)], changes.push, {
+    const target = { listCached: () => [info("claude", "s1", file)] };
+    const watcher = new TranscriptWatcher(target, changes.push, {
         debounceMs: 20,
     });
     watcher.start();
@@ -49,7 +50,8 @@ test("reports brand-new transcript files created in a watched directory", async 
     const indexed = path.join(dir, "s1.jsonl");
     fs.writeFileSync(indexed, "{}\n");
     const changes: string[] = [];
-    const watcher = new TranscriptWatcher(() => [info("codex", "s1", indexed)], changes.push, {
+    const target = { listCached: () => [info("codex", "s1", indexed)] };
+    const watcher = new TranscriptWatcher(target, changes.push, {
         debounceMs: 20,
     });
     watcher.start();
@@ -70,7 +72,8 @@ test("coalesces a burst of writes into a single debounced report", async () => {
     const file = path.join(dir, "s1.jsonl");
     fs.writeFileSync(file, "{}\n");
     const changes: string[] = [];
-    const watcher = new TranscriptWatcher(() => [info("claude", "s1", file)], changes.push, {
+    const target = { listCached: () => [info("claude", "s1", file)] };
+    const watcher = new TranscriptWatcher(target, changes.push, {
         debounceMs: 80,
     });
     watcher.start();
@@ -100,8 +103,9 @@ test("caps the number of watched directories", async () => {
         fs.writeFileSync(file, "{}\n");
         return file;
     });
+    const target = { listCached: () => files.map((file, i) => info("claude", `s${i}`, file)) };
     const watcher = new TranscriptWatcher(
-        () => files.map((file, i) => info("claude", `s${i}`, file)),
+        target,
         () => undefined,
         { maxDirectories: 2, resyncIntervalMs: 5_000 },
     );
@@ -127,7 +131,8 @@ test("picks up directories that appear in the index later", async () => {
     fs.writeFileSync(fileB, "{}\n");
     const listed = [info("claude", "a", fileA)];
     const changes: string[] = [];
-    const watcher = new TranscriptWatcher(() => listed, changes.push, {
+    const target = { listCached: () => listed };
+    const watcher = new TranscriptWatcher(target, changes.push, {
         debounceMs: 20,
         resyncIntervalMs: 40,
     });
@@ -150,7 +155,8 @@ test("dispose closes watchers and drops pending debounced changes", async () => 
     const file = path.join(dir, "s1.jsonl");
     fs.writeFileSync(file, "{}\n");
     const changes: string[] = [];
-    const watcher = new TranscriptWatcher(() => [info("claude", "s1", file)], changes.push, {
+    const target = { listCached: () => [info("claude", "s1", file)] };
+    const watcher = new TranscriptWatcher(target, changes.push, {
         debounceMs: 40,
     });
     watcher.start();

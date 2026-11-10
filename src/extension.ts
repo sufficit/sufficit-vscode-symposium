@@ -297,7 +297,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
 
     // Forward-declared so progressive index updates (onChange) repaint every
     // session list once refreshAll is bound below (issue #40).
-    let refreshAllSessions = () => undefined;
+    let refreshAllSessions: () => void = () => undefined;
     sessionIndex = new SessionIndex({
         storageDir: context.globalStorageUri.fsPath,
         adapters,
