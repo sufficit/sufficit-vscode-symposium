@@ -57,7 +57,7 @@ export class TranscriptWatcher {
         return this.watchers.has(directory);
     }
 
-    async sync(): Promise<void> {
+    sync(): Promise<void> {
         const cap = this.options.maxDirectories ?? DEFAULT_MAX_DIRECTORIES;
         const dirs = [
             ...new Set(
@@ -72,7 +72,7 @@ export class TranscriptWatcher {
             .slice(0, cap);
         if (dirs.length === 0) {
             this.closeAll();
-            return;
+            return Promise.resolve();
         }
         for (const dir of [...this.watchers.keys()]) {
             if (!dirs.includes(dir)) {
@@ -96,6 +96,7 @@ export class TranscriptWatcher {
                 );
             }
         }
+        return Promise.resolve();
     }
 
     dispose(): void {
