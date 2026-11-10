@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { AgentAdapter, SessionInfo } from "../adapters/types";
+import {
+    JsonlMetadataCache,
+    jsonlMetadataCacheStats,
+    jsonlReadStats,
+    readJsonlPrefix,
+} from "../adapters/jsonlPrefix";
 import { SessionIndex } from "../sessions/index";
 import { InMemorySessionRepository } from "../sessions/memoryRepository";
 
@@ -43,6 +52,16 @@ function fakeAdapter(backend: string, session: SessionInfo) {
 }
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+        if (Date.now() > deadline) {
+            throw new Error("waitFor: condition not met in time");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+}
 
 function makeIndex(adapters: AgentAdapter[], preloaded: SessionInfo[] = []) {
     const repository = new InMemorySessionRepository();
@@ -178,4 +197,66 @@ test("invalidate after dispose does not scan", async () => {
     await tick();
 
     assert.equal(claude.scans(), 0);
+});
+
+test("invalidate({ sessionId }) with the same id in two backends rescans both", async () => {
+    const claude = fakeAdapter("claude", info("claude", "shared", "Claude shared"));
+    const codex = fakeAdapter("codex", info("codex", "shared", "Codex shared"));
+    const index = makeIndex(
+        [claude.adapter, codex.adapter],
+        [
+            info("claude", "shared", "Claude shared", "/tmp/shared-claude.jsonl"),
+            info("codex", "shared", "Codex shared", "/tmp/shared-codex.jsonl"),
+        ],
+    );
+
+    index.invalidate({ sessionId: "shared" });
+    await tick();
+
+    assert.equal(claude.scans(), 1);
+    assert.equal(codex.scans(), 1);
+});
+
+test("invalidate({ path }) with an unindexed path falls back to every backend", async () => {
+    const claude = fakeAdapter("claude", info("claude", "c1", "Claude one"));
+    const codex = fakeAdapter("codex", info("codex", "x1", "Codex one"));
+    const index = makeIndex([claude.adapter, codex.adapter]);
+
+    index.invalidate({ path: "/tmp/brand-new-transcript.jsonl" });
+    await tick();
+
+    assert.equal(claude.scans(), 1);
+    assert.equal(codex.scans(), 1);
+});
+
+test("a targeted rescan of an unchanged transcript is a cache hit with zero bytes read", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "symposium-inval-"));
+    const file = path.join(dir, "c1.jsonl");
+    fs.writeFileSync(file, `${JSON.stringify({ type: "user", text: "hello" })}\n`);
+    const cache = new JsonlMetadataCache<string>();
+    const adapter = {
+        backend: "claude",
+        listSessionsIncremental: async (): Promise<SessionInfo[]> => {
+            const text = await cache.get(file, () => readJsonlPrefix(file, 4096));
+            return [info("claude", "c1", `rows:${text.split("\n").filter(Boolean).length}`, file)];
+        },
+    } as unknown as AgentAdapter;
+    const index = makeIndex([adapter]);
+
+    index.invalidate({ backend: "claude" });
+    await waitFor(() => index.get("claude", "c1") !== undefined);
+    const readsAfterFirst = jsonlReadStats();
+    const cacheAfterFirst = jsonlMetadataCacheStats();
+    assert.ok(readsAfterFirst.bytesRead > 0, "first scan must read the transcript");
+    assert.equal(cacheAfterFirst.misses, 1);
+
+    index.invalidate({ backend: "claude" });
+    await waitFor(() => jsonlMetadataCacheStats().hits === cacheAfterFirst.hits + 1);
+
+    assert.equal(jsonlReadStats().bytesRead, readsAfterFirst.bytesRead);
+    assert.equal(jsonlMetadataCacheStats().misses, cacheAfterFirst.misses);
+    assert.equal(index.get("claude", "c1")?.title, "rows:1");
+
+    await index.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
 });
