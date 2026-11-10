@@ -104,11 +104,10 @@ test("caps the number of watched directories", async () => {
         return file;
     });
     const target = { listCached: () => files.map((file, i) => info("claude", `s${i}`, file)) };
-    const watcher = new TranscriptWatcher(
-        target,
-        () => undefined,
-        { maxDirectories: 2, resyncIntervalMs: 5_000 },
-    );
+    const watcher = new TranscriptWatcher(target, () => undefined, {
+        maxDirectories: 2,
+        resyncIntervalMs: 5_000,
+    });
     watcher.start();
     try {
         await waitFor(() => watcher.isWatching(dirs[0]) && watcher.isWatching(dirs[1]), 2_000);
