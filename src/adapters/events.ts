@@ -151,6 +151,11 @@ export type AgentEvent =
     | {
           kind: "error";
           message: string;
+          cancellationReason?:
+              | "service_stopping"
+              | "user_cancelled"
+              | "timeout"
+              | "cancelled_unknown";
           retryable?: boolean;
           /** Earliest Unix timestamp at which retrying can succeed. Hard
            *  provider quotas use this to keep Retry unavailable until reset. */

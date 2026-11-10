@@ -1265,3 +1265,33 @@ test("failed host clipboard does not mark the response copied", async () => {
     assert.match(h.document.querySelector("#toast.error").textContent, /Could not copy/);
     h.dom.window.close();
 });
+
+test("Genius service interruption offers only explicit Continue and never replays the user request", () => {
+    const h = createHarness();
+    h.deliver(meta("alpha", "genius", { busy: false }));
+    h.deliver({ type: "user", text: "perform an external write", attachments: [], clientMessageId: "original" });
+    h.deliver({ type: "event", event: { kind: "error", message: "[Genius service_stopping] Genius service is stopping",
+        cancellationReason: "service_stopping", retryable: false, automaticRetry: false } });
+    const error = h.document.querySelector(".turnError");
+    assert.match(error.textContent, /service stopped or restarted/);
+    assert.doesNotMatch(error.textContent, /update the request or configuration/);
+    assert.equal(h.sent.some((m) => m.type === "continue" || m.type === "retry-last-message"), false);
+    const button = [...error.querySelectorAll("button")].find((b) => /Continue|Continuar/.test(b.textContent));
+    assert.ok(button);
+    button.click();
+    assert.equal(h.sent.at(-1).type, "continue");
+    assert.equal(h.sent.some((m) => m.type === "retry-last-message"), false);
+    assert.equal(button.disabled, true);
+    h.dom.window.close();
+});
+
+test("Genius user cancellation does not create a Continue or Retry action", () => {
+    const h = createHarness();
+    h.deliver(meta("alpha", "genius", { busy: false }));
+    h.deliver({ type: "user", text: "work", attachments: [] });
+    h.deliver({ type: "event", event: { kind: "error", message: "[Genius user_cancelled] Cancelled by user", retryable: false } });
+    const error = h.document.querySelector(".turnError");
+    assert.match(error.textContent, /cancelled by the user/);
+    assert.equal([...error.querySelectorAll("button")].some((b) => /Continue|Continuar|Retry/.test(b.textContent)), false);
+    h.dom.window.close();
+});

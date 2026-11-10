@@ -6,6 +6,7 @@
 export interface ErrorPresentation {
     summary: string;
     detail: string;
+    recovery?: "continue";
 }
 
 const MAX_TECHNICAL_DETAIL_LENGTH = 512;
@@ -95,6 +96,8 @@ export function presentTurnError(
     now = Date.now(),
 ): ErrorPresentation {
     const detail = compactTechnicalDetail(message);
+    const cancellation = presentGeniusCancellation(detail);
+    if (cancellation) return cancellation;
     const status = httpStatus(detail);
     const completedTools = /Completed tool results are saved/i.test(String(message ?? ""));
     const retry = completedTools
@@ -154,4 +157,37 @@ export function presentTurnError(
         };
     }
     return { summary: "The request ended before the agent could reply." + retry, detail };
+}
+
+/** Cancellation never authorizes replaying a potentially side-effecting request. */
+function presentGeniusCancellation(detail: string): ErrorPresentation | undefined {
+    const reason = /^\[Genius (service_stopping|user_cancelled|timeout|cancelled_unknown)\]/.exec(
+        detail,
+    )?.[1];
+    if (reason === "service_stopping")
+        return {
+            summary:
+                "The Genius service stopped or restarted during this execution. Check the saved progress, then use Continue after the service is available. Do not resend the original request.",
+            detail,
+            recovery: "continue",
+        };
+    if (reason === "timeout")
+        return {
+            summary:
+                "The Genius execution timed out. Check the saved progress and any unfinished tool outcomes before using Continue. Do not resend the original request.",
+            detail,
+            recovery: "continue",
+        };
+    if (reason === "user_cancelled")
+        return {
+            summary: "The execution was cancelled by the user. No automatic retry was scheduled.",
+            detail,
+        };
+    if (reason === "cancelled_unknown" || /^Genius command cancel(?:led|ed)\.?$/i.test(detail))
+        return {
+            summary:
+                "The Genius execution was cancelled, but the source was not reported. Check its state before continuing; no automatic retry was scheduled.",
+            detail,
+        };
+    return undefined;
 }

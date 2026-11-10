@@ -1,6 +1,7 @@
 import type { AgentEvent } from "../types";
 import { geniusToolSummary } from "./toolSummary";
 import { GeniusTaskTracker } from "./tasks";
+import { geniusCancellation } from "./cancellation";
 
 type RecordValue = Record<string, unknown>;
 
@@ -62,7 +63,10 @@ export class GeniusEventParser {
             case "result":
                 this.sawResult = true;
                 if (frame.status === "failed") {
-                    this.error(string(frame.error) || "Genius turn failed");
+                    this.error(
+                        string(frame.error) || "Genius turn failed",
+                        frame.cancellationReason,
+                    );
                 } else if (frame.status === "completed") {
                     const answer = string(frame.answer);
                     if (!this.streamedText && answer)
@@ -80,6 +84,7 @@ export class GeniusEventParser {
                     data.code === "session_not_found"
                         ? `${message}. This session was removed from Genius; start a new chat.`
                         : message,
+                    data.cancellationReason ?? data.code,
                 );
                 break;
             }
@@ -167,8 +172,10 @@ export class GeniusEventParser {
         });
     }
 
-    private error(message: string): void {
+    private error(message: string, reason?: unknown): void {
         this.sawError = true;
-        this.callbacks.emit({ kind: "error", message, retryable: false });
+        this.callbacks.emit(
+            geniusCancellation(reason, message) ?? { kind: "error", message, retryable: false },
+        );
     }
 }
