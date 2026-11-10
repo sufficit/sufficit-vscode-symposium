@@ -6,6 +6,9 @@ import * as path from "node:path";
 import { TranscriptWatcher } from "../sessions/transcriptWatcher";
 import type { SessionInfo } from "../adapters/types";
 
+// The watcher only needs the narrow TranscriptWatcherTarget surface, so these
+// tests stub listCached() directly instead of building a full SessionIndex.
+
 function info(backend: string, sessionId: string, transcriptPath: string): SessionInfo {
     return { backend, sessionId, title: sessionId, transcriptPath };
 }
