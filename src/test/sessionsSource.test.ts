@@ -33,8 +33,7 @@ function afterTimeout(): Promise<SessionInfo[]> {
     });
 }
 
-const inTime = (list: Promise<SessionInfo[]>) =>
-    Promise.race([list, afterTimeout()]);
+const inTime = (list: Promise<SessionInfo[]>) => Promise.race([list, afterTimeout()]);
 
 test("cold index primes once, then serves the cached snapshot without rescanning", async () => {
     const recorder = makeRecorder();
@@ -44,15 +43,11 @@ test("cold index primes once, then serves the cached snapshot without rescanning
 
     assert.deepEqual(
         first.map((s) => s.sessionId),
-        [
-            "s1",
-        ],
+        ["s1"],
     );
     assert.deepEqual(
         recorder.cached.map((s) => s.sessionId),
-        [
-            "s1",
-        ],
+        ["s1"],
     );
 
     const second = await rawSessions();
@@ -60,9 +55,7 @@ test("cold index primes once, then serves the cached snapshot without rescanning
     assert.equal(recorder.reconcileCalls(), 1);
     assert.deepEqual(
         second.map((s) => s.sessionId),
-        [
-            "s1",
-        ],
+        ["s1"],
     );
 });
 
@@ -75,9 +68,7 @@ test("warm index returns the cache immediately and throttles background reconcil
 
     assert.deepEqual(
         first.map((s) => s.sessionId),
-        [
-            "warm-1",
-        ],
+        ["warm-1"],
     );
     await flush();
     assert.equal(recorder.reconcileCalls(), 1);
@@ -106,7 +97,10 @@ test("cold start resolves the first useful list before every backend lands", asy
     releaseA();
 
     const firstInTime = await inTime(first);
-    assert.deepEqual(firstInTime.map((s) => s.sessionId), ["a1"]);
+    assert.deepEqual(
+        firstInTime.map((s) => s.sessionId),
+        ["a1"],
+    );
 });
 
 test("cold start falls back to the end-of-scan snapshot when every backend is empty", async () => {
