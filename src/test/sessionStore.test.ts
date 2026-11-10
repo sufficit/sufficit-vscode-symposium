@@ -111,6 +111,29 @@ test("SessionStore movePinned notifies once for an effective reorder", async () 
     assert.deepEqual(fired, [first.sessionId]);
 });
 
+test("SessionStore setPinnedOrder notifies every reordered pinned session", async () => {
+    const memory = new MemoryMemento();
+    const fired: string[] = [];
+    const store = new SessionStore(memory as unknown as vscode.Memento);
+    store.setMutationListener((sessionId) => fired.push(sessionId));
+    const first = session("pinned-a");
+    const second = session("pinned-b");
+    await store.setPinned(first, true);
+    await store.setPinned(second, true);
+    fired.length = 0;
+
+    await store.setPinnedOrder([second.sessionId, first.sessionId]);
+
+    assert.deepEqual(
+        [...fired].sort(),
+        [first.sessionId, second.sessionId].sort(),
+    );
+
+    fired.length = 0;
+    await store.setPinnedOrder([second.sessionId, first.sessionId]); // no-op
+    assert.deepEqual(fired, []);
+});
+
 test("SessionStore stays silent on dedup skips, status writes and deletes", async () => {
     const memory = new MemoryMemento();
     const fired: string[] = [];

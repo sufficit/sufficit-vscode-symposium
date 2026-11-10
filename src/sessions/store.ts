@@ -164,8 +164,16 @@ export class SessionStore {
                 next.push(id);
             }
         }
+        const effective = this.pinned.join("\0") !== next.join("\0");
         this.pinned = next;
         await this.memento.update(PINNED_KEY, this.pinned);
+        if (effective) {
+            // A drag-and-drop reorder moves several sessions at once; each
+            // moved id gets a targeted rescan (coalesced into one per backend).
+            for (const id of next) {
+                this.onMutation?.(id);
+            }
+        }
     }
 
     /**
