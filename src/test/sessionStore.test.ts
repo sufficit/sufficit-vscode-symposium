@@ -124,10 +124,9 @@ test("SessionStore setPinnedOrder notifies every reordered pinned session", asyn
 
     await store.setPinnedOrder([second.sessionId, first.sessionId]);
 
-    assert.deepEqual(
-        [...fired].sort(),
-        [first.sessionId, second.sessionId].sort(),
-    );
+    assert.equal(fired.length, 2);
+    assert.ok(fired.includes(first.sessionId));
+    assert.ok(fired.includes(second.sessionId));
 
     fired.length = 0;
     await store.setPinnedOrder([second.sessionId, first.sessionId]); // no-op
