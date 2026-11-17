@@ -23,10 +23,10 @@ export function startGeniusSessionRefresh(
         chatView.reMetaActive();
     };
     const geniusTitleSync = new GeniusTitleSync(genius, store, index, refreshAll, log);
-    context.subscriptions.push(geniusTitleSync);
-    geniusTitleSync.start();
     // Issue #40 phase 7: real invalidation triggers — store metadata writes
     // and targeted transcript watcher events converge the persistent index.
-    context.subscriptions.push(connectSessionIndexTriggers({ store, index }));
+    const indexTriggers = connectSessionIndexTriggers({ store, index });
+    context.subscriptions.push(geniusTitleSync, indexTriggers);
+    geniusTitleSync.start();
     return { refreshAll, geniusTitleSync };
 }

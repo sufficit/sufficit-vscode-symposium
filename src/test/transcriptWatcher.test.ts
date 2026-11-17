@@ -33,7 +33,7 @@ test("watches indexed transcript directories and reports the exact changed file"
     fs.writeFileSync(file, "{}\n");
     const changes: string[] = [];
     const target = { listCached: () => [info("claude", "s1", file)] };
-    const watcher = new TranscriptWatcher(target, changes.push, {
+    const watcher = new TranscriptWatcher(target, (changed) => changes.push(changed), {
         debounceMs: 20,
     });
     watcher.start();
@@ -54,7 +54,7 @@ test("reports brand-new transcript files created in a watched directory", async 
     fs.writeFileSync(indexed, "{}\n");
     const changes: string[] = [];
     const target = { listCached: () => [info("codex", "s1", indexed)] };
-    const watcher = new TranscriptWatcher(target, changes.push, {
+    const watcher = new TranscriptWatcher(target, (changed) => changes.push(changed), {
         debounceMs: 20,
     });
     watcher.start();
@@ -76,7 +76,7 @@ test("coalesces a burst of writes into a single debounced report", async () => {
     fs.writeFileSync(file, "{}\n");
     const changes: string[] = [];
     const target = { listCached: () => [info("claude", "s1", file)] };
-    const watcher = new TranscriptWatcher(target, changes.push, {
+    const watcher = new TranscriptWatcher(target, (changed) => changes.push(changed), {
         debounceMs: 80,
     });
     watcher.start();
@@ -134,7 +134,7 @@ test("picks up directories that appear in the index later", async () => {
     const listed = [info("claude", "a", fileA)];
     const changes: string[] = [];
     const target = { listCached: () => listed };
-    const watcher = new TranscriptWatcher(target, changes.push, {
+    const watcher = new TranscriptWatcher(target, (changed) => changes.push(changed), {
         debounceMs: 20,
         resyncIntervalMs: 40,
     });
@@ -158,7 +158,7 @@ test("dispose closes watchers and drops pending debounced changes", async () => 
     fs.writeFileSync(file, "{}\n");
     const changes: string[] = [];
     const target = { listCached: () => [info("claude", "s1", file)] };
-    const watcher = new TranscriptWatcher(target, changes.push, {
+    const watcher = new TranscriptWatcher(target, (changed) => changes.push(changed), {
         debounceMs: 40,
     });
     watcher.start();
