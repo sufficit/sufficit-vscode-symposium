@@ -4,6 +4,8 @@ import type { SessionInfo } from "../adapters/types";
 export interface SessionsSourceIndex {
     listCached(): SessionInfo[];
     reconcile(): Promise<SessionInfo[]>;
+    /** First useful snapshot: resolves before every backend has landed. */
+    ready(): Promise<SessionInfo[]>;
 }
 
 const RECONCILE_INTERVAL_MS = 5_000;
@@ -11,7 +13,8 @@ const RECONCILE_INTERVAL_MS = 5_000;
 /**
  * Builds rawSessions() for the chat surface: warm starts return the cached
  * index snapshot immediately and schedule a throttled background reconcile;
- * a cold start primes the index once before the first listing resolves.
+ * a cold start returns the first useful snapshot (ready()) instead of
+ * waiting for every backend to finish scanning.
  */
 export function createSessionsSource(
     index: SessionsSourceIndex | undefined,
@@ -31,7 +34,10 @@ export function createSessionsSource(
             return Promise.resolve(cached);
         }
         lastReconcileAt = Date.now();
-        return index.reconcile().then((sessions) => {
+        // Cold start (issue #40): the first useful list must not wait for
+        // every backend — ready() resolves as soon as one lands.
+        void index.reconcile();
+        return index.ready().then((sessions) => {
             primed = true;
             return sessions;
         });

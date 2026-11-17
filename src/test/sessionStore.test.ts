@@ -74,3 +74,78 @@ test("SessionStore tombstones a deleted session across extension reloads", async
 
     assert.deepEqual(restored, []);
 });
+
+test("SessionStore notifies the invalidation seam on effective metadata writes", async () => {
+    const memory = new MemoryMemento();
+    const fired: string[] = [];
+    const store = new SessionStore(memory as unknown as vscode.Memento);
+    store.setMutationListener((sessionId) => fired.push(sessionId));
+    const info = session("mutation-session");
+
+    await store.setTitle(info, "Renamed");
+    await store.setArchived(info, true);
+    await store.setPinned(info, true);
+    store.setParent(info.sessionId, "parent-1");
+    store.setLineage(info.sessionId, "lineage-1");
+    store.setDisplayMetadata(info.sessionId, "model-x", "high");
+
+    assert.deepEqual(
+        fired,
+        Array.from({ length: 6 }, () => info.sessionId),
+    );
+});
+
+test("SessionStore movePinned notifies once for an effective reorder", async () => {
+    const memory = new MemoryMemento();
+    const fired: string[] = [];
+    const store = new SessionStore(memory as unknown as vscode.Memento);
+    store.setMutationListener((sessionId) => fired.push(sessionId));
+    const first = session("pinned-a");
+    const second = session("pinned-b");
+    await store.setPinned(first, true);
+    await store.setPinned(second, true);
+    fired.length = 0;
+
+    await store.movePinned(first, 1);
+
+    assert.deepEqual(fired, [first.sessionId]);
+});
+
+test("SessionStore setPinnedOrder notifies every reordered pinned session", async () => {
+    const memory = new MemoryMemento();
+    const fired: string[] = [];
+    const store = new SessionStore(memory as unknown as vscode.Memento);
+    store.setMutationListener((sessionId) => fired.push(sessionId));
+    const first = session("pinned-a");
+    const second = session("pinned-b");
+    await store.setPinned(first, true);
+    await store.setPinned(second, true);
+    fired.length = 0;
+
+    await store.setPinnedOrder([second.sessionId, first.sessionId]);
+
+    assert.equal(fired.length, 2);
+    assert.ok(fired.includes(first.sessionId));
+    assert.ok(fired.includes(second.sessionId));
+
+    fired.length = 0;
+    await store.setPinnedOrder([second.sessionId, first.sessionId]); // no-op
+    assert.deepEqual(fired, []);
+});
+
+test("SessionStore stays silent on dedup skips, status writes and deletes", async () => {
+    const memory = new MemoryMemento();
+    const fired: string[] = [];
+    const store = new SessionStore(memory as unknown as vscode.Memento);
+    store.setMutationListener((sessionId) => fired.push(sessionId));
+    const info = session("quiet-session");
+
+    store.setDisplayMetadata(info.sessionId, "model-x", "high");
+    store.setDisplayMetadata(info.sessionId, "model-x", "high"); // dedup: no second write
+    store.setParent(info.sessionId, "parent-1");
+    store.setParent(info.sessionId, "parent-1"); // idempotent: no second write
+    store.setTerminalStatus(info.sessionId, "warning"); // status: not an index mutation
+    await store.forget(info); // delete owns its own index eviction (sessionIndex.forget)
+
+    assert.deepEqual(fired, [info.sessionId, info.sessionId]);
+});

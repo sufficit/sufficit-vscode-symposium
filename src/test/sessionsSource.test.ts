@@ -20,11 +20,20 @@ function makeRecorder() {
             cached.push(session(`s${reconcileCalls}`));
             return Promise.resolve(cached.slice());
         },
+        ready: () => Promise.resolve(cached.slice()),
     };
     return { index, cached, reconcileCalls: () => reconcileCalls };
 }
 
 const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+function afterTimeout(): Promise<SessionInfo[]> {
+    return new Promise((resolve) => {
+        setTimeout(() => resolve([]), 1_000);
+    });
+}
+
+const inTime = (list: Promise<SessionInfo[]>) => Promise.race([list, afterTimeout()]);
 
 test("cold index primes once, then serves the cached snapshot without rescanning", async () => {
     const recorder = makeRecorder();
@@ -67,6 +76,42 @@ test("warm index returns the cache immediately and throttles background reconcil
     await rawSessions();
 
     assert.equal(recorder.reconcileCalls(), 1);
+});
+
+test("cold start resolves the first useful list before every backend lands", async () => {
+    let releaseA: () => void = () => undefined;
+    const backendA = new Promise<void>((resolve) => {
+        releaseA = () => resolve();
+    });
+    const backendB = new Promise<SessionInfo[]>(() => {
+        /* never settles: awaiting the full reconcile would hang */
+    });
+    const index: SessionsSourceIndex = {
+        listCached: () => [],
+        reconcile: () => Promise.all([backendA, backendB]).then(() => []),
+        ready: () => backendA.then(() => [session("a1")]),
+    };
+    const rawSessions = createSessionsSource(index);
+
+    const first = rawSessions();
+    releaseA();
+
+    const firstInTime = await inTime(first);
+    assert.deepEqual(
+        firstInTime.map((s) => s.sessionId),
+        ["a1"],
+    );
+});
+
+test("cold start falls back to the end-of-scan snapshot when every backend is empty", async () => {
+    const index: SessionsSourceIndex = {
+        listCached: () => [],
+        reconcile: () => Promise.resolve([]),
+        ready: () => Promise.resolve([]),
+    };
+    const rawSessions = createSessionsSource(index);
+
+    assert.deepEqual(await inTime(rawSessions()), []);
 });
 
 test("a missing index yields an empty session list", async () => {

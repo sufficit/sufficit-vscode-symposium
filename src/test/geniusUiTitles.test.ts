@@ -55,40 +55,42 @@ test("native title refresh updates the open Symposium surfaces", async () => {
         metadataRefreshes++;
     };
     const context = { subscriptions: [] as { dispose(): void }[] };
-    const result = startGeniusSessionRefresh(
-        context as never,
-        {
-            listSessions: () => Promise.resolve([info]),
-            renameSession: () => Promise.resolve(),
-        } as never,
-        {
-            customTitle: () => localTitle,
-            setTitle: (_session: SessionInfo, value: string | undefined) => {
-                localTitle = value;
-                return Promise.resolve();
-            },
-        } as never,
-        {
-            listCached: () => [info],
-            reconcile: () => Promise.resolve([info]),
-        } as never,
-        {
-            refreshSessions: () => {
-                listRefreshes++;
-                return Promise.resolve();
-            },
-            reMetaActive: () => {
-                metadataRefreshes++;
-            },
-        } as never,
-        () => undefined,
-    );
     try {
+        const result = startGeniusSessionRefresh(
+            context as never,
+            {
+                listSessions: () => Promise.resolve([info]),
+                renameSession: () => Promise.resolve(),
+            } as never,
+            {
+                setMutationListener: () => undefined,
+                customTitle: () => localTitle,
+                setTitle: (_session: SessionInfo, value: string | undefined) => {
+                    localTitle = value;
+                    return Promise.resolve();
+                },
+            } as never,
+            {
+                invalidate: () => undefined,
+                listCached: () => [info],
+                reconcile: () => Promise.resolve([info]),
+            } as never,
+            {
+                refreshSessions: () => {
+                    listRefreshes++;
+                    return Promise.resolve();
+                },
+                reMetaActive: () => {
+                    metadataRefreshes++;
+                },
+            } as never,
+            () => undefined,
+        );
         await result.geniusTitleSync.rename(info, "Shared title");
         assert.equal(listRefreshes, 2);
         assert.equal(metadataRefreshes, 2);
     } finally {
-        result.geniusTitleSync.dispose();
+        for (const subscription of context.subscriptions) subscription.dispose();
         ChatPanel.refreshSessions = previousRefresh;
         ChatPanel.reMetaActive = previousMeta;
     }

@@ -295,11 +295,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
     // a live controller can't re-inject them mid-delete.
     const deleting = new Set<string>();
 
+    // Forward-declared so progressive index updates (onChange) repaint every
+    // session list once refreshAll is bound below (issue #40).
+    let refreshAllSessions: () => void = () => undefined;
     sessionIndex = new SessionIndex({
         storageDir: context.globalStorageUri.fsPath,
         adapters,
         log: symposiumLog,
         disableSqlite: true,
+        // Partial cold-start lists must reach the UI without a manual refresh.
+        onChange: () => refreshAllSessions(),
     });
     context.subscriptions.push(sessionIndex);
     registerShutdownTask(() => sessionIndex?.dispose() ?? Promise.resolve());
@@ -333,6 +338,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Sympos
         chatView,
         (message) => symposiumLog(`[genius] title sync: ${message}`),
     );
+    refreshAllSessions = refreshAll;
     // Debounce status-driven refreshes (turns flip busy frequently).
     let statusTimer: ReturnType<typeof setTimeout> | undefined;
     notifyStatus = () => {
