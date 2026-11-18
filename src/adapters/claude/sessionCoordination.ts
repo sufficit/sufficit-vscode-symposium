@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { describeStorageFull, isStorageFullError } from "../../diskErrors";
 
 interface LeaseOwner {
     pid: number;
@@ -24,7 +25,7 @@ export interface ClaudeSessionCoordinationOptions {
 
 export type ClaudeSessionLeaseResult =
     | { acquired: true; generation: number; recoveredStaleOwner: boolean }
-    | { acquired: false; ownerPid?: number; message: string };
+    | { acquired: false; ownerPid?: number; storageFull?: boolean; message: string };
 
 const OWNER_GRACE_MS = 30_000;
 
@@ -60,7 +61,17 @@ export class ClaudeSessionCoordination {
         if (this.held) {
             this.release();
         }
-        fs.mkdirSync(this.root, { recursive: true, mode: 0o700 });
+        try {
+            fs.mkdirSync(this.root, { recursive: true, mode: 0o700 });
+        } catch (error) {
+            return {
+                acquired: false,
+                ...(isStorageFullError(error) ? { storageFull: true } : {}),
+                message: isStorageFullError(error)
+                    ? `Claude session coordination failed. ${describeStorageFull(this.root, error)}`
+                    : `Claude session coordination failed: ${errorMessage(error)}`,
+            };
+        }
         const key = createHash("sha256").update(sessionId).digest("hex");
         const lockPath = path.join(this.root, `${key}.lock`);
         const statePath = path.join(this.root, `${key}.json`);
@@ -86,6 +97,13 @@ export class ClaudeSessionCoordination {
                         fs.rmSync(lockPath, { recursive: true, force: true });
                     } else {
                         this.removeOwnedLock(lockPath);
+                    }
+                    if (isStorageFullError(error)) {
+                        return {
+                            acquired: false,
+                            storageFull: true,
+                            message: `Claude session coordination failed. ${describeStorageFull(this.root, error)}`,
+                        };
                     }
                     return {
                         acquired: false,
@@ -220,4 +238,20 @@ function isFsError(error: unknown, code: string): error is NodeJS.ErrnoException
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+/** Error event for a refused lease. A full disk/quota will not clear within
+ * the bounded automatic backoff: keep manual Retry, skip the auto loop. */
+export function leaseErrorEvent(lease: { message: string; storageFull?: boolean }): {
+    kind: "error";
+    message: string;
+    retryable: true;
+    automaticRetry?: false;
+} {
+    return {
+        kind: "error",
+        message: lease.message,
+        retryable: true,
+        ...(lease.storageFull ? { automaticRetry: false as const } : {}),
+    };
 }

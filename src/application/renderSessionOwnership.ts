@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { describeStorageFull, isStorageFullError } from "../diskErrors";
 import type { RenderWriter } from "../renderLog";
 
 interface OwnershipRecord extends RenderWriter {
@@ -82,7 +83,7 @@ export class RenderSessionOwnership {
                 if (!isFsError(error, "EEXIST")) {
                     if (created) fs.rmSync(lockPath, { recursive: true, force: true });
                     this.log?.(
-                        `[render-owner] acquire failed for ${sessionId}: ${errorMessage(error)}`,
+                        `[render-owner] acquire failed for ${sessionId}: ${isStorageFullError(error) ? describeStorageFull(this.root, error) : errorMessage(error)}`,
                     );
                     return false;
                 }

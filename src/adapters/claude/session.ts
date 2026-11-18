@@ -5,7 +5,7 @@ import { resolveExecutable } from "../exec";
 import { AgentSession, SessionStartOptions } from "../types";
 import { claudeResumeSessionId } from "./resume";
 import { imageBlock } from "./images";
-import { ClaudeSessionCoordination } from "./sessionCoordination";
+import { leaseErrorEvent, ClaudeSessionCoordination } from "./sessionCoordination";
 import { ClaudeAdapterConfig, mapUnifiedToClaudeFlag } from "./sessionConfig";
 import { ClaudeEventParser } from "./eventParser";
 import {
@@ -286,7 +286,7 @@ export class ClaudeSession extends EventEmitter implements AgentSession {
             const lease = this.coordination.acquire(resume);
             if (!lease.acquired) {
                 this.config.log?.(`[claude] cross-window send blocked: ${lease.message}`);
-                this.emit("event", { kind: "error", message: lease.message, retryable: true });
+                this.emit("event", leaseErrorEvent(lease));
                 this.emit("event", { kind: "turn-end" });
                 return;
             }

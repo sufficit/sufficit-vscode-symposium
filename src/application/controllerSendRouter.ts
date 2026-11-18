@@ -75,6 +75,15 @@ export function routeControllerSend(
         );
         return;
     }
+    if (context.busy() && isRetry(message) && retryAlreadyPending(message, context)) {
+        // Retry is idempotent: clicking it again while the same request is
+        // running or already waiting must not stack another identical copy.
+        context.emitQueue();
+        context.log?.(
+            `[send] "${preview}" — retry ignored: same request already running or queued`,
+        );
+        return;
+    }
     if (context.busy()) {
         // Plain "queue": back of the line, after everything already pending.
         context.queue.enqueue(message);
@@ -120,4 +129,14 @@ export function routeControllerSend(
     context.emitQueue();
     context.log?.(`[send] "${preview}" — idle, queue empty: dispatching directly`);
     context.dispatch(message);
+}
+
+function isRetry(message: PendingMessage): boolean {
+    return message.retryOf !== undefined || message.interruptedBy !== undefined;
+}
+
+function retryAlreadyPending(message: PendingMessage, context: SendRouterContext): boolean {
+    const running = context.turns?.current?.request;
+    if (running && running.text === message.text) return true;
+    return context.queue.items().some((queued) => queued.text === message.text);
 }
