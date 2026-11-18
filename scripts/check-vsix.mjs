@@ -118,7 +118,10 @@ const budgets = new Map([
     // host budget; archive cap unchanged.
     // The phase 7 watcher and activation wiring measure 949796 bytes in PR CI.
     // The 928 KiB bound covers that measured bundle, and the archive stays at 1 MiB.
-    ["extension/out/extension.js", 928 * 1024],
+    // Retry dedup and disk-full/quota classification (diskErrors) measure
+    // 951431 bytes (929.13 KiB) in main CI. Keep a bounded 930 KiB host
+    // budget; archive cap unchanged.
+    ["extension/out/extension.js", 930 * 1024],
     ["extension/out/ui/webview.bundle.js", 330 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
