@@ -178,7 +178,10 @@ export class ChatController {
             this.disposed || this.isBusy || !this.queue.isEmpty,
         );
     }
-    endHistoryRecovery = (): void => this.renderPersistence.endHistoryRecovery();
+    endHistoryRecovery(): void {
+        this.renderPersistence.endHistoryRecovery();
+        if (!this.queue.isEmpty) this.emitQueue();
+    }
     get attentionStatus(): SessionTerminalStatus | undefined {
         if (this.isBusy) return undefined;
         return this.live.attentionStatus ?? this.renderPersistence.peerAttention;
@@ -296,12 +299,13 @@ export class ChatController {
         });
     }
     private onSend(msg: PendingMessage, mode: SendMode): void {
-        if (this.disposed || this.renderPersistence.recoveringHistory) return;
+        if (this.disposed) return;
+        if (this.renderPersistence.recoveringHistory) mode = "queue";
         this.runner.cancelAutomaticRetry();
         routeControllerSend(msg, mode, {
             queue: this.queue,
             dedup: this.dedup,
-            busy: () => this.live.busy || !this.renderPersistence.canDispatch(),
+            busy: () => this.isBusy || !this.renderPersistence.canDispatch(),
             cancel: () => this.session?.cancel(),
             dispatch: (message, options) => this.dispatchOwned(message, options),
             emitQueue: () => this.emitQueue(),
@@ -317,7 +321,7 @@ export class ChatController {
         this.emit(createQueueSnapshot(this.queue, this.isBusy));
     }
     private dispatchOwned(message: PendingMessage, options: QueueDispatchOptions = {}): void {
-        if (!this.renderPersistence.canDispatch()) {
+        if (this.renderPersistence.recoveringHistory || !this.renderPersistence.canDispatch()) {
             this.queue.unshift(message);
             this.emitQueue();
             this.onLog?.("[render-owner] dispatch deferred to the session owner");
@@ -326,7 +330,6 @@ export class ChatController {
         void this.runner.dispatch(message, options);
     }
     private onExternalRenderMessage(message: unknown, record: RenderLogRecord): boolean | void {
-        if (this.renderPersistence.recoveringHistory) return false;
         this.live.hydrateTodosFromMessage(message);
         return reconcilePeerQueue(message, record, {
             queue: this.queue,

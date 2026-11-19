@@ -358,9 +358,5 @@ export interface AgentAdapter {
      */
     deleteSession?(info: SessionInfo): Promise<string[] | void>;
     forkBeforeAudioError?(sessionId: string, cwd: string): Promise<SessionInfo>;
-    revertBeforeAudioError?(
-        sessionId: string,
-        cwd: string,
-        prepare: (info: SessionInfo) => void,
-    ): Promise<SessionInfo>;
+    revertBeforeAudioError?(sessionId: string, cwd: string): Promise<SessionInfo>;
 }

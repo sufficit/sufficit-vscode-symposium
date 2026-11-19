@@ -93,12 +93,8 @@ export class CodexAdapter implements AgentAdapter {
         return forkBeforeAudioError(this.getConfig().executable, sessionId, cwd);
     }
 
-    revertBeforeAudioError(
-        sessionId: string,
-        cwd: string,
-        prepare: (info: SessionInfo) => void,
-    ): Promise<SessionInfo> {
-        return revertBeforeAudioError(this.getConfig().executable, sessionId, cwd, prepare);
+    revertBeforeAudioError(sessionId: string, cwd: string): Promise<SessionInfo> {
+        return revertBeforeAudioError(this.getConfig().executable, sessionId, cwd);
     }
 
     async listSessions(): Promise<SessionInfo[]> {

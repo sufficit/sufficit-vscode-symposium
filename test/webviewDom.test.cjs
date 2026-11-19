@@ -365,6 +365,9 @@ test("Codex audio recovery can copy the history before the failure", () => {
         event: { kind: "error", message: "Audio input is not available." },
     });
 
+    const composer = harness.document.querySelector("#input");
+    composer.value = "Continue this draft";
+    composer.dispatchEvent(new harness.dom.window.Event("input"));
     const actions = harness.document.querySelectorAll(".turnError .statusNoticeAction");
     assert.equal(actions.length, 3);
     assert.match(actions[0].textContent, /continue in this session/i);
@@ -375,6 +378,9 @@ test("Codex audio recovery can copy the history before the failure", () => {
     assert.equal(harness.sent.length, sentBefore + 1);
     assert.equal(harness.sent.at(-1).type, "revert-before-audio-error");
     assert.equal(harness.sent.at(-1).sessionId, "codex-session");
+    harness.deliver({ type: "toast", text: "Codex context recovered. You can continue in this session." });
+    assert.equal(composer.value, "Continue this draft");
+    assert.match(harness.document.querySelector(".turnError").textContent, /audio input/);
     actions[1].click();
     assert.equal(harness.sent.at(-1).type, "fork-before-audio-error");
     harness.dom.window.close();

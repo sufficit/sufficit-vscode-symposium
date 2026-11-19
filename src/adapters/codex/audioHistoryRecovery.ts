@@ -34,11 +34,8 @@ export function revertBeforeAudioError(
     executable: string,
     threadId: string,
     cwd: string,
-    prepare: (info: SessionInfo) => void,
 ): Promise<SessionInfo> {
-    return withCodexAppServer(executable, cwd, (request) =>
-        revertAtAudioError(request, threadId, prepare),
-    );
+    return withCodexAppServer(executable, cwd, (request) => revertAtAudioError(request, threadId));
 }
 
 async function withCodexAppServer<T>(
@@ -170,11 +167,7 @@ export async function forkAtLastCompletedTurn(
     return { ...info, lineageId: threadId };
 }
 
-export async function revertAtAudioError(
-    request: Rpc,
-    threadId: string,
-    prepare: (info: SessionInfo) => void,
-): Promise<SessionInfo> {
+export async function revertAtAudioError(request: Rpc, threadId: string): Promise<SessionInfo> {
     const { thread } = await request<{ thread: CodexThread }>("thread/resume", {
         threadId,
         excludeTurns: true,
@@ -185,8 +178,6 @@ export async function revertAtAudioError(
         );
     }
     const { firstDiscarded, anchor } = await audioErrorCutoff(request, threadId);
-    const info = sessionInfo(thread);
-    prepare(info);
     const { thread: updated } = await request<{ thread: CodexThread }>("thread/revert", {
         threadId,
         beforeTurnId: firstDiscarded.id,

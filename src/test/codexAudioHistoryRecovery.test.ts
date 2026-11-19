@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import * as vscode from "vscode";
 import {
@@ -132,48 +133,41 @@ test("Codex reverts before the first failed audio turn and verifies the same thr
         historyMode: "paginated",
     };
     const retry = { ...rejected, id: "retry" };
-    let prepared = false;
     let reverted = false;
-    const info = await revertAtAudioError(
-        <T>(method: string, params: object) => {
-            if (method === "thread/resume") return Promise.resolve({ thread } as T);
-            if (method === "thread/revert") {
-                assert.equal(prepared, true);
-                assert.deepEqual(params, { threadId: "source", beforeTurnId: "rejected" });
-                reverted = true;
-                return Promise.resolve({ thread } as T);
-            }
-            return Promise.resolve({
-                data: reverted ? [completed] : [retry, rejected, completed],
-            } as T);
-        },
-        "source",
-        (info) => {
-            assert.equal(info.sessionId, "source");
-            prepared = true;
-        },
-    );
+    const info = await revertAtAudioError(<T>(method: string, params: object) => {
+        if (method === "thread/resume") return Promise.resolve({ thread } as T);
+        if (method === "thread/revert") {
+            assert.deepEqual(params, { threadId: "source", beforeTurnId: "rejected" });
+            reverted = true;
+            return Promise.resolve({ thread } as T);
+        }
+        return Promise.resolve({
+            data: reverted ? [completed] : [retry, rejected, completed],
+        } as T);
+    }, "source");
     assert.equal(info.sessionId, "source");
     assert.equal(reverted, true);
 });
 
-test("Codex does not prepare or revert legacy history", async () => {
+test("Codex does not revert legacy history", async () => {
     await assert.rejects(
-        revertAtAudioError(
-            <T>(method: string) => {
-                assert.equal(method, "thread/resume");
-                return Promise.resolve({ thread: { id: "source", historyMode: "legacy" } } as T);
-            },
-            "source",
-            () => assert.fail("unexpected history preparation"),
-        ),
+        revertAtAudioError(<T>(method: string) => {
+            assert.equal(method, "thread/resume");
+            return Promise.resolve({ thread: { id: "source", historyMode: "legacy" } } as T);
+        }, "source"),
         /requires paginated/,
     );
 });
 
-test("the host asks before reverting and reopens the same session after approval", async (t) => {
+test("the host recovers Codex context without replacing the displayed conversation", async (t) => {
     const info = { backend: "codex", sessionId: randomUUID(), title: "Session" };
-    t.after(() => rmSync(ledgerDir(info.sessionId), { recursive: true, force: true }));
+    const folder = ledgerDir(info.sessionId);
+    t.after(() => rmSync(folder, { recursive: true, force: true }));
+    mkdirSync(folder, { recursive: true });
+    const render = join(folder, "render.jsonl");
+    const saved =
+        '{"type":"user","text":"Keep my message"}\n{"type":"event","event":{"kind":"error","message":"Audio input is not available."}}\n';
+    writeFileSync(render, saved);
     let approve = false;
     let held = false;
     const actions: string[] = [];
@@ -182,7 +176,10 @@ test("the host asks before reverting and reopens the same session after approval
         cwd: "/workspace",
         isBusy: false,
         beginHistoryRecovery: () => (held = true),
-        getPermission: () => "",
+        endHistoryRecovery: () => {
+            held = false;
+            actions.push("release");
+        },
     };
     const window = vscode.window as unknown as {
         showWarningMessage?: (
@@ -210,14 +207,10 @@ test("the host asks before reverting and reopens the same session after approval
                 [
                     "codex",
                     {
-                        revertBeforeAudioError: (
-                            _id: string,
-                            _cwd: string,
-                            prepare: (session: typeof info) => void,
-                        ) => {
+                        revertBeforeAudioError: (id: string) => {
+                            assert.equal(id, info.sessionId);
                             assert.equal(held, true);
                             actions.push("revert");
-                            prepare(info);
                             return Promise.resolve(info);
                         },
                     },
@@ -231,7 +224,9 @@ test("the host asks before reverting and reopens the same session after approval
     assert.equal(held, false);
     approve = true;
     await handleSurfaceCommandMessage(request, deps);
-    assert.deepEqual(actions, ["revert", `dispose:${info.sessionId}`, `open:${info.sessionId}`]);
+    assert.deepEqual(actions, ["revert", "release"]);
+    assert.equal(held, false);
+    assert.equal(readFileSync(render, "utf8"), saved);
 });
 
 test("recovered pagination presents retained messages in chronological order", () => {
