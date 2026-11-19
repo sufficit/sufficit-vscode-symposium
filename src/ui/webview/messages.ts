@@ -12,6 +12,7 @@ import { clearFailedAttemptForEdit } from "./errorEditRecovery";
 import { registerMessageBridge } from "./messageBridge";
 import { endThinkingStream } from "./thinking";
 import { createSystemNotice } from "./systemNotice";
+import { audioErrorActions } from "./audioErrorActions";
 import { t } from "./i18n";
 import { presentTurnError } from "../errorPresentation";
 import { reasoningDefault, reasoningValue } from "./models";
@@ -56,14 +57,8 @@ export function renderError(
     removeDuplicateAssistantError(message);
     const presentation = presentTurnError(message, retryable, retryAt);
     const newSession = presentation.recovery === "new-session";
-    const action =
-        newSession && !historical
-            ? {
-                  label: t("chat.icon.newSession"),
-                  onClick: () => postMessage({ type: "new-session" }),
-              }
-            : undefined;
-    const el = createSystemNotice(presentation.summary, "error", undefined, undefined, action);
+    const actions = newSession && !historical ? audioErrorActions() : [];
+    const el = createSystemNotice(presentation.summary, "error", undefined, undefined, actions);
     el.classList.add("turnError");
     if (turnId) el.dataset.turnId = turnId;
     el.dataset.errorStatus = /\bHTTP\s+(\d{3})\b/i.exec(presentation.detail)?.[1] || "unknown";
@@ -258,7 +253,13 @@ export function renderStatusNotice(
                   },
               }
             : undefined;
-    const el = createSystemNotice(text, severity, anchorIndex, scrollToMessageRow, noticeAction);
+    const el = createSystemNotice(
+        text,
+        severity,
+        anchorIndex,
+        scrollToMessageRow,
+        noticeAction ? [noticeAction] : [],
+    );
     if (noticeAction) {
         el.classList.add("statusNoticePaused");
     }

@@ -356,4 +356,5 @@ export interface AgentAdapter {
      * still hold residual data and could not be surgically cleaned, if any.
      */
     deleteSession?(info: SessionInfo): Promise<string[] | void>;
+    forkBeforeAudioError?(sessionId: string, cwd: string): Promise<SessionInfo>;
 }

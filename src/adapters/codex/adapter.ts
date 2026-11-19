@@ -30,6 +30,7 @@ import { looksInjected } from "./transcript";
 import { listCodexSessions } from "./sessionDiscovery";
 import { parseCodexModelCatalog } from "./models";
 import { codexUsage } from "./usage";
+import { forkBeforeAudioError } from "./audioHistoryRecovery";
 
 function runCodexDebugModels(executable: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
@@ -81,6 +82,10 @@ export class CodexAdapter implements AgentAdapter {
                     : resolve({ ok: false, error: `exit code ${code}` }),
             );
         });
+    }
+
+    forkBeforeAudioError(sessionId: string, cwd: string): Promise<SessionInfo> {
+        return forkBeforeAudioError(this.getConfig().executable, sessionId, cwd);
     }
 
     async listSessions(): Promise<SessionInfo[]> {

@@ -119,6 +119,7 @@ function parseCodexMeta(content: string): CodexMeta {
                 effort?: string;
                 reasoning?: string;
                 parent_thread_id?: string | null;
+                forked_from_id?: string | null;
                 source?: {
                     subagent?: {
                         thread_spawn?: { parent_thread_id?: string };
@@ -147,6 +148,8 @@ function parseCodexMeta(content: string): CodexMeta {
                 continuationBlockedReason = "codex-subagent";
             } else if (typeof nativeParentId === "string") {
                 lineageId = nativeParentId;
+            } else if (typeof entry.payload?.forked_from_id === "string") {
+                lineageId = entry.payload.forked_from_id;
             }
         } else if (entry.type === "turn_context" && typeof entry.payload?.model === "string") {
             model = entry.payload.model;

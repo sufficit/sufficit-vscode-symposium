@@ -77,7 +77,7 @@ test("rejected audio explains how to recover without resuming the same history",
     const out = presentTurnError(raw, isTransientErrorMessage(raw));
 
     assert.match(out.summary, /provider rejected audio input/i);
-    assert.match(out.summary, /start a new session/i);
+    assert.match(out.summary, /new session/i);
     assert.match(out.summary, /transcript/i);
     assert.equal(out.recovery, "new-session");
     assert.equal(out.detail, raw);

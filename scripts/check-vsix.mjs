@@ -121,9 +121,10 @@ const budgets = new Map([
     // Retry dedup and disk-full/quota classification (diskErrors) measure
     // 951431 bytes (929.13 KiB) in main CI. Keep a bounded 930 KiB host
     // budget; archive cap unchanged.
-    ["extension/out/extension.js", 930 * 1024],
-    // Audio input recovery adds a new-session action. The webview measures 338092 bytes.
-    ["extension/out/ui/webview.bundle.js", 331 * 1024],
+    // Codex audio history recovery measures 954894 bytes in the extension
+    // and 339177 bytes in the webview. The 1 MiB archive cap is unchanged.
+    ["extension/out/extension.js", 933 * 1024],
+    ["extension/out/ui/webview.bundle.js", 332 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
 for (const [entry, budget] of budgets) {

@@ -35,3 +35,8 @@ export function isCapacityErrorMessage(message: string): boolean {
         message,
     );
 }
+
+/** Permanent provider rejection of audio in a conversation's input. */
+export function isUnavailableAudioInput(message: string): boolean {
+    return /\bAudio input is not available\b/i.test(message);
+}

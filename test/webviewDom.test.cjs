@@ -357,6 +357,26 @@ test("audio rejection offers a fresh session without replaying the failed turn",
     harness.dom.window.close();
 });
 
+test("Codex audio recovery can copy the history before the failure", () => {
+    const harness = createHarness();
+    harness.deliver(meta("codex-session", "luna", { canForkBeforeAudioError: true }));
+    harness.deliver({
+        type: "event",
+        event: { kind: "error", message: "Audio input is not available." },
+    });
+
+    const actions = harness.document.querySelectorAll(".turnError .statusNoticeAction");
+    assert.equal(actions.length, 2);
+    assert.match(actions[0].textContent, /copy session before error/i);
+    assert.match(actions[1].textContent, /new session/i);
+    const sentBefore = harness.sent.length;
+    actions[0].click();
+    assert.equal(harness.sent.length, sentBefore + 1);
+    assert.equal(harness.sent.at(-1).type, "fork-before-audio-error");
+    assert.equal(harness.sent.at(-1).sessionId, "codex-session");
+    harness.dom.window.close();
+});
+
 test("503 maintenance HTML stays compact and is never sent as retry context", () => {
     const harness = createHarness();
     const raw =

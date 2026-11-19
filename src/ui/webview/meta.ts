@@ -59,6 +59,7 @@ import {
     setPermissionModes,
     setPermissionValue,
     setCanSteerInline,
+    setCanForkBeforeAudioError,
     setSideMode,
 } from "./state";
 import { preserveSelectedModel } from "./modelCatalog";
@@ -75,6 +76,7 @@ export function applyMeta(data: MetaMessageData): void {
     }
     // Seed the default send mode once (don't override a saved choice).
     setCanSteerInline(data.canSteerInline === true);
+    setCanForkBeforeAudioError(data.canForkBeforeAudioError === true);
     if (data.whenBusy && !(saved && saved.sendMode)) {
         sendMode.value = data.whenBusy;
     }

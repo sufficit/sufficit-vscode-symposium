@@ -99,6 +99,7 @@ export type WebviewToHost =
     | { type: "pin-model"; model: string }
     | { type: "set-model-default"; model: string }
     | { type: "new-session"; compressionPresetId?: string }
+    | { type: "fork-before-audio-error"; sessionId: string }
     | { type: "new-editor-session" }
     | { type: "pick-session" }
     | { type: "set-compression-preset"; compressionPresetId: string }

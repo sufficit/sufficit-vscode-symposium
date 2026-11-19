@@ -1,3 +1,5 @@
+import { isUnavailableAudioInput } from "../adapters/transientError";
+
 /**
  * User-facing description for a terminal backend error. Keep the complete
  * provider payload separate: gateways often return nested JSON that is useful
@@ -98,10 +100,10 @@ export function presentTurnError(
     const detail = compactTechnicalDetail(message);
     const cancellation = presentGeniusCancellation(detail);
     if (cancellation) return cancellation;
-    if (/\bAudio input is not available\b/i.test(detail)) {
+    if (isUnavailableAudioInput(detail)) {
         return {
             summary:
-                "The provider rejected audio input. Start a new session and continue with a transcript.",
+                "The provider rejected audio input. Continue with a transcript in a new session.",
             detail,
             recovery: "new-session",
         };

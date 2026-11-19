@@ -337,6 +337,7 @@ export class SurfaceDialogues {
                 .getConfiguration("symposium.chat")
                 .get("whenBusy", DEFAULT_BUSY_SEND_MODE),
             canSteerInline: adapter.supportsInlineSteer?.() === true,
+            canForkBeforeAudioError: !!adapter.forkBeforeAudioError,
             devMode: vscode.workspace.getConfiguration("symposium.chat").get("devMode", false),
             openIn: vscode.workspace.getConfiguration("symposium.chat").get("openIn", "editor"),
             execDisplay: vscode.workspace

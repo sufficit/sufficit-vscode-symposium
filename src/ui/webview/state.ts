@@ -33,6 +33,10 @@ export let activeFileRange: SourceRange | null = null;
 export let activeFileDismissed = false;
 export let activeFilePreview = false; // VS Code preview tab (italic) → suggestion
 export let activeFilePinned = false; // user attached a preview suggestion
+export let canForkBeforeAudioError = false;
+export function setCanForkBeforeAudioError(value: boolean): void {
+    canForkBeforeAudioError = value;
+}
 export let currentBackend = "";
 export let currentBackendName = "";
 export let agentLabels: AgentLabels | null = null;

@@ -75,6 +75,7 @@ export interface MetaMessageData {
     whenBusy?: string;
     /** Backend can splice a steer into the running turn (openai only today). */
     canSteerInline?: boolean;
+    canForkBeforeAudioError?: boolean;
     busy?: boolean;
     chatOnly?: boolean;
     agentLabels?: AgentLabels;

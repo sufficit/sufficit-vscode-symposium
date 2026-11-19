@@ -51,13 +51,13 @@ export function createSystemNotice(
     severity: "info" | "warning" | "error" = "info",
     anchorIndex?: number,
     onAnchor: (index: number) => void = (_index) => {},
-    action?: SystemNoticeAction,
+    actions: SystemNoticeAction[] = [],
 ): HTMLDivElement {
     const level = severity === "warning" || severity === "error" ? severity : "info";
     const labelText = level === "warning" ? "Warning" : level === "error" ? "Error" : "System";
     const el = document.createElement("div");
     el.className = "msg statusNotice " + level;
-    el.setAttribute("role", level === "error" || action ? "alert" : "status");
+    el.setAttribute("role", level === "error" || actions.length ? "alert" : "status");
     el.setAttribute("aria-label", "System " + labelText.toLowerCase());
 
     const icon = document.createElement("span");
@@ -86,17 +86,19 @@ export function createSystemNotice(
         btn.addEventListener("click", () => onAnchor(anchorIndex));
         body.appendChild(btn);
     }
-    if (action) {
-        const actions = document.createElement("div");
-        actions.className = "statusNoticeActions";
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "statusNoticeAction";
-        button.textContent = action.label;
-        button.setAttribute("aria-label", action.ariaLabel ?? action.label);
-        button.addEventListener("click", () => action.onClick(button));
-        actions.appendChild(button);
-        content.appendChild(actions);
+    if (actions.length) {
+        const group = document.createElement("div");
+        group.className = "statusNoticeActions";
+        for (const action of actions) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "statusNoticeAction";
+            button.textContent = action.label;
+            button.setAttribute("aria-label", action.ariaLabel ?? action.label);
+            button.addEventListener("click", () => action.onClick(button));
+            group.appendChild(button);
+        }
+        content.appendChild(group);
     }
     el.appendChild(icon);
     el.appendChild(content);

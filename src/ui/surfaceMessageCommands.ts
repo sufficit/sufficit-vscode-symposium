@@ -4,6 +4,42 @@ import { symposiumLog } from "../extension/log";
 import type { WebviewToHost } from "../protocol/chat";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
 
+const audioRecoveryInProgress = new Set<string>();
+
+async function recoverAudioHistory(deps: SurfaceMessagesDeps, sessionId: string): Promise<void> {
+    const controller = deps.getController();
+    if (!controller || controller.sessionId !== sessionId || deps.getSendBlockedReason()) return;
+    const adapter = deps.deps.adapterByBackend.get(controller.backend);
+    if (!adapter?.forkBeforeAudioError || audioRecoveryInProgress.has(sessionId)) return;
+    if (controller.isBusy) {
+        deps.post({
+            type: "toast",
+            text: "Wait for the current turn to finish before copying its history.",
+        });
+        return;
+    }
+    audioRecoveryInProgress.add(sessionId);
+    try {
+        const copy = await adapter.forkBeforeAudioError(sessionId, controller.cwd);
+        if (deps.getController() === controller && !controller.isBusy) {
+            deps.openSession(copy);
+            deps.post({
+                type: "toast",
+                text: "Opened a copy from before the audio error. Previous tool changes are still in place.",
+            });
+        } else {
+            deps.post({ type: "toast", text: "The copy is available in your session list." });
+        }
+    } catch (error) {
+        deps.post({
+            type: "toast",
+            text: `Could not copy the session. ${error instanceof Error ? error.message : String(error)}`,
+        });
+    } finally {
+        audioRecoveryInProgress.delete(sessionId);
+    }
+}
+
 /** Handles model, backend and global command messages. */
 export async function handleSurfaceCommandMessage(
     message: WebviewToHost,
@@ -80,6 +116,9 @@ export async function handleSurfaceCommandMessage(
             }
             return true;
         }
+        case "fork-before-audio-error":
+            await recoverAudioHistory(deps, message.sessionId);
+            return true;
         case "new-session":
             await vscode.commands.executeCommand("symposium.newSession");
             return true;
