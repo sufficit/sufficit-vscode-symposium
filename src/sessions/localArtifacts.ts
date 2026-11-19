@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { isLedgerDeleted, ledgerDir, markLedgerDeleted } from "../ledger";
 
 export interface LocalArtifactCleanupResult {
@@ -39,14 +38,28 @@ export function removeLocalSessionArtifacts(sessionId: string): LocalArtifactCle
 }
 
 function assertSafeSessionId(sessionId: string): void {
+    // Claude stores subagent IDs as <parent>/subagents/<agent>. Match that
+    // discovery contract while rejecting arbitrary paths and traversal.
+    const parts = sessionId.split("/");
+    const supportedShape = parts.length === 1 || (parts.length === 3 && parts[1] === "subagents");
     if (
-        !sessionId ||
-        sessionId === "." ||
-        sessionId === ".." ||
-        path.basename(sessionId) !== sessionId ||
-        sessionId.includes("/") ||
-        sessionId.includes("\\")
+        !supportedShape ||
+        parts.some((part) => !part || part === "." || part === ".." || /[\\\0:]/.test(part))
     ) {
         throw new Error("Invalid session id for local artifact cleanup");
+    }
+    // rm does not follow the final symlink, but an intermediate symlink could
+    // redirect a nested deletion outside the ledger. Fail before tombstoning.
+    for (let i = 1; i < parts.length; i++) {
+        const ancestor = ledgerDir(parts.slice(0, i).join("/"));
+        try {
+            if (fs.lstatSync(ancestor).isSymbolicLink()) {
+                throw new Error(
+                    "Invalid session id for local artifact cleanup: symbolic-link ancestor",
+                );
+            }
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
     }
 }
