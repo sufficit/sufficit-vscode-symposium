@@ -1,100 +1,97 @@
-# Release e publicação — guardrail obrigatório
+# Release e publicação do Symposium
 
-Este projeto publica `sufficit.sufficit-vscode-symposium` no Visual Studio
-Marketplace e no Open VSX. Toda alteração entregue deve seguir o mesmo fluxo:
+O workflow **Publish VS Code Extension** publica
+`sufficit.sufficit-vscode-symposium` no Visual Studio Marketplace e no Open
+VSX. Ele também anexa o VSIX ao GitHub Release.
 
-`versão → verify:package → commit na develop → push → tag → instalação local/remota`.
+A integração das alterações acontece na `main`. Para publicar uma versão,
+avance `develop` até o commit da release e crie uma tag anotada nesse commit.
+O workflow verifica se a tag está na história de `origin/develop` e
+corresponde à versão do pacote.
 
-O script `check:release` é executado dentro de `npm run verify` e garante que
-`package.json`, `package-lock.json` e `VERSION.md` estejam sincronizados. No
-fluxo estrito, ele também exige `develop`, rejeita versões não novas e valida
-que a tag seja anotada e aponte para o commit publicado nessa branch. Em CI,
-uma tag só passa quando seu nome é exatamente `v<package.json.version>`.
+## Preparar a versão
 
-## Fluxo obrigatório
-
-1. Confirme a branch e o estado do checkout:
+1. Confira o estado do checkout e busque as tags existentes.
 
    ```bash
-   git switch develop
-   RELEASE_GUARDRAIL_REQUIRE_DEVELOP=1 RELEASE_GUARDRAIL_REQUIRE_NEW_VERSION=1 npm run check:release
+   git status --short --branch
+   git fetch origin main develop --tags
    ```
 
-2. Atualize a versão CalVer sem criar commit/tag automático:
+2. Escolha uma versão superior à última tag conforme a
+   [política CalVer](../VERSION.md). No exemplo abaixo, substitua o valor
+   pela versão da release.
 
    ```bash
-   npm version 2026.808.2 --no-git-tag-version
+   version=2026.1119.3
+   npm version "$version" --no-git-tag-version
    ```
 
-   Use `YYYY.MMDD.X`, sem zero à esquerda no segmento do mês/dia.
+   Atualize a data, o formato e a versão corrente em `VERSION.md`.
+   Mantenha `package.json` e `package-lock.json` sincronizados.
 
-3. Valide e gere o artefato:
+3. Verifique a versão e valide o pacote local.
 
    ```bash
+   RELEASE_GUARDRAIL_REQUIRE_NEW_VERSION=1 npm run check:release
    npm run verify:package
    ```
 
-4. Faça um único commit contendo todo o escopo da release e publique a branch:
+## Publicar pelo GitHub Actions
+
+1. Revise e inclua apenas os arquivos da release. Faça o commit e envie-o à
+   `main`.
+2. Avance `develop` até o mesmo commit. O push sem `--force` rejeita
+   divergências. Se houver divergência, resolva a integração antes de criar
+   a tag.
 
    ```bash
-   git add -A
-   git commit -m "fix: describe the release"
-   git push -u origin develop
+   release_commit=$(git rev-parse HEAD)
+   git push origin "${release_commit}:refs/heads/main"
+   git push origin "${release_commit}:refs/heads/develop"
    ```
 
-5. Crie a tag anotada somente depois do push da `develop`:
+3. Crie e envie a tag anotada. Preserve tags já publicadas.
 
    ```bash
-   git tag -a v2026.808.2 -m "Release v2026.808.2"
-   git push origin v2026.808.2
+   git tag -a "v${version}" "$release_commit" -m "Release v${version}"
+   git push origin "refs/tags/v${version}"
    ```
 
-   Não mova nem sobrescreva uma tag publicada. O workflow de publicação valida
-   que a tag aponta para um commit que está em `develop`.
+4. Acompanhe o workflow até confirmar a publicação nas duas lojas e o VSIX
+   no GitHub Release.
 
-6. Instale o VSIX validado nos ambientes de uso:
+O workflow instala dependências, roda `verify`, empacota o VSIX e valida seu
+conteúdo antes de publicar. Use `workflow_dispatch` apenas para recuperar
+uma publicação da mesma versão após falha operacional.
 
-   ```bash
-   code --install-extension ./sufficit-vscode-symposium-2026.808.2.vsix --force
-   scp -P <porta> sufficit-vscode-symposium-2026.808.2.vsix <host>:/tmp/
-   ssh -p <porta> <host> \
-     'code-server --install-extension /tmp/sufficit-vscode-symposium-2026.808.2.vsix --force'
-   ```
+## Instalar e confirmar a ativação
 
-   No code-server de desenvolvimento, use o checkout/instalação em
-   `/mnt/sufficit/sufficit-servers/development` e confirme a versão com:
+Baixe o VSIX da release e use a CLI do ambiente onde a extensão vai rodar.
 
-   ```bash
-   code-server --list-extensions --show-versions
-   ```
+```bash
+code --install-extension "sufficit-vscode-symposium-${version}.vsix" --force
+code --list-extensions --show-versions
+```
 
-7. Confirme a ativação da nova versão. Instalar o VSIX não substitui o código
-   já carregado por janelas abertas: cada Extension Host mantém a versão que
-   ativou até a janela ser recarregada. Execute `Symposium: Reload Window
-   (apply latest build)` em cada janela afetada e confirme no log `Symposium`:
+No code-server de desenvolvimento, use o ambiente registrado em
+`/mnt/sufficit/sufficit-servers/development`. Transfira o VSIX para o host,
+execute `code-server --install-extension <arquivo.vsix> --force` e confirme
+a versão com `code-server --list-extensions --show-versions`.
 
-   ```text
-   [extension] activated version=<versão-publicada>
-   ```
+As janelas abertas continuam com a versão que carregaram. Em cada janela
+afetada, rode **Symposium: Reload Window (apply latest build)** e confira no
+log **Symposium** a mesma versão listada na instalação.
 
-   Em um code-server administrado, uma reinicialização remota só é válida após
-   identificar a janela e o PID exato do seu `extensionHost`, confirmar que ela
-   não possui turno em andamento e encerrar apenas esse PID. Nunca use `pkill -f`
-   ou reinicie todos os hosts para aplicar uma extensão. A instalação só está
-   concluída quando a versão listada e a versão ativada no log são iguais.
+```text
+[extension] activated version=<versão-publicada>
+```
 
-## Publicação automática
+Se o code-server exigir reinicialização remota, identifique a janela e o PID
+exato do `extensionHost`. Confirme que a janela está sem turno em andamento e
+encerre apenas esse PID. Evite `pkill -f` e reinicializações de todos os hosts.
 
-Ao receber `vX.Y.Z`, o workflow `Publish VS Code Extension` instala dependências,
-executa o `verify`, empacota e valida o VSIX, publica no Visual Studio Marketplace
-e no Open VSX e anexa o artefato ao GitHub Release.
+## Segredos do GitHub Actions
 
-O `workflow_dispatch` só deve ser usado para recuperar uma publicação da mesma
-versão após falha operacional. Releases normais sempre seguem a sequência acima.
-
-## Secrets necessários
-
-No GitHub, configure:
-
-- `VSCE_PAT`: Personal Access Token do Azure DevOps com escopo `Marketplace: Manage`.
-- `OVSX_PAT`: token de publicação do Open VSX.
+- `VSCE_PAT` requer o escopo `Marketplace: Manage` do Azure DevOps.
+- `OVSX_PAT` é o token de publicação do Open VSX.

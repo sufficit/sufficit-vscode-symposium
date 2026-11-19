@@ -3,10 +3,11 @@
 Durable UI/UX standard for the Symposium VS Code / code-server extension.
 Promoted from the 2026-06-19 UI/UX audit (archived under `docs/activities/`).
 
-Symposium is an **in-IDE panel, not a website**: the whole UI lives in webviews
-(`src/ui/chatHtml.ts` + `chatStyles.ts` + `chatClient.ts`, and `configHtml.ts`)
-plus native `package.json` contributions. The north star is **native VS Code
-look + theme fidelity** — never a hero/CTA/landing pattern.
+Use native VS Code styling and theme tokens in the chat and settings panels.
+The chat webview is authored in [TypeScript](../src/ui/webview/index.ts) and
+[CSS](../src/ui/webview/chat.css). The settings panel is rendered by
+[`configHtml.ts`](../src/ui/configHtml.ts). VS Code menus and commands are
+registered in [the extension manifest](../package.json).
 
 ## Principles
 
@@ -37,10 +38,10 @@ look + theme fidelity** — never a hero/CTA/landing pattern.
 - [ ] Transitions 150–300ms, gated by `prefers-reduced-motion`
 - [ ] Config panel kept at parity with the chat panel
 
-## Known structural follow-up
+## Build and validate
 
-The webview client (`chatClient.ts`) and styles (`chatStyles.ts`) still ship as
-template-literal strings. Bundling them (esbuild → `media/`, `asWebviewUri`) and
-typing the webview side against `src/ui/protocol.ts` is tracked as
-`docs/activities/<ts>-architecture-refactor.md` item #2 — do that before any
-large UI iteration so the client gets type-checking + lint.
+The chat loads bundled assets through [webview URIs](../src/ui/chatSurfaceAssets.ts).
+Keep browser messages within the [typed host contract](../src/protocol/chat.ts).
+Run `npm run verify` to check both TypeScript targets, webview assets, and
+the test suite. Use the [offline test guide](TESTING-config-and-bridge.md) to
+validate settings and bridge changes without a live account.

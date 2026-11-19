@@ -1,8 +1,8 @@
 # Symposium — Architecture
 
 Symposium hosts persistent dialogue sessions for Claude Code, Codex CLI,
-Genius CLI, GitHub Copilot CLI and OpenAI-compatible HTTP providers. The extension has no
-runtime npm dependencies: VS Code and Node provide the runtime platform.
+Genius CLI, GitHub Copilot CLI, and OpenAI-compatible HTTP providers. VS Code
+and Node provide the runtime platform. The VSIX ships `ws` for the WebSocket transport.
 
 ## Dependency direction
 
@@ -59,8 +59,8 @@ This keeps `ChatController` and its collaborators portable and testable.
 ## Session lifetime
 
 `sessions/runtime.ts` owns the live `ChatController` registry. A controller
-owns one normalized `AgentSession`, remains alive while surfaces detach or
-switch, and is disposed only by explicit deletion or extension shutdown.
+owns one normalized `AgentSession` and stays alive when a surface detaches
+or changes sessions. Explicit deletion and extension shutdown release it.
 
 `application/chatController.ts` coordinates queueing, steering, transcript
 replay, status, changed files and persistence through smaller collaborators.
@@ -110,11 +110,29 @@ the hard limit; `check:complexity` keeps the complete target inventory visible
 without a named exception baseline, and `check:complexity:strict` is the
 zero-tolerance burn-down check.
 
-## AHP direction
+## Agent Host Protocol
 
-The transport-independent authoritative channel store in `ahp/channelStore.ts`
-provides sequencing, snapshots and replay for the gradual Agent Host Protocol
-adoption described in [docs/AHP-ADOPTION.md](docs/AHP-ADOPTION.md).
+The production AHP host owns root, session, and chat state. The editor and
+sidebar connect through an in-process MessagePort. The PWA connects through
+the authenticated `/ahp` WebSocket. Clients render `ChatState`, recover from
+snapshots and ordered actions, and submit messages through
+`symposium/messageSubmitted`.
+
+```mermaid
+flowchart TD
+    VSCode[Editor and sidebar] -->|MessagePort| Host[AHP host]
+    PWA[Remote PWA] -->|WebSocket| Host
+    Host --> Controllers[LiveSessions and ChatController]
+    Controllers --> Adapters[AgentAdapter]
+    Adapters --> CLI[Claude, Codex, Genius and Copilot CLIs]
+    Adapters --> API[OpenAI-compatible API]
+```
+
+The store in `ahp/channelStore.ts` provides sequencing, snapshots, and replay.
+The public in-process API also serves other VS Code extensions. Optional
+protocol channels are capability-gated. See the
+[AHP implementation and version policy](docs/AHP-ADOPTION.md) for supported
+channels, protocol pinning, and operational requirements.
 
 ## Related documents
 

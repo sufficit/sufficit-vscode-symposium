@@ -2,7 +2,7 @@
 
 Contrato operacional da aba **Contexto e histórico** do painel de configurações do Symposium. A superfície amplia as preferências existentes e mantém a identidade visual do painel.
 
-O registro original da sessão e a seleção enviada à IA são independentes. Diminuir a janela de envio ou gerar um resumo não apaga a transcrição preservada no ledger. Resumo é opcional. As opções de envio se aplicam aos backends de API compatíveis com OpenAI; os CLIs gerenciam seu próprio contexto.
+O registro original da sessão e a seleção enviada à IA são independentes. Diminuir a janela de envio ou gerar um resumo não apaga a transcrição preservada no ledger. Resumo é opcional. As opções de envio se aplicam aos backends de API compatíveis com OpenAI; os CLIs gerenciam seu próprio contexto. Para o caso de áudio rejeitado pelo Codex, consulte a [recuperação de sessões](SESSION-RECOVERY.md).
 
 ## Localização e persistência
 

@@ -2,222 +2,81 @@
   <img src="media/symposium-icon.png" width="96" height="96" alt="Sufficit Symposium icon">
 </p>
 
-> **Worktrees (padrão Sufficit):** toda árvore de trabalho deste projeto (humanos ou agentes de IA) deve ser criada dentro da pasta do próprio projeto: `git worktree add .worktrees/<nome>`. A pasta `.worktrees/` é ignorada pelo git (`.gitignore` → `**/.worktrees/`) e nunca deve ser versionada ou criada fora da raiz do repositório.
-
-
 # Sufficit Symposium
 
-<p align="center">
-  <a href="https://www.sufficit.com.br">
-    <img src="media/sufficit-ai-logo.png" width="42" height="42" alt="Sufficit AI logo">
-  </a>
-  <br>
-  <strong>Powered by Sufficit</strong>
-</p>
+Symposium runs AI agent conversations side by side in VS Code and code-server.
+Choose a backend and model for each session, reopen previous conversations, and
+hand off work between agents from the chat header.
 
-> συμπόσιον — *symposion*: the banquet where many minds dialogue, conducted by a host.
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=sufficit.sufficit-vscode-symposium) ·
+[Open VSX](https://open-vsx.org/extension/sufficit/sufficit-vscode-symposium) ·
+[GitHub releases](https://github.com/sufficit/sufficit-vscode-symposium/releases) ·
+[Report an issue](https://github.com/sufficit/sufficit-vscode-symposium/issues)
 
-Sufficit Symposium is a VS Code and code-server extension for hosting dialogue
-sessions with multiple AI agents side by side. It runs **Sufficit AI**,
-**Claude Code**, **Codex CLI**, **Genius CLI** and **GitHub Copilot CLI** through one visual
-surface, while keeping each session pinned to the backend and model selected by
-the user.
+## Quick start
 
-[Marketplace](https://marketplace.visualstudio.com/items?itemName=sufficit.sufficit-vscode-symposium) |
-[Releases](https://github.com/sufficit/sufficit-vscode-symposium/releases) |
-[Issues](https://github.com/sufficit/sufficit-vscode-symposium/issues) |
-[Sufficit](https://www.sufficit.com.br) |
-[Sufficit AI](https://ai.sufficit.com.br) |
-[GitHub](https://github.com/sufficit)
+1. Install the extension in the environment where you run your conversations.
 
-## What It Does
+   **VS Code**
 
-- Hosts multiple agent backends from the same VS Code surface.
-- Keeps backend, model, permissions and session identity explicit per session.
-- Supports hand-off between agents without leaving the conversation screen.
-- Integrates Sufficit Identity, Sufficit AI, shared memory and vault-backed tools.
-- Works in desktop VS Code and browser-based code-server environments.
-- Adds a Source Control command to generate commit messages through Sufficit AI.
+   ```bash
+   code --install-extension sufficit.sufficit-vscode-symposium
+   ```
 
-## Why
+   **code-server**
 
-VS Code's built-in chat delegation can let a calling model influence the target
-agent. Symposium inverts that control: the extension owns the process lifecycle,
-session state and model selection. Agents converse, but the host conducts.
+   ```bash
+   code-server --install-extension sufficit.sufficit-vscode-symposium
+   ```
 
-## Supported Backends
+   To install from a [GitHub release](https://github.com/sufficit/sufficit-vscode-symposium/releases),
+   download its VSIX and pass its file path to the same `--install-extension` command.
 
-| Backend | Status | Notes |
-|---|---:|---|
-| Sufficit AI | Implemented | Native OpenAI-compatible backend with Sufficit Identity, memory, web and local tools. |
-| Claude Code | Implemented | JSONL streaming via `claude -p`, resume via `--resume`, model pinned per session. |
-| Codex CLI | Implemented | JSONL events via `codex exec --json`, resume via `codex exec resume`. |
-| Genius CLI | Implemented | JSONL events via `genius exec --input-json --json`; Genius owns context and resume by UUID. [Setup and limits](docs/GENIUS-CLI-ADAPTER.md). |
-| GitHub Copilot CLI | Implemented | JSON output via `copilot -p --output-format json`; ACP is planned for persistent sessions. |
+2. For Sufficit AI, run **Symposium: Login (Sufficit)** from the Command Palette.
+   To use a CLI backend, install its executable where the VS Code extension
+   host can run it. With code-server, that is the server.
+3. Run **Symposium: New Session** and choose an agent. Select a model in the
+   chat, then send your first message.
 
-## Architecture
+## Supported backends
 
-```mermaid
-flowchart TD
-    UI[VS Code and code-server sessions and chat] --> Adapter[AgentAdapter interface]
-    Adapter --> API[Sufficit AI API]
-    Adapter --> CLI[Claude, Codex, Genius and Copilot CLIs]
-    Adapter --> History[Symposium transcript store]
-```
+| Backend | Connection |
+| --- | --- |
+| Sufficit AI | Built-in OpenAI-compatible adapter with Sufficit Identity. |
+| Claude Code | Runs `claude` and resumes conversations through the CLI. |
+| Codex CLI | Runs `codex exec --json` and resumes by native session ID. |
+| Genius CLI | Runs `genius exec --input-json --json` and resumes by native session UUID. [Genius setup and authentication](docs/GENIUS-CLI-ADAPTER.md) |
+| GitHub Copilot CLI | Runs `copilot -p --output-format json` and resumes by CLI session ID. |
 
-[ARCHITECTURE.md](ARCHITECTURE.md) covers dependency direction, application
-ports, session lifetime and the verification guardrails.
+Set a CLI executable path under **Settings → Symposium** if VS Code cannot
+find it on the extension host's PATH. The extension also provides a Source
+Control command to generate commit messages through Sufficit AI.
 
-## Agent Host Protocol Direction
+## Work with sessions
 
-Symposium is incrementally adopting Microsoft's
-[Agent Host Protocol (AHP)](https://microsoft.github.io/agent-host-protocol/)
-as its client-facing state and synchronization layer.
+Open a saved conversation from the sessions list to resume it. To move work
+to a different backend, use the hand-off control in the chat header and select
+the target agent. Symposium starts a session on that backend with the prior
+conversation as context. The original session remains available in the list.
 
-Symposium is the **AHP host** in this architecture. The existing
-`AgentAdapter` implementations remain the downstream boundary to Claude Code,
-Codex CLI, Genius CLI, GitHub Copilot CLI and OpenAI-compatible services. AHP sits above
-them so the VS Code webview, PWA and future CLI/mobile clients can share one
-host-authoritative view of a live session.
-
-```text
- VS Code webview       PWA       CLI/mobile
-        \               |             /
-         +---------- AHP clients ----+
-                       |
-              WebSocket / in-process
-                       |
-        +-------- Symposium AHP host --------+
-        | state · serverSeq · replay · auth  |
-        +----------------+--------------------+
-                         |
-                LiveSessions / controllers
-                         |
-             AgentAdapter implementations
-```
-
-The migration is complete. A single production AHP runtime owns root, session
-and chat state; editor/sidebar clients use the in-process MessagePort transport,
-and the PWA uses the authenticated `/ahp` WebSocket. Both render `ChatState`
-directly, reconnect from snapshots plus ordered actions, and submit messages
-through `symposium/messageSubmitted`. The former webview replay, REST+SSE chat
-routes and transport rollback switches have been retired.
-
-Optional changeset, terminal, resource, customization/MCP, client-tool and
-telemetry channels remain capability-gated. The public in-process API is still
-available to other VS Code extensions, while remote chat clients use AHP.
-
-The protocol is still a draft, so the official TypeScript contract is
-exact-pinned to `@microsoft/agent-host-protocol@0.6.0`. See
-[docs/AHP-ADOPTION.md](docs/AHP-ADOPTION.md) for the complete architecture,
-security requirements, version policy and shipped architecture.
-
-## Installation
-
-Install from the Visual Studio Marketplace:
-
-```bash
-code --install-extension sufficit.sufficit-vscode-symposium
-```
-
-Or download the `.vsix` from the
-[latest release](https://github.com/sufficit/sufficit-vscode-symposium/releases/latest):
-
-```bash
-code --install-extension sufficit-vscode-symposium-<version>.vsix
-```
-
-For code-server, run the install command in the same environment where
-code-server is installed:
-
-```bash
-code-server --install-extension sufficit.sufficit-vscode-symposium
-```
-
-The external CLIs are not bundled. Install the ones you want to use and make
-sure `claude`, `codex` or `copilot` are available on the PATH seen by VS Code or
-code-server.
-
-## Configuration
-
-Core settings are available under `Symposium` in VS Code settings.
-
-| Setting | Purpose |
-|---|---|
-| `symposium.openai.baseUrl` | OpenAI-compatible endpoint. Defaults to `https://ai.sufficit.com.br/openai/v1`. |
-| `symposium.identity.issuer` | Sufficit Identity issuer. Defaults to `https://identity.sufficit.com.br`. |
-| `symposium.identity.scope` | OAuth scopes requested at login. `roles` and `directives` are always included because Sufficit AI authorization requires them. |
-| `symposium.hub.url` | Sufficit memory/vault hub URL. |
-| `symposium.claude.executable` | Path to the `claude` binary. |
-| `symposium.claude.model` | Default Claude model for new sessions. |
-| `symposium.claude.permissionMode` | Claude permission mode for new sessions. |
-| `symposium.codex.executable` | Path to the `codex` binary. |
-| `symposium.copilot.executable` | Path to the `copilot` binary. |
-
-Further configuration guides:
-
-- [Context and history settings](docs/CONTEXT-HISTORY.md) — the Context and history tab of the settings panel.
-- [Settings API](docs/USAGE-api-settings.md) — reading and changing Symposium settings from code.
-- [Compression manual](docs/manuals/en/compression.md) — how history compression reduces token usage.
-- [Compression presets guide](docs/compression-guide.md) and [quick reference](docs/compression-presets.md).
-- [OpenAI history diagnostics](docs/manuals/en/openai-history.md) — when and why request history is reshaped.
-
-## Hand-Off Between Agents
-
-A live dialogue can be handed off to a different backend without leaving the
-screen. Use the hand-off button in the chat header, pick another agent, and
-Symposium starts a fresh session with the prior conversation seeded as context.
-
-The original session is detached, not destroyed. It keeps its own backend
-session id and can be reopened from the sessions list.
-
-## Official Links
-
-| Resource | Link |
-|---|---|
-| Sufficit website | <https://www.sufficit.com.br> |
-| Sufficit AI | <https://ai.sufficit.com.br> |
-| Sufficit Identity | <https://identity.sufficit.com.br> |
-| GitHub organization | <https://github.com/sufficit> |
-| Extension repository | <https://github.com/sufficit/sufficit-vscode-symposium> |
-| VS Code Marketplace | <https://marketplace.visualstudio.com/items?itemName=sufficit.sufficit-vscode-symposium> |
-
-## Remote access
-
-- [Remote access](docs/REMOTE-ACCESS.md) — driving an agent session from a phone through the bridge.
-- [Sufficit Relay Protocol](docs/RELAY-PROTOCOL.md) — public Symposium access over HTTP and AHP WebSocket.
-- [API discovery](docs/API-DISCOVERY.md) — the discovery contract published for external clients.
-
-## Authentication browser
-
-[Device Flow browser lifecycle](docs/DEVICE-FLOW-BROWSER.md) describes the Identity launcher, popup completion and manual fallbacks.
+For behavior and configuration, see the [documentation index](docs/README.md).
+Start with [session recovery](docs/SESSION-RECOVERY.md),
+[context and history](docs/CONTEXT-HISTORY.md), or [remote access](docs/REMOTE-ACCESS.md).
 
 ## Development
 
-```bash
-npm install
-npm run compile
-npm run lint
-```
-
-Use `F5` in VS Code to launch the Extension Development Host.
-
-To package locally:
+Use Node.js 22, as in CI.
 
 ```bash
-npx @vscode/vsce package
+npm ci
+npm run verify
 ```
 
-Stable releases are published from version tags by the repository workflow.
+Press **F5** in VS Code to launch the Extension Development Host.
+Use `npm run verify:package` to build and validate a VSIX before packaging or publishing.
 
-Development references:
+Create linked Git worktrees inside the repository with
+`git worktree add .worktrees/<name> <branch>`. Git ignores `.worktrees/`.
 
-- [Release and publishing](docs/RELEASE.md) — the mandatory release guardrail and flow.
-- [Versioning policy](VERSION.md) and [feature versioning](docs/FEATURE-VERSIONING.md).
-- [Clipboard and Genius authentication](docs/activities/202611061912-clipboard-genius-auth.md).
-- [UI guidelines](docs/USAGE-guidelines-ui.md) — the standard for Symposium webviews.
-- [Offline testing of the config UI, public API and remote bridge](docs/TESTING-config-and-bridge.md).
-- [Pull request evaluations](docs/pullrequests/README.md).
-- Every Markdown file must be reachable from this README through links from its natural parent;
-  `npm run check:markdown` (part of `npm test`) enforces it. Only `docs/activities/` is exempt
-  (`.markdown-coverage-ignore`).
+See the [architecture](ARCHITECTURE.md), [release procedure](docs/RELEASE.md),
+and [Markdown reference checks](docs/README.md#markdown-reference-checks).
