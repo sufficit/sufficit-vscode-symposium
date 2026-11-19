@@ -65,6 +65,8 @@ Start with [session recovery](docs/guides/session-recovery.md),
 
 ## Development
 
+See the [contributor and agent instructions](AGENTS.md).
+
 Use Node.js 22, as in CI.
 
 ```bash
