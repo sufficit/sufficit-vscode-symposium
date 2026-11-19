@@ -166,16 +166,17 @@ export class SurfaceSync {
      * async search index to pick it up. Falls back to a full refresh.
      */
     async bumpTasksByIds(ids: string[]): Promise<void> {
-        if (!ids.length) {
+        const sessionId = this.d.getController()?.sessionId;
+        if (!ids.length || !sessionId || !this.hub.configured()) {
             return this.refreshTasks();
         }
         try {
-            if (!this.hub.configured()) {
-                return this.refreshTasks();
+            const obs = await this.hub.getByIds(ids, sessionId);
+            if (this.d.getController()?.sessionId !== sessionId) {
+                return;
             }
-            const obs = await this.hub.getByIds(ids);
             const created: TaskItem[] = obs
-                .filter((o) => o && o.id)
+                .filter((o) => o.id && o.sessionId === sessionId)
                 .map((o) => ({
                     id: String(o.id),
                     type: o.type ?? "task-anchor",
@@ -203,7 +204,6 @@ export class SurfaceSync {
                 }
             }
             this.lastTasks = merged;
-            const sessionId = this.d.getController()?.sessionId ?? "";
             this.d.post({ type: "tasks", items: merged, project: sessionId });
         } catch {
             // getByIds can fail on an older hub; fall back to the search path.

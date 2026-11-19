@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { HubClient } from "../sync/hubClient";
+import * as vscode from "vscode";
+import { runTaskTool } from "../adapters/aiTools/taskRun";
+import { HubClient, Observation } from "../sync/hubClient";
 import {
     fetchSessionTasks,
     fetchPendingWorkItems,
@@ -8,6 +10,7 @@ import {
     fetchLatestCheckpoint,
     rememberTaskCreated,
     rememberTaskDone,
+    setTaskDone,
 } from "../sync/tasks";
 
 test("pending tasks do not expire locally while the hub index is stale", async () => {
@@ -245,4 +248,72 @@ test("a done task-anchor is not a pending work item", async () => {
         pending.map((t) => t.id),
         ["task-2"],
     );
+});
+
+test("task aliases complete internal observations with the same session header as creation", async (t) => {
+    const sessionId = "internal-task-session";
+    const observations = new Map<string, Observation>();
+    t.mock.method(vscode.workspace, "getConfiguration", () => ({
+        get: (key: string, fallback: unknown) =>
+            key === "url" ? "https://hub.example.test" : key === "token" ? "same-token" : fallback,
+    }));
+    t.mock.method(globalThis, "fetch", (url: string, init: RequestInit) => {
+        const headers = new Headers(init.headers);
+        assert.equal(headers.get("Authorization"), "Bearer same-token");
+        const trustedSession = headers.get("X-Symposium-Session-Id");
+        const body = JSON.parse(String(init.body));
+        switch (new URL(url).pathname) {
+            case "/api/memory/save": {
+                const existing = observations.get(body.id);
+                if (trustedSession !== (existing?.sessionId ?? body.sessionId) || !trustedSession) {
+                    return new Response(null, { status: 403 });
+                }
+                const id = body.id ?? `task-${observations.size + 1}`;
+                observations.set(id, { ...existing, ...body, id });
+                return Response.json({ success: true, data: { id } });
+            }
+            case "/api/memory/observations":
+                return Response.json(
+                    Array.from(observations.values()).filter(
+                        (obs) => obs.sessionId === trustedSession && body.ids.includes(obs.id),
+                    ),
+                );
+            case "/api/memory/search":
+                return Response.json(Array.from(observations.values()));
+            default:
+                assert.fail(`Unexpected hub request: ${url}`);
+        }
+    });
+    const hub = new HubClient();
+    const ctx = { hub, cwd: "/workspace", sessionId };
+    const { ids } = JSON.parse(
+        (await runTaskTool("add_task", { tasks: ["First task", "Second task"] }, ctx))!,
+    );
+
+    for (const [index, name] of ["task_complete", "TaskUpdate"].entries()) {
+        const id = ids[index];
+        const result = JSON.parse((await runTaskTool(name, { id, summary: "Verified" }, ctx))!);
+        assert.equal(result.ok, true, result.error);
+        assert.deepEqual(observations.get(id), {
+            id,
+            sessionId,
+            privacyLevel: "internal",
+            type: "task-anchor",
+            title: index === 0 ? "First task" : "Second task",
+            summary: `${index === 0 ? "First task" : "Second task"}\n\nCompleted: Verified`,
+            tags: "task-anchor,creator:agent,status:done",
+        });
+    }
+    const first = observations.get(ids[0])!;
+    assert.equal(first.summary, "First task\n\nCompleted: Verified");
+    first.expiresAtUtc = "2099-01-01T00:00:00Z";
+    assert.equal(await setTaskDone(hub, sessionId, ids[0], false), true);
+    assert.equal(observations.get(ids[0])?.tags, "task-anchor,creator:agent");
+    assert.equal(observations.get(ids[0])?.expiresAtUtc, first.expiresAtUtc);
+
+    const wrongSession = { ...ctx, sessionId: "other-session" };
+    const otherResult = JSON.parse(
+        (await runTaskTool("task_complete", { id: ids[0] }, wrongSession))!,
+    );
+    assert.match(otherResult.error, /not found/);
 });

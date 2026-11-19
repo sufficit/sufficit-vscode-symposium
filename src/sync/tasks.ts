@@ -222,20 +222,22 @@ export async function fetchSessionCheckpoints(
 /** Sets/clears a task's completed state (DONE_TAG). User- or agent-driven. */
 export async function setTaskDone(
     hub: HubClient,
+    sessionId: string,
     id: string,
     done: boolean,
     completionSummary?: string,
 ): Promise<boolean> {
-    if (!hub.configured() || !id) {
+    if (!hub.configured() || !sessionId || !id) {
         return false;
     }
-    // Direct upsert: save is id-based. Append or remove DONE_TAG without
-    // spreading stale API fields back into the payload. Errors (transport,
-    // 401/403, 5xx) propagate to the tool/UI layer so the real cause is
-    // reported instead of being hidden as "task id was not found".
-    const [obs] = await hub.getByIds([id]);
-    const existing = obs ? String(obs.tags ?? "") : "";
-    const tags = existing
+    const [obs] = await hub.getByIds([id], sessionId);
+    if (!obs || obs.id !== id || obs.sessionId !== sessionId || !isTask(obs.type)) {
+        return false;
+    }
+    if (hasTag(obs.tags, DONE_TAG) === done) {
+        return true;
+    }
+    const tags = String(obs.tags ?? "")
         .split(",")
         .map((t) => t.trim())
         .filter(Boolean)
@@ -243,34 +245,29 @@ export async function setTaskDone(
     if (done) {
         tags.push(DONE_TAG);
     }
-    const baseSummary = obs?.summary || "";
-    const summary = completionSummary?.trim()
-        ? baseSummary
-            ? `${baseSummary}\n\nCompleted: ${completionSummary.trim()}`
-            : `Completed: ${completionSummary.trim()}`
-        : baseSummary;
-    // Preserve the observation's existing type verbatim. The fallback only
-    // applies when the record is missing its type: defaulting a task being
-    // COMPLETED to task-anchor (executable work) rather than task-checkpoint
-    // (observed state) — completing work must never silently reclassify it
-    // into a historical-fact type, which would then disappear from pending
-    // work and resurface only as resume context.
-    const type = obs?.type || TASK_ANCHOR;
-    await hub.save({ id, type, title: obs?.title || "task", summary, tags: tags.join(",") });
+    const note = completionSummary?.trim();
+    const summary = note ? `${obs.summary}\n\nCompleted: ${note}` : obs.summary;
+    // save forwards sessionId as the trusted header required for internal tasks.
+    await hub.save({
+        id,
+        sessionId,
+        type: obs.type,
+        title: obs.title,
+        summary,
+        tags: tags.join(","),
+        expiresAtUtc: obs.expiresAtUtc,
+    });
     return true;
 }
 
 /** Marks a task observation completed by adding the DONE_TAG (idempotent). */
 export async function markTaskDone(
     hub: HubClient,
+    sessionId: string,
     id: string,
     completionSummary?: string,
 ): Promise<boolean> {
-    // Delegate to setTaskDone which preserves existing tags (including the
-    // critical symposium-session:xxx tag). A blind upsert with only DONE_TAG
-    // wipes the session tag → fetchSessionTasks filter can never find the task
-    // again → panel shows stale "pending" forever.
-    return setTaskDone(hub, id, true, completionSummary);
+    return setTaskDone(hub, sessionId, id, true, completionSummary);
 }
 
 /**

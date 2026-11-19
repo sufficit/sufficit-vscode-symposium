@@ -1,16 +1,4 @@
 /**
- * Error classification for Sufficit Hub (memory/task REST) failures.
- *
- * Motivation: a 403 "scope_required" from the hub was surfaced to agents and
- * users as "save failed - check hub configuration" or as generic timeout text,
- * sending operators to investigate hub outages without evidence. A 403 tells us the permission was
- * missing from the token on that request; a renewed session may resolve it.
- * These carriers preserve the HTTP status and the server's
- * reasonCode/requiredPermission so every layer (tool result, retry affordance,
- * logs) can distinguish "reconnect the account" from "hub unreachable".
- */
-
-/**
  * A classified hub failure. `status` is undefined for transport-level failures
  * (deadline exceeded, fetch refused) where no HTTP response existed.
  */
@@ -30,9 +18,14 @@ export class HubRequestError extends Error {
         this.requiredPermission = details.requiredPermission;
     }
 
-    /** Auth/permission rejection (401/403): the SAME request cannot succeed until the account is reconnected. */
-    get permissionProblem(): boolean {
-        return this.status === 401 || this.status === 403;
+    get accessNotice(): string | undefined {
+        if (this.status === 401) {
+            return "The hub could not authenticate this request. Check the configured hub credential or reconnect the Sufficit account.";
+        }
+        if (this.status === 403) {
+            return "The hub denied access to this operation. Check the record's session and context, and any required permission, before retrying.";
+        }
+        return undefined;
     }
 
     /** Transport/server class: the exact same request may succeed moments later. */
@@ -63,14 +56,19 @@ export function hubFailurePayload(
     extra?: Record<string, unknown>,
 ): string {
     const hubError = toHubRequestError(error);
-    const permission = hubError.permissionProblem;
+    const accessNotice = hubError.accessNotice;
     const retryable = hubError.retryable;
     const payload: Record<string, unknown> = {
         error: `${operation} failed: ${hubError.message}`,
         retryable,
-        _memory_source: permission ? "auth_required" : "remote_unavailable",
-        _notice: permission
-            ? "AUTH/PERMISSION PROBLEM: this hub request was rejected with 401/403. Reconnect the Sufficit account to renew the token, then retry. This rejection is not evidence of a hub outage. No local fallback was read or written."
+        _memory_source:
+            hubError.status === 401
+                ? "auth_required"
+                : hubError.status === 403
+                  ? "permission_denied"
+                  : "remote_unavailable",
+        _notice: accessNotice
+            ? accessNotice
             : retryable
               ? "Hub request failed temporarily or the network is unavailable. For a failed write, check whether it was saved before retrying; for a read, retry after checking the connection. No local fallback was read or written."
               : "Hub rejected this request. Check the request parameters before retrying. No local fallback was read or written.",
@@ -104,8 +102,7 @@ function parseErrorBody(text: string): { reasonCode?: string; requiredPermission
 
 /**
  * Builds the classified error for a non-OK hub response, preserving the HTTP
- * status plus the server's reasonCode/requiredPermission when present, so
- * callers can tell "reconnect the account" (403) from "hub unreachable".
+ * status plus the server's reasonCode/requiredPermission when present.
  */
 export function hubStatusError(operation: string, res: Response, body: string): HubRequestError {
     const { reasonCode, requiredPermission } = parseErrorBody(body);

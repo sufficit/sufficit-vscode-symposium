@@ -111,17 +111,17 @@ async function completeTask(
     if (name === "TaskUpdate" && args.done === false) {
         return JSON.stringify({ ok: true, message: "task unchanged (done=false)" });
     }
+    if (!ctx.sessionId) return JSON.stringify({ error: "no current session" });
     const summary = typeof args.summary === "string" ? args.summary : undefined;
     try {
-        if (!(await markTaskDone(ctx.hub, id, summary))) {
+        if (!(await markTaskDone(ctx.hub, ctx.sessionId, id, summary))) {
             return JSON.stringify({
-                error: "task completion failed — the task id was not found or the hub rejected the update",
+                error: "task completion failed: the task id was not found in the current session",
             });
         }
     } catch (error) {
         return hubFailurePayload("task_complete", error, { id });
     }
-    if (!ctx.sessionId) return JSON.stringify({ ok: true });
     rememberTaskDone(ctx.sessionId, id);
     const cascaded = await cascadePriorTasks(ctx, id, summary);
     return completionResult(ctx, [id, ...cascaded], cascaded);
@@ -135,21 +135,22 @@ async function cascadePriorTasks(
     if (!ctx.sessionId) return [];
     const priorIds = priorInBatch(ctx.sessionId, id);
     if (!priorIds.length) return [];
-    const observations = await ctx.hub.getByIds(priorIds).catch(() => []);
-    const userRequested = new Set(
+    const observations = await ctx.hub.getByIds(priorIds, ctx.sessionId).catch(() => []);
+    const agentTasks = new Set(
         observations
-            .filter((item) =>
-                (Array.isArray(item.tags) ? item.tags : String(item.tags ?? "").split(","))
-                    .map((tag) => String(tag).trim())
-                    .includes("creator:user"),
+            .filter(
+                (item) =>
+                    !(Array.isArray(item.tags) ? item.tags : String(item.tags ?? "").split(","))
+                        .map((tag) => String(tag).trim())
+                        .includes("creator:user"),
             )
             .map((item) => String(item.id)),
     );
     const completed: string[] = [];
     for (const priorId of priorIds) {
         if (
-            !userRequested.has(priorId) &&
-            (await markTaskDone(ctx.hub, priorId, summary).catch(() => false))
+            agentTasks.has(priorId) &&
+            (await markTaskDone(ctx.hub, ctx.sessionId, priorId, summary).catch(() => false))
         ) {
             rememberTaskDone(ctx.sessionId, priorId);
             completed.push(priorId);
