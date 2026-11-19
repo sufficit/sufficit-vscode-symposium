@@ -24,4 +24,4 @@ O catálogo público Open VSX confirmou a nova versão.
 
 A atualização local solicitada nesta etapa era do Genius; não foi reiniciado o
 Extension Host da conversa. O contrato da funcionalidade está em
-[CONTEXT-HISTORY.md](../CONTEXT-HISTORY.md).
+[CONTEXT-HISTORY.md](../guides/context-and-history.md).

@@ -19,7 +19,7 @@ corresponde à versão do pacote.
    ```
 
 2. Escolha uma versão superior à última tag conforme a
-   [política CalVer](../VERSION.md). No exemplo abaixo, substitua o valor
+   [política CalVer](../../VERSION.md). No exemplo abaixo, substitua o valor
    pela versão da release.
 
    ```bash

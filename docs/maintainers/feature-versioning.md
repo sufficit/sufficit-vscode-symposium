@@ -56,33 +56,9 @@ the extension package version.
 
 ## Registered namespaces
 
-| Namespace | Owner |
-| --- | --- |
-| `symposium.adapter.claude` | Claude adapter |
-| `symposium.adapter.codex` | Codex adapter |
-| `symposium.adapter.copilot` | Copilot adapter |
-| `symposium.adapter.openai-compatible` | OpenAI-compatible and Sufficit AI adapter |
-| `symposium.adapters` | Shared adapter contract |
-| `symposium.ahp` | Agent Host Protocol |
-| `symposium.ai-tools` | AI tool discovery and execution |
-| `symposium.api` | Public API and discovery |
-| `symposium.auth` | Authentication and credentials |
-| `symposium.changesets` | AHP change sets |
-| `symposium.chat-ui` | Chat user interface |
-| `symposium.client-tools` | AHP client tools |
-| `symposium.compression` | Context compression |
-| `symposium.configuration` | Settings and presets |
-| `symposium.customizations` | AHP customizations |
-| `symposium.pwa` | Progressive web application |
-| `symposium.recovery` | Bounded transient-failure recovery |
-| `symposium.relay` | Relay and remote transport |
-| `symposium.resources` | AHP resources |
-| `symposium.scm` | Source control integration |
-| `symposium.sessions` | Session lifecycle and persistence |
-| `symposium.sync` | State synchronization |
-| `symposium.telemetry` | AHP telemetry |
-| `symposium.terminal` | AHP terminal |
-| `symposium.voice` | Audio capture and transcription |
+Read the current namespaces in the [feature catalog](../../src/features/catalog.ts).
+Clients can also use the live discovery map, including capabilities supplied
+by adapters.
 
 ## Adding or changing a feature
 

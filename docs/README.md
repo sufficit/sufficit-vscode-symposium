@@ -8,11 +8,10 @@ instructions. Use the guides below as you configure Symposium or work on the ext
 | Task | Guide |
 | --- | --- |
 | Configure the extension, API, identity, or a CLI executable | [Settings reference](#settings-reference) |
-| Resume a conversation after an error | [Session recovery](SESSION-RECOVERY.md) |
-| Configure how much history the model receives | [Context and history](CONTEXT-HISTORY.md) |
-| Set up Genius and troubleshoot authentication | [Genius CLI adapter](GENIUS-CLI-ADAPTER.md) and [browser authentication](DEVICE-FLOW-BROWSER.md) |
-| Access a session from another device | [Remote access](REMOTE-ACCESS.md) |
-| Configure compression | [Compression guide](compression-guide.md) and [preset reference](compression-presets.md) |
+| Resume a conversation after an error | [Session recovery](guides/session-recovery.md) |
+| Configure how much history the model receives | [Context and history](guides/context-and-history.md) |
+| Set up Genius and troubleshoot authentication | [Genius CLI adapter](guides/genius.md) and [browser authentication](guides/browser-sign-in.md) |
+| Access a session from another device | [Remote access](guides/remote-access.md) |
 
 Manuals are available in English and Brazilian Portuguese.
 
@@ -38,18 +37,26 @@ lists the full settings schema and defaults.
 
 ## Integrate with Symposium
 
-- [Settings API](USAGE-api-settings.md) for reading and changing settings from code.
-- [API discovery](API-DISCOVERY.md) for clients locating the public interface.
-- [Relay protocol](RELAY-PROTOCOL.md) for remote HTTP and AHP WebSocket access.
+- [Settings API](reference/settings-api.md) for reading and changing settings from code.
+- [API discovery](reference/api-discovery.md) for clients locating the public interface.
+- [Relay protocol](reference/relay-protocol.md) for remote HTTP and AHP WebSocket access.
 
 ## Maintain the extension
 
 - [Architecture](../ARCHITECTURE.md) for module boundaries, session lifetime, and transport.
-- [Agent Host Protocol](AHP-ADOPTION.md) for the production host, supported channels, and protocol version policy.
-- [Webview guidelines](USAGE-guidelines-ui.md) for theme, focus, and accessibility.
-- [Offline config and bridge tests](TESTING-config-and-bridge.md) for local checks with no live account.
-- [Release and publishing](RELEASE.md), [package versioning](../VERSION.md), and [feature versioning](FEATURE-VERSIONING.md).
-- [Pull request evaluations](pullrequests/README.md) for recorded review evidence.
+- [Agent Host Protocol](maintainers/agent-host-protocol.md) for the production host, supported channels, and protocol version policy.
+- [Webview guidelines](maintainers/webview-ui.md) for theme, focus, and accessibility.
+- [Offline config and bridge tests](maintainers/testing.md) for local checks with no live account.
+- [Release and publishing](maintainers/release.md), [package versioning](../VERSION.md), and [feature versioning](maintainers/feature-versioning.md).
+- [Compression implementation](maintainers/compression.md) for request selection and summary behavior.
+- [Pull request evaluations](maintainers/reviews/README.md) for recorded review evidence.
+- [Historical assessments](archive/README.md) for dated audits and investigations.
+
+Use lowercase kebab-case for guide, reference, and maintainer filenames.
+Use `README.md` for directory indexes. Keep in-app manuals in
+`manuals/<locale>/` because the extension opens them by identifier.
+Record completed work in `activities/YYYYMMDDHHmm-description.md` and use
+`docs/PLAN-*.md` for active execution plans.
 
 ### Markdown reference checks
 

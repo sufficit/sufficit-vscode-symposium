@@ -15,7 +15,15 @@ const entries = execFileSync("unzip", ["-Z1", vsix], { encoding: "utf8" })
     .split(/\r?\n/)
     .filter(Boolean);
 
+const manuals = [
+    "extension/docs/manuals/en/compression.md",
+    "extension/docs/manuals/en/openai-history.md",
+    "extension/docs/manuals/pt-br/compression.md",
+    "extension/docs/manuals/pt-br/openai-history.md",
+];
+
 const exact = new Set([
+    ...manuals,
     "extension.vsixmanifest",
     "[Content_Types].xml",
     "extension/package.json",
@@ -55,6 +63,7 @@ const unexpected = entries.filter(
     (entry) => !exact.has(entry) && !entry.startsWith("extension/media/"),
 );
 const required = [
+    ...manuals,
     "extension/package.json",
     "extension/out/extension.js",
     "extension/out/ui/webview.bundle.js",

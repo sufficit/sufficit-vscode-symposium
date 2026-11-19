@@ -18,28 +18,16 @@ Disk reads/writes and shared-file-lock waiting use promises. The lock heartbeats
 - **Fail closed.** `mergePersisted` no longer falls back to the local payload on arbitrary errors. Only a missing file proceeds; syntactically invalid JSON is quarantined (`state.corrupt.*`) and then replaced; every other failure (size/session limits, validation, I/O) rejects the save and leaves the on-disk state untouched, so foreign sessions cannot be lost.
 - **Codex metadata.** `readCodexMeta` is cached by `mtime`+`size` (the discovery stat is passed down, so the metadata cache does not stat the same file again). The earlier `updatedAt === mtime` shortcut in `listCodexSessions` was removed because it ignored size. Unchanged transcripts are not read again; changed ones use bounded prefix/tail reads (the prefix/tail readers still open/stat their file handles).
 
-## Real-state diagnosis (read-only, aggregate)
+## Diagnose and test
 
-`node scripts/diagnose-ahp-state.cjs <state.json>` prints only counts and sizes. Latest read-only sample (diagnostic JSON generated 2026-10-19 14:43:17 UTC): 20,366,392 B, 289 sessions and 579 snapshots; chat snapshots total 19,541,011 B (96%), other snapshots 188,446 B, root 164 B, retained actions 734 / 534,608 B. The chat snapshots contain 277 turns (at most one per chat), but `responseParts` account for 18,900,674 B (92.8% of the whole file): 6,267 tool calls consume 17,629,090 B, versus 2,122 markdown parts at 1,133,165 B, 195 reasoning parts at 66,029 B, and 304 notice parts at 63,213 B. The largest aggregate tool-call fields are `content` 6,086,787 B, `result` 4,649,989 B, `toolInput` 1,888,975 B, and `invocationMessage` 1,673,645 B. This identifies verbose tool payloads, not session/turn count or the retained action log, as the size driver. The diagnostic script's synchronous read/parse measured 24.5/40.9 ms. An earlier read-only sample was 20,527,971 B; the file changed between samples while the application was active. This agent did not write the real state file; the cause of that change is not established. The size-bounding therefore targets tool-call payloads first and preserves session and turn structure.
+Run `node scripts/diagnose-ahp-state.cjs <state.json>` to print aggregate
+counts and sizes without reading conversation text into the output. The
+persistence directory is the `ahp` subdirectory of the extension's VS Code
+global storage.
 
-## Validation and benchmark
-
-`scripts/benchmark-ahp-persistence.cjs <path-to-out/ahp/index.js>` builds 20 sessions x 50 turns x 20,000 tool-result chars (20 MB of tool text), runs five isolated child processes for save and five for load, records elapsed time, maximum timer gap (5 ms interval) and peak-RSS growth, and finally holds the lock 50 ms to simulate a sibling host. The baseline is `git archive f1c4230` compiled in a temp folder with this install's `node_modules`.
-
-Measured (medians of 5 isolated runs, local tmp filesystem):
-
-| Measurement                         |            Baseline f1c4230 |           This branch |
-| ----------------------------------- | --------------------------: | --------------------: |
-| Save completion                     |                   137.80 ms |              64.66 ms |
-| Save max timer gap                  |                   165.18 ms |              21.89 ms |
-| Save peak RSS growth                |                49,364,992 B |          40,931,328 B |
-| Bytes written                       |                   8,387,671 |             1,342,135 |
-| Sessions / turns kept               |                    20 / 412 |            20 / 1,000 |
-| Load (20,325,135 B file) completion |                   149.95 ms |             106.57 ms |
-| Load max timer gap                  |                   150.30 ms |              12.29 ms |
-| Load peak RSS growth                |               105,705,472 B |         102,703,104 B |
-| Occupied lock (50 ms)               | timed out after 2,018.68 ms | saved after 154.08 ms |
-
-Caveats: synthetic uniform fixture; tool text compresses to markers so the size gain is fixture-specific; peak RSS is process-wide `maxRSS` and noisy; the remaining first-save serialization is chunked but each chat state is still stringified synchronously (largest real chat 708 KB); worker start-up would add a few ms to small files; files < 1 MiB are therefore parsed inline. Real tool outputs beyond 1,024 characters are not recoverable from the reconnect cache; the authoritative transcripts remain in each provider's own storage.
-
-Tests (`ahpPersistenceLarge.test.ts`, `codexTranscript.test.ts`, existing suites): 20 MB size bound with all turns preserved, event-loop gap on save and load, incremental re-save, debounce coalescing, fail-closed on an unmergeable valid state (file bytes unchanged, no temp files), quarantine of unparseable state, failed save not advancing the sequence, 4 concurrent writer processes without lost sessions, Codex cache invalidation on size change with preserved mtime.
+Run `npm run verify` for persistence and concurrent writer tests. The
+[benchmark script](../../scripts/benchmark-ahp-persistence.cjs) accepts a
+compiled AHP entry point, produced by `npm run compile:test` before the host
+bundle removes intermediate modules. It measures save and load time, event
+loop delay, and peak memory on synthetic state. Results depend on payload and
+filesystem characteristics.

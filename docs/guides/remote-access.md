@@ -25,7 +25,7 @@ endpoints perigosos têm limite próprio:
 | `allowedLmTools` | `[]` | ferramentas LM do VS Code invocáveis remotamente. Vazio = nenhuma (podem incluir terminal) |
 | `allowExecutableOverride` | `false` | permitir reescrever o binário de spawn (é RCE limpo) |
 | `allowVaultResolve` | `false` | permitir ler segredos do vault via `/vault/resolve` |
-| `allowedHosts` | `[]` | valores aceitos no cabeçalho HTTP `Host` (anti DNS-rebinding), não endereços de bind. Loopback sempre passa; inclua o hostname/IP efetivamente usado pelo túnel ou proxy |
+| `allowedHosts` | `[]` | valores aceitos no cabeçalho HTTP `Host` (anti DNS-rebinding), não endereços de bind. Vazio desativa a validação de Host. Loopback é aceito com a lista configurada. Inclua o hostname/IP usado pelo túnel ou proxy |
 
 Exemplo mínimo seguro (troque os placeholders):
 
@@ -76,9 +76,9 @@ Para produção, publique em conjunto uma versão da extensão e uma versão do
 gateway `sufficit-ai` que implementem `socket-open`, `socket-opened`,
 `socket-frame` e `socket-close`. Um gateway antigo ainda pode entregar os
 arquivos da PWA, mas o chat não conecta porque não transporta `/ahp`. Consulte
-[RELAY-PROTOCOL.md](RELAY-PROTOCOL.md) para o contrato e os limites.
+[protocolo do relay](../reference/relay-protocol.md) para o contrato e os limites.
 
-## Fase 0 — provar que o celular alcança (sem escrever cliente)
+## Conectar pela rede privada Tailscale
 
 1. **Ligar o bridge.** Aplique o `settings.json` acima; a Bridge reinicia
    automaticamente. No canal de saída "Symposium" deve aparecer `[bridge] listening on
@@ -161,11 +161,8 @@ GET  /vault/resolve?reference=...                 → 403 vault resolve disabled
 Teste também pelo cliente AHP que `createSession` com `cwd: "/etc"` é
 recusado quando `/etc` não pertence a `allowedRoots`.
 
-## Próximas fases
+## Referências
 
-- **PWA AHP** — implementada: o browser usa o cliente AHP, snapshots e ações
-  ordenadas; não existe shim REST de chat.
-- **Fase 2** — login Sufficit (client PKCE novo + validação de JWT no bridge),
-  registro de máquinas no hub, Web Push no `turn-end`.
-
-Ver o brief de arquitetura para o desenho completo e o plano por-arquivo.
+Consulte a [descoberta da API](../reference/api-discovery.md) para a versão
+AHP disponível e o [protocolo do relay](../reference/relay-protocol.md)
+para o transporte pelo gateway.

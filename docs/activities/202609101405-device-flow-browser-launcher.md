@@ -16,6 +16,6 @@ A validação de CI também exigiu explicitar o mapeamento NuGet de NATS.Client 
 
 O VSIX validado foi instalado pelo CLI local e pelo code-server em development; ambos listam `2026.910.1`. SHA-256 do pacote local instalado: `8435dfe3a8d684227708e225256db07f58c65177428683bee4603be3965876f6`. SHA-256 do artefato Identity: `dd7cfb3ddff11b733c30439e9593c9fa2e4a77b616af14caf9df615ee2f9c9c1`.
 
-A ativação nas janelas abertas **não está confirmada**. A janela local tinha turnos ativos e não foi interrompida. No code-server, o Extension Host de PID 1170996 foi encerrado somente após confirmar ociosidade, fila vazia e identidade do processo; ele não reiniciou automaticamente. É necessário recarregar essa janela e confirmar `activated version=2026.910.1` no log, conforme [RELEASE.md](../RELEASE.md). O serviço inteiro e outros hosts não foram reiniciados.
+A ativação nas janelas abertas **não está confirmada**. A janela local tinha turnos ativos e não foi interrompida. No code-server, o Extension Host de PID 1170996 foi encerrado somente após confirmar ociosidade, fila vazia e identidade do processo; ele não reiniciou automaticamente. É necessário recarregar essa janela e confirmar `activated version=2026.910.1` no log, conforme [RELEASE.md](../maintainers/release.md). O serviço inteiro e outros hosts não foram reiniciados.
 
 O plano ativo PLAN-device-popup-release.md permanece para acompanhar essa pendência; este registro não declara a ativação concluída. PLAN-live-retry.md pertence a outra atividade e foi preservado.

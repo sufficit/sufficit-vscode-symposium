@@ -28,4 +28,4 @@ completed turn. If the error happened on the first turn, you can start a
 new session.
 
 For the distinction between displayed transcripts and request context in
-OpenAI-compatible sessions, see [Context and history](CONTEXT-HISTORY.md).
+OpenAI-compatible sessions, see [Context and history](context-and-history.md).

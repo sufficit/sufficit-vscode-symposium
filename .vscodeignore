@@ -13,6 +13,8 @@ tsconfig.json
 tsconfig.webview.json
 ARCHITECTURE.md
 docs/**
+!docs/manuals/
+!docs/manuals/**
 PLAN-*.md
 .vscode/**
 **/.worktrees/**

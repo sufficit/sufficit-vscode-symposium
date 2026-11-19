@@ -45,7 +45,7 @@ hand off work between agents from the chat header.
 | Sufficit AI | Built-in OpenAI-compatible adapter with Sufficit Identity. |
 | Claude Code | Runs `claude` and resumes conversations through the CLI. |
 | Codex CLI | Runs `codex exec --json` and resumes by native session ID. |
-| Genius CLI | Runs `genius exec --input-json --json` and resumes by native session UUID. [Genius setup and authentication](docs/GENIUS-CLI-ADAPTER.md) |
+| Genius CLI | Runs `genius exec --input-json --json` and resumes by native session UUID. [Genius setup and authentication](docs/guides/genius.md) |
 | GitHub Copilot CLI | Runs `copilot -p --output-format json` and resumes by CLI session ID. |
 
 Set a CLI executable path under **Settings → Symposium** if VS Code cannot
@@ -60,8 +60,8 @@ the target agent. Symposium starts a session on that backend with the prior
 conversation as context. The original session remains available in the list.
 
 For behavior and configuration, see the [documentation index](docs/README.md).
-Start with [session recovery](docs/SESSION-RECOVERY.md),
-[context and history](docs/CONTEXT-HISTORY.md), or [remote access](docs/REMOTE-ACCESS.md).
+Start with [session recovery](docs/guides/session-recovery.md),
+[context and history](docs/guides/context-and-history.md), or [remote access](docs/guides/remote-access.md).
 
 ## Development
 
@@ -78,5 +78,5 @@ Use `npm run verify:package` to build and validate a VSIX before packaging or pu
 Create linked Git worktrees inside the repository with
 `git worktree add .worktrees/<name> <branch>`. Git ignores `.worktrees/`.
 
-See the [architecture](ARCHITECTURE.md), [release procedure](docs/RELEASE.md),
+See the [architecture](ARCHITECTURE.md), [release procedure](docs/maintainers/release.md),
 and [Markdown reference checks](docs/README.md#markdown-reference-checks).

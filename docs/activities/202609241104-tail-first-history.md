@@ -9,7 +9,7 @@ O usuário relatou que, ao abrir uma sessão longa, o compositor percorria visua
 - `renderLog.readRenderPage` lê a cauda por offset e usa fronteiras de mensagem do usuário para não partir ferramentas/respostas no meio; linhas incompletas ficam para o seguidor.
 - `controllerHistory` mantém todas as páginas na fonte visual e identifica as páginas para evitar colisão de IDs AHP; `controllerPersist` semeia só a página recente e recupera separadamente fila e plano atuais.
 - O webview recebe `todos-snapshot` e pinta o estado consolidado. Renderização de histórico não altera o compositor nem reinicia timers de tarefas concluídas. A trava da rolagem volta a liberar após cada página.
-- Identidade visual/tokens existentes preservados. Referência de interação: intenção tail-first relatada pelo usuário; `refero-design` (movimento funcional), `impeccable` (medir antes/depois) e `sufficit-frontend` (validar estados reais) guiaram a correção. Contrato permanente: [SESSION-LOADING.md](../SESSION-LOADING.md).
+- Identidade visual/tokens existentes preservados. Referência de interação: intenção tail-first relatada pelo usuário; `refero-design` (movimento funcional), `impeccable` (medir antes/depois) e `sufficit-frontend` (validar estados reais) guiaram a correção. Contrato permanente: [SESSION-LOADING.md](../maintainers/session-history.md).
 
 ## Evidência
 

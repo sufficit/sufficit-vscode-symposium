@@ -20,7 +20,7 @@ mensagem do usuário e pares de ferramentas mesmo quando excedem o teto nominal.
 O aviso é temporário e a seleção não altera o ledger. `read_session` oferece cursor
 por caracteres no corpo, estável quando novas mensagens acrescentam ao histórico.
 
-Contrato, controles, defaults e limites: [CONTEXT-HISTORY.md](../CONTEXT-HISTORY.md).
+Contrato, controles, defaults e limites: [CONTEXT-HISTORY.md](../guides/context-and-history.md).
 Entrega na branch `feat/context-history-settings`, para revisão, sem publicação.
 
 ## Validação

@@ -1,5 +1,7 @@
 # Auditoria de fluxo conversacional e controle de escopo — Sufficit VS Code Symposium
 
+> Registro histórico. Consulte o [índice da documentação](../README.md) para o comportamento atual.
+
 - **Data:** 2026-07-28 23:26
 - **Modelo:** GLM-5.2 (Explore subagent)
 - **Escopo:** `src/**/*.ts` somente — nenhuma documentação local (`.md`, `docs/`, README, planos, análises prévias) foi consultada. O juízo veio exclusivamente da leitura do código-fonte.
@@ -264,4 +266,4 @@ O codebase mostra evidência clara de raciocínio cuidadoso sobre cada um destes
 
 ## Related documents
 
-- [Audit prompt](COMPARISON-AGENT-CONVERSATION-FLOW-AUDIT.md) — the instructions this audit was produced from.
+- [Audit prompt](conversation-flow-audit-template.md) — the instructions this audit was produced from.

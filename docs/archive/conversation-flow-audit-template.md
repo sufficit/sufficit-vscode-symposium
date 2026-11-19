@@ -1,5 +1,7 @@
 # Prompt: auditoria de fluxo conversacional e controle de escopo do agente
 
+> Registro histórico. Consulte o [índice da documentação](../README.md) para o comportamento atual.
+
 > **Instruções para o subagente executor:**
 >
 > 1. **NÃO leia nenhuma documentação local** — ignore TODOS os arquivos `.md`,

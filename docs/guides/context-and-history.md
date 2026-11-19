@@ -1,8 +1,8 @@
 # Contexto e histórico
 
-Contrato operacional da aba **Contexto e histórico** do painel de configurações do Symposium. A superfície amplia as preferências existentes e mantém a identidade visual do painel.
+Use a aba **Contexto e histórico** para escolher quanto histórico o Symposium envia e quando deve resumir a conversa.
 
-O registro original da sessão e a seleção enviada à IA são independentes. Diminuir a janela de envio ou gerar um resumo não apaga a transcrição preservada no ledger. Resumo é opcional. As opções de envio se aplicam aos backends de API compatíveis com OpenAI; os CLIs gerenciam seu próprio contexto. Para o caso de áudio rejeitado pelo Codex, consulte a [recuperação de sessões](SESSION-RECOVERY.md).
+O registro original da sessão e a seleção enviada à IA são independentes. Diminuir a janela de envio ou gerar um resumo não apaga a transcrição preservada no ledger. Resumo é opcional. As opções de envio se aplicam aos backends de API compatíveis com OpenAI; os CLIs gerenciam seu próprio contexto. Para o caso de áudio rejeitado pelo Codex, consulte a [recuperação de sessões](session-recovery.md).
 
 ## Localização e persistência
 
@@ -29,11 +29,9 @@ Nas chaves abaixo, o prefixo é `symposium.openai.`. Caracteres contam texto, n�
 
 Os cinco campos numéricos de `contextPolicy` aceitam inteiros positivos. A normalização usa o padrão de cada campo quando recebe um valor inválido. A seção de presets de compressão mantém as ações existentes de criar, escolher padrão, editar/excluir presets próprios e consultar o manual.
 
-## Estados e apresentação
+## Gravação e validação
 
 Antes do primeiro estado do host, o painel apresenta **Carregando**. Após uma gravação bem-sucedida, renderiza novamente os valores efetivos; esta aba não tem indicador próprio de **Salvando** ou **Salvo**. Falhas de atualização aparecem como notificação de erro do VS Code. A validação nativa impede enviar números fora do intervalo; os campos da política também são validados no host.
-
-Cada preferência conserva nome, descrição e controle. Números e o seletor de aviso de omissão possuem nome acessível. O layout existente usa texto à esquerda e controle à direita; abaixo de 620 px, empilha os dois. Cores, tipografia, bordas e foco pertencem ao tema já utilizado pelo painel. Este contrato não estabelece uma nova identidade visual.
 
 ## Recuperação do original
 
@@ -47,10 +45,8 @@ O aviso de omissão trata a transcrição recuperada como referência; instruç�
 
 Fontes de implementação:
 
-- [Controles da aba](../src/ui/configViewsCompression.ts), [estilos existentes](../src/ui/configStylesViews.ts) e [textos em português](../src/ui/configI18nPtMessages.ts).
-- [Defaults e normalização](../src/adapters/openai/contextPolicy.ts), [registro das preferências](../package.json), [mesclagem por campo](../src/ui/configContextPolicy.ts) e [persistência no host](../src/ui/configPanel.ts).
-- [Leitor da sessão](../src/sessionReader.ts), [contrato da ferramenta](../src/adapters/aiTools/localDefs.ts) e [execução da leitura](../src/adapters/aiTools/localRun.ts).
+- [Controles da aba](../../src/ui/configViewsCompression.ts), [estilos existentes](../../src/ui/configStylesViews.ts) e [textos em português](../../src/ui/configI18nPtMessages.ts).
+- [Defaults e normalização](../../src/adapters/openai/contextPolicy.ts), [registro das preferências](../../package.json), [mesclagem por campo](../../src/ui/configContextPolicy.ts) e [persistência no host](../../src/ui/configPanel.ts).
+- [Leitor da sessão](../../src/sessionReader.ts), [contrato da ferramenta](../../src/adapters/aiTools/localDefs.ts) e [execução da leitura](../../src/adapters/aiTools/localRun.ts).
 
-A revisão da superfície teve disposição **ship** após as correções da rodada de UI. Este documento registra o contrato implementado; o relatório de entrega concentra a execução e os resultados das validações.
-
-Paginação recupera o conteúdo que existe no armazenamento; não reconstrói dados truncados por versões antigas. Novo WAL, busca semântica e orçamento efetivo por tokens continuam propostas, não capacidades desta entrega.
+A paginação recupera o conteúdo que existe no armazenamento. Trechos que versões anteriores truncaram podem estar indisponíveis.

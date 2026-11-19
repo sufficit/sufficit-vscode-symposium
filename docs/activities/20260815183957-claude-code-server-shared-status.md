@@ -27,7 +27,7 @@ Claude ainda trabalhava.
   turnos longos.
 
 O relatório detalhado que originou o ajuste foi preservado em
-[`docs/INVESTIGATION-sol.md`](../INVESTIGATION-sol.md).
+[`docs/INVESTIGATION-sol.md`](../archive/claude-history-projection-investigation.md).
 
 ## Implementação
 

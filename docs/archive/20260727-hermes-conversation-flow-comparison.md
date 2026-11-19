@@ -1,10 +1,12 @@
 # Symposium × Hermes Agent: fluxo conversacional, retomada e controle de escopo
 
+> Registro histórico. Consulte o [índice da documentação](../README.md) para o comportamento atual.
+
 Status: análise e plano; nenhuma mudança funcional foi implementada por este documento.
 
 > Nota de 2026-08-11: esta é uma fotografia histórica. A migração AHP posterior
 > removeu o handler direto da UI e tornou `symposium/messageSubmitted` o único
-> comando de submissão; veja [Agent Host Protocol adoption](AHP-ADOPTION.md).
+> comando de submissão; veja [Agent Host Protocol adoption](../maintainers/agent-host-protocol.md).
 
 Data da análise: 2026-07-27.
 
@@ -87,7 +89,7 @@ O problema mais grave não é apenas custo ou excesso de ferramentas: o runtime 
 
 ### 1. Backlog com autoridade maior que a mensagem nova
 
-Em [`src/ui/controllerHubState.ts`](../src/ui/controllerHubState.ts), `pendingTasksSummary()` produz:
+Em [`src/ui/controllerHubState.ts`](https://github.com/sufficit/sufficit-vscode-symposium/blob/963e9263c078fcf669e2d34dc9bce5a478454412/src/ui/controllerHubState.ts), `pendingTasksSummary()` produz:
 
 ```text
 [TASKS — current task marked below...]
@@ -96,7 +98,7 @@ Up next:
 - ...
 ```
 
-Em [`src/ui/outboundPrompt.ts`](../src/ui/outboundPrompt.ts), esse bloco:
+Em [`src/ui/outboundPrompt.ts`](https://github.com/sufficit/sufficit-vscode-symposium/blob/963e9263c078fcf669e2d34dc9bce5a478454412/src/ui/outboundPrompt.ts), esse bloco:
 
 - é injetado em toda mensagem;
 - entra antes dos demais prefixos;
@@ -112,23 +114,23 @@ user: pare a implementação; crie apenas um TODO
 
 A mensagem de usuário é mais recente, mas tem papel de menor autoridade. Esperar que o modelo sempre deduza a precedência temporal correta é frágil.
 
-O fallback de planos nativos tem o mesmo comportamento. [`src/adapters/todos.ts`](../src/adapters/todos.ts) transforma `lastTodos` em um novo bloco `[PLAN — ... CURRENT ...]` e [`src/ui/chatController.ts`](../src/ui/chatController.ts) o envia em todo dispatch.
+O fallback de planos nativos tem o mesmo comportamento. [`src/adapters/todos.ts`](../../src/adapters/todos.ts) transforma `lastTodos` em um novo bloco `[PLAN — ... CURRENT ...]` e [`src/ui/chatController.ts`](https://github.com/sufficit/sufficit-vscode-symposium/blob/963e9263c078fcf669e2d34dc9bce5a478454412/src/ui/chatController.ts) o envia em todo dispatch.
 
 ### 2. Checkpoint e tarefa são a mesma entidade operacional
 
 O conflito é produzido por uma cadeia concreta:
 
-1. [`src/ui/outboundPrompt.ts`](../src/ui/outboundPrompt.ts) instrui o agente a chamar `memory_save(type="task-checkpoint")` para cada resultado, decisão e marco.
-2. [`src/sync/tasks.ts`](../src/sync/tasks.ts) considera tarefa todo tipo cujo nome começa por `task`.
+1. [`src/ui/outboundPrompt.ts`](https://github.com/sufficit/sufficit-vscode-symposium/blob/963e9263c078fcf669e2d34dc9bce5a478454412/src/ui/outboundPrompt.ts) instrui o agente a chamar `memory_save(type="task-checkpoint")` para cada resultado, decisão e marco.
+2. [`src/sync/tasks.ts`](../../src/sync/tasks.ts) considera tarefa todo tipo cujo nome começa por `task`.
 3. `fetchSessionTasks()` ordena os registros do mais novo para o mais antigo.
-4. [`src/ui/controllerHubState.ts`](../src/ui/controllerHubState.ts) escolhe o primeiro registro pendente como `CURRENT`.
+4. [`src/ui/controllerHubState.ts`](https://github.com/sufficit/sufficit-vscode-symposium/blob/963e9263c078fcf669e2d34dc9bce5a478454412/src/ui/controllerHubState.ts) escolhe o primeiro registro pendente como `CURRENT`.
 5. `fetchLatestCheckpoint()` também prefere o `task-checkpoint` pendente mais novo.
 
 Consequência: “corrigido e implantado” pode ser salvo como checkpoint e imediatamente virar a próxima tarefa executável. Estado observado e intenção autorizada estão no mesmo namespace.
 
 ### 3. Resume checkpoint entra em toda “continuidade”
 
-[`src/ui/controllerDispatchPrep.ts`](../src/ui/controllerDispatchPrep.ts) injeta o checkpoint mais recente quando:
+[`src/ui/controllerDispatchPrep.ts`](https://github.com/sufficit/sufficit-vscode-symposium/blob/963e9263c078fcf669e2d34dc9bce5a478454412/src/ui/controllerDispatchPrep.ts) injeta o checkpoint mais recente quando:
 
 - o backend é role-aware;
 - existe Hub;
@@ -139,7 +141,7 @@ Não há verificação de que a nova mensagem continua o mesmo objetivo. Uma men
 
 ### 4. Compactação livre produz instruções executáveis
 
-[`src/adapters/openai/compactor.ts`](../src/adapters/openai/compactor.ts) pede ao modelo um resumo denso que preserve:
+[`src/adapters/openai/compactor.ts`](../../src/adapters/openai/compactor.ts) pede ao modelo um resumo denso que preserve:
 
 - decisões;
 - fatos;
@@ -160,7 +162,7 @@ Depois, o summary sintético usa `developer` quando suportado. A primeira compac
 
 ### 5. Retry duplica intenção em vez de criar nova tentativa do mesmo turno
 
-[`src/ui/surfaceBranching.ts`](../src/ui/surfaceBranching.ts) reenvia o texto original em um Retry. Em [`src/adapters/openai/session.ts`](../src/adapters/openai/session.ts):
+[`src/ui/surfaceBranching.ts`](../../src/ui/surfaceBranching.ts) reenvia o texto original em um Retry. Em [`src/adapters/openai/session.ts`](../../src/adapters/openai/session.ts):
 
 - um `assistant: (previous turn interrupted)` fecha a alternância;
 - um novo preâmbulo de continuação é persistido;
@@ -168,7 +170,7 @@ Depois, o summary sintético usa `developer` quando suportado. A primeira compac
 - `runner.run()` inicia outro `turnNo`.
 
 À época, o `clientMessageId` de
-[`src/ui/webview/composer.ts`](../src/ui/webview/composer.ts) servia somente para
+[`src/ui/webview/composer.ts`](../../src/ui/webview/composer.ts) servia somente para
 reconciliar a mensagem otimista, enquanto o handler direto não mantinha um
 índice de IDs aceitos. Esse caminho foi removido pela migração AHP.
 
@@ -182,7 +184,7 @@ Existe apenas “enviar o mesmo texto outra vez”.
 
 ### 6. Queue é o padrão para uma mensagem enviada durante execução
 
-O padrão `symposium.chat.whenBusy` é `queue`. Em [`src/ui/chatController.ts`](../src/ui/chatController.ts), uma mensagem regular durante um turno entra em FIFO e só é disparada quando o turno anterior termina sem erro.
+O padrão `symposium.chat.whenBusy` é `queue`. Em [`src/ui/chatController.ts`](https://github.com/sufficit/sufficit-vscode-symposium/blob/963e9263c078fcf669e2d34dc9bce5a478454412/src/ui/chatController.ts), uma mensagem regular durante um turno entra em FIFO e só é disparada quando o turno anterior termina sem erro.
 
 Isso é correto para “quando terminar, rode os testes”, mas ruim para:
 

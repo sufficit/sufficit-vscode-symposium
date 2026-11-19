@@ -131,15 +131,13 @@ flowchart TD
 The store in `ahp/channelStore.ts` provides sequencing, snapshots, and replay.
 The public in-process API also serves other VS Code extensions. Optional
 protocol channels are capability-gated. See the
-[AHP implementation and version policy](docs/AHP-ADOPTION.md) for supported
+[AHP implementation and version policy](docs/maintainers/agent-host-protocol.md) for supported
 channels, protocol pinning, and operational requirements.
 
 ## Related documents
 
-- [Tool-name mapping boundaries](docs/ARCHITECTURE-tool-name-mapping-boundaries.md)
-- [AHP async persistence](docs/async-ahp-persistence.md)
-- [Opening long sessions](docs/SESSION-LOADING.md)
-- [Compression system — technical documentation](docs/compression-technical.md)
-- [Symposium × Hermes Agent conversation flow comparison](docs/COMPARISON-HERMES-CONVERSATION-FLOW.md)
-- [Conversation flow and scope control audit (2026-07-28)](docs/AUDIT-20260728-232617-glm-5.2.md)
-- [Claude history-to-AHP flow diagnostic notes](docs/INVESTIGATION-sol.md)
+- [Tool-name mapping boundaries](docs/maintainers/tool-name-mapping.md)
+- [AHP async persistence](docs/maintainers/ahp-persistence.md)
+- [Opening long sessions](docs/maintainers/session-history.md)
+- [Compression system — technical documentation](docs/maintainers/compression.md)
+- [Historical assessments](docs/archive/README.md)

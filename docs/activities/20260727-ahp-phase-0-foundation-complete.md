@@ -46,4 +46,4 @@ can become a client-facing authority.
 
 Host models, event projection, persistence, authenticated WebSocket transport,
 PWA/editor migration and optional channels remain open. Their independent
-plans are indexed in [`AHP-ADOPTION.md`](../AHP-ADOPTION.md#execution-backlog).
+plans are indexed in [`AHP-ADOPTION.md`](../maintainers/agent-host-protocol.md#delivery-record).

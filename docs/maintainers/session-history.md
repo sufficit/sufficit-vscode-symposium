@@ -1,6 +1,6 @@
 # Abertura de sessões longas
 
-O chat abre pelo trecho recente. Se há `render.jsonl`, ele é a fonte visual canônica: contém mensagens do usuário, ferramentas, diffs e avisos que a transcrição nativa do adaptador pode omitir. A primeira página e as seguintes usam offsets de bytes desse mesmo arquivo; não se alterna para o JSONL nativo no meio da paginação. Sem render log, aplica-se a paginação própria do adaptador.
+O chat abre pelo trecho recente. Se há `render.jsonl`, ele é a fonte visual canônica: contém mensagens do usuário, ferramentas, diffs e avisos que a transcrição nativa do adaptador pode omitir. A primeira página e as seguintes usam offsets de bytes desse mesmo arquivo; não se alterna para o JSONL nativo no meio da paginação. Sem render log, aplica-se a paginação própria do adaptador. Sessões Codex recuperadas pela versão 2026.1119.1 podem ter o marcador legado `codex-recovered-history`, que faz a leitura pela API paginada do Codex. O fluxo atual preserva o ledger ao recuperar o contexto.
 
 `readRenderPage` procura uma fronteira de mensagem do usuário e devolve um turno completo, até o offset solicitado. A meta é cerca de 1 MB por página, mas um turno individual pode ultrapassá-la. O cursor da página anterior continua estável quando outro processo acrescenta registros ao final. Linhas incompletas não são projetadas; o seguidor as lê quando terminam.
 

@@ -1,10 +1,9 @@
 # Device Flow: abertura e fechamento do navegador
 
-O login remoto/web do Symposium usa Device Flow. Desde 2026.910.1, a URL
+O login remoto/web do Symposium usa Device Flow. A URL
 `/connect/device` do Identity é transformada em `/device/launch`, na mesma
 origem, levando somente user_code e launch_mode=popup. Outros caminhos de
-provedores mantêm a URL original. A página exige o Identity com suporte ao
-launcher; publique o servidor antes de distribuir esta versão do Symposium.
+provedores mantêm a URL original. O ambiente do Identity precisa oferecer suporte ao launcher.
 
 O launcher oferece **Abrir autenticação**. O clique abre um popup controlado
 pela página de mesma origem do Identity; ela acompanha a conclusão, fecha o
@@ -19,4 +18,4 @@ O Device Flow continua buscando o token no host. Nenhum token, device_code,
 URL de callback ou resultado autenticado é transmitido por postMessage.
 Copiar URL e o fallback quando openExternal falha também usam o launcher.
 
-[Contrato do servidor e casos de segurança](../../sufficit-identity/docs/design/DESIGN-DEVICE-FLOW-POPUP.md).
+[Contrato do servidor e casos de segurança](https://github.com/sufficit/sufficit-identity/blob/main/docs/design/DESIGN-DEVICE-FLOW-POPUP.md).

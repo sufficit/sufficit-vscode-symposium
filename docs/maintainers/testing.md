@@ -1,7 +1,6 @@
 # Testing — Config UI, Public API e Remote Bridge (offline)
 
-Tudo funciona **sem o sufficit-ai** (modo offline). O hub de sync ainda não está
-ligado; estado de saúde aparece como `unknown`.
+Os testes do painel e da Bridge local podem ser feitos sem uma conta Sufficit. Para testar o modo offline, deixe a URL do hub vazia e o relay desligado. Testes que enviam mensagens exigem um backend disponível.
 
 ## 1. Build e instalar
 
@@ -18,7 +17,7 @@ npm run compile
    Cria recursos de exemplo em `~/.symposium/repo`.
 3. Abas **Agentes/Skills/Tools/Instruções**: listam os recursos. Clique numa linha
    para abrir o arquivo; **✕** exclui; **+ Novo** cria.
-4. Aba **Backends**: mostra disponibilidade dos CLIs (claude/codex/copilot).
+4. Aba **Backends**: mostra a disponibilidade dos adaptadores instalados.
 5. Aba **Sync**: saúde do hub (`unknown` offline), último sync, pushes pendentes.
 6. Editar um arquivo no `repo/` atualiza a lista ao vivo (watcher).
 
@@ -27,8 +26,9 @@ npm run compile
 De outra extensão / console de extension host:
 
 ```js
-const sym = vscode.extensions.getExtension("sufficit.sufficit-vscode-symposium").exports;
-sym.version;                       // "1.0.0"
+const extension = vscode.extensions.getExtension("sufficit.sufficit-vscode-symposium");
+const sym = await extension.activate();
+sym.version;                       // versão da API pública
 sym.resources.seed();             // cria exemplos
 sym.resources.scan();             // lista recursos
 const id = sym.sessions.create("claude", { cwd: "/algum/projeto" });
@@ -43,6 +43,8 @@ Ligar nas settings:
 
 ```jsonc
 "symposium.bridge.enabled": true,
+"symposium.bridge.relay": "off",
+"symposium.bridge.allowedHosts": ["127.0.0.1"],
 "symposium.bridge.pwa": true,
 "symposium.bridge.ahp": true,
 "symposium.bridge.token": "meu-token",   // vazio gera token efêmero (vai no Output: Symposium)

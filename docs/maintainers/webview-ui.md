@@ -4,10 +4,10 @@ Durable UI/UX standard for the Symposium VS Code / code-server extension.
 Promoted from the 2026-06-19 UI/UX audit (archived under `docs/activities/`).
 
 Use native VS Code styling and theme tokens in the chat and settings panels.
-The chat webview is authored in [TypeScript](../src/ui/webview/index.ts) and
-[CSS](../src/ui/webview/chat.css). The settings panel is rendered by
-[`configHtml.ts`](../src/ui/configHtml.ts). VS Code menus and commands are
-registered in [the extension manifest](../package.json).
+The chat webview is authored in [TypeScript](../../src/ui/webview/index.ts) and
+[CSS](../../src/ui/webview/chat.css). The settings panel is rendered by
+[`configHtml.ts`](../../src/ui/configHtml.ts). VS Code menus and commands are
+registered in [the extension manifest](../../package.json).
 
 ## Principles
 
@@ -40,8 +40,8 @@ registered in [the extension manifest](../package.json).
 
 ## Build and validate
 
-The chat loads bundled assets through [webview URIs](../src/ui/chatSurfaceAssets.ts).
-Keep browser messages within the [typed host contract](../src/protocol/chat.ts).
+The chat loads bundled assets through [webview URIs](../../src/ui/chatSurfaceAssets.ts).
+Keep browser messages within the [typed host contract](../../src/protocol/chat.ts).
 Run `npm run verify` to check both TypeScript targets, webview assets, and
-the test suite. Use the [offline test guide](TESTING-config-and-bridge.md) to
+the test suite. Use the [offline test guide](testing.md) to
 validate settings and bridge changes without a live account.

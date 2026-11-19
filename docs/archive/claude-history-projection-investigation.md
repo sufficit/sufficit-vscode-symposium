@@ -1,3 +1,5 @@
+> Registro histórico. Consulte o [índice da documentação](../README.md) para o comportamento atual.
+
 Vou fazer uma revisão diagnóstica, sem alterar o código nesta etapa: rastrear o fluxo Claude do arquivo de histórico até o AHP/webview, confrontar com os logs locais e verificar separadamente por que estado/eventos não chegam em tempo real e por que os divisores estão sendo multiplicados. Depois entrego o parecer com causas, riscos e ordem de correção.
 
 
