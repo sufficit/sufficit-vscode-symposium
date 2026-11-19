@@ -61,6 +61,7 @@ test("posts the audio with bearer token and short language, returns trimmed text
         assert.equal(calls[0].url, "https://ai.sufficit.com.br/openai/v1/audio/transcriptions");
         const headers = calls[0].init.headers as Record<string, string>;
         assert.equal(headers.authorization, "Bearer tok-1");
+        assert.equal(headers["User-Agent"], "symposium-vscode");
         const form = calls[0].init.body as FormData;
         assert.equal(form.get("language"), "pt");
         assert.ok(form.get("file"));

@@ -96,7 +96,7 @@ async function post(
     form.append("language", shortLanguage(request.language));
     return fetchImpl(url, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${token}`, "User-Agent": "symposium-vscode" },
         body: form,
         signal: AbortSignal.timeout(SUFFICIT_STT_TIMEOUT_MS),
     });
