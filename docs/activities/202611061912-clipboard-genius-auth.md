@@ -11,3 +11,9 @@ Genius CLI 0.152.2 no development: `auth status` retorna `not_authenticated`. Is
 ## Validação e entrega
 
 `npm run verify:package` aprovado: 1.025 testes, lint, formatação, tipos, cobertura, verificações estruturais, build e VSIX. Versão 2026.1106.1 instalada e listada no code-server development; ativação requer reload da janela. Entrega na main, sem tag de publicação. Testes cobrem confirmação após escrita, falha do host, preservação de seleção e ausência de falso sucesso. Sem comprovação interativa do clipboard no navegador do usuário.
+
+## Encerramento em 19/11/2026
+
+A conta do titular tinha uma sessão compartilhada do Symposium salva no code-server development após o último `invalid_grant` observado. A rotina de renovação do Symposium obteve um token válido usando o bloqueio do armazenamento compartilhado. O Genius CLI 0.152.2, sem login próprio no development, recebeu esse token pelo mesmo mecanismo usado pelo adaptador e concluiu um turno de teste com status `completed`, saída 0 e a resposta esperada `SYMPOSIUM_OK`.
+
+A entrega original e a validação de cópia permanecem registradas acima. A publicação está no [registro da release 2026.1106.1](202611061920-release-2026-1106-1.md). O teste final cobriu a renovação compartilhada e a execução do Genius no ambiente afetado.
