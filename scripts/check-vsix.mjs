@@ -134,7 +134,8 @@ const budgets = new Map([
     // and 339177 bytes in the webview. The 1 MiB archive cap is unchanged.
     // Same-session recovery adds the confirmed revert and controller rehydration.
     ["extension/out/extension.js", 937 * 1024],
-    ["extension/out/ui/webview.bundle.js", 332 * 1024],
+    // Updating completed Codex searches in place brings the webview to 340119 bytes.
+    ["extension/out/ui/webview.bundle.js", 333 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);
 for (const [entry, budget] of budgets) {
