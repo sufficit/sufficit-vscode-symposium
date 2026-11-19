@@ -84,7 +84,7 @@ export function applyEvent(ev: AgentEvent, errorTurnId?: string, historical = fa
         });
     } else if (ev.kind === "tool-output") fillToolResult(ev.toolId, ev.text, false);
     else if (ev.kind === "tool-end") {
-        fillToolResult(ev.toolId, ev.result, true);
+        fillToolResult(ev.toolId, ev.result, true, ev.detail);
         if (ev.todos) {
             renderTool("TodoWrite", "", { todos: ev.todos });
         }

@@ -109,7 +109,13 @@ export function codexToolEnd(item: Record<string, unknown>): ToolEnd | undefined
         };
     }
     if (type === "web_search") {
-        return { kind: "tool-end", toolName: "web_search", toolId, result: statusResult(item) };
+        return {
+            kind: "tool-end",
+            toolName: "web_search",
+            toolId,
+            detail: searchDetail(item),
+            result: statusResult(item),
+        };
     }
     if (type === "image_view") {
         return { kind: "tool-end", toolName: "view_image", toolId };
@@ -204,13 +210,27 @@ function statusResult(item: Record<string, unknown>): string | undefined {
 }
 
 function searchDetail(item: Record<string, unknown>): string | undefined {
-    const query = item.query;
-    if (typeof query === "string") return query;
-    if (Array.isArray(query)) return query.map(String).join(", ");
-    const action = item.action;
-    if (!action || typeof action !== "object") return undefined;
-    const record = action as Record<string, unknown>;
-    return stringValue(record.query) ?? stringValue(record.url) ?? stringValue(record.pattern);
+    const action =
+        item.action && typeof item.action === "object"
+            ? (item.action as Record<string, unknown>)
+            : {};
+    return (
+        searchQueries(action.queries) ??
+        searchQueries(item.query) ??
+        searchQueries(action.query) ??
+        stringValue(action.url) ??
+        stringValue(action.pattern)
+    );
+}
+
+function searchQueries(value: unknown): string | undefined {
+    if (!Array.isArray(value)) return stringValue(value)?.trim() || undefined;
+    return (
+        value
+            .map((query) => stringValue(query)?.trim())
+            .filter(Boolean)
+            .join(", ") || undefined
+    );
 }
 
 function isOpaqueWebSearchAction(action: unknown): boolean {

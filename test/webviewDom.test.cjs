@@ -475,6 +475,52 @@ test("web-search activity explains opaque Codex actions in live and stored rows"
     harness.dom.window.close();
 });
 
+test("completed web-search terms replace the same live AHP row and survive hydration", async () => {
+    const { chatReducer } = require("../out/ahp/chatReducer.js");
+    const harness = createHarness();
+    const resource = "ahp-chat:/11111111-1111-5111-8111-111111111111";
+    let state = { resource, title: "Search", status: 1, turns: [], modifiedAt: new Date(0).toISOString() };
+    let serverSeq = 1;
+    const frame = (value) => harness.deliver({ type: "ahp-frame", frame: { generation: 1, ...value } });
+    const snapshot = () => frame({ kind: "snapshot", snapshot: { resource, fromSeq: serverSeq, state } });
+    const apply = (type, values) => {
+        const action = { type, turnId: "search-turn", ...values };
+        state = chatReducer(state, action);
+        frame({ kind: "action", envelope: { channel: resource, serverSeq: ++serverSeq, action } });
+    };
+    harness.deliver(meta("alpha", "luna"));
+    frame({ kind: "reset" });
+    snapshot();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    apply("chat/turnStarted", { message: { text: "Find Rust docs", origin: { kind: "user" } } });
+    apply("chat/toolCallStart", { toolCallId: "search", displayName: "web_search" });
+    await new Promise(setImmediate);
+    const row = harness.document.querySelector(".toolwrap");
+    assert.match(row.querySelector(".toolrow").textContent, /Search terms not available/);
+    row.querySelector(".toolrow").click();
+
+    const detail = "rust async await, rust futures";
+    apply("chat/toolCallComplete", {
+        toolCallId: "search",
+        result: { success: true },
+        _meta: { symposium: { detail } },
+    });
+    await new Promise(setImmediate);
+    assert.deepEqual([...harness.document.querySelectorAll(".toolwrap")], [row]);
+    assert.equal(row.querySelector(".tTarget").textContent, detail);
+    assert.equal(row.querySelector(".toolbody pre").textContent, detail);
+    assert.equal(row.classList.contains("open"), true);
+
+    apply("chat/turnComplete", { duration: 1 });
+    snapshot();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const reopened = [...harness.document.querySelectorAll(".toolwrap")];
+    assert.equal(reopened.length, 1);
+    assert.notEqual(reopened[0], row);
+    assert.equal(reopened[0].querySelector(".tTarget").textContent, detail);
+    harness.dom.window.close();
+});
+
 test("webview DOM announces AHP reconciliation and renders a chat snapshot once", async () => {
     const harness = createHarness();
     harness.deliver(meta("alpha", "luna"));

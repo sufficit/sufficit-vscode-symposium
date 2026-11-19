@@ -257,7 +257,10 @@ function projectToolEnd(
                 success: true,
                 content: event.result ? [{ kind: "text", text: event.result }] : [],
             },
-            _meta: safeMeta({ todos: event.todos }),
+            _meta: safeMeta({
+                todos: event.todos,
+                detail: event.toolName === "web_search" ? event.detail : undefined,
+            }),
         }),
         ...activity(state.tools.size ? "Running tools" : "Thinking"),
     ];

@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CodexEventParser } from "../adapters/codex/eventParser";
 import type { AgentEvent } from "../adapters/types";
+import { replayRows } from "../application/controllerTranscript";
+import { createProjectionState, projectAgentEvent } from "../ahp/projectAgentEvent";
 
 function parserHarness() {
     const events: AgentEvent[] = [];
@@ -138,6 +140,33 @@ test("Codex web searches show the query when available and identify opaque searc
             input: undefined,
         },
     ]);
+});
+
+test("Codex web search completion carries batched terms into live and replayed activity", () => {
+    const { events, send } = parserHarness();
+    const item = { id: "web-1", type: "web_search", query: "" };
+    send({ type: "item.started", item: { ...item, action: { type: "other" } } });
+    send({
+        type: "item.completed",
+        item: {
+            ...item,
+            action: { type: "search", queries: ["rust async await", "rust futures"] },
+        },
+    });
+
+    const query = "rust async await, rust futures";
+    assert.deepEqual(
+        events.map((event) => event.kind),
+        ["tool-start", "tool-end"],
+    );
+    const projection = createProjectionState();
+    projectAgentEvent(projection, { kind: "turn-start", logicalTurnId: "turn-1" });
+    const actions = events.flatMap((event) => projectAgentEvent(projection, event));
+    const completion = actions.find(({ action }) => action.type === "chat/toolCallComplete");
+    assert.deepEqual(completion?.action._meta, { symposium: { detail: query } });
+    const [row, ...remaining] = replayRows(events.map((event) => ({ type: "event", event })));
+    assert.equal(row?.role === "tool" && row.detail, query);
+    assert.equal(remaining.length, 0);
 });
 
 test("Codex enriches completed MCP calls even when the start event was missed", () => {

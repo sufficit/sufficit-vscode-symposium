@@ -6,7 +6,11 @@ import {
     isPendingQueueHeld,
     selectPendingMessages,
 } from "../../ahp/client/chatSelectors";
-import { toolDisplayMetadata, toolTodosFromMetadata } from "../../ahp/toolMetadata";
+import {
+    toolDetailFromMetadata,
+    toolDisplayMetadata,
+    toolTodosFromMetadata,
+} from "../../ahp/toolMetadata";
 import { readAssistantMetadata } from "../../ahp/assistantMetadata";
 import { applyEvent } from "./events";
 import { renderQueueView, renderUserTurn, resetConversationView } from "./conversationView";
@@ -26,7 +30,7 @@ import { setBusy } from "./state";
 import { setStatus } from "./status";
 import { renderInSlices } from "./renderScheduler";
 import { renderAhpRecoveryStatus } from "./ahpRecoveryView";
-import { asRecord, numberValue, optionalString } from "./ahpValues";
+import { asRecord, contentText, numberValue, optionalString, stringContent } from "./ahpValues";
 import { removeRecoveredErrorNotice } from "./ahpRecoveredErrorView";
 import {
     isEmptyStreamAnchor,
@@ -185,6 +189,7 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
                 kind: "tool-end",
                 toolId: optionalString(action.toolCallId),
                 toolName: "Tool",
+                detail: toolDetailFromMetadata(action._meta),
                 result: contentText(asRecord(action.result).content),
                 todos: toolTodosFromMetadata(action._meta),
             });
@@ -306,7 +311,10 @@ function renderPart(part: ResponsePart, fallbackModel?: string, historical = fal
     const tool = asRecord(value.toolCall);
     const id = String(tool.toolCallId ?? "tool");
     const name = String(tool.displayName ?? tool.toolName ?? "Tool");
-    renderTool(name, stringContent(tool.intention ?? tool.invocationMessage), {
+    const detail =
+        toolDetailFromMetadata(tool._meta) ??
+        stringContent(tool.intention ?? tool.invocationMessage);
+    renderTool(name, detail, {
         toolId: id,
         historical,
         input: optionalString(tool.toolInput),
@@ -368,21 +376,6 @@ function affectsQueueOrLifecycle(type: string): boolean {
         type === "chat/pendingMessageRemoved" ||
         type === "chat/queuedMessagesReordered"
     );
-}
-
-function contentText(value: unknown): string {
-    if (!Array.isArray(value)) return "";
-    return value.map((item) => stringContent(asRecord(item).text)).join("");
-}
-
-function stringContent(value: unknown): string {
-    if (typeof value === "string") return value;
-    const record = asRecord(value);
-    return typeof record.value === "string"
-        ? record.value
-        : typeof record.text === "string"
-          ? record.text
-          : "";
 }
 
 function severity(value: unknown): "info" | "warning" | "error" {

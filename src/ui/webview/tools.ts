@@ -23,6 +23,7 @@ interface ToolOptions {
 }
 interface ToolRow {
     showResult: (text: string, replace?: boolean) => void;
+    updateDetail?: (detail: string) => void;
     wrap: HTMLDivElement;
     body: HTMLDivElement;
     approvalBar?: HTMLDivElement;
@@ -130,9 +131,6 @@ export function diffSection(hunks: Array<{ old: string; new: string }>): HTMLDiv
     sec.appendChild(pre);
     return sec;
 }
-// Shorten a file path for display: keep the start and the tail (filename +
-// a few parent segments), dropping the middle with an ellipsis so the most
-// meaningful parts stay visible. The full path is kept in the tooltip.
 // Humanize an unmapped tool name for display. Bridged VS Code LM tools arrive
 // vendor-namespaced (e.g. "copilot_switchAgent", "mcp_foo_bar"); strip the
 // namespace prefix and split snake/camel case so the action log never shows a
@@ -260,12 +258,14 @@ export function renderTool(
     const body = document.createElement("div");
     body.className = "toolbody";
     const detailText = detail && String(detail).trim();
+    let detailSection: HTMLDivElement | undefined;
     if (opts.diff && opts.diff.length) {
         body.appendChild(diffSection(opts.diff));
     } else if (opts.input) {
         body.appendChild(toolSection("Input", opts.input));
     } else if (detailText && !opts.path) {
-        body.appendChild(toolSection(detailLabel(name), detailText));
+        detailSection = toolSection(detailLabel(name), detailText);
+        body.appendChild(detailSection);
     }
     let resultSec: HTMLDivElement | null = null;
     let resultText = "";
@@ -311,12 +311,26 @@ export function renderTool(
     autoScroll(stick);
     if (opts.toolId) {
         toolRows[opts.toolId] = { showResult, wrap, body };
+        if (name === "web_search") {
+            const target = head.querySelector(".tTarget");
+            const expanded = detailSection?.querySelector("pre");
+            toolRows[opts.toolId].updateDetail = (value) => {
+                if (target) target.textContent = value;
+                if (expanded) expanded.textContent = value;
+            };
+        }
     }
     return wrap;
 }
-export function fillToolResult(toolId?: string, result?: string, final = false): void {
+export function fillToolResult(
+    toolId?: string,
+    result?: string,
+    final = false,
+    detail?: string,
+): void {
     const rec = toolId && toolRows[toolId];
     if (rec) {
+        if (detail) rec.updateDetail?.(detail);
         rec.showResult(result ?? "", final);
         if (final) {
             delete toolRows[toolId];

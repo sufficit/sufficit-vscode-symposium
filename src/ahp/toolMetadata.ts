@@ -16,6 +16,12 @@ export function mergeToolMetadata(current: unknown, incoming: unknown): unknown 
     };
 }
 
+/** Reads the final display detail carried in a tool completion. */
+export function toolDetailFromMetadata(meta: unknown): string | undefined {
+    const detail = record(record(meta).symposium).detail;
+    return typeof detail === "string" ? detail : undefined;
+}
+
 /** Reads a normalized native plan snapshot carried through AHP tool metadata. */
 export function toolTodosFromMetadata(meta: unknown): TodoItem[] | undefined {
     const value = record(record(meta).symposium).todos;

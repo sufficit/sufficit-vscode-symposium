@@ -54,7 +54,9 @@ export class ReplayToolTracker {
         if (!current) return synthesized;
         current.closed = true;
         if (current.id) this.byId.delete(current.id);
-        if (!current.row.detail && event.detail) current.row.detail = event.detail;
+        if (event.detail && (!current.row.detail || current.row.toolName === "web_search")) {
+            current.row.detail = event.detail;
+        }
         if (event.todos) current.row.todos = event.todos;
         const result = event.result || current.output;
         if (result) current.row.result = result;
