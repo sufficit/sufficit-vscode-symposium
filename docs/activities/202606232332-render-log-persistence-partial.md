@@ -3,7 +3,7 @@
 **Date:** 2026-06-23
 **Status:** completed. Persistence and replay shipped first; deletion cleanup
 and regression coverage were completed in
-[`20260809210807-session-local-artifact-cleanup.md`](20260809210807-session-local-artifact-cleanup.md).
+[`202608092108-session-local-artifact-cleanup.md`](202608092108-session-local-artifact-cleanup.md).
 
 ## Problem
 

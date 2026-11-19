@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Checks that every Markdown file is part of the documentation hierarchy:
 // - every Markdown file is reachable from README.md through relative links;
-// - maintained documents do not link to Markdown files that do not exist.
+// - maintained documents do not link to Markdown files that do not exist;
+// - activity filenames include a timestamp at minute resolution.
 //
 // Paths matched by .markdown-coverage-ignore ("dir/" prefixes or glob patterns
 // where "*" stays within one path segment) are exempt from both rules; links
@@ -21,6 +22,8 @@ import MarkdownIt from "markdown-it";
 
 export const ENTRYPOINT = "README.md";
 export const IGNORE_FILE = ".markdown-coverage-ignore";
+const ACTIVITY_PATH = "docs/activities/";
+const ACTIVITY_NAME = /^\d{12}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/;
 
 const EXTERNAL = /^(?:[a-z][a-z\d+.-]*:|\/\/|[?#])/i;
 const COMMENT = /<!--[\s\S]*?-->/g;
@@ -176,6 +179,16 @@ export function check(root) {
     const graph = MarkdownGraph.fromRepository(root);
     const exempt = Exemptions.load(root);
     const errors = [];
+    const paths = graph.paths();
+    const invalidActivities = paths.filter(
+        (path) => path.startsWith(ACTIVITY_PATH) && !ACTIVITY_NAME.test(posix.basename(path)),
+    );
+    if (invalidActivities.length > 0) {
+        errors.push(
+            "Activity filenames must use YYYYMMDDHHmm-description.md:\n" +
+                invalidActivities.map((path) => `  - ${path}\n`).join(""),
+        );
+    }
     const orphans = exempt.filter(graph.unreachable());
     if (orphans.length > 0) {
         errors.push(
@@ -185,7 +198,7 @@ export function check(root) {
                 `Use ${IGNORE_FILE} only for intentionally unindexed history.`,
         );
     }
-    const missing = graph.missingTargets(exempt.filter(graph.paths()));
+    const missing = graph.missingTargets(exempt.filter(paths));
     if (Object.keys(missing).length > 0) {
         errors.push(
             "Markdown links to missing documents:\n" +

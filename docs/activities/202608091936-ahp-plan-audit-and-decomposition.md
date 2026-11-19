@@ -27,7 +27,7 @@ independently executable plans.
 
 The implemented scope is exactly the Phase 0 authoritative channel foundation,
 already archived in
-[`20260727-ahp-phase-0-foundation-complete.md`](20260727-ahp-phase-0-foundation-complete.md).
+[`202607271239-ahp-phase-0-foundation-complete.md`](202607271239-ahp-phase-0-foundation-complete.md).
 No portion of phases 1–6 met its acceptance criteria, so no completion activity
 was manufactured for future work.
 

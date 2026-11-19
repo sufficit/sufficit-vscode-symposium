@@ -1,8 +1,8 @@
 # PLAN — oversized-files relapse (2026-07-11)
 
-Follow-up to `20260621115747-architecture-refactor.md`. That pass drove the
+Follow-up to `202606211157-architecture-refactor.md`. That pass drove the
 `check:size` gate (400-line limit, `scripts/check-file-size.mjs`) to **zero**
-violations by 2026-06-23 (see `20260623-openai-session-decomposed-complete.md`:
+violations by 2026-06-23 (see `202606231119-openai-session-decomposed-complete.md`:
 "the check-file-size EXEMPT set is now EMPTY"). Three weeks of feature work
 since (voice/STT, turn-runner growth, adapter growth) pushed it back into the
 red. This plan targets the current, real violators — not the stale list in the

@@ -130,3 +130,25 @@ test("markdown coverage: inventory uses tracked and new files, excluding ignored
         rmSync(root, { recursive: true, force: true });
     }
 });
+
+test("markdown coverage: requires activity timestamps even for unindexed records", async () => {
+    const { check, IGNORE_FILE } = await load();
+    const root = mkdtempSync(join(tmpdir(), "md-coverage-activities-"));
+    try {
+        execFileSync("git", ["init", "--quiet"], { cwd: root, stdio: "ignore" });
+        writeFileSync(join(root, "README.md"), "# Project");
+        writeFileSync(join(root, IGNORE_FILE), "docs/activities/\n");
+        const activities = join(root, "docs", "activities");
+        mkdirSync(activities, { recursive: true });
+        writeFileSync(join(activities, "202611191620-valid.md"), "");
+        writeFileSync(join(activities, "20261119-date-only.md"), "");
+        writeFileSync(join(activities, "20261119162000-with-seconds.md"), "");
+        assert.deepEqual(check(root), [
+            "Activity filenames must use YYYYMMDDHHmm-description.md:\n" +
+                "  - docs/activities/20261119-date-only.md\n" +
+                "  - docs/activities/20261119162000-with-seconds.md\n",
+        ]);
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+});

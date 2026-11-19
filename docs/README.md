@@ -78,3 +78,4 @@ When adding a guide, link to it from the nearest guide or index. When moving or
 renaming a file, update both links to the file and relative links inside it.
 Use [the ignore list](../.markdown-coverage-ignore) for archived records. Direct
 links from maintained guides to those records still have their targets checked.
+The checker also enforces the minute-resolution filename for activity records.

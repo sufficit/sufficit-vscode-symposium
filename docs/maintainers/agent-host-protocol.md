@@ -89,24 +89,24 @@ tests. Use the [offline test procedure](testing.md) to check the Bridge.
 The 2026-08-09 implementation completed the host, projections, persistence,
 authenticated transports and all three clients:
 
-1. [Host runtime and channel models](../activities/20260809201446-ahp-host-runtime-and-channel-models.md)
-2. [Normalized agent-event projection](../activities/20260809201447-ahp-agent-event-projection.md)
-3. [Shadow projection and parity diagnostics](../activities/20260809201448-ahp-shadow-projection.md)
-4. [Persistence and restart recovery](../activities/20260809201449-ahp-persistence-and-restart.md)
-5. [Authenticated WebSocket transport](../activities/20260809201450-ahp-authenticated-websocket.md)
-6. [PWA client migration](../activities/20260809202643-ahp-pwa-client-migration.md)
-7. [Editor and sidebar migration](../activities/20260809210800-ahp-editor-sidebar-migration.md)
+1. [Host runtime and channel models](../activities/202608092014-ahp-host-runtime-and-channel-models.md)
+2. [Normalized agent-event projection](../activities/202608092014-ahp-agent-event-projection.md)
+3. [Shadow projection and parity diagnostics](../activities/202608092014-ahp-shadow-projection.md)
+4. [Persistence and restart recovery](../activities/202608092014-ahp-persistence-and-restart.md)
+5. [Authenticated WebSocket transport](../activities/202608092014-ahp-authenticated-websocket.md)
+6. [PWA client migration](../activities/202608092026-ahp-pwa-client-migration.md)
+7. [Editor and sidebar migration](../activities/202608092108-ahp-editor-sidebar-migration.md)
 
 Optional capability packages are also implemented behind explicit host
 enablement and advertised capability gates:
 
-- [Changeset channel](../activities/20260809210801-ahp-changeset-channel.md)
-- [Terminal channel](../activities/20260809210803-ahp-terminal-channel.md)
-- [Resource and attachment channels](../activities/20260809210802-ahp-resource-channel.md)
-- [Customization channels](../activities/20260809210804-ahp-customization-channels.md)
-- [Client-provided tools](../activities/20260809210805-ahp-client-tools.md)
-- [Telemetry measurements](../activities/20260809210806-ahp-telemetry.md)
+- [Changeset channel](../activities/202608092108-ahp-changeset-channel.md)
+- [Terminal channel](../activities/202608092108-ahp-terminal-channel.md)
+- [Resource and attachment channels](../activities/202608092108-ahp-resource-channel.md)
+- [Customization channels](../activities/202608092108-ahp-customization-channels.md)
+- [Client-provided tools](../activities/202608092108-ahp-client-tools.md)
+- [Telemetry measurements](../activities/202608092108-ahp-telemetry.md)
 
 Legacy transport retirement completed after the editor/sidebar and PWA clients
 remained released across the required compatibility window. See the completed
-[retirement record](../activities/20260811-ahp-legacy-transport-retired.md).
+[retirement record](../activities/202608110144-ahp-legacy-transport-retired.md).

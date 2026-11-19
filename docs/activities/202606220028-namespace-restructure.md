@@ -1,7 +1,7 @@
 # PLAN — Namespace Restructure & 400-Line Decomposition
 
 Status: **FINALIZED** (2026-06-22). Supersedes the two items deferred by
-`docs/activities/20260621115747-architecture-refactor.md` (#2 webview
+`docs/activities/202606211157-architecture-refactor.md` (#2 webview
 extract+bundle, #8 god-object split) and folds them into one namespace-first
 restructuring.
 
