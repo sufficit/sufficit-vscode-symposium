@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { rmSync } from "node:fs";
 import test from "node:test";
-import { forkAtLastCompletedTurn } from "../adapters/codex/audioHistoryRecovery";
+import * as vscode from "vscode";
+import {
+    forkAtLastCompletedTurn,
+    mapRecoveredHistory,
+    revertAtAudioError,
+} from "../adapters/codex/audioHistoryRecovery";
+import { ledgerDir } from "../ledger";
 import { handleSurfaceCommandMessage } from "../ui/surfaceMessageCommands";
 import type { SurfaceMessagesDeps } from "../ui/surfaceMessagesTypes";
 
@@ -114,4 +122,141 @@ test("the host opens one copy of the selected session even after repeated clicks
     finishCopy();
     await recovering;
     assert.deepEqual(opened, [copy]);
+});
+
+test("Codex reverts before the first failed audio turn and verifies the same thread", async () => {
+    const thread = {
+        id: "source",
+        path: "/source.jsonl",
+        cwd: "/workspace",
+        historyMode: "paginated",
+    };
+    const retry = { ...rejected, id: "retry" };
+    let prepared = false;
+    let reverted = false;
+    const info = await revertAtAudioError(
+        <T>(method: string, params: object) => {
+            if (method === "thread/resume") return Promise.resolve({ thread } as T);
+            if (method === "thread/revert") {
+                assert.equal(prepared, true);
+                assert.deepEqual(params, { threadId: "source", beforeTurnId: "rejected" });
+                reverted = true;
+                return Promise.resolve({ thread } as T);
+            }
+            return Promise.resolve({
+                data: reverted ? [completed] : [retry, rejected, completed],
+            } as T);
+        },
+        "source",
+        (info) => {
+            assert.equal(info.sessionId, "source");
+            prepared = true;
+        },
+    );
+    assert.equal(info.sessionId, "source");
+    assert.equal(reverted, true);
+});
+
+test("Codex does not prepare or revert legacy history", async () => {
+    await assert.rejects(
+        revertAtAudioError(
+            <T>(method: string) => {
+                assert.equal(method, "thread/resume");
+                return Promise.resolve({ thread: { id: "source", historyMode: "legacy" } } as T);
+            },
+            "source",
+            () => assert.fail("unexpected history preparation"),
+        ),
+        /requires paginated/,
+    );
+});
+
+test("the host asks before reverting and reopens the same session after approval", async (t) => {
+    const info = { backend: "codex", sessionId: randomUUID(), title: "Session" };
+    t.after(() => rmSync(ledgerDir(info.sessionId), { recursive: true, force: true }));
+    let approve = false;
+    let held = false;
+    const actions: string[] = [];
+    const controller = {
+        ...info,
+        cwd: "/workspace",
+        isBusy: false,
+        beginHistoryRecovery: () => (held = true),
+        getPermission: () => "",
+    };
+    const window = vscode.window as unknown as {
+        showWarningMessage?: (
+            message: string,
+            options: unknown,
+            button: string,
+        ) => Promise<string | undefined>;
+    };
+    const previous = window.showWarningMessage;
+    t.after(() => {
+        window.showWarningMessage = previous;
+    });
+    window.showWarningMessage = (_message, options, button) => {
+        assert.equal((options as { modal: boolean }).modal, true);
+        return Promise.resolve(approve ? button : undefined);
+    };
+    const deps = {
+        getController: () => controller,
+        getSendBlockedReason: () => undefined,
+        post: () => {},
+        openSession: (session: typeof info) => actions.push(`open:${session.sessionId}`),
+        deps: {
+            runtime: { disposeBySessionId: (id: string) => actions.push(`dispose:${id}`) },
+            adapterByBackend: new Map([
+                [
+                    "codex",
+                    {
+                        revertBeforeAudioError: (
+                            _id: string,
+                            _cwd: string,
+                            prepare: (session: typeof info) => void,
+                        ) => {
+                            assert.equal(held, true);
+                            actions.push("revert");
+                            prepare(info);
+                            return Promise.resolve(info);
+                        },
+                    },
+                ],
+            ]),
+        },
+    } as unknown as SurfaceMessagesDeps;
+    const request = { type: "revert-before-audio-error", sessionId: info.sessionId } as const;
+    await handleSurfaceCommandMessage(request, deps);
+    assert.deepEqual(actions, []);
+    assert.equal(held, false);
+    approve = true;
+    await handleSurfaceCommandMessage(request, deps);
+    assert.deepEqual(actions, ["revert", `dispose:${info.sessionId}`, `open:${info.sessionId}`]);
+});
+
+test("recovered pagination presents retained messages in chronological order", () => {
+    assert.deepEqual(
+        mapRecoveredHistory([
+            {
+                id: "last",
+                status: "completed",
+                items: [{ type: "agentMessage", text: "Retained answer", startedAtMs: 20 }],
+            },
+            {
+                id: "first",
+                status: "completed",
+                items: [
+                    {
+                        type: "userMessage",
+                        content: [{ type: "text", text: "Original question" }],
+                        startedAtMs: 10,
+                    },
+                ],
+            },
+        ]),
+        [
+            { role: "user", text: "Original question", ts: 10 },
+            { role: "assistant", text: "Retained answer", ts: 20 },
+        ],
+    );
 });

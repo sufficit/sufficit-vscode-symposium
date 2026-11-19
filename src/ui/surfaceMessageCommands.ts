@@ -3,14 +3,19 @@ import { probeRtk } from "../adapters/rtk";
 import { symposiumLog } from "../extension/log";
 import type { WebviewToHost } from "../protocol/chat";
 import type { SurfaceMessagesDeps } from "./surfaceMessagesTypes";
+import { revertSurfaceAudioHistory } from "./surfaceAudioRecovery";
 
 const audioRecoveryInProgress = new Set<string>();
 
-async function recoverAudioHistory(deps: SurfaceMessagesDeps, sessionId: string): Promise<void> {
+async function recoverAudioHistory(
+    deps: SurfaceMessagesDeps,
+    sessionId: string,
+    inPlace: boolean,
+): Promise<void> {
     const controller = deps.getController();
     if (!controller || controller.sessionId !== sessionId || deps.getSendBlockedReason()) return;
     const adapter = deps.deps.adapterByBackend.get(controller.backend);
-    if (!adapter?.forkBeforeAudioError || audioRecoveryInProgress.has(sessionId)) return;
+    if (!adapter || audioRecoveryInProgress.has(sessionId)) return;
     if (controller.isBusy) {
         deps.post({
             type: "toast",
@@ -20,6 +25,11 @@ async function recoverAudioHistory(deps: SurfaceMessagesDeps, sessionId: string)
     }
     audioRecoveryInProgress.add(sessionId);
     try {
+        if (inPlace) {
+            await revertSurfaceAudioHistory(deps, controller, adapter, sessionId);
+            return;
+        }
+        if (!adapter.forkBeforeAudioError) return;
         const copy = await adapter.forkBeforeAudioError(sessionId, controller.cwd);
         if (deps.getController() === controller && !controller.isBusy) {
             deps.openSession(copy);
@@ -33,7 +43,7 @@ async function recoverAudioHistory(deps: SurfaceMessagesDeps, sessionId: string)
     } catch (error) {
         deps.post({
             type: "toast",
-            text: `Could not copy the session. ${error instanceof Error ? error.message : String(error)}`,
+            text: `Could not recover the session. ${error instanceof Error ? error.message : String(error)}`,
         });
     } finally {
         audioRecoveryInProgress.delete(sessionId);
@@ -117,7 +127,12 @@ export async function handleSurfaceCommandMessage(
             return true;
         }
         case "fork-before-audio-error":
-            await recoverAudioHistory(deps, message.sessionId);
+        case "revert-before-audio-error":
+            await recoverAudioHistory(
+                deps,
+                message.sessionId,
+                message.type === "revert-before-audio-error",
+            );
             return true;
         case "new-session":
             await vscode.commands.executeCommand("symposium.newSession");

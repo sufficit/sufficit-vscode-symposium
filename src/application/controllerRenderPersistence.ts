@@ -37,6 +37,7 @@ export class ControllerRenderPersistence {
     private followedSessionId: string | undefined;
     private owned = false;
     private yielded = false;
+    recoveringHistory = false;
 
     constructor(
         private readonly sessionId: () => string | undefined,
@@ -75,6 +76,17 @@ export class ControllerRenderPersistence {
         this.follow(resumeSessionId, restored.cursor);
         this.recoverAbandonedPeerTurn();
         return restored;
+    }
+
+    beginHistoryRecovery(blocked: boolean): boolean {
+        if (blocked || !this.canDispatch()) return false;
+        this.recoveringHistory = true;
+        return true;
+    }
+
+    endHistoryRecovery(): void {
+        this.recoveringHistory = false;
+        this.releaseOwnership();
     }
 
     /** True when this controller may invoke the adapter for the native session. */

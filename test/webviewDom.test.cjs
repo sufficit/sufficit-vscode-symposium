@@ -366,14 +366,17 @@ test("Codex audio recovery can copy the history before the failure", () => {
     });
 
     const actions = harness.document.querySelectorAll(".turnError .statusNoticeAction");
-    assert.equal(actions.length, 2);
-    assert.match(actions[0].textContent, /copy session before error/i);
-    assert.match(actions[1].textContent, /new session/i);
+    assert.equal(actions.length, 3);
+    assert.match(actions[0].textContent, /continue in this session/i);
+    assert.match(actions[1].textContent, /copy session before error/i);
+    assert.match(actions[2].textContent, /new session/i);
     const sentBefore = harness.sent.length;
     actions[0].click();
     assert.equal(harness.sent.length, sentBefore + 1);
-    assert.equal(harness.sent.at(-1).type, "fork-before-audio-error");
+    assert.equal(harness.sent.at(-1).type, "revert-before-audio-error");
     assert.equal(harness.sent.at(-1).sessionId, "codex-session");
+    actions[1].click();
+    assert.equal(harness.sent.at(-1).type, "fork-before-audio-error");
     harness.dom.window.close();
 });
 

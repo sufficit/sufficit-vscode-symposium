@@ -24,7 +24,10 @@ export async function loadControllerHistory(
     // Render-log cursors stay on the lossless visual source. Falling through to
     // native JSONL on page two duplicated turns and dropped tool/diff rows.
     const renderOffset = cursor?.startsWith("r:") ? Number(cursor.slice("r:".length)) : undefined;
-    if ((!cursor && renderLog.hasRender(info.sessionId)) || renderOffset !== undefined) {
+    if (
+        !adapter.preferNativeHistory?.(info) &&
+        ((!cursor && renderLog.hasRender(info.sessionId)) || renderOffset !== undefined)
+    ) {
         const page = renderLog.readRenderPage(info.sessionId, renderOffset);
         const messages = historyFromRenderLog(info, page.messages);
         if (messages.length > 0 || renderOffset !== undefined) {

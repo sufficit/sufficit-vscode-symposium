@@ -12,10 +12,16 @@ export function audioErrorActions(): SystemNoticeAction[] {
     ];
     const sessionId = activeSessionId;
     if (sessionId && canForkBeforeAudioError) {
-        actions.unshift({
-            label: t("chat.audioError.fork"),
-            onClick: () => postMessage({ type: "fork-before-audio-error", sessionId }),
-        });
+        actions.unshift(
+            {
+                label: t("chat.audioError.revert"),
+                onClick: () => postMessage({ type: "revert-before-audio-error", sessionId }),
+            },
+            {
+                label: t("chat.audioError.fork"),
+                onClick: () => postMessage({ type: "fork-before-audio-error", sessionId }),
+            },
+        );
     }
     return actions;
 }

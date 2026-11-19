@@ -120,6 +120,10 @@ export function ledgerDir(sessionId: string): string {
     return path.join(ledgerRoot(), sessionId);
 }
 
+export function codexRecoveredHistoryMarker(sessionId: string): string {
+    return path.join(ledgerDir(sessionId), "codex-recovered-history");
+}
+
 function messagesFile(dir: string): string {
     return path.join(dir, "messages.jsonl");
 }

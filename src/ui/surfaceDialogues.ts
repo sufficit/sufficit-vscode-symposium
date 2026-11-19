@@ -261,7 +261,7 @@ export class SurfaceDialogues {
         // Restore persisted internal events before rebuilding the authoritative
         // AHP projection for a reopened session.
         const seededVisual = !existing && !!options.resumeSessionId && controller.seedRenderLog();
-        if (seededVisual && controller.sessionKey) {
+        if (historyPending && !existing && controller.sessionKey) {
             this.d.deps.ahp.rebuild(backend, controller.sessionKey);
         }
         this.d.setController(controller);

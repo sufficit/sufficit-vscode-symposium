@@ -299,6 +299,7 @@ export interface AgentAdapter {
      * return everything at once.
      */
     history?(info: SessionInfo, cursor?: string): Promise<HistoryPage>;
+    preferNativeHistory?(info: SessionInfo): boolean;
     /**
      * Watch a stored transcript and stream messages appended after the
      * point `history()` already returned (read-only live mirror of a
@@ -357,4 +358,9 @@ export interface AgentAdapter {
      */
     deleteSession?(info: SessionInfo): Promise<string[] | void>;
     forkBeforeAudioError?(sessionId: string, cwd: string): Promise<SessionInfo>;
+    revertBeforeAudioError?(
+        sessionId: string,
+        cwd: string,
+        prepare: (info: SessionInfo) => void,
+    ): Promise<SessionInfo>;
 }

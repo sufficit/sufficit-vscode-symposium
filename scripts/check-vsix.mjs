@@ -123,7 +123,8 @@ const budgets = new Map([
     // budget; archive cap unchanged.
     // Codex audio history recovery measures 954894 bytes in the extension
     // and 339177 bytes in the webview. The 1 MiB archive cap is unchanged.
-    ["extension/out/extension.js", 933 * 1024],
+    // Same-session recovery adds the confirmed revert and controller rehydration.
+    ["extension/out/extension.js", 937 * 1024],
     ["extension/out/ui/webview.bundle.js", 332 * 1024],
     ["extension/out/ui/webview.css", 120 * 1024],
 ]);

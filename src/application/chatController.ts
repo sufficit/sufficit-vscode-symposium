@@ -44,7 +44,7 @@ import {
 export class ChatController {
     private runtimeKey: string | undefined;
     private session: AgentSession | undefined;
-    // One-shot outbound-prompt injection flags.
+    private disposed = false;
     private readonly promptState: OutboundPromptState = {
         policyInjected: false,
         todoInjected: false,
@@ -58,11 +58,9 @@ export class ChatController {
         sessionScopeInjected: false,
     };
     private readonly hub = new HubClient();
-    // Checkpoint already injected as resume context.
     private injectedCheckpointId: string | undefined;
     private readonly changed = new ChangedFilesState();
     private readonly queue = new ChatQueue();
-    // Persisted internal event stream; AHP owns client reconstruction.
     private readonly renderPersistence = new ControllerRenderPersistence(() => this.sessionId, {
         onExternalMessage: (message, record) => this.onExternalRenderMessage(message, record),
         onStatusChanged: () => this.onStatusChange?.(),
@@ -110,7 +108,6 @@ export class ChatController {
         log: (message) => this.onLog?.(message),
     });
     private readonly runner: ControllerTurnRunner;
-
     constructor(
         private readonly adapter: AgentAdapter,
         private readonly options: SessionStartOptions,
@@ -168,9 +165,20 @@ export class ChatController {
     }
 
     get isBusy(): boolean {
-        return this.live.busy || this.runner.retryPending || this.renderPersistence.peerBusy;
+        return (
+            this.renderPersistence.recoveringHistory ||
+            this.live.busy ||
+            this.runner.retryPending ||
+            this.renderPersistence.peerBusy
+        );
     }
 
+    beginHistoryRecovery(): boolean {
+        return this.renderPersistence.beginHistoryRecovery(
+            this.disposed || this.isBusy || !this.queue.isEmpty,
+        );
+    }
+    endHistoryRecovery = (): void => this.renderPersistence.endHistoryRecovery();
     get attentionStatus(): SessionTerminalStatus | undefined {
         if (this.isBusy) return undefined;
         return this.live.attentionStatus ?? this.renderPersistence.peerAttention;
@@ -179,11 +187,9 @@ export class ChatController {
     get lastTurnId(): string | undefined {
         return this.live.lastLogicalTurnId;
     }
-
     private hubContext(): HubStateContext {
         return { sessionId: () => this.sessionId, hub: () => this.hub, state: this.hubState };
     }
-
     get backend(): string {
         return this.adapter.backend;
     }
@@ -238,11 +244,6 @@ export class ChatController {
     }
     subscribeLive(observer: (message: unknown) => void): () => void {
         const detach = this.stream.addLiveObserver(observer);
-        // The AHP projection attaches here, and it may be restoring a ChatState
-        // persisted across a restart whose queue rows this controller has no
-        // idea about. Live observers get no replay, so without an immediate
-        // snapshot nothing ever contradicts those rows and they stay in the
-        // Queued panel forever.
         observer(createQueueSnapshot(this.queue, this.isBusy));
         observer({ type: "changed-files", items: this.changedItemsRaw() });
         return detach;
@@ -266,7 +267,6 @@ export class ChatController {
         }
         return restored.seeded;
     }
-
     private historyInfo?: SessionInfo;
     private historyCursor?: string;
     async loadHistory(info: SessionInfo, transient = false): Promise<void> {
@@ -278,20 +278,16 @@ export class ChatController {
             else this.emit(message);
         });
     }
-
-    /** Loads the next older history page when a cursor remains. */
     async loadMoreHistory(): Promise<void> {
         if (!this.historyInfo || !this.historyCursor) return;
         const cursor = this.historyCursor;
         this.historyCursor = await loadControllerHistory(
             this.adapter,
             this.historyInfo,
-            // Scroll-up pages are read-side projections, not new ledger events.
             (message) => this.stream.notify(message),
             cursor,
         );
     }
-
     async pickAttachments(): Promise<Array<{ path: string; name: string }>> {
         return this.ports.files.pickFiles({
             many: true,
@@ -300,11 +296,11 @@ export class ChatController {
         });
     }
     private onSend(msg: PendingMessage, mode: SendMode): void {
+        if (this.disposed || this.renderPersistence.recoveringHistory) return;
         this.runner.cancelAutomaticRetry();
         routeControllerSend(msg, mode, {
             queue: this.queue,
             dedup: this.dedup,
-            // Peer owner: route through the shared queue, not a second resume.
             busy: () => this.live.busy || !this.renderPersistence.canDispatch(),
             cancel: () => this.session?.cancel(),
             dispatch: (message, options) => this.dispatchOwned(message, options),
@@ -330,6 +326,7 @@ export class ChatController {
         void this.runner.dispatch(message, options);
     }
     private onExternalRenderMessage(message: unknown, record: RenderLogRecord): boolean | void {
+        if (this.renderPersistence.recoveringHistory) return false;
         this.live.hydrateTodosFromMessage(message);
         return reconcilePeerQueue(message, record, {
             queue: this.queue,
@@ -341,7 +338,6 @@ export class ChatController {
             applyCommand: (command) => applyPeerQueueCommand(command, this.client, this.onLog),
         });
     }
-
     private drainExternalQueueIfOwner(): void {
         if (
             !this.renderPersistence.isOwner ||
@@ -388,8 +384,8 @@ export class ChatController {
             this.emitChanged();
         }
     }
-
     dispose(): void {
+        this.disposed = true;
         this.runner.clearWatchdog();
         this.runner.cancelAutomaticRetry();
         this.session?.dispose();

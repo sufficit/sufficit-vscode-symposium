@@ -2,6 +2,7 @@ import { spawn } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { codexRecoveredHistoryMarker } from "../../ledger";
 import { builtinCommands } from "../builtins";
 import { resolveExecutable } from "../exec";
 import { scrubJsonlLines, scrubSqliteRows } from "../scrub";
@@ -30,7 +31,11 @@ import { looksInjected } from "./transcript";
 import { listCodexSessions } from "./sessionDiscovery";
 import { parseCodexModelCatalog } from "./models";
 import { codexUsage } from "./usage";
-import { forkBeforeAudioError } from "./audioHistoryRecovery";
+import {
+    forkBeforeAudioError,
+    loadRecoveredCodexHistory,
+    revertBeforeAudioError,
+} from "./audioHistoryRecovery";
 
 function runCodexDebugModels(executable: string): Promise<unknown> {
     return new Promise((resolve, reject) => {
@@ -88,6 +93,14 @@ export class CodexAdapter implements AgentAdapter {
         return forkBeforeAudioError(this.getConfig().executable, sessionId, cwd);
     }
 
+    revertBeforeAudioError(
+        sessionId: string,
+        cwd: string,
+        prepare: (info: SessionInfo) => void,
+    ): Promise<SessionInfo> {
+        return revertBeforeAudioError(this.getConfig().executable, sessionId, cwd, prepare);
+    }
+
     async listSessions(): Promise<SessionInfo[]> {
         return listCodexSessions([]);
     }
@@ -96,7 +109,14 @@ export class CodexAdapter implements AgentAdapter {
         return listCodexSessions(cached);
     }
 
+    preferNativeHistory(info: SessionInfo): boolean {
+        return fs.existsSync(codexRecoveredHistoryMarker(info.sessionId));
+    }
+
     async history(info: SessionInfo, cursor?: string): Promise<HistoryPage> {
+        if (this.preferNativeHistory(info)) {
+            return loadRecoveredCodexHistory(this.getConfig().executable, info, cursor);
+        }
         const file = info.transcriptPath;
         if (!file) {
             return { messages: [] };

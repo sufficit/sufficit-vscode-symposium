@@ -103,7 +103,7 @@ export function presentTurnError(
     if (isUnavailableAudioInput(detail)) {
         return {
             summary:
-                "The provider rejected audio input. Continue with a transcript in a new session.",
+                "The provider rejected audio input. Continue with a transcript after recovering or opening a new session.",
             detail,
             recovery: "new-session",
         };
