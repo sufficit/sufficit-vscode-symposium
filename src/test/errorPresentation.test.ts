@@ -63,6 +63,27 @@ test("legacy AI control 403 names the AIControl directive", () => {
     assert.match(out.summary, /Required directive: AIControl/i);
 });
 
+test("rejected audio explains how to recover without resuming the same history", () => {
+    const raw = JSON.stringify({
+        type: "error",
+        error: {
+            type: "invalid_request_error",
+            code: null,
+            message: "Audio input is not available.",
+            param: "input",
+        },
+        status: 400,
+    });
+    const out = presentTurnError(raw, isTransientErrorMessage(raw));
+
+    assert.match(out.summary, /provider rejected audio input/i);
+    assert.match(out.summary, /start a new session/i);
+    assert.match(out.summary, /transcript/i);
+    assert.equal(out.recovery, "new-session");
+    assert.equal(out.detail, raw);
+    assert.equal(isTransientErrorMessage(raw), false);
+});
+
 test("unknown terminal errors preserve their technical detail", () => {
     const out = presentTurnError("socket closed unexpectedly", true);
 

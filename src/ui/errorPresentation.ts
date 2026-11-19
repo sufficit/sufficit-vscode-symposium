@@ -6,7 +6,7 @@
 export interface ErrorPresentation {
     summary: string;
     detail: string;
-    recovery?: "continue";
+    recovery?: "continue" | "new-session";
 }
 
 const MAX_TECHNICAL_DETAIL_LENGTH = 512;
@@ -98,6 +98,14 @@ export function presentTurnError(
     const detail = compactTechnicalDetail(message);
     const cancellation = presentGeniusCancellation(detail);
     if (cancellation) return cancellation;
+    if (/\bAudio input is not available\b/i.test(detail)) {
+        return {
+            summary:
+                "The provider rejected audio input. Start a new session and continue with a transcript.",
+            detail,
+            recovery: "new-session",
+        };
+    }
     const status = httpStatus(detail);
     const completedTools = /Completed tool results are saved/i.test(String(message ?? ""));
     const retry = completedTools

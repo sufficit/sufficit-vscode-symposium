@@ -337,6 +337,26 @@ test("automatic retry is one visible local-only card with attempt and countdown"
     harness.dom.window.close();
 });
 
+test("audio rejection offers a fresh session without replaying the failed turn", () => {
+    const harness = createHarness();
+    const message =
+        '{"type":"error","error":{"message":"Audio input is not available."},"status":400}';
+    harness.deliver(meta("alpha", "luna", { busy: false }));
+    harness.deliver({ type: "user", text: "Continue", attachments: [] });
+    harness.deliver({ type: "event", event: { kind: "error", message, retryable: false } });
+
+    const error = harness.document.querySelector(".turnError");
+    assert.equal(error.querySelector(".turnErrorDetails pre").textContent, message);
+    const actions = error.querySelectorAll("button");
+    assert.equal(actions.length, 1);
+    assert.match(actions[0].textContent, /new session/i);
+    const sentBefore = harness.sent.length;
+    actions[0].click();
+    assert.equal(harness.sent.length, sentBefore + 1);
+    assert.equal(harness.sent.at(-1).type, "new-session");
+    harness.dom.window.close();
+});
+
 test("503 maintenance HTML stays compact and is never sent as retry context", () => {
     const harness = createHarness();
     const raw =

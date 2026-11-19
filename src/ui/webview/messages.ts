@@ -55,7 +55,15 @@ export function renderError(
     endStream();
     removeDuplicateAssistantError(message);
     const presentation = presentTurnError(message, retryable, retryAt);
-    const el = createSystemNotice(presentation.summary, "error");
+    const newSession = presentation.recovery === "new-session";
+    const action =
+        newSession && !historical
+            ? {
+                  label: t("chat.icon.newSession"),
+                  onClick: () => postMessage({ type: "new-session" }),
+              }
+            : undefined;
+    const el = createSystemNotice(presentation.summary, "error", undefined, undefined, action);
     el.classList.add("turnError");
     if (turnId) el.dataset.turnId = turnId;
     el.dataset.errorStatus = /\bHTTP\s+(\d{3})\b/i.exec(presentation.detail)?.[1] || "unknown";
@@ -73,7 +81,7 @@ export function renderError(
         }
     }
     const lastUser = lastComposerUserRow();
-    if (lastUser && !historical) {
+    if (lastUser && !historical && !newSession) {
         const bar = document.createElement("div");
         bar.className = "errActions";
         if (presentation.recovery === "continue") {
