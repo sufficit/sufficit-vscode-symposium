@@ -12,6 +12,8 @@ node_modules/**
 tsconfig.json
 tsconfig.webview.json
 ARCHITECTURE.md
+AGENTS.md
+FLEET.md
 docs/**
 !docs/manuals/
 !docs/manuals/**
