@@ -308,6 +308,7 @@ test("response parts keep their chronological order across tool boundaries", () 
     const parts = state.turns[0].responseParts as unknown as {
         kind: string;
         content?: string;
+        toolCall?: { toolCallId?: string };
     }[];
     assert.deepEqual(
         parts.map((part) => part.kind),
@@ -319,42 +320,40 @@ test("response parts keep their chronological order across tool boundaries", () 
         ["A", "B", "C"],
         "each text run is its own part, not one concatenated blob",
     );
-});
-
-test("reasoning parts also stay separate across a tool boundary", () => {
-    const runtime = fixture("openai");
-    rememberProjectedUser(runtime.projection, "question");
-    for (const event of [
-        { kind: "turn-start", logicalTurnId: "turn-1" },
-        { kind: "thinking", text: "r1" },
-        { kind: "tool-start", toolName: "read_file", toolId: "t1", detail: "look" },
-        { kind: "thinking", text: "r2" },
-    ] as AgentEvent[]) {
-        apply(runtime, projectAgentEvent(runtime.projection, event));
-    }
-    const chat = runtime.host.snapshot(runtime.handle.chatResource).state as ChatState;
-    const active = chat.activeTurn;
-    assert.ok(active, "the turn is still open (no turn-end sent yet)");
-    const reasoning = (
-        active!.responseParts as unknown as { kind: string; content?: string }[]
-    ).filter((part) => part.kind === "reasoning");
     assert.deepEqual(
-        reasoning.map((part) => part.content),
-        ["r1", "r2"],
-        "two separate reasoning parts, not one part holding both",
+        parts.filter((part) => part.kind === "toolCall").map((part) => part.toolCall?.toolCallId),
+        ["t1", "t2"],
     );
 });
 
-test("authoritative response parts retain tool ids and chronological order", () => {
-    const state = runStream("openai", INTERLEAVED_STREAM);
-    const parts = state.turns[0].responseParts as unknown as Array<{
-        kind: string;
-        toolCall?: { toolCallId?: string };
-    }>;
-    const toolIds = parts.flatMap((part) =>
-        part.kind === "toolCall" && part.toolCall?.toolCallId ? [part.toolCall.toolCallId] : [],
+test("reasoning fragments retain whitespace and order across tools, text and notices", () => {
+    const state = runStream("openai", [
+        { kind: "turn-start", logicalTurnId: "turn-1" },
+        { kind: "thinking", text: "First" },
+        { kind: "thinking", text: "\n\n" },
+        { kind: "thinking", text: "paragraph" },
+        { kind: "tool-start", toolName: "read_file", toolId: "t1" },
+        { kind: "thinking", text: "Second run" },
+        { kind: "text", text: "Answer" },
+        { kind: "thinking", text: "Third run" },
+        { kind: "status-notice", text: "Notice", transcript: true },
+        { kind: "thinking", text: "Fourth run" },
+        { kind: "text", text: "Update" },
+    ]);
+    const parts = state.activeTurn!.responseParts as { kind: string; content?: string }[];
+    assert.deepEqual(
+        parts.map(({ kind, content }) => content ?? kind),
+        [
+            "First\n\nparagraph",
+            "toolCall",
+            "Second run",
+            "Answer",
+            "Third run",
+            "Notice",
+            "Fourth run",
+            "Update",
+        ],
     );
-    assert.deepEqual(toolIds, ["t1", "t2"], "tool order is preserved, not collapsed together");
 });
 
 function runStream(provider: string, events: AgentEvent[]): ChatState {

@@ -10,7 +10,7 @@ import { svgIcon } from "./icons";
 import { beginComposerEdit, lastComposerUserRow } from "./composerBridge";
 import { clearFailedAttemptForEdit } from "./errorEditRecovery";
 import { registerMessageBridge } from "./messageBridge";
-import { endThinkingStream } from "./thinking";
+import { endThinkingStream, streamThinkingDelta as appendThinkingDelta } from "./thinking";
 import { createSystemNotice } from "./systemNotice";
 import { audioErrorActions } from "./audioErrorActions";
 import { t } from "./i18n";
@@ -19,7 +19,7 @@ import { reasoningDefault, reasoningValue } from "./models";
 import type { TransientRetryNotice } from "../../adapters/events";
 import { renderTransientRetryNotice } from "./retryStatusNotice";
 import { appendGatedRetry } from "./retryGate";
-export { renderThinkBlock, streamThinkingDelta } from "./thinking";
+export { renderThinkBlock } from "./thinking";
 
 // Tracks the Retry bar for the most recent retry click, so it can be
 // removed once that retry resolves (success or a fresh error) — see
@@ -363,7 +363,18 @@ export function streamDelta(
     }
     autoScroll(stick);
 }
-export function endStream() {
+export function streamThinkingDelta(text: string): void {
+    if (!text) return;
+    endTextStream();
+    appendThinkingDelta(text);
+}
+
+export function endStream(): void {
+    endTextStream();
+    endThinkingStream();
+}
+
+function endTextStream(): void {
     // Flush a pending animation frame so the final assistant text is fully
     // rendered before the next event closes the streaming message.
     if (streamRaf) {
@@ -373,7 +384,6 @@ export function endStream() {
     streamMsg = null;
     streamBody = null;
     streamText = "";
-    endThinkingStream();
 }
 
 registerMessageBridge({ optimisticUserMessage, endStream, endToolGroup });

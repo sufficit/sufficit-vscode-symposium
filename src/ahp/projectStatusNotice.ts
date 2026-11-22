@@ -20,6 +20,7 @@ export function projectStatusNotice(
         return activity(event.text);
     }
     state.textPartId = undefined;
+    state.reasoningPartId = undefined;
     return [
         chatAction("chat/responsePart", state.turnId, {
             part: {

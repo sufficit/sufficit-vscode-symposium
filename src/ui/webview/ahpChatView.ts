@@ -18,10 +18,12 @@ import { hideAgentPicker } from "./agentPicker";
 import { log } from "./dom";
 import { showToast } from "./menus";
 import {
+    endStream,
     message,
     renderError,
     renderStatusNotice,
     renderThinkBlock,
+    streamThinkingDelta,
     withdrawOptimisticMessage,
 } from "./messages";
 import { preserveScrollOnPrepend, setHasMoreHistory } from "./scroll";
@@ -30,13 +32,19 @@ import { setBusy } from "./state";
 import { setStatus } from "./status";
 import { renderInSlices } from "./renderScheduler";
 import { renderAhpRecoveryStatus } from "./ahpRecoveryView";
-import { asRecord, contentText, numberValue, optionalString, stringContent } from "./ahpValues";
-import { removeRecoveredErrorNotice } from "./ahpRecoveredErrorView";
 import {
+    approvalTier,
+    asRecord,
+    coalesceReasoningParts,
+    contentText,
     isEmptyStreamAnchor,
-    isSyntheticControlMessage,
-    reconcileAhpRetryLifecycle,
-} from "./ahpRetryReconciliation";
+    numberValue,
+    optionalString,
+    severity,
+    stringContent,
+} from "./ahpValues";
+import { removeRecoveredErrorNotice } from "./ahpRecoveredErrorView";
+import { isSyntheticControlMessage, reconcileAhpRetryLifecycle } from "./ahpRetryReconciliation";
 
 let renderGeneration = 0;
 let pendingRender: Promise<void> = Promise.resolve();
@@ -130,6 +138,7 @@ export function renderAhpChatAction(envelope: ActionEnvelope, chat?: ChatState):
                     optionalString(action.startedAt),
                 );
             } else {
+                endStream();
                 setBusy(true);
                 setStatus();
             }
@@ -258,7 +267,10 @@ function renderTurn(
         );
     }
     const usageModel = optionalString(asRecord(turn.usage).model);
-    for (const part of turn.responseParts) renderPart(part, usageModel, true);
+    const parts = coalesceReasoningParts(turn.responseParts);
+    const liveReasoning = active && parts.at(-1)?.kind === "reasoning" ? parts.pop() : undefined;
+    for (const part of parts) renderPart(part, usageModel, true);
+    if (liveReasoning) renderPart(liveReasoning);
     if ("error" in turn && turn.error) {
         const error = asRecord(turn.error);
         renderError(
@@ -287,6 +299,7 @@ function renderPart(part: ResponsePart, fallbackModel?: string, historical = fal
         const content = String(value.content ?? "");
         const metadata = readAssistantMetadata(value._meta);
         if (content) {
+            if (!historical) endStream();
             message(
                 "assistant",
                 content,
@@ -299,7 +312,8 @@ function renderPart(part: ResponsePart, fallbackModel?: string, historical = fal
     }
     if (value.kind === "reasoning") {
         const content = String(value.content ?? "");
-        if (content.trim()) renderThinkBlock(content);
+        if (historical) renderThinkBlock(content);
+        else streamThinkingDelta(content);
         return;
     }
     if (value.kind === "notice" || value.kind === "systemNotification") {
@@ -308,6 +322,7 @@ function renderPart(part: ResponsePart, fallbackModel?: string, historical = fal
         return;
     }
     if (value.kind !== "toolCall") return;
+    if (!historical) endStream();
     const tool = asRecord(value.toolCall);
     const id = String(tool.toolCallId ?? "tool");
     const name = String(tool.displayName ?? tool.toolName ?? "Tool");
@@ -376,16 +391,6 @@ function affectsQueueOrLifecycle(type: string): boolean {
         type === "chat/pendingMessageRemoved" ||
         type === "chat/queuedMessagesReordered"
     );
-}
-
-function severity(value: unknown): "info" | "warning" | "error" {
-    return value === "warning" || value === "error" ? value : "info";
-}
-
-function approvalTier(value: Record<string, unknown>): "write" | "destructive" {
-    return asRecord(asRecord(value._meta).symposium).tier === "destructive"
-        ? "destructive"
-        : "write";
 }
 
 function isToolFinished(value: unknown): boolean {

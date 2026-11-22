@@ -1321,6 +1321,92 @@ test("thinking updates retain a backwards partial selection", () => {
     h.dom.window.close();
 });
 
+test("thinking streams through whitespace and stops at transcript boundaries", () => {
+    const h = createHarness();
+    h.deliver(meta("alpha", "luna"));
+    const event = (kind, text) => h.deliver({ type: "event", event: { kind, text } });
+    event("thinking", "  ");
+    assert.equal(h.document.querySelector(".thinkWrap"), null);
+    event("thinking", "First");
+    const block = h.document.querySelector(".thinkWrap");
+    event("thinking", "\n\n");
+    event("usage");
+    event("thinking", "paragraph");
+    assert.deepEqual([...h.document.querySelectorAll(".thinkWrap")], [block]);
+    const first = "  First\n\nparagraph";
+    assert.equal(block.querySelector(".thinkBody").textContent, first);
+    assert.equal(block.querySelector(".thinkLen").textContent, first.length + " chars");
+
+    event("text", "Answer");
+    event("thinking", "Second run");
+    event("text", "Update");
+    event("turn-end");
+    event("thinking", "Next turn");
+    assert.deepEqual(
+        [...h.document.querySelectorAll(".thinkWrap, .msg.assistant")].map((row) =>
+            row.querySelector(".thinkBody, .md").textContent
+        ),
+        [first, "Answer", "Second run", "Update", "Next turn"],
+    );
+    h.dom.window.close();
+});
+
+test("AHP thinking stays grouped across snapshots and subsequent deltas", async () => {
+    const h = createHarness();
+    const resource = "ahp-chat:/11111111-1111-5111-8111-111111111111";
+    const frame = (value) => h.deliver({ type: "ahp-frame", frame: { generation: 1, ...value } });
+    try {
+        h.deliver(meta("alpha", "luna"));
+        frame({ kind: "reset" });
+        frame({
+            kind: "snapshot",
+            snapshot: {
+                resource,
+                fromSeq: 1,
+                state: {
+                    resource,
+                    status: 1,
+                    turns: [],
+                    activeTurn: {
+                        id: "thinking-turn",
+                        message: { text: "Question", origin: { kind: "user" } },
+                        responseParts: [
+                            { kind: "reasoning", id: "r1", content: "First" },
+                            { kind: "reasoning", id: "r2", content: "\nparagraph" },
+                            { kind: "markdown", id: "m1", content: "Answer" },
+                            { kind: "reasoning", id: "r3", content: "More" },
+                        ],
+                    },
+                },
+            },
+        });
+        await new Promise(setImmediate);
+        const blocks = [...h.document.querySelectorAll(".thinkWrap")];
+        assert.deepEqual(blocks.map((row) => row.querySelector(".thinkBody").textContent), [
+            "First\nparagraph",
+            "More",
+        ]);
+        frame({
+            kind: "action",
+            envelope: {
+                channel: resource,
+                serverSeq: 2,
+                action: {
+                    type: "chat/reasoning",
+                    turnId: "thinking-turn",
+                    partId: "r3",
+                    content: " details",
+                },
+            },
+        });
+        await new Promise(setImmediate);
+        assert.deepEqual([...h.document.querySelectorAll(".thinkWrap")], blocks);
+        assert.equal(blocks[1].querySelector(".thinkBody").textContent, "More details");
+    } finally {
+        h.dom.window.close();
+    }
+});
+
 test("denied browser clipboard delegates copy without removing the selection or reporting false success", async () => {
     const h = createHarness();
     h.deliver(meta("alpha", "luna"));

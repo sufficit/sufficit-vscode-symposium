@@ -26,6 +26,7 @@ import type { QueueItem } from "./types";
 /** Clears only conversation-owned presentation state. Session metadata and the
  * surrounding surface remain intact while an AHP snapshot replaces the chat. */
 export function resetConversationView(): void {
+    endStream();
     setConversationRows([]);
     resetDispatchedMessages();
     log.textContent = "";

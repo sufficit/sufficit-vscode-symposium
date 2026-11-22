@@ -110,6 +110,7 @@ export function transcriptMessages(log: unknown[]): TranscriptRow[] {
                 assistantBuf += message.event.text || "";
             }
         } else if (message?.type === "event" && message.event?.kind === "thinking") {
+            if (assistantBuf && message.event.text) flushAssistant();
             thinkingBuf += message.event.text || "";
         } else if (message?.type === "event" && message.event?.kind === "turn-end") {
             flushAssistant();
@@ -291,6 +292,7 @@ export function replayRows(log: unknown[]): ReplayRow[] {
                 assistantBuf += message.event.text || "";
             }
         } else if (message?.type === "event" && message.event?.kind === "thinking") {
+            if (assistantBuf && message.event.text) flushAssistant();
             thinkingBuf += message.event.text || "";
         } else if (message?.type === "event" && message.event?.kind === "turn-end") {
             flushAssistant();

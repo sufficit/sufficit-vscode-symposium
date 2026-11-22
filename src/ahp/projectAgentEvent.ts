@@ -141,6 +141,7 @@ function projectText(
     event: Extract<AgentEvent, { kind: "text" }>,
 ): AhpProjectionAction[] {
     if (!state.turnId || !event.text) return [];
+    state.reasoningPartId = undefined;
     const actions: AhpProjectionAction[] = [];
     const metadata = assistantMetadata({
         ts: event.ts,
@@ -172,6 +173,7 @@ function projectText(
 
 function projectReasoning(state: AhpProjectionState, text: string): AhpProjectionAction[] {
     if (!state.turnId || !text) return [];
+    state.textPartId = undefined;
     const actions: AhpProjectionAction[] = [];
     if (!state.reasoningPartId) {
         state.reasoningPartId = partId(state, "reasoning");

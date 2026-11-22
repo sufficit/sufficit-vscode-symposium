@@ -53,10 +53,9 @@ export function applyEvent(ev: AgentEvent, errorTurnId?: string, historical = fa
     if (!historical && isRetryProgressEvent(ev)) {
         resolveRunningTransientRetryNotices();
     }
-    // Claude streams extended thinking token-by-token. Consecutive thinking
-    // deltas should stay in one block; text/tools/status events close it via
-    // endStream(), so distinct phases still separate naturally.
-    if (ev.kind === "thinking") {
+    if (ev.kind === "turn-start") {
+        endStream();
+    } else if (ev.kind === "thinking") {
         streamThinkingDelta(ev.text);
     } else if (ev.kind === "text") {
         const legacyNotice = legacyGuardrailStopNotice(ev.text);

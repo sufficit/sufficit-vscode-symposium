@@ -16,14 +16,6 @@ export function reconcileAhpRetryLifecycle(action: Record<string, unknown>): voi
     if (part && isRetryProgressPart(part)) resolveRunningTransientRetryNotices();
 }
 
-export function isEmptyStreamAnchor(part: ResponsePart): boolean {
-    const value = part as unknown as Record<string, unknown>;
-    return (
-        (value.kind === "markdown" || value.kind === "reasoning") &&
-        String(value.content ?? "") === ""
-    );
-}
-
 export function isSyntheticControlMessage(message: Record<string, unknown>): boolean {
     const metadata = message._meta;
     return !!metadata && typeof metadata === "object" && "synthetic" in metadata

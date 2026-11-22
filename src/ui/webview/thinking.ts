@@ -8,16 +8,12 @@ export function configureThinkingRenderer(options: { closeToolGroup?: () => void
     closeToolGroup = options.closeToolGroup || closeToolGroup;
 }
 
-let streamThink: HTMLDivElement | null = null,
-    streamThinkBody: HTMLDivElement | null = null,
-    streamThinkLen: HTMLSpanElement | null = null,
-    streamThinkText = "",
-    streamThinkDet: HTMLDetailsElement | null = null;
+let streamThink: ReturnType<typeof renderThinkBlock> = null;
+let streamThinkText = "";
 const THINK_ICON =
     '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5A5.5 5.5 0 1 0 13.5 7c0-.67-.12-1.32-.35-1.92A2 2 0 0 1 11 6.5a2 2 0 0 1-2-2c0-.31.07-.6.19-.86A5.5 5.5 0 0 0 8 1.5ZM1 7a7 7 0 1 1 7.96 6.94 1.5 1.5 0 1 1-1.33-2.67A7 7 0 0 1 1 7Z"/></svg>';
 
 export function renderThinkBlock(text: string): {
-    wrap: HTMLDivElement;
     body: HTMLDivElement;
     len: HTMLSpanElement;
     det: HTMLDetailsElement;
@@ -53,50 +49,32 @@ export function renderThinkBlock(text: string): {
     log.appendChild(wrap);
     refreshEmpty();
     autoScroll(stick);
-    return { wrap, body, len, det };
+    return { body, len, det };
 }
 
 export function streamThinkingDelta(text: string): void {
-    const stick = nearBottom();
-    if (streamThink && text.trim() === "" && streamThinkText.length > 0) {
-        endThinkingStream();
-    }
-    if (!streamThink) {
-        if (text.trim() === "") {
-            return;
-        }
-        const rendered = renderThinkBlock(text);
-        if (!rendered) {
-            return;
-        }
-        const { wrap, body, len, det } = rendered;
-        streamThink = wrap;
-        streamThinkBody = body;
-        streamThinkLen = len;
-        streamThinkDet = det;
-        streamThinkText = "";
-    }
+    if (!text) return;
     streamThinkText += text;
-    if (streamThinkBody) {
-        const body = streamThinkBody;
-        preserveTextSelection(body, () => {
-            body.textContent = streamThinkText;
-        });
+    if (!streamThink) {
+        streamThink = renderThinkBlock(streamThinkText);
+        return;
     }
-    if (streamThinkLen) streamThinkLen.textContent = streamThinkText.length + " chars";
+    const stick = nearBottom();
+    const { body, len } = streamThink;
+    preserveTextSelection(body, () => {
+        body.textContent = streamThinkText;
+    });
+    len.textContent = streamThinkText.length + " chars";
     autoScroll(stick);
 }
 
 export function endThinkingStream(): void {
-    if (streamThinkDet) {
-        const det = streamThinkDet;
+    if (streamThink) {
+        const { det } = streamThink;
         setTimeout(() => {
             det.open = false;
         }, 3000);
     }
     streamThink = null;
-    streamThinkBody = null;
-    streamThinkLen = null;
     streamThinkText = "";
-    streamThinkDet = null;
 }
