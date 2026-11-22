@@ -81,3 +81,5 @@ links from maintained guides to those records still have their targets checked.
 The checker also enforces the minute-resolution filename for activity records.
 
 [Active release plan](PLAN-TASK-COMPLETION-RELEASE.md).
+
+[Thinking stream release plan](PLAN-THINKING-STREAM-RELEASE.md).
